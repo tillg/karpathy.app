@@ -1,7 +1,7 @@
 ---
 title: "Deployment: releases, targets and operations"
 created: 2026-10-02
-edited: 2026-10-02
+edited: 2026-10-04
 ---
 
 # Deployment: releases, targets and operations
@@ -64,7 +64,7 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
 - **Built and Deployed:** the guard job's time goes into the backend image as `BUILT_AT`; role `app`
   writes `DEPLOYED_AT` to `shared/.env`, keeping it when the same version is redeployed (an unchanged
   `.env` recreates nothing). `GET /api/health` reports both as `built` / `deployed` (`null` locally).
-- Images: `ghcr.io/tillg/karpathy.app-{proxy,backend,opencode}`, public (the repo is), pulled
+- Images: `ghcr.io/tillg/karpathy.app-{proxy,backend,opencode,egress}`, public (the repo is), pulled
   anonymously. Every version stays in GHCR.
 
 ## The compose stack on a target
@@ -79,6 +79,10 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
   log rotation (3 × 10 MB). The backend has `init: true`: its PID 1 (`npm exec`) didn't reap orphaned
   git processes.
 - `TZ` from the target (`tzdata` in the backend image), so commit times follow it.
+- Networks: `edge` (proxy), `internal` (`internal: true`: proxy, backend, opencode, egress) and `egress` (backend
+  and the `egress` Squid proxy, the only two with a route out). opencode reaches the internet only through
+  `egress:3128`; the backend talks to opencode with the `opencode_password` (HTTP Basic, also in opencode's
+  healthcheck).
 
 A target adds `shared/compose.target.yml` (rendered by Ansible): the `vaults` volume as a bind mount
 of `/srv/vaults`; on `local` also the e2e bare repos at `/remotes` with `safe.directory`.
@@ -150,7 +154,8 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
 | Bearer token | backend | `shared/secrets/bearer_token` (uid 1000, 0600) |
 | GitHub token | backend | `shared/secrets/github_token` (uid 1000, 0600); the fallback: a token set in the app's settings wins and needs no redeploy |
 | GoDaddy `<key>:<secret>` | proxy (DNS-01) | `shared/secrets/dns_api_token` (root, 0600: Caddy runs as root without CAP_DAC_OVERRIDE) |
-| Provider keys | opencode | `shared/opencode.env` (0600) |
+| Provider keys, optional `EXA_API_KEY`, `WEB_FETCH_CAP` / `WEB_SEARCH_CAP` | opencode | `shared/opencode.env` (0600) |
+| opencode server password | backend, opencode | `shared/secrets/opencode_password` (uid 1000, 0600); generated once on the target by role `app` (`force: false`), no vault entry; a change recreates the stack |
 | Tailscale auth key | `tailscale up` | not stored; single-use |
 | ntfy topic, healthchecks.io URL, Beszel password / hub key / token | monitoring | monitoring files, 0600 |
 

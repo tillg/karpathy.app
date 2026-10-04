@@ -53,20 +53,43 @@ A git-level clash between the vault's uncommitted changes and changes pulled fro
 
 ### Editor
 
+**Vault file**:
+Any file in the vault: a note, a media file or a binary file. The file tree, Delete, the Changes list and commits work on vault files.
+_Avoid_: Note (for anything that isn't text), document, item
+
+**Note**:
+A vault file that is UTF-8 text, usually `.md`. Only notes can be edited and have a Write/Read mode.
+
+**Media file**:
+A vault file whose extension marks it as an image, video or audio file. Shown, never edited.
+_Avoid_: Attachment, asset, resource
+
+**Embed**:
+Markdown that asks for a file to be shown inside a note: `![[target]]`, `![[target|300]]` or `![alt](path)`. Showing it never changes the note.
+_Avoid_: Attachment (that's the file), inline image, transclusion (embedding a note's text, which the app doesn't do)
+
+**File card**:
+What shows instead of a player: file name, size, Download, plus Open for a PDF and Load anyway for a media file over the preview limit (50 MB).
+_Avoid_: Placeholder
+
 **Write mode**:
-The default way a note opens: raw Markdown with live preview, editable.
+Raw Markdown with live preview, editable. The mode of a new browser.
 _Avoid_: Edit mode, source mode
 
 **Read mode**:
 A rendered, non-editable view of a note that the user can switch to.
 _Avoid_: Preview
 
+**Mode preference**:
+The Write/Read mode the user last chose. Applies to every note opened afterwards and survives a reload; one per browser.
+_Avoid_: Default mode
+
 ### Operations
 
 Terms for running the app, not for using it ([`specs/system/deployment.md`](specs/system/deployment.md)).
 
 **Release**:
-A git tag `vX.Y.Z` together with the three images CI built from it (`ghcr.io/tillg/karpathy.app-{proxy,backend,opencode}:X.Y.Z`) and the `compose.yml` attached to the GitHub release. Never changes once published; a tag whose images failed to build isn't one.
+A git tag `vX.Y.Z` together with the four images CI built from it (`ghcr.io/tillg/karpathy.app-{proxy,backend,opencode,egress}:X.Y.Z`) and the `compose.yml` attached to the GitHub release. Never changes once published; a tag whose images failed to build isn't one.
 _Avoid_: Build, deployment
 
 **Pre-release**:

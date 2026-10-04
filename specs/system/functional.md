@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-03
+edited: 2026-10-04
 ---
 
 # Functional: karpathy.app
@@ -60,8 +60,9 @@ The modal has four views, switched inside it (no router). Every view but the lis
 - **Switch vault** from the vault menu (shows `name · branch`); the open note is saved first.
 - **Settings** view, in three groups:
   - **GitHub:** the server-wide token ([GitHub token](#github-token)).
-  - **App:** commit reminder threshold (1–1000 changed files) and the model (`provider/model`, server-wide; the
-    server rejects models opencode doesn't offer).
+  - **App:** commit reminder threshold (1–1000 changed files), the model (`provider/model`, server-wide; the
+    server rejects models opencode doesn't offer) and the **Web access** switch (on by default, for all vaults: "Lets
+    the AI search the web (via Exa) and read pages you or it found. Each search and page is shown in the chat.").
   - **Version:** server and PWA version, Built and Deployed.
 
 #### Checked attach
@@ -100,25 +101,40 @@ applies to the next git operation. The deployment's `GITHUB_TOKEN` secret stays 
   names; dot-files never shown. The open note's folders open and its row scrolls into view.
 - **Create a note** (path prompt, `.md` added if missing, starts as `# <title>`). Refused for existing names, names
   that differ only by case, and invalid names.
-- **Delete a note** (recoverable until the next commit).
-- **Write mode** (default): Markdown with live preview, frontmatter shown as a block, find-in-note.
+- **Delete a note** (recoverable until the next commit). On a media or binary file the button says "Delete file".
+- **Write mode** (default for a new browser): Markdown with live preview, frontmatter shown as a block,
+  find-in-note; embeds show as a block below their line, the `![[…]]` text stays editable.
 - **Read mode:** rendered, sanitized Markdown of the note's current text; frontmatter as a properties table, where
   `related` / `sources` values that name a note are links. Obsidian syntax: callouts `> [!type] Title`, `==highlight==`,
-  `%%comments%%` hidden, footnotes, task markers ☑ / ☐, `![[note]]` as an embed link (no transclusion; images: #97).
+  `%%comments%%` hidden, footnotes, task markers ☑ / ☐, media embeds (below), `![[note]]` as a link (no
+  transclusion).
+- **Sticky mode:** the Write/Read mode the user last chose holds for every note opened afterwards (tree, search,
+  links, chat chips, AI opens) and after a reload, per browser. Opening a media or binary file doesn't change it.
+- **Media embeds** `![[photo.png]]`, `![[clip.mp4|300]]` (width in px, any media kind), `![alt](img/a.png)`: images,
+  videos (inline, also on iPhone) and audio show in Read mode, in Write mode and in chat replies. PDFs and other files
+  show a file card (name, size, Download; Open for a PDF, in the browser's viewer in a new tab). Media over 50 MB shows
+  **Load anyway (N MB)**; a missing target shows a "missing" card; offline shows an "offline" card. Remote images
+  (`https://…`) stay links. A skeleton holds the space while bytes load. Tapping an image opens it in the note pane.
+- **Media view:** opening an image, video or audio file from the tree (or a tapped image) shows it in the note pane;
+  a PDF or other binary file shows its file card. No mode toggle, no find-in-note; Delete stays.
+- **Search hit and `[[note#heading]]` in Read mode** scroll to the rendered block that holds the line and highlight it
+  briefly.
+- **Place:** Back returns to where you left a note seen in this session (also after an image or link); switching
+  Write ↔ Read keeps the place.
   Wide tables scroll sideways. Links: wikilinks carry the note's route (new tab and copy link work), relative Markdown
   links to vault notes open in the app, external links open in a new tab.
-- **Wikilinks** `[[target#heading|alias]]`: click to open (resolved by path, then by file name anywhere); links to
-  missing pages are marked and say "No page “X” yet".
+- **Wikilinks** `[[target#heading|alias]]`: click to open (resolved by path, then path suffix, then file name
+  anywhere; with duplicate names the note's own folder wins, then the shortest path, then A–Z); links to missing pages
+  are marked and say "No page “X” yet".
 - **Autosave** 1.5 s after the last edit; local drafts survive reloads and crashes; status footer
   "Saving…" / "● Unsaved changes" / "Saved".
 - **Live updates:** a note changed by the AI or a pull reloads silently if it has no unsaved changes; a deleted note
   shows "Keep as new note" / "Close".
-- **Binary files** are shown as "Binary file — can’t be edited here".
 
 ### Search
 
 Full-text, case-insensitive, fixed-string search over the vault root (ripgrep), plus file-name matches; results
-grouped per note with up to 4 line snippets; capped at 200 hits ("refine your search"); opens the note at the hit.
+grouped per note with up to 4 line snippets; capped at 200 hits ("refine your search"); opens the note at the hit, in the current mode.
 Several words find notes that contain all of them (in the text or the path) and show the lines of any of them; a
 `"quoted phrase"` matches as written (#107). Notes whose file name contains every word come first, the rest in path
 order (#99).
@@ -157,7 +173,13 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
 - **The AI opens notes** when asked ("show me my reading list"): on the wide layout right away, on a phone or in the
   tablet overlay when the reply is done, never while the user is editing (then a notice "AI opened …" and the chip).
   Reloading a chat never reopens anything; a wrong path goes back to the AI as a tool error. Works in conflict too.
-- **Read-only while in conflict** ("the AI can only read, not change notes").
+- **Web search and web fetch** (with Web access on): "What's new in X?" searches the web (Exa); "summarize the link
+  in this note" or a pasted URL is fetched. Each call is a chip: `searched the web: "<query>"` (a label) and
+  `fetched <host/path>` (a link to the page, new tab). The AI may fetch only a URL that already appears in the chat
+  (the user's messages, notes it read, earlier results); any other URL fails with "URL not in this chat: paste it into
+  the chat first", and the turn goes on. At most 20 searches and 20 fetches per turn. Fetched pages stay in the chat;
+  they reach the vault only if the AI writes about them. With Web access off, the AI has neither tool.
+- **Read-only while in conflict** ("the AI can only read, not change notes"); web search and fetch still work.
 - The AI can read and edit notes in the vault root only; its changes are uncommitted until the user commits.
 
 ### Skills
@@ -167,9 +189,11 @@ wiki skills (`query`, `lint`, `ingest`, …) written for Claude Code are offered
 on what it needs:
 
 - **Only file tools** (read, search, write notes): works, within the vault root.
-- **Shell or web** (Python scripts such as `film-import.py`, `rg` via bash, fetching URLs): doesn't work, because
-  `bash` and `webfetch` are denied. Making them work needs Python in the opencode image, a bash command allowlist
-  re-checked against the leaks in [security.md](security.md#confining-the-ai), and a decision on webfetch.
+- **Web** (search, reading a URL from a note or the prompt): works with Web access on, within the known-URL rule
+  and the per-turn caps.
+- **Shell** (Python scripts such as `film-import.py`, `rg` via bash): doesn't work, because `bash` is denied. Making
+  it work needs Python in the opencode image and a bash command allowlist re-checked against the leaks in
+  [security.md](security.md#confining-the-ai).
 - **Credentials** (`ingest-email` with Gmail, the Instagram scraper): need secrets for the opencode service and
   network access; not set up.
 - **Steps that commit or push:** never run (the AI can't commit); such steps must be dropped from the skill.
@@ -226,13 +250,15 @@ sequenceDiagram
 | Vault config: repo, branch, root, name (+ "create folders" yes/no) | A cloned vault, an inline error, or the missing-folders question; a clone error after the check |
 | GitHub token (typed, to save or to test) | Masked state (last 4), token test result per account and vault |
 | Note text (Markdown, any UTF-8 text file) | Saved file + new version; rendered HTML in Read mode |
+| Media and other files in the vault (read-only) | Images, video and audio players; file cards with Open (PDF) / Download |
 | Search query | Grouped hits with line snippets |
 | Chat prompt | Streamed reply, tool chips, changed notes |
 | Commit message | Commit on GitHub (or an unpushed commit), toast |
 | Conflict choice per file | Resolved file(s), possibly a `.conflict-<date>` copy |
-| Settings: reminder threshold, model | — |
+| Settings: reminder threshold, model, Web access | — |
+| URLs in prompts and notes, web search queries (AI) | Web chips; pages and results in the chat only |
 
-No uploads, exports, e-mail or push notifications.
+No uploads (also no pasting images), exports, e-mail or push notifications.
 
 ## States and transitions
 
@@ -286,6 +312,13 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
 - The frontmatter properties table understands simple YAML only; other values are shown raw.
 - The offline cache has no automated test in WebKit (Playwright's offline WebKit fails even service-worker-served
   requests); on iPhone/iPad it needs a check by hand.
+- **Media:** fetched whole before it shows (no streaming; the bearer token can't ride on `<img src>`), so seeking
+  works only after the download. Not in the offline cache. Some codecs (HEVC `.mov` in Chromium, `.mkv`) don't play;
+  the player shows its error. PDFs aren't shown inline. **Open** in the installed iOS home-screen app is checked by
+  hand only. Note transclusion (`![[Other note]]`) and remote images aren't shown.
+- **Web access:** a URL the AI builds itself (e.g. adds a query) can't be fetched: the user pastes it. A link deep in a
+  long, truncated page isn't known either. Without `EXA_API_KEY`, search uses Exa's rate-limited anonymous endpoint.
+  Changing the web caps needs an opencode restart or redeploy.
 - A retryable provider error is retried by opencode for up to about 2 minutes before the turn fails.
 - With the chat in main, Tab still reaches the note before the chat (the swap moves columns visually only). At
   1024–1279 px with the sidebar open, the main column (364 px) is narrower than the side column.

@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-03
+edited: 2026-10-04
 ---
 
 # Architecture: karpathy.app
@@ -23,21 +23,25 @@ flowchart LR
     P[proxy: Caddy<br/>TLS, CSP, static PWA]
     B[backend: Node/Express<br/>vault, file, git, chat API]
     O[opencode serve<br/>agent loop + tools]
+    E[egress: Squid<br/>public addresses only]
     V[(volume vaults:<br/>git clones)]
     C[(volume config:<br/>config.json)]
     OD[(volume opencode-data)]
   end
   GH[(GitHub)]
   LLM[LLM provider]
+  WEB[(Exa, public web)]
   PWA -- "HTTPS, Bearer token,<br/>JSON + NDJSON" --> P
   P -- "/api/*" --> B
-  B -- "@opencode-ai/sdk (HTTP + SSE)" --> O
+  B -- "@opencode-ai/sdk (HTTP + SSE),<br/>Basic auth" --> O
   B -- "git, ripgrep" --> V
   B --> C
   O -- "file tools" --> V
   O --> OD
   B -- "fetch / push (token header)" --> GH
-  O -- "model API" --> LLM
+  O -- "HTTP(S)_PROXY" --> E
+  E -- "model API" --> LLM
+  E -- "web search, web fetch" --> WEB
 ```
 
 ## Technology stack
@@ -72,11 +76,23 @@ flowchart LR
 - **Store** (`store.tsx`): one `useAppState` hook in a React context holds the token, vaults, status, open note, save
   pipeline (autosave 1.5 s, drafts, retries), the vault event stream and routing (`#/<vault>/<path>`).
 - **Editor** (`Editor.tsx`, `lib/cm.ts`): CodeMirror 6 with decorations only, so the Markdown text, frontmatter and
-  `[[wikilinks]]` round-trip losslessly; CRLF kept; external reloads applied as one minimal change.
+  `[[wikilinks]]` round-trip losslessly; CRLF kept; external reloads applied as one minimal change. Embeds come from a
+  `StateField` (block decorations must come from state): per line with an embed, a block widget after the line end
+  (`side: 1`) that calls `mountEmbed`; not in fenced code or frontmatter; recomputed on `docChanged` and on
+  `refreshLinks`. `EditorHandle` has `topLine()` and `gotoLine(line, { focus: false, align: 'start' })` for mode
+  switches (no keyboard on a phone).
+- **Media** (`lib/media.ts`, `lib/embed.ts`, shared `MEDIA` table): see [Media embeds](#media-embeds).
+- **Mode preference** (`store.tsx`): `mode` is read from and written to localStorage `karpathy.mode`; `openNote` never
+  changes it. An in-memory `places` map (`vault\0path` → scroll top, top line, mode) is filled when a note is left
+  and restored on Back/Forward; `lib/place.ts` maps between source lines and Read-mode blocks.
 - **Renderer** (`lib/markdown.ts`): `marked` with extensions (wikilinks and embeds, highlights, footnotes; callouts and
   task markers via renderer overrides; `%%comments%%` stripped outside code) + DOMPurify for Read mode and chat text. A
   per-call `afterSanitizeAttributes` hook sets link targets: wikilinks and resolved relative links get app routes,
-  external links `target="_blank" rel="noopener noreferrer"`.
+  external links `target="_blank" rel="noopener noreferrer"`. `renderMarkdown(md, ctx)` takes `{ exists,
+  resolveEmbed }`; `![[…]]` (an inline extension before `wikilink`) and `![alt](src)` (the `image` renderer) emit a
+  `<span class="embed" data-path data-kind data-width data-alt>` placeholder, never an `<img src>`. Each top-level
+  block carries `data-line` (its source line, frontmatter included) on its own tag, no wrapper elements; Read mode
+  uses it for hit positions and mode switches.
 - **API client** (`lib/api.ts`, `lib/ndjson.ts`): fetch wrapper with Bearer token, typed `ApiError`, NDJSON reader.
 - **Admin modal** (`Admin.tsx`): one `Modal` with local view state `list | details | add | settings` (no router;
   `adminOpen` stays a boolean plus an optional vault id). Every view but the list has a "All vaults" back button; closing
@@ -109,7 +125,7 @@ on its own ([deployment.md › Website](deployment.md#website)).
 | `preflight.ts` | `preflight()`: the attach check ([Attach preflight](#attach-preflight)); `REQUIRED_FOLDERS`. |
 | `github-token.ts` | `GitHubToken`: the server-wide token (stored over secret), its source, `GET /user` identity check, redaction of every value seen. |
 | `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure, commit, push, conflict sides and resolution; hardened `runGit`. |
-| `files.ts`, `paths.ts` | Tree listing, versions (content hash), ripgrep search; path normalization and symlink-safe resolution. |
+| `files.ts`, `paths.ts` | Tree listing, versions (content hash), ripgrep search; path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules. |
 | `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`; exclusive: every git operation). |
 | `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events. |
 | `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. |
@@ -121,8 +137,11 @@ on its own ([deployment.md › Website](deployment.md#website)).
 
 The pinned stock image (`deploy/opencode/Dockerfile`) plus a **managed config** at `/etc/opencode/opencode.json` (merged last, so a vault can't override it):
 agents `vault` (edits allowed except `.git` and harness config), `vault-readonly` (default; used during conflicts) and
-`commit-message` (no tools); `bash`, `webfetch`, `websearch`, `task`, `question` and `external_directory` denied;
-reading `*.env` denied; snapshots, sharing and auto-update off. The image has no git binary, so opencode can't detect
+`commit-message` (no tools); `bash`, `webfetch`, `websearch`, `task`, `question` and `external_directory` denied
+(`websearch` and `webfetch` are switched on per turn by the backend, see [Web access](#web-access));
+reading `*.env` denied; snapshots, sharing and auto-update off. The image sets `OPENCODE_ENABLE_EXA=true` and
+`OPENCODE_WEBSEARCH_PROVIDER=exa`; its entrypoint exports the `opencode_password` secret as
+`OPENCODE_SERVER_PASSWORD` (HTTP Basic on every route, health included). The image has no git binary, so opencode can't detect
 a worktree and stays confined to the session directory (the vault root).
 
 **Custom tool `open_note`** (`deploy/opencode/tools/open_note.ts`, path check in `deploy/opencode/lib/resolve-note.ts`):
@@ -149,10 +168,27 @@ sequenceDiagram
   S->>A: wide: now · phone / tablet: on idle · editing: toast instead
 ```
 
+**Plugin `known-url`** (`deploy/opencode/plugins/known-url.ts`, pure check in `deploy/opencode/lib/known-url.ts`,
+baked into the same global config dir): a `tool.execute.before` hook. For `webfetch` it loads the session's messages
+through opencode's plugin client, collects user text and completed tool outputs, and throws "URL not in this chat:
+paste it into the chat first" unless the URL is known (`extractUrls`, `isKnownUrl`). For `webfetch` and `websearch`
+it counts the calls after the last user message and throws once the per-turn cap is reached (`capFromEnv`:
+`WEB_FETCH_CAP` / `WEB_SEARCH_CAP`, default 20). Stateless, so it survives an opencode restart.
+
+### Egress proxy (`deploy/egress`)
+
+Squid 6 in an own Alpine image (base pinned by digest; the fourth release image), on networks `internal` and
+`egress`. `squid.conf` has one `dst` ACL of internal ranges (loopback, RFC 1918, link-local, CGNAT/tailnet, ULA,
+multicast, …) that is denied, then allows everything else; Squid checks after DNS resolution on every request, so
+each redirect hop is re-checked. opencode gets `HTTP_PROXY`/`HTTPS_PROXY=http://egress:3128` and
+`NO_PROXY=localhost,127.0.0.1,0.0.0.0` (its plugin client calls its own server directly; dev and tests add the
+Ollama host). Gotcha: `::ffff:0:0/96` or `0.0.0.0/8` in the ACL make Squid read `0.0.0.0/0`, so they stay out.
+
 ### Proxy (`deploy/proxy`)
 
 Serves the built PWA from `/srv` with SPA fallback, proxies `/api/*` to the backend unbuffered (`flush_interval -1`),
-sets CSP and security headers, and gets its certificate by DNS-01 (`TLS_MODE=dns`; GoDaddy, with a 90 s wait for
+sets CSP and security headers (`img-src` and `media-src` allow `blob:` for media embeds; `frame-src` and
+`object-src` stay closed), and gets its certificate by DNS-01 (`TLS_MODE=dns`; GoDaddy, with a 90 s wait for
 GoDaddy's nameservers) or from Caddy's internal CA (`TLS_MODE=internal`: prodtest and the `local` target). A
 plain-HTTP site on `127.0.0.1:8081` answers the container healthcheck.
 
@@ -178,6 +214,92 @@ sequenceDiagram
 - **Request/response** JSON over `fetch`; **streams** as NDJSON over `fetch` (no WebSockets, no SSE to the browser):
   the vault event stream (`status`, `files-changed`; never ends) and the chat stream (ends when the turn is idle).
 - Turns outlive connections: a client reattaches to a running turn from any device.
+
+## Web access
+
+```mermaid
+sequenceDiagram
+  participant W as web Settings / ChatPane
+  participant B as backend chat.ts
+  participant O as opencode
+  participant G as plugin known-url
+  participant P as egress proxy
+  participant X as Exa / public web
+  W->>B: PATCH /settings {webAccess}
+  W->>B: POST chat turn
+  B->>O: promptAsync({agent, tools: {websearch, webfetch}}) + Basic auth
+  O->>G: websearch {query} → cap check
+  O->>P: CONNECT mcp.exa.ai
+  P->>X: query
+  X-->>O: results (URLs, page text)
+  O->>G: webfetch {url}
+  G->>O: GET /session/:id/message (direct, NO_PROXY)
+  G-->>O: ok, or throw "URL not in this chat"
+  O->>P: GET url (every redirect hop re-checked)
+  P->>X: fetch
+  X-->>O: page → Markdown / image
+  O-->>B: tool parts
+  B-->>W: NDJSON parts → web chips
+```
+
+- **Setting:** `Settings.webAccess` (default `true`; an old `config.json` reads as `true` through the defaults merge).
+- **Per turn:** `chat.ts` sends `tools: { websearch: webAccess, webfetch: webAccess }` with every prompt of both chat
+  agents, `false` included: opencode stores the map as the session's permission, replacing earlier rules and merged
+  after the agent's. Any later per-turn rule must go into the same map.
+- **Mapping:** `harness/map.ts` sets `ToolCall.query` (websearch `input.query`) and `ToolCall.url` (webfetch
+  `input.url`); `writes`/`opens` stay false, no `path`.
+- **Chips:** `toolLabel(call)` (`lib/chat.ts`) → `searched the web: "<query>"` and `fetched <host><path>` (path cut at
+  60 characters, full URL as tooltip). A completed fetch chip with an `http(s)` URL is a link (new tab, `noopener
+  noreferrer`); a search chip is a label; a refused fetch shows the guard's message.
+
+## Media embeds
+
+```mermaid
+flowchart LR
+    subgraph shared["packages/shared"]
+      T[MEDIA table, mediaKind, rawType<br/>ext → kind, Content-Type]
+    end
+    subgraph backend["apps/backend"]
+      R["GET /vaults/:id/raw?path="] --> V[Vaults.rawFile<br/>resolveInVault]
+    end
+    subgraph web["apps/web"]
+      MDL[lib/markdown.ts<br/>embeds → placeholders]
+      MED[lib/media.ts<br/>parseEmbed, resolveEmbed,<br/>objectUrl cache]
+      EMB[lib/embed.ts<br/>mountEmbed, file card]
+      CMX[lib/cm.ts<br/>embed block widget]
+      NP[NotePane: Read view,<br/>media view, editor]
+      CP[ChatPane]
+    end
+    T --> R & MED
+    MDL --> NP & CP
+    MED --> MDL & CMX & EMB
+    EMB --> NP & CMX & CP
+    MED -->|"HEAD / GET (Bearer)"| R
+```
+
+Four surfaces show media: Read mode, Write mode, chat replies and the media view (a file opened on its own). All of
+them end in one plain-DOM function, `mountEmbed(el, resolved, ctx)`, which creates elements with `createElement` and
+an object URL as `src` (no HTML strings). While bytes load, a skeleton holds the space, using the natural size the
+cache remembered from an earlier load when there is one, so Back lands without layout jumps.
+
+- **Raw route:** `GET /vaults/:id/raw?path=` behind the bearer auth. `Vaults.rawFile` applies the note path rules (no
+  `..`, no `.git`, no hidden files, no symlinks); `res.sendFile` streams and answers `HEAD` and `Range`. Headers:
+  `Content-Type` from `rawType` (media table; `application/pdf`; else `application/octet-stream`),
+  `Content-Disposition: attachment` for everything that isn't a media kind, `nosniff`, `Cache-Control: no-store`. No
+  ETag: hashing a large video per request is the waste avoided. `GET /file` is unchanged and still gives the version
+  that Delete needs when a media file is opened from the tree.
+- **Resolution** (`resolveEmbed(embed, notePath, paths)`): the wiki form goes through `resolveWikilink` (exact path,
+  path suffix, basename; ties: the note's folder, then the shortest path, then A–Z); the Markdown form is URL-decoded
+  and joined with the note's folder; `http(s):`, `//`, `data:` → `remote` (a plain link). Results: `media`, `file`,
+  `note` (rendered as a wikilink), `missing`, `remote`.
+- **Object-URL cache** (`objectUrl`, `invalidate`): key `vault\0path`, the pending promise is shared. A `HEAD` asks the
+  size first; over 50 MB it resolves `tooLarge` without transferring bytes (not cached), unless `force` (Load anyway).
+  SVGs are sanitized with DOMPurify's SVG profile before they become a blob. Budget 200 MB, least recently used entries
+  revoked; entries in use are held (`release()`) and never evicted. `files-changed` invalidates the changed paths;
+  switching vault or logging out invalidates the vault.
+- **PDF Open:** `window.open('', '_blank')` synchronously in the click (Safari blocks it after an `await`), then the
+  tab's location becomes a blob re-typed `application/pdf`, so only the browser's PDF viewer can show it.
+- **Tap on an image** calls `onOpen(path)` → `store.openNote`, which pushes a history entry.
 
 ## Attach preflight
 
@@ -266,7 +388,8 @@ sequenceDiagram
 | `/vaults/.preflight/` | Short-lived blobless clones of the attach preflight; emptied at startup. | backend |
 | Volume `opencode-data` | opencode sessions = chat history. | opencode |
 | Volume `caddy-data` | TLS certificates and keys. | proxy |
-| Browser localStorage | Token, local drafts, tree expansion state. | web |
+| Browser localStorage | Token, local drafts, tree expansion state, main pane, mode preference (`karpathy.mode`). | web |
+| Browser memory | Object URLs of media (≤ 200 MB), places of notes seen this session. Lost on reload. | web |
 | Service worker cache `vault-api` | Vault list, file trees, opened notes (for offline reading); cleared on 401. | web |
 
 No database. Git is the source of truth for notes; GitHub is the sync hub.
@@ -276,7 +399,8 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 - **Exposed:** one HTTPS origin: the PWA plus `/api/*` (full route list in `apps/backend/src/app.ts`). Every `/api`
   route needs the bearer token; `/healthz` exists only inside the stack.
 - **Consumed:** GitHub over HTTPS (clone, fetch, push), the opencode HTTP API on the internal network, the LLM
-  provider APIs (from opencode only), and the DNS provider API (DNS-01, from the proxy only).
+  provider APIs, Exa and public web pages (from opencode only, through the egress proxy), and the DNS provider API
+  (DNS-01, from the proxy only).
 
 ## External systems
 
@@ -285,6 +409,7 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 | GitHub | Vault repos; fine-grained token as an HTTP extra header, never in `.git/config`; `api.github.com/user` for the token test | in use |
 | LLM providers (OpenRouter in production, any via opencode) | Model behind opencode; keys only in `opencode.env` | OpenRouter `z-ai/glm-5.3` on zero-data-retention hosts in production |
 | Ollama | Dev, local prod test and CI LLM tests | in use |
+| Exa | Web search backend (opencode `websearch`, MCP at `mcp.exa.ai`); optional `EXA_API_KEY`, else the anonymous, rate-limited endpoint | in use |
 | Let's Encrypt + GoDaddy DNS | Certificate for `app.karpathy.app` via DNS-01; the A record points at the server's tailnet IP. The apex and `www` point at GitHub Pages | in use |
 | GitHub Pages | Hosts the website at `karpathy.app` (with GitHub's own Let's Encrypt certificate) | in use |
 | ghcr.io | The app's release images (public) and opencode's base image | in use |
@@ -296,10 +421,11 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 ## Infrastructure
 
 - **Runtime = docker compose** in dev and prod (`deploy/compose.yml`). Services `proxy` (networks `edge` +
-  `internal`), `backend` and `opencode` (`internal` only); backend and opencode run as uid 1000; all with
-  `cap_drop: [ALL]`, `no-new-privileges` and log rotation; no egress restriction (opencode must reach the LLM APIs).
-  Secrets are files mounted as compose secrets (`deploy/secrets/` in dev, `shared/secrets/` on a target); provider
-  keys come from `opencode.env`.
+  `internal`), `backend` and `egress` (`internal` + `egress`), `opencode` (`internal` only, which is
+  `internal: true`: no route out but the egress proxy); backend and opencode run as uid 1000; all with
+  `cap_drop: [ALL]`, `no-new-privileges` and log rotation. Secrets are files mounted as compose secrets
+  (`deploy/secrets/` in dev, `shared/secrets/` on a target: `bearer_token`, `github_token`, `opencode_password`);
+  provider keys, `EXA_API_KEY` and the web caps come from `opencode.env`.
 - **Dev** (`compose.dev.yml`, `just dev`): https://localhost:8443 with Caddy's internal CA, Vite with HMR (`web`
   service), bind-mounted sources, local bare repos as remotes (`GIT_REMOTE_BASE=file:///remotes/`), Ollama.
 - **Local prod test** (`compose.prodtest.yml`, `just prodtest`): the prod images on https://localhost:9443 next to
@@ -359,6 +485,23 @@ The ones that shape the whole system:
 - **Swapping main and side column is CSS only** (`order`/`flex`): a keyed reorder in JSX keeps component state but
   moves DOM nodes, which drops keyboard focus and resets scroll positions. Cost: Tab order doesn't follow the visual
   order when the chat is in main.
+- **Web access = opencode's own `websearch` + `webfetch` plus three guards** (known-URL plugin, egress proxy, server
+  password), not provider server tools (one vendor, against ADR 0002) or own tools. URL permission patterns can't stop
+  SSRF (webfetch follows redirects), so a network-level proxy does; the plugin client needs direct loopback, so the
+  password is required. One global switch, on by default, fail-closed in the config. Search is pinned to Exa (one
+  known recipient). Fetched pages live only in the chat; archiving a source is the ingest skill's job.
+- **Media reaches the page as authed `fetch` → `blob:` object URL.** A token in the query string would land in proxy
+  logs and history; cookie auth would add a second scheme and a CSRF surface; a service worker injecting the header
+  could stream and seek but can't reach the token in page `localStorage`. Cost: whole files are fetched before they
+  show, bounded by the 50 MB preview limit and the 200 MB cache budget.
+- **Media embeds in Write mode are block widgets below the line**, not a replacement of the `![[…]]` text: the text
+  stays editable and the round trip lossless, without cursor-in/out handling that is awkward on touch.
+- **PDFs open in a new tab, not inline:** inline needs `frame-src blob:` and shows poorly on iOS and Android; pdf.js
+  would add about 1 MB and its own UI and security updates.
+- **Remote images stay blocked** (`img-src` has no `https:`): notes from git, web clips and AI ingests could otherwise
+  phone home.
+- **The mode preference is per browser in localStorage**, not per vault, note or server: it's a device habit (read on
+  the phone, write on the Mac).
 
 ## Testing
 
@@ -373,11 +516,17 @@ The ones that shape the whole system:
   GitHub test vault), so ordinary tests attach without a `409`; preflight tests opt out (`structure: false`). Token
   storage, precedence, masking and redaction run in the default tier; the `/user` identity check and a token changed
   at runtime need real GitHub (`@github`), because `file://` remotes never send the auth header.
+- **Web access tests:** default tier: known-URL units, Basic auth (401 without the password), the session permission
+  set by the `tools` map, settings round-trip, mapping on captured fixtures; `egress.test.ts` `docker exec`s into a
+  test opencode container and proves loopback without the password, the backend stand-in, `169.254.169.254` and a
+  redirect to an internal URL fail, and a public URL works (skipped offline). `@llm`: one search, one fetch of a
+  pasted URL, one constructed URL refused.
 - **`@llm` rules:** prompts name the tool explicitly; assertions check tool events and the file system, never answer
   text; a turn without any tool call fails as *inconclusive*, not as passed; at most one retry.
 - **Model in dev and CI:** Ollama `qwen2.5:3b` with `OLLAMA_CONTEXT_LENGTH=16384` and a matching context limit in the
   opencode provider config. Ollama otherwise truncates opencode's prompt to about 2k tokens silently, and the model
   then ignores `AGENTS.md` and misuses tools.
 - **e2e:** Playwright against the running stack (dev, or the prod images via `E2E_BASE_URL`); every test fails on a
-  CSP violation. Offline e2e in WebKit is skipped (Playwright's offline WebKit fails even service-worker-served
+  CSP violation (so the media specs prove the prod `media-src` only when run with `just prodtest e2e`; the dev proxy
+  sets no CSP). Media fixtures are tiny real files in `e2e/fixtures/media/`. Offline e2e in WebKit is skipped (Playwright's offline WebKit fails even service-worker-served
   requests).

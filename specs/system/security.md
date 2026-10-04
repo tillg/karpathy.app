@@ -1,7 +1,7 @@
 ---
 title: "Security: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-03
+edited: 2026-10-04
 ---
 
 # Security: karpathy.app
@@ -16,10 +16,13 @@ server setup is in the [prod-env report](../research/prod-env/prod-env-report.md
 flowchart LR
   D[Device: PWA] -- "Tailscale, then<br/>Bearer token over HTTPS" --> P[proxy]
   P --> B[backend]
-  B -- "internal network only" --> O[opencode]
-  O -. "confined to vault root,<br/>no shell, no web" .-> V[(vault clone)]
+  B -- "internal network only,<br/>Basic auth (opencode password)" --> O[opencode]
+  O -. "confined to vault root,<br/>no shell" .-> V[(vault clone)]
   B -- "GitHub token (header only)" --> GH[(GitHub)]
-  O -- "provider key" --> LLM[LLM provider]
+  O -- "all outbound HTTP" --> E[egress proxy:<br/>public addresses only]
+  E -- "provider key" --> LLM[LLM provider]
+  E -- "web search queries" --> EXA[Exa]
+  E -- "web fetch of known URLs" --> WEB[public web]
 ```
 
 ## Authentication
@@ -38,7 +41,8 @@ flowchart LR
 | Bearer token | backend | compose secret (`BEARER_TOKEN_FILE`) |
 | GitHub token | backend | set in the app (stored in `config.json`, wins) or the compose secret (fallback); sent per git command as an `http.https://github.com/.extraheader`, never written to `.git/config`, redacted from errors and logs ([below](#github-token)) |
 | DNS API token | proxy | compose secret (root-owned on a server) |
-| LLM provider keys | opencode | `opencode.env` (env file) |
+| LLM provider keys, optional `EXA_API_KEY` | opencode | `opencode.env` (env file) |
+| opencode server password | backend, opencode | compose secret `opencode_password` (`OPENCODE_PASSWORD_FILE`; opencode's entrypoint exports it as `OPENCODE_SERVER_PASSWORD`); generated once per target, never in the vault or the AI's reach |
 
 In dev the secret files are gitignored. On a target they come from that target's encrypted Ansible Vault (password
 in the operator's Keychain) and are written 0600 by tasks that don't log. opencode never receives the GitHub or
@@ -67,12 +71,12 @@ bearer token.
 
 - **Managed opencode config** merged last (`/etc/opencode/opencode.json`), so a vault can't override it; an empty
   tmpfs `HOME` means no global config either.
-- **Denied tools:** `bash`, `webfetch`, `websearch`, `task`, `question`, `external_directory`; no permission is ever
-  "ask", so a turn never blocks on an approval (opencode's built-in defaults contain `ask` rules, each one is
-  overridden). Reading `*.env` is denied; editing `.git`, `opencode.json(c)` and `.opencode/` is denied. Why:
+- **Denied tools:** `bash`, `task`, `question`, `external_directory`; `webfetch` and `websearch` are denied in the
+  managed config too and switched on per turn only (see [Web access](#web-access)). No permission is ever "ask", so a
+  turn never blocks on an approval (opencode's built-in defaults contain `ask` rules, each one is overridden). Reading
+  `*.env` is denied; editing `.git`, `opencode.json(c)` and `.opencode/` is denied. Why:
   - `bash` would get around every file-tool rule: write during a read-only turn, read other vaults under
-    `/vaults/*`, read the container env with the provider keys.
-  - `webfetch` could send vault content or keys out after a prompt injection from an ingested note.
+    `/vaults/*`, read the container env with the provider keys, the Exa key and the opencode password.
   - `task`: a subagent inherits the parent *session's* permissions, not the parent *agent's*, so it could write during
     a `vault-readonly` turn (verified).
   - The edit guards stop the AI from planting an opencode plugin (code in opencode) or a git hook (code in the backend,
@@ -97,6 +101,25 @@ bearer token.
   only override its keys, not stop it from adding new ones. A vault that needs its own opencode config can't use chat.
 - **No commits by the AI:** only the user's commit records and pushes changes ([ADR 0001](../../docs/adr/0001-user-triggered-commits.md)).
 
+## Web access
+
+The AI's only outbound channel: opencode's built-in `websearch` (pinned to Exa) and `webfetch`, switched on per turn
+by the **Web access** setting (on by default). The managed config keeps both `deny` (fail-closed); the backend sends
+`tools: { websearch, webfetch }` with every turn, `false` included, because opencode stores that map as the session's
+permission and it replaces earlier rules. Off = the model sees neither tool. `commit-message` never gets them.
+
+| Risk | Guard | What remains |
+|---|---|---|
+| Vault data leaves in a **fetch URL** | **Known-URL provenance:** a plugin (`deploy/opencode/plugins/known-url.ts`, `tool.execute.before`) lets `webfetch` fetch only a URL that appears verbatim in what the model saw in this chat (user messages, tool outputs; truncated outputs count as their preview). Normalization: scheme and host lower-case, default port and fragment dropped; path and query exact. Otherwise the call fails "URL not in this chat: paste it into the chat first". | The AI can fetch an attacker URL that is already in a note or page, but without added data. |
+| Data in the **order of fetches** | **Web caps:** at most 20 fetches and 20 searches per turn (`WEB_FETCH_CAP`, `WEB_SEARCH_CAP` in `opencode.env`, read at start), counted from the stored messages | A slow leak of a few characters per turn. |
+| Data in a **search query** | Every query is a chip; the switch turns web access off | Exa receives the query text; the user sees it afterwards, not before. |
+| **SSRF / escape** (opencode API, backend, metadata, tailnet) | **Egress proxy** (Squid, `deploy/egress`): opencode is only on the `internal: true` network and reaches the internet through `HTTP(S)_PROXY`; the proxy refuses loopback, RFC 1918, link-local, CGNAT/tailnet, ULA and other special ranges after DNS resolution, on every request (so every redirect hop). | None known; the network tests check each target. |
+| **Loopback** (`NO_PROXY` names it, because opencode's plugin client must reach its own server directly) | **opencode server password:** HTTP Basic on every opencode route, health included. The backend sends it; the AI can't read it (`bash`, `external_directory` and `*.env` denied). | — |
+| **Untrusted web content** (pages up to 5 MB, images, results) | None at fetch time | An injected instruction can make the AI edit notes; the diff review before commit is the safety net (ADR 0001). |
+
+Not taken: an approval prompt per call (needs `ask`, which blocks the turn), a domain allowlist (defeats reading what
+the user points to), provider server tools (tied to one model vendor, ADR 0002).
+
 ## Input handling
 
 - **Paths:** relative only; no `..`, NUL, absolute paths or `.git` segments; every segment is checked for symlinks
@@ -113,8 +136,21 @@ Notes and AI replies are untrusted HTML sources. Markdown is rendered with `mark
 sanitizing, a hook sets only the app's own link attributes: route hrefs for vault links (any `data-note` from the note
 itself is removed first) and `target="_blank" rel="noopener noreferrer"` on external links. The
 prod proxy adds a strict **CSP** (`default-src 'self'`, `script-src 'self'`, `object-src 'none'`,
-`frame-ancestors 'none'`, …; `style-src 'unsafe-inline'` because CodeMirror injects styles) and `nosniff`,
-`no-referrer` and `X-Frame-Options DENY`.
+`frame-ancestors 'none'`, …; `style-src 'unsafe-inline'` because CodeMirror injects styles; `img-src` and
+`media-src` allow `'self' blob:` for media embeds, no remote hosts) and `nosniff`, `no-referrer` and
+`X-Frame-Options DENY`.
+
+**Media files** are untrusted bytes too:
+
+- Embeds render as `data-*` placeholders that survive DOMPurify; the elements are created with `createElement` and a
+  `blob:` object URL, never from HTML strings. Remote images (`https:`, `//`, `data:`) stay links: no tracking pixels.
+- `GET /raw` takes the Content-Type from the extension (shared table), never from content, with `nosniff`. Anything
+  that isn't a media kind (PDF included) gets `Content-Disposition: attachment`, so the browser never renders it as a
+  page on the app's origin.
+- SVGs are sanitized (DOMPurify SVG profile) before they become a blob and are only shown inside `<img>`; their file
+  card downloads, never opens.
+- **Open** (PDF only) navigates a new tab to a blob the app typed `application/pdf`, so only the PDF viewer can show
+  it; no `frame-src` or `object-src` relaxation.
 
 ## Runtime hardening
 
@@ -130,8 +166,10 @@ prod proxy adds a strict **CSP** (`default-src 'self'`, `script-src 'self'`, `ob
 ## Gaps (known, not built)
 
 - No rate limiting on the token check.
-- No egress restriction: opencode can reach any host (it needs the LLM APIs, and fetches the models.dev catalog at
-  startup, which a future egress filter must allow).
+- The egress proxy allows every public destination (LLM APIs, models.dev, Exa, any web page); it is an SSRF fence,
+  not an allowlist.
+- Exa without `EXA_API_KEY` is its anonymous, rate-limited endpoint with no account terms; with a key, the key travels
+  in the Exa URL query (HTTPS, to Exa only). Neither has zero data retention below Exa's enterprise plans.
 - Single shared token: no per-device tokens or revocation other than changing the secret.
 - The GitHub token set in the app is stored unencrypted in `config.json`; request bodies of the token routes are not
   logged, but no rate limit applies to the test route.
