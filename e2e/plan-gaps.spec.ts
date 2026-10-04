@@ -10,7 +10,10 @@ test.describe('stack (plan P1)', () => {
   test('/api/health reports backend + opencode ok inside the stack', async ({ api }) => {
     const res = await api.ctx.get('/api/health');
     expect(res.status()).toBe(200);
-    expect(await res.json()).toEqual({ backend: 'ok', opencode: 'ok', version: expect.any(String) });
+    // built / deployed: ISO times on a release, null for local builds (the settings dialog shows them).
+    const body = await res.json();
+    expect(body).toEqual({ backend: 'ok', opencode: 'ok', version: expect.any(String), built: body.built, deployed: body.deployed });
+    for (const t of [body.built, body.deployed]) if (t !== null) expect(Number.isNaN(Date.parse(t))).toBe(false);
   });
 
   test('compose ps: every service with a healthcheck is healthy; only the proxy publishes a port; opencode not reachable from the host', async () => {
@@ -36,10 +39,12 @@ test.describe('opencode container (mvp §2.5 / §3.2)', () => {
 
   test('no git in the image (keeps subfolder confinement), HOME is a tmpfs without ~/.claude, managed config mounted, no GitHub/bearer secrets', async () => {
     expect(inOpencode('command -v git >/dev/null && echo has-git || echo no-git')).toBe('no-git');
-    expect(inOpencode('mount | grep -c " on $HOME type tmpfs"')).toBe('1');
+    // /proc/mounts, not `mount`: the image's busybox `mount` prints nothing.
+    expect(inOpencode('grep -c " $HOME tmpfs " /proc/mounts')).toBe('1');
     expect(inOpencode('ls -A "$HOME"').split('\n')).not.toContain('.claude');
     expect(inOpencode('cat /etc/opencode/opencode.json')).toBe(readFileSync(join(ROOT, 'deploy/opencode/opencode.json'), 'utf8').trim());
-    expect(inOpencode('ls /run/secrets 2>/dev/null | wc -l')).toBe('0');
+    // Only its own server password (web search change); never the GitHub or bearer token.
+    expect(inOpencode('ls /run/secrets 2>/dev/null || true')).toBe('opencode_password');
     expect(inOpencode('env | grep -ciE "github|bearer" || true')).toBe('0');
     // Same UID/GID as the backend, so opencode's files stay committable.
     const uid = (svc: string) => execFileSync('docker', ['compose', '-f', join(ROOT, 'deploy/compose.yml'), '-f', join(ROOT, 'deploy/compose.dev.yml'), 'exec', '-T', svc, 'id', '-u'], { encoding: 'utf8' }).trim();
@@ -50,12 +55,13 @@ test.describe('opencode container (mvp §2.5 / §3.2)', () => {
 test.describe('prod proxy config (plan P1)', () => {
   test('the prod Caddyfile (DNS-01) passes `caddy validate` in the prod proxy image', async () => {
     // The prod image carries the DNS provider module (xcaddy); use a locally built one if present.
-    const images = execFileSync('docker', ['images', '--format', '{{.Repository}}'], { encoding: 'utf8' }).split('\n');
-    const image = ['karpathy-app-proxy', 'karpathy-app-proxy-prod', 'karpathy-app-prodtest-proxy'].find((i) => images.includes(i));
+    const images = execFileSync('docker', ['images', '--format', '{{.Repository}}:{{.Tag}}'], { encoding: 'utf8' }).split('\n');
+    // The prod proxy image as `just prodtest` builds it (the dev stack runs stock caddy without the module).
+    const image = ['ghcr.io/tillg/karpathy.app-proxy:dev'].find((i) => images.includes(i));
     test.skip(!image, 'no prod proxy image built (docker compose -f deploy/compose.yml build proxy)');
     const dir = mkdtempSync(join(tmpdir(), 'e2e-caddy-'));
-    // Cloudflare tokens are 40 characters; the module rejects other shapes at provision time.
-    writeFileSync(join(dir, 'dns_api_token'), 'x'.repeat(40));
+    // GoDaddy credentials are `<key>:<secret>`.
+    writeFileSync(join(dir, 'dns_api_token'), `${'k'.repeat(34)}:${'s'.repeat(22)}`);
     const out = execFileSync('docker', [
       'run', '--rm', '-e', 'DOMAIN=wiki.example.com', '-e', 'DNS_API_TOKEN_FILE=/run/secrets/dns_api_token',
       '-v', `${join(dir, 'dns_api_token')}:/run/secrets/dns_api_token:ro`,
