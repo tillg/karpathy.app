@@ -1,6 +1,7 @@
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import type { ChatEvent, ToolCall } from '@karpathy/shared';
 import { createApp } from '../src/app.js';
 import { ChatService } from '../src/chat.js';
@@ -8,7 +9,7 @@ import { OpencodeCommitMessages } from '../src/commit-message.js';
 import { OpencodeHarness } from '../src/harness/opencode.js';
 import { makeApp, TOKEN } from './app-helpers.js';
 import { makeRemote, sh } from './helpers.js';
-import { LLM_MODEL, startOpencode, testDir } from './opencode-container.js';
+import { EGRESS, LLM_MODEL, startOpencode, testDir } from './opencode-container.js';
 
 // @llm tier: a real model (default: local Ollama qwen2.5:3b). Rules (plan): prompts name the
 // tool; assertions check tool events and the file system, never answer text; no tool call at
@@ -84,9 +85,21 @@ async function capture(parts: Awaited<ReturnType<typeof webParts>>) {
   }
 }
 
+/** If the test still runs after `ms`, prints the vault's web tool parts and the opencode and egress logs (CI hang diagnosis). */
+function dumpIfHanging(t: T, ms: number) {
+  const timer = setTimeout(async () => {
+    const res = await oc.fetch(`${oc.url}/session?directory=${t.chat.dir(t.id)}`);
+    for (const s of (await res.json()) as { id: string }[]) console.log(`[hang] session ${s.id}`, JSON.stringify(await webParts(t, s.id)));
+    for (const c of [oc.name, EGRESS]) console.log(`[hang] docker logs ${c}\n`, execFileSync('docker', ['logs', '--tail', '150', c], { encoding: 'utf8', stdio: 'pipe' }));
+  }, ms);
+  return () => clearTimeout(timer);
+}
+
 describe('@llm web access', () => {
   it('web search on: the model calls websearch', async () => {
     const t = await setup();
+    const stopDump = dumpIfHanging(t, 480_000);
+    onTestFinished(stopDump);
     await withRetry(async () => {
       const { chatId, tools } = await turn(t, 'Use the websearch tool to search the web for "llm.c Karpathy". Do nothing else.');
       if (tools.length === 0) throw new Inconclusive('model made no tool call');
