@@ -22,23 +22,26 @@ Each step is one red → green cycle. Nothing is mocked: git runs for real again
 
 ## Phase 1: count and fetch in the repo
 
-- [ ] `Repo.incomingCount()` counts GitHub's commits not in HEAD
-  - Test first: `repo.test.ts` › "incomingCount counts fetched commits on GitHub's side only". Clone, Obsidian
-    pushes 2 commits, `repo.git.run(['fetch', 'origin', 'main'])`: `incomingCount()` is 2. Then commit one local
-    change (no push): `incomingCount()` still 2, `unpushedCount()` 1. Fails today: the method doesn't exist.
+- [ ] `Repo.incomingPaths()` lists the files GitHub changed, GitHub's side only
+  - Test first: `repo.test.ts` › "incomingPaths lists fetched files on GitHub's side only, one entry per file".
+    Clone, Obsidian pushes 3 commits: two to `b.md`, one to `c.md`; `repo.git.run(['fetch', 'origin', 'main'])`:
+    `incomingPaths()` is `['b.md', 'c.md']` (3 commits, 2 files). Then commit a local change to `a.md` (no push):
+    still `['b.md', 'c.md']`, `unpushedCount()` 1. Fails today: the method doesn't exist.
   - Verify: `npm test -w apps/backend -- repo` → green.
 
-- [ ] The count is scoped to the vault root
-  - Test first: `repo.test.ts` › "incomingCount ignores commits outside a subfolder vault root". Remote with
-    `wiki/a.md` and `outside.md`, `Repo` with root `wiki`; Obsidian pushes a change to `outside.md`, fetch:
-    count 0; pushes a change to `wiki/a.md`, fetch: count 1. Fails until the pathspec is passed.
+- [ ] The list is scoped to the vault root and survives a replaced remote
+  - Test first: `repo.test.ts` › "incomingPaths ignores files outside a subfolder vault root". Remote with
+    `wiki/a.md` and `outside.md`, `Repo` with root `wiki`; Obsidian pushes a change to `outside.md`, fetch: `[]`;
+    pushes a change to `wiki/a.md`, fetch: `['a.md']` (vault-relative). Fails until pathspec and `toVaultPath`.
+  - Test first: `repo.test.ts` › "incomingPaths falls back to the tree diff without a merge base". Orphan force-push
+    to the bare remote with `x.md` only, fetch: `incomingPaths()` lists every file that differs (no error, not `[]`).
   - Verify: `npm test -w apps/backend -- repo` → green.
 
 - [ ] `Repo.fetchUpstream()` moves only `origin/<branch>`
   - Test first: `repo.test.ts` › "fetchUpstream updates the remote ref and nothing else". Local uncommitted edit of
     `a.md` plus one unpushed commit; Obsidian pushes `b.md`. After `fetchUpstream()`: `{ ok: true }`,
-    `incomingCount()` 1, `changes()` and `unpushedCount()` unchanged, `b.md` on disk still the old text. Then rename
-    the bare repo away: `{ ok: false, error }` with a non-empty error, count still 1. Fails today: no such method.
+    `incomingPaths()` `['b.md']`, `changes()` and `unpushedCount()` unchanged, `b.md` on disk still the old text. Then rename
+    the bare repo away: `{ ok: false, error }` with a non-empty error, list still `['b.md']`. Fails today: no such method.
   - Verify: `npm test -w apps/backend -- repo` → green.
 
 ## Phase 2: lock and vault
@@ -50,12 +53,19 @@ Each step is one red → green cycle. Nothing is mocked: git runs for real again
     after the fetch releases. Fails today: no `tryShared`, no `fetch` label.
   - Verify: `npm test -w apps/backend -- lock` → green.
 
-- [ ] `VaultStatus.incomingCount` is reported
-  - Test first: `api.test.ts` › "status reports incoming commits after a fetch, files untouched". `vaultApp()`,
+- [ ] `VaultStatus.incomingCount` and `incomingPaths` are reported
+  - Test first: `api.test.ts` › "status reports incoming changes after a fetch, files untouched". `vaultApp()`,
     `obsidianPush({'Other.md': 'remote v2\n'})`, `await t.vaults.fetchRemote(t.id)` → `'fetched'`;
-    `GET /status` has `incomingCount: 1`; `GET /file?path=Other.md` still `other\n`. A fresh vault reports
-    `incomingCount: 0`. Fails today: no field, no `fetchRemote`. (Adds the field to `packages/shared`.)
+    `GET /status` has `incomingCount: 1`, `incomingPaths: ['Other.md']`; `GET /file?path=Other.md` still `other\n`.
+    A fresh vault reports `0` and `[]`. Fails today: no fields, no `fetchRemote`. (Adds the fields and
+    `INCOMING_PATHS_MAX` to `packages/shared`.)
   - Verify: `npm test -w apps/backend -- api` → green; `npm run typecheck` → green.
+
+- [ ] The path list is capped, the count is exact
+  - Test first: `api.test.ts` › "incomingPaths is capped at INCOMING_PATHS_MAX, incomingCount stays exact". Obsidian
+    pushes `INCOMING_PATHS_MAX + 5` new files in one commit, `fetchRemote`: `incomingCount` is `MAX + 5`,
+    `incomingPaths.length` is `MAX`. Fails until the cap.
+  - Verify: `npm test -w apps/backend -- api` → green.
 
 - [ ] `fetchRemote` runs during an AI turn and skips git operations
   - Test first: `api.test.ts` › "background fetch runs next to a turn, skips while a git op holds the lock". Hold
@@ -89,7 +99,7 @@ Each step is one red → green cycle. Nothing is mocked: git runs for real again
   - Verify: `npm test -w apps/backend -- api` → green.
 
 - [ ] `POST /vaults/:id/pull` runs the existing pull
-  - Test first: `api.test.ts` › "pull route: takes incoming commits, waits for a turn, refuses in conflict". Obsidian
+  - Test first: `api.test.ts` › "pull route: takes incoming changes, waits for a racing turn, refuses in conflict". Obsidian
     pushes, `fetchRemote`, `POST /pull` → 200, `incomingCount: 0`, `Other.md` is `remote v2\n`. With a `turn`
     holder: the request doesn't finish within 200 ms, finishes after release. With a local edit and a clashing
     Obsidian push: reply `state: 'conflict'`; a second `POST /pull` → 423. Offline: reply has `pullError`. Fails
@@ -98,12 +108,36 @@ Each step is one red → green cycle. Nothing is mocked: git runs for real again
 
 ## Phase 3: web
 
-- [ ] The pill shows "· N incoming" and a tap pulls
+- [ ] The incoming controls' state is one pure function
+  - Test first: `apps/web/src/lib/incoming.test.ts` › "incomingView: shown when ready with a count, disabled during
+    a turn or sync, wording and tab badge". `incomingView(status, pulling)` returns `{ show, disabled, label, title,
+    tabMark }`: `ready` + count 2 → shown, enabled, label "Pull 2 incoming changes from GitHub"; count 1 → "change";
+    `busy: 'turn'` → disabled, title says the AI is working; `busy: 'sync'` or `pulling` → disabled; `conflict` →
+    not shown; count 0 → not shown, `tabMark` false; count 3 → `tabMark` true. The e2e stack can't hold a turn
+    without a real LLM, so the turn rule is pinned here. Fails today: no module.
+  - Verify: `npm test -w apps/web -- incoming` → green.
+
+- [ ] The pill shows "· N incoming" and a tap pulls, with a toast
   - Test first: `e2e/remote-changes.spec.ts` › "an Obsidian push shows as incoming; one tap brings it in". Open the
-    app on `Ideas.md`, `pushFromObsidian(bare, 'Ideas.md', …)`, dispatch `visibilitychange`: `incoming-badge`
-    reads "· 1 incoming", has the accessible name "Pull 1 incoming commit from GitHub", and `changes-badge` still
-    reads "All committed". Tap it: the badge disappears, the editor shows the new text. Fails today: no badge.
+    app on `Other.md`, `pushFromObsidian(bare, 'Ideas.md', …)` with two commits to `Ideas.md`, dispatch
+    `visibilitychange`: `incoming-badge` reads "· 1 incoming" (files, not commits), has the accessible name "Pull 1
+    incoming change from GitHub", and `changes-badge` still reads "All committed". Tap it: toast "Pulled 1 change
+    from GitHub", the badge disappears; open `Ideas.md`: new text. Fails today: no badge.
   - Verify: `just e2e e2e/remote-changes.spec.ts` → green; `just check` → green.
+
+- [ ] The open note warns when it is incoming
+  - Test first: `e2e/remote-changes.spec.ts` › "the open note shows 'Changed on GitHub · Pull' and stays editable".
+    Open `Ideas.md`, push a change to `Ideas.md` from Obsidian, dispatch `visibilitychange`: `incoming-note` is
+    visible, the editor still accepts typing. Push to another file only (fresh vault): no `incoming-note`. Tap the
+    bar's "Pull" (clean editor): the bar disappears, the editor shows the new text. Fails today: no bar.
+  - Verify: `just e2e e2e/remote-changes.spec.ts` → green.
+
+- [ ] The Changes panel lists the incoming files
+  - Test first: `e2e/remote-changes.spec.ts` › "Changes panel lists incoming files". Push changes to `Ideas.md` and
+    `Other.md` from Obsidian, dispatch `visibilitychange`, open Changes: `incoming` reads "2 incoming changes ·
+    pull", `incoming-list` holds both names, no diff opens on click. The "…and N more" row is covered by the
+    backend cap test plus `incoming.test.ts` (`moreCount` = count − paths length). Fails today: no list.
+  - Verify: `just e2e e2e/remote-changes.spec.ts` → green.
 
 - [ ] A clashing pull goes into the conflict flow; the segment hides
   - Test first: `e2e/remote-changes.spec.ts` › "tapping incoming with a clashing local edit ends in conflict". Edit
@@ -117,16 +151,17 @@ Each step is one red → green cycle. Nothing is mocked: git runs for real again
     the badge still reads "· 1 incoming"; tap it: a toast "Couldn't reach GitHub", badge unchanged. Restore.
   - Verify: `just e2e e2e/remote-changes.spec.ts` → green.
 
-- [ ] Phone: the Changes panel offers the pull
-  - Test first: `e2e/remote-changes.spec.ts` › "phone: Changes tab shows incoming commits · pull". Phone viewport,
-    push from Obsidian, dispatch `visibilitychange`, open the Changes tab: `incoming` banner reads "1 incoming
-    commit · pull"; tap "pull": the banner disappears. Fails today: no banner.
+- [ ] Phone: the tab badge shows "↓", the Changes panel offers the pull
+  - Test first: `e2e/remote-changes.spec.ts` › "phone: tab badge ↓ and Changes panel pull". Phone viewport, clean
+    vault, push from Obsidian, dispatch `visibilitychange`: `changes-badge-tab` reads "↓". Open the Changes tab:
+    `incoming` banner reads "1 incoming change · pull"; tap "pull": the banner and the "↓" disappear. Fails today: no
+    badge mark, no banner.
   - Verify: `just e2e e2e/remote-changes.spec.ts e2e/mobile.spec.ts` → green.
 
 - [ ] The new controls pass the accessibility checks
-  - Test first: `e2e/a11y.spec.ts` › add a state with the incoming segment and the banner visible (Obsidian push,
-    `visibilitychange`) to the axe scan of the main layout. Fails if the segment lacks a name or has too little
-    contrast.
+  - Test first: `e2e/a11y.spec.ts` › add a state with the incoming segment, the open-note bar, the Changes banner and
+    list visible (Obsidian push to the open note, `visibilitychange`) to the axe scan of the main layout. Fails if a
+    control lacks a name or has too little contrast.
   - Verify: `just e2e e2e/a11y.spec.ts e2e/a11y-keyboard.spec.ts` → green.
 
 - [ ] README mentions incoming changes and the one-tap pull

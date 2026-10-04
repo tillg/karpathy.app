@@ -17,7 +17,7 @@ Three small additions on top of what exists. No new service, no new event type.
 flowchart LR
     subgraph Web
       GP[GitPill<br/>· N incoming]
-      CP[ChangesPanel<br/>N incoming commits · pull]
+      CP[ChangesPanel<br/>N incoming changes · pull]
       ST[store.tsx<br/>pull, pulling]
       EV[useVaultEvents<br/>reconnect on visible / online]
     end
@@ -47,8 +47,10 @@ export interface VaultStatus {
   state: VaultState;
   changedCount: number;
   unpushedCount: number;
-  /** Commits on GitHub's branch, as of the last fetch, not in HEAD and touching the vault root. */
+  /** Files inside the vault root that GitHub's branch changed since its last commit shared with HEAD (as of the last fetch). */
   incomingCount: number;
+  /** Their vault-relative paths, at most INCOMING_PATHS_MAX (200); length === min(incomingCount, 200). */
+  incomingPaths: string[];
   busy: Busy;
   conflictPaths: string[];
   /** Set when the last pull or background fetch couldn't reach GitHub (git's error, redacted). */
@@ -56,7 +58,8 @@ export interface VaultStatus {
 }
 ```
 
-`incomingCount` is required and `0` while the vault isn't `ready`. It goes out on the existing `status` event and in
+`incomingCount` and `incomingPaths` are required, `0` and `[]` while the vault isn't `ready`. The count stays a
+field of its own so every reader that only needs the number keeps a plain number (pill, tab badge). It goes out on the existing `status` event and in
 the replies of `GET /status`, `POST /open` and the new `POST /pull`.
 
 ## Backend: `repo.ts`
@@ -64,10 +67,13 @@ the replies of `GET /status`, `POST /open` and the new `POST /pull`.
 Two methods next to `unpushedCount()`:
 
 ```ts
-/** Commits on origin/<branch> not in HEAD that touch the vault root. Local refs only, no network. */
-async incomingCount(): Promise<number> {
-  const r = await this.git.run(['rev-list', '--count', `HEAD..${this.upstream}`, ...this.pathspec], { allowFail: true });
-  return r.code === 0 ? Number(r.stdout.trim()) : 0;
+/** Vault-relative paths inside the root that origin/<branch> changed since the merge base with HEAD. Local refs only, no network. */
+async incomingPaths(): Promise<string[]> {
+  // Three dots = GitHub's side only. No merge base (remote replaced, #36): fall back to the plain tree diff.
+  let r = await this.git.run(['diff', '--name-only', '-z', `HEAD...${this.upstream}`, ...this.pathspec], { allowFail: true });
+  if (r.code !== 0) r = await this.git.run(['diff', '--name-only', '-z', 'HEAD', this.upstream, ...this.pathspec], { allowFail: true });
+  if (r.code !== 0) return [];
+  return r.stdout.split('\0').filter(Boolean).map((p) => this.toVaultPath(p)).filter((p): p is string => p !== null);
 }
 
 /** Updates origin/<branch> only: no merge, no index, no working tree. */
@@ -77,10 +83,13 @@ async fetchUpstream(): Promise<{ ok: true } | { ok: false; error: string }> {
 }
 ```
 
-- **The count** is `HEAD..origin/<branch>`, the mirror of `unpushedCount`'s `origin/<branch>..HEAD`. With unpushed
-  commits it still counts only GitHub's side. The `-- <root>` pathspec drops commits that only touch files outside a
-  subfolder vault root, like every other git query of the app. When the histories share no commit (the remote was
-  replaced, #36), it counts all of GitHub's commits; the pull then resets onto them, as today.
+- **The count** is the number of files in `git diff --name-only HEAD...origin/<branch>`: what GitHub changed since
+  the merge base, in files, the same unit as `changedCount`. Twenty Obsidian Git auto-commits to one note count as 1.
+  With unpushed commits it still counts only GitHub's side (three dots diff from the merge base, not from HEAD). A
+  file GitHub changed and changed back nets out and doesn't count. A rename counts once (git's default rename
+  detection). The `-- <root>` pathspec drops files outside a subfolder vault root, like every other git query of the
+  app. When the histories share no commit (the remote was replaced, #36), three dots fail and it counts the plain
+  `HEAD` ↔ `origin/<branch>` tree diff; the pull then resets onto GitHub's tree, as today.
 - **`--no-auto-maintenance`** keeps a background fetch to "objects + one ref": no `gc --auto` repack while a turn or
   status read runs next to it. The pull's own fetch is unchanged.
 - **Timeout.** The background fetch runs on a `Repo` built with `timeoutMs: 30_000` (`runGit` kills git and its
@@ -216,13 +225,16 @@ async pull(id: string): Promise<VaultStatus> {
 - The same `pullUnlocked` as open, commit, push and the turn. A conflict it causes is recorded there and shows in the
   returned status (`state: 'conflict'`), not as an HTTP error: the user asked for the pull and it happened.
 - An offline result shows as `pullError` in the returned status.
-- During an AI turn the exclusive request waits until the turn releases its shared lock (`busy` stays `turn`, then
-  `sync` while the pull runs).
+- The UI never sends it during an AI turn (the controls are disabled). A request that races a turn's start still
+  waits until the turn releases its shared lock, which is correct, just slow; no 409 for it.
 - `open()`: `await r.fetching` before `tryExclusive()` (see the lock section).
 
 ### `status(id)`
 
-Adds `repo.incomingCount()` to the existing `Promise.all` with `changes()` and `unpushedCount()`. Read-only, local,
+Adds `repo.incomingPaths()` to the existing `Promise.all` with `changes()` and `unpushedCount()`; sets
+`incomingCount` to the full length and `incomingPaths` to the first `INCOMING_PATHS_MAX` (200, in `packages/shared`).
+The cap bounds every `status` event after a remote replacement (#36) or a big reorganisation in Obsidian; the count
+stays exact. Read-only, local,
 no lock, like the other two.
 
 ## Backend: `app.ts`
@@ -239,11 +251,28 @@ Next to `POST /vaults/:id/push`. Bearer-guarded like every route.
 
 - `api.pull(id) → VaultStatus`.
 - Store action `pull()` and flag `pulling`: calls `api.pull(activeId)`, sets the status, toasts
-  "Couldn't reach GitHub" when the reply has `pullError`, and toasts `errorText(e)` on an HTTP error. Changed files
+  "Pulled N change(s) from GitHub" (N = `incomingCount` before the tap) when the reply is `ready` without
+  `pullError`, "Couldn't reach GitHub" when the reply has `pullError`, nothing extra on `conflict` (the banner says it), and toasts `errorText(e)` on an HTTP error. Changed files
   arrive as `files-changed` events from the watcher; the open note reloads through the existing path ("Updated by AI
   or another device"), and a note with unsaved text goes through the stale-save flow as today.
 - No new timer and no new `visibilitychange` handler: `useVaultEvents` already reconnects the stream when the app
   becomes visible or comes back online, and each connect triggers a fetch on the server.
+
+### `lib/incoming.ts`
+
+One pure function decides every incoming control, so the pill segment, the Changes banner, the editor bar and the tab
+badge can't drift apart, and the AI-turn rule is unit-tested (the e2e stack can't hold a turn without a real LLM):
+
+```ts
+incomingView(status: VaultStatus | undefined, pulling: boolean): {
+  show: boolean;      // ready && incomingCount > 0
+  disabled: boolean;  // pulling || busy !== 'none'
+  label: string;      // "Pull N incoming change(s) from GitHub"
+  title: string;      // AI-working hint during a turn, else "N file(s) changed on GitHub. Tap to pull."
+  tabMark: boolean;   // "↓" on the phone tab badge
+  moreCount: number;  // incomingCount − incomingPaths.length ("…and N more")
+}
+```
 
 ### `GitPill.tsx`
 
@@ -252,9 +281,9 @@ The pill stays one button (`changes-badge`, opens Changes). Right after it, a se
 ```tsx
 {showIncoming && (
   <button className={`gitpill-incoming${small ? ' small' : ''}`} data-testid="incoming-badge" data-count={k}
-    disabled={pulling || status.busy === 'sync'}
-    aria-label={`Pull ${k} incoming commit${k === 1 ? '' : 's'} from GitHub`}
-    title={`${k} new on GitHub. Tap to pull.`}
+    disabled={pulling || status.busy !== 'none'}
+    aria-label={`Pull ${k} incoming change${k === 1 ? '' : 's'} from GitHub`}
+    title={status.busy === 'turn' ? 'The AI is working; its turn pulls first.' : `${k} file${k === 1 ? '' : 's'} changed on GitHub. Tap to pull.`}
     onClick={() => void pull()}>
     · {k} incoming
   </button>
@@ -265,14 +294,30 @@ The pill stays one button (`changes-badge`, opens Changes). Right after it, a se
 - A nested button inside the pill would be invalid HTML, and the pill's own click must keep opening Changes (several e2e
   specs use `changes-badge`). A sibling keeps `changes-badge` and its text untouched.
 - CSS: the pill loses its right rounding when followed by the segment (`.gitpill:has(+ .gitpill-incoming)`), the
-  segment has the same height, background and font, and the left-pointing rounding removed. Enabled during an AI
-  turn (the pull waits), disabled while a pull or other git operation runs.
+  segment has the same height, background and font, and the left-pointing rounding removed. Disabled while an AI
+  turn, a pull or another git operation runs (`busy !== 'none'`): the count stays visible, only the tap is off.
 
 ### `ChangesPanel.tsx`
 
 The phone layout has no pill (only the Changes tab badge). So the Changes panel gets a banner next to the existing
-"N unpushed commits · retry": `N incoming commit(s) · pull` (`data-testid="incoming"`), same action, same
-conditions. The phone tab badge keeps showing only the uncommitted count.
+"N unpushed commits · retry": `N incoming change(s) · pull` (`data-testid="incoming"`), same action, same
+conditions (disabled during a turn). Below the banner, a section "Incoming from GitHub" lists `incomingPaths`
+(`data-testid="incoming-list"`), names only, no diff, not tappable; when `incomingCount > incomingPaths.length` a last
+row reads "…and N more". Shown in every layout, not only on the phone.
+
+### Editor: open-note marker
+
+When the open note's path is in `incomingPaths`, a slim bar above the editor reads "Changed on GitHub · Pull"
+(`data-testid="incoming-note"`). Editing stays allowed: if the user edits anyway, the pull's stash, re-apply and
+conflict flow cover it. "Pull" is the same store action with the same disabled conditions. The bar disappears with the
+next status that no longer lists the path. A note beyond the 200-path cap gets no bar (accepted: the count and the
+"↓" still say to pull).
+
+### `Shell.tsx`: phone tab badge
+
+The Changes tab badge (`changes-badge-tab`) shows `↓` when `incomingCount > 0` on a ready vault: `3 ↓` with
+uncommitted changes, `↓` alone without. Its accessible label gains "· N incoming". The number stays the uncommitted
+count.
 
 ## Interval and load
 
@@ -292,7 +337,16 @@ conditions. The phone tab badge keeps showing only the uncommitted count.
 | Lock for the background fetch | shared `fetch` holder via `tryShared`, skip when a git op holds or waits | exclusive (flicker, blocks saves behind turns, no count during turns); no lock (ref-lock race makes the pull report offline; clone/remove under a fetch) |
 | Trigger | server timer per vault while subscribed + one fetch per event-stream connect | client `POST /fetch` on `visibilitychange` (#74's sketch): a second trigger path for what the reconnect already does; fetching all vaults always: traffic for vaults nobody looks at |
 | Interval | 2 min | 30 s, 5 min (above) |
-| Count | `rev-list HEAD..origin/<branch> -- <root>`, computed in `status()` | stored counter (goes stale after a pull, a commit, a branch change); counting all commits (shows changes the vault can't show) |
+| Count | files: `diff --name-only HEAD...origin/<branch> -- <root>`, computed in `status()` | commits (`rev-list HEAD..origin`): Obsidian Git auto-commits turn five notes into "47 incoming"; commits + file list in a tooltip (two numbers for one question); stored counter (goes stale after a pull, a commit, a branch change); counting outside the root (shows changes the vault can't show) |
+| User pull during an AI turn | controls disabled; the route still waits if a request races the turn | tap waits for the turn (queued exclusive blocks every save until the turn ends, writer preference; the turn's own pull takes the changes in anyway); route answers 409 (a race would surface as an error for no reason) |
+| Automatic pull | never; fetch only updates the count | auto-pull when the tree is clean and no draft is unsaved (a file changing under the reader without a tap; can be added later on the same count) |
+| Phone signal | `↓` on the Changes tab badge + banner in the Changes panel | banner only (invisible until the tab is opened, on the device that motivates the change); banner above the editor (takes space on the smallest screen) |
+| Feedback after a pull | toast "Pulled N changes from GitHub" | silent (the pulled files are usually not the open note, so the tap looks like it did nothing) |
+| Incoming file list | `incomingPaths` on `VaultStatus`, used to mark the open note | count only (can't warn that the note being edited is stale, the main cause of conflicts); a separate route for the list (a second fetch for data the status already computes) |
+| Open-note marker | bar "Changed on GitHub · Pull", editing allowed | note read-only until pulled (blocks edits to an unrelated paragraph; the conflict flow already protects data); dot in the title only (too easy to miss) |
+| Incoming list in Changes | file names under the banner, no diff | count only (the user can't see what's waiting); with diff (a new route and view; out of scope) |
+| Path list size | capped at 200, count exact, "…and N more" | uncapped (thousands of paths on every status event after #36 or a reorganisation) |
+| Hidden desktop tabs | keep fetching every 2 min | pause while every subscriber is hidden (needs a client visibility signal); drop the stream after N min hidden (loses `files-changed` too); the cost is ~30 small fetches/hour for one user |
 | Channel | `incomingCount` on `VaultStatus` / the `status` event | a new event type |
 | Tap target | sibling segment `incoming-badge` + banner in Changes | repurposing the pill's click (breaks "pill opens Changes"); nested button (invalid HTML) |
 | Pull route | new `POST /vaults/:id/pull` returning `VaultStatus` | reusing `POST /push` (it runs the same pull, but the name says push and the reply is a `CommitResult`) |
@@ -304,7 +358,4 @@ conditions. The phone tab badge keeps showing only the uncommitted count.
 - **A desktop tab left open fetches forever** (30/hour). Acceptable for one user; if GitHub ever throttles, raise the
   interval or stop the timer when no `visibilitychange` keepalive arrives.
 - **A hung fetch** delays a commit or turn by up to 30 s. The timeout bounds it; the pull's own fetch has no timeout
-  today, a separate issue.
-- **Pull tapped during a long AI turn** holds new saves until the turn ends and the pull is done (writer preference),
-  the same as a commit during a turn. The editor's local draft keeps the text meanwhile.
-- **`--no-auto-maintenance`** needs git ≥ 2.29; the backend image is `node:22-alpine` with Alpine's current git.
+  today, a separate issue.- **`--no-auto-maintenance`** needs git ≥ 2.29; the backend image is `node:22-alpine` with Alpine's current git.
