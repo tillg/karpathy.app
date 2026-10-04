@@ -16,7 +16,7 @@ flowchart LR
     subgraph web["apps/web"]
       AB[components/AttachButton.tsx<br/>Take photo · Choose file]
       AT[lib/attach.ts<br/>prepare, uploadName]
-      ED[NotePane + Editor<br/>insertAtCursor]
+      ED[NotePane + Editor<br/>insertAt, drop handler,<br/>follow a move]
       CP[ChatPane<br/>chips, send]
       EMB[lib/embed.ts<br/>mountEmbed, file card]
     end
@@ -24,8 +24,9 @@ flowchart LR
       UPL[media.ts: UPLOADABLE,<br/>upload limits]
     end
     subgraph backend["apps/backend"]
-      R["POST /vaults/:id/raw?name=&note="]
+      R["POST /vaults/:id/raw?name=&note=&source="]
       U[Vaults.upload<br/>attachmentFolder, freeName]
+      MV[Vaults.moveIntoOwnFolder<br/>lib/relink.ts rewriteLinks]
       P["POST …/prompt<br/>{text, attachments}"]
       C[chat.ts → harness.prompt<br/>file parts]
       M[harness/map.ts<br/>file part → ChatPart file]
@@ -33,7 +34,7 @@ flowchart LR
     end
     O[opencode 1.18.25<br/>unchanged]
     AB --> AT --> ED & CP
-    ED & CP -->|"fetch, Bearer,<br/>binary body"| R --> U
+    ED & CP -->|"fetch, Bearer,<br/>binary body"| R --> U --> MV
     UPL --> R & AT
     CP --> P --> C -->|promptAsync| O
     O -->|messages| M --> CP
@@ -41,8 +42,12 @@ flowchart LR
     S --> CP
 ```
 
-Two flows share one upload route. The editor inserts an embed after the upload; the chat sends the uploaded paths with
-the prompt. opencode does the rest: it reads the file, resizes images and drops what the model can't take.
+Three entry points share one upload route.
+
+- **Editor button and drop:** the editor inserts an embed after the upload. If the upload moved the page into its
+  own folder, the editor follows the page first.
+- **Chat:** the chat sends the uploaded paths with the prompt. opencode does the rest: it reads the file, resizes
+  images and drops what the model can't take.
 
 ## Verified facts
 
@@ -66,6 +71,10 @@ Checked on 2026-10-04 against the pinned versions. Paths in opencode are in `pac
 | F13 | `express.json({ limit: '10mb' })` parses only `application/json` bodies; the API has no binary body parser. Caddy sets no `request_body` limit. | `apps/backend/src/app.ts`; `deploy/proxy/Caddyfile` |
 | F14 | The queue of prompts is persisted in `config.json` (`saveQueue`), text only. | `apps/backend/src/chat.ts` (`prompt`, `saveQueue`) |
 | F15 | `harness/map.ts` maps `text` (skipping `synthetic`), `reasoning` and `tool` parts; a `file` part falls to `default` and is dropped. | `apps/backend/src/harness/map.ts` 80–88 |
+| F16 | Obsidian: the attachment location has four options (vault folder, a specified folder, same folder as the note, a subfolder under the note's folder, created on demand). Paste creates a file there. Dropping a file from the file system "copies the file to the default attachment location and embeds it in the note". "Use Wikilinks" switches `![[x]]` / `![](x)`, and Markdown links encode spaces as `%20`. "Automatically update internal links" rewrites links on rename. Not confirmed from a primary source: the `app.json` keys and values (`attachmentFolderPath`, `useMarkdownLinks`), the default when unset, and whether a path-form link survives a move without the update. | [obsidian.md/help/attachments](https://obsidian.md/help/attachments), [/help/settings](https://obsidian.md/help/settings), [/help/links](https://obsidian.md/help/links), `obsidian.d.ts` (`getAvailablePathForAttachment`, `renameFile`), fetched 2026-10-04 |
+| F17 | The vaults keep pages with images in their own folders (`Wiki/<slug>/<slug>.md`, sources as `Sources/<slug>/index.md`). They embed with `![[name]]` only and set no `useMarkdownLinks`. They gitignore `.obsidian/`, so the app's clones never see `app.json`. The user's local Obsidian has been set to `attachmentFolderPath: "./"` since 2026-10-04. Path-form wikilinks: 540 of 9 871 in `mylife_wiki/Wiki`, 379 of 2 977 in `frechen_wiki/Wiki`. Relative Markdown links: 0 and 1. | the user's vault clones, counted 2026-10-04 |
+| F18 | The app's resolver finds `[[serien/foo]]` after a move to `serien/foo/foo.md` through its basename fallback. So only Obsidian (and other tools) would break. | `apps/web/src/lib/wikilink.ts` 50–63 (`resolveWikilink`) |
+| F19 | CodeMirror inserts a dropped file's name or path as text unless the `drop` event is handled. `EditorView.domEventHandlers({ dragover, drop })` returning `true` takes over, and `view.posAtCoords({x, y})` gives the document position under the pointer. | CodeMirror 6 `@codemirror/view` docs (`domEventHandlers`, `posAtCoords`) |
 
 Not verified, checked by hand on a real iPhone (plan, last phase): the exact iOS menu without `capture`, the format
 of a photo taken through `capture="environment"`, and Files-app HEIC picks with the explicit `accept` list. The
@@ -73,7 +82,8 @@ browser's photo preparation (below) turns any HEIC that still arrives into JPEG,
 
 ## Backend: the upload route
 
-`POST /vaults/:id/raw?name=<file name>[&note=<note path>]`, body = the file's bytes, behind the bearer auth.
+`POST /vaults/:id/raw?name=<file name>[&note=<note path> | &source=new | &source=<folder name>]`. The body is the
+file's bytes, behind the bearer auth. Exactly one of `note` (editor) and `source` (chat) is given.
 
 ```mermaid
 sequenceDiagram
@@ -83,21 +93,26 @@ sequenceDiagram
     participant F as disk (vault clone)
     W->>A: POST /raw?name=…&note=… (application/octet-stream)
     A->>A: express.raw({ limit: 50 MB }) on this route only → 413 above
-    A->>V: upload(id, name, note, bytes)
+    A->>V: upload(id, name, {note} | {source}, bytes)
     V->>V: requireReady, extension in UPLOADABLE? else 415
     V->>V: checkNewName(name), no "/" in name, no leading dot
     V->>F: read <root>/.obsidian/app.json (plain fs, optional)
-    V->>V: attachmentFolder(note) → folder, Sources/ case kept
     V->>V: lock.withShared('save')
     alt conflict
       V-->>A: 423 conflict
-    else
-      loop name, name-2, name-3 … (max 100)
-        V->>V: refuseCaseTwin check → taken? next
-        V->>F: mkdir -p, writeFile(path, bytes, { flag: 'wx' })
+    else note given
+      V->>V: attachmentFolder(note) → {folder, move?}
+      opt move (flat page, no Obsidian setting)
+        V->>V: moveIntoOwnFolder(note) → 409 ai-busy / folder-taken, or {to, rewritten}
       end
-      V-->>A: { path, version, size }
+    else source given
+      V->>V: new → Sources/upload-<date>-<stem>[-n]/, else check the given folder
     end
+    loop name, name-2, name-3 … (max 100)
+      V->>V: refuseCaseTwin check → taken? next
+      V->>F: mkdir -p, writeFile(path, bytes, { flag: 'wx' })
+    end
+    V-->>A: { path, version, size, moved?, rewritten? }
     A-->>W: 201
 ```
 
@@ -109,8 +124,15 @@ sequenceDiagram
 - **Case twins:** a name that differs from an existing one only in case counts as taken (next suffix), instead of the
   `409 exists-case` of `writeFile`. Folders are matched case-insensitively and the existing spelling is kept
   (`sources/media/`), the same idea as the attach preflight.
-- **Errors** (`HttpError` JSON): `400 bad-name`, `413 too-large`, `415 not-uploadable` ("Only JPEG, PNG, GIF, WebP and
-  PDF can be uploaded."), `423 conflict`, `400 bad-path` for a `note` outside the vault.
+- **Errors** (`HttpError` JSON):
+  - `400 bad-name`;
+  - `413 too-large`;
+  - `415 not-uploadable` ("Only JPEG, PNG, GIF, WebP and PDF can be uploaded.");
+  - `423 conflict`;
+  - `400 bad-path` for a `note` outside the vault, or for a `source` folder that isn't an existing
+    `Sources/upload-…` folder;
+  - `400` when both or neither of `note` and `source` are given;
+  - `409 ai-busy` and `409 folder-taken` from the move.
 - **Version:** `versionOf(bytes)`, the same hash `GET /file` gives, so Delete works on the new file at once.
 - **Watcher:** the write triggers `files-changed` like every write; the tree, the Changes list and the object-URL
   cache update on their own.
@@ -118,17 +140,71 @@ sequenceDiagram
 
 ### Attachment folder
 
-`Vaults.attachmentFolder(id, note?: string): string`:
+`Vaults.attachmentFolder(id, note: string): { folder: string; move: boolean }`:
 
-1. No `note` → `Sources/media`.
-2. Read `<vault root>/.obsidian/app.json` with plain `fs` (the raw route refuses dot paths; this is server-internal).
-   Missing, unreadable or invalid JSON, or no string `attachmentFolderPath`, or `''` → `Sources/media`.
-3. `/` → vault root. `./` → the note's folder. `./x` → `x` inside the note's folder. Anything else → that path from
-   the vault root.
-4. `normalizeRel` and a dot-segment check on the result; on a `PathError` → `Sources/media`.
-5. The first segment `Sources` matches an existing folder case-insensitively.
+1. Read `<vault root>/.obsidian/app.json` with plain `fs`. The raw route refuses dot paths, but this read is
+   server-internal. If the file is missing, unreadable or invalid JSON, or has no string `attachmentFolderPath`, or
+   it is `''`, go to step 4.
+2. Map the setting:
+   - `/` → vault root;
+   - `./` → go to step 4 (the own-folder rule, including the move);
+   - `./x` → `x` inside the note's folder;
+   - anything else → that path from the vault root.
 
-No cache: it's one small file read per upload.
+   The user's vaults gitignore `.obsidian/` (F17), so their clones have no `app.json` and always take step 4.
+3. `normalizeRel` and a dot-segment check on the result. If it passes → `{ folder, move: false }`. On a `PathError`,
+   go to step 4.
+4. **Own folder:** let the note be `dir/stem.md`.
+   - It is in its own folder if `base(dir)` equals `stem` case-insensitively, or if `stem` is `index`. Then →
+     `{ folder: dir, move: false }`.
+   - Otherwise → `{ folder: dir/stem, move: true }`.
+
+`Vaults.sourceFolder(id, source)`:
+
+- `new` → `Sources/upload-YYYY-MM-DD-<stem of name>`, taking `-2`, `-3` … if the folder exists. The first segment
+  matches an existing `Sources` folder case-insensitively.
+- A folder name → it must exist directly under that `Sources` folder and start with `upload-`.
+
+There's no cache: it's one small file read per upload. The same read gives `useMarkdownLinks`, which `GET /settings`
+exposes per vault as `embedForm: 'wikilink' | 'markdown'`, so the web app writes the right embed form.
+
+### Move into own folder
+
+`Vaults.moveIntoOwnFolder(id, note): { to: string; rewritten: string[] }` runs inside the upload's shared `save`
+lock, before the file is written:
+
+1. **Refuse:**
+   - `409 ai-busy` while the vault's busy state is `turn`, because a running turn could write the old path again;
+   - `409 folder-taken` if `dir/stem/stem.md`, or a case twin of it, exists.
+
+   Nothing has changed at this point. An existing `dir/stem/` folder without that file is fine: the page moves in
+   next to what's there.
+2. **Find inbound links:**
+   - `rg --fixed-strings` over `*.md` in the vault root for the note's stem (one ripgrep call, the same binary as
+     `/search`) narrows the candidate files.
+   - `lib/relink.ts` parses each candidate's links: wikilinks and embeds `[[…]]`/`![[…]]` with `|alias` and
+     `#heading`, and Markdown links `[…](…)`/`![…](…)`.
+   - It skips fenced code blocks and code spans.
+3. **Pick the ones to rewrite:** a link is rewritten only if it is **path-form** (its target contains `/`) and it
+   resolves to the old path with the backend's port of the app's resolver. Wikilinks resolve the way
+   `resolveWikilink` does, and Markdown links the way `resolveRelativeLink` does. The port lives in
+   `packages/shared`, moved from `apps/web/src/lib/wikilink.ts` so both sides use one implementation.
+   - A rewritten wikilink keeps its style. `[[serien/foo]]` → `[[serien/foo/foo]]`: the same suffix depth plus the
+     new folder. With an `.md` in the old target, the new one keeps it.
+   - A Markdown link gets a new relative path from its page to the new location, with spaces as `%20`.
+4. **Relative links inside the moved page:** Markdown links and embeds that don't start with `/` or a scheme get
+   recomputed relative paths. Wikilinks inside it stay as they are.
+5. **Write:**
+   - Each rewritten page is written with `writeFile`, which does the stale check against the version just read;
+     a page changed in between makes the move fail with `409 stale` before the rename.
+   - Then `rename(old, new)` and the attachment.
+   - The AI-touched set renames the entry if the old path was in it.
+6. If any step fails after a rewritten page was written, the step stops and the error is returned. There's no
+   rollback: the rewritten pages are ordinary uncommitted changes, and Discard undoes them. This is rare, because
+   every check runs before the first write.
+
+The response adds `moved: { from, to }` and `rewritten: string[]`. `files-changed` fires for all of them, as for any
+write. Git sees a delete and an add until the commit, and the commit records it as a rename (git's rename detection).
 
 ### Shared table
 
@@ -162,6 +238,12 @@ One **+** button opens a small menu with two entries, each a hidden `<input type
 The editor shows the button only in Write mode with a note open, online and not in conflict. The composer shows it
 online and not in conflict. Picking several files in the composer adds several chips (`multiple`, up to 5).
 
+The composer keeps one source folder per draft message:
+
+- The first upload sends `source=new`, and the composer stores the folder from the returned path.
+- Later uploads for the same draft send `source=<folder name>`.
+- Sending the message, or clearing the composer, forgets the folder.
+
 ### `lib/attach.ts`
 
 ```ts
@@ -169,10 +251,19 @@ export function uploadName(file: File, fromCamera: boolean, now: Date): string;
 export async function prepare(file: File): Promise<{ blob: Blob; name: string }>;
 ```
 
-- **`uploadName`:** `YYYY-MM-DD-` + stem + `.` + lower-case extension. Stem: `photo-HHMMSS` from the camera, else the
-  file's stem with `<>:"|?*\#^[]` and control characters replaced by `-`, runs of `-` collapsed, leading dots and
-  trailing dots and spaces dropped, at most 80 characters; empty → `file`. A stem that already starts with a date is
-  not prefixed twice. `.jpeg` stays `.jpeg`; a converted HEIC gets `.jpg`.
+- **`uploadName`:** stem + `.` + lower-case extension, with no date prefix (the page's folder says what the file
+  belongs to).
+  - A camera photo's stem is `photo-YYYYMMDD-HHMMSS`.
+  - Otherwise it is the file's stem, cleaned:
+    - `<>:"|?*\#^[]` and control characters replaced by `-`;
+    - runs of `-` collapsed;
+    - leading dots, and trailing dots and spaces, dropped;
+    - at most 80 characters;
+    - empty → `file`;
+    - a Windows-reserved stem (`con`, `nul`, `com1` …) gets `-file`.
+
+    Spaces are kept, as in Obsidian.
+  - `.jpeg` stays `.jpeg`; a converted HEIC gets `.jpg`.
 - **`prepare`:** JPEG and HEIC (by type or extension) are decoded with `createImageBitmap(file)` (EXIF orientation is
   applied by default), drawn on a canvas scaled to at most 2048 px on the long edge, and encoded with
   `canvas.toBlob('image/jpeg', 0.85)`. That drops all metadata. HEIC decodes in Safari 17+ (F12); in Chrome it
@@ -180,23 +271,60 @@ export async function prepare(file: File): Promise<{ blob: Blob; name: string }>
 - **Size checks before sending:** over `MAX_UPLOAD_BYTES` → refused in the browser; over `WARN_UPLOAD_BYTES` →
   `confirm` with the size. A chat attachment over `MAX_ATTACHMENT_BYTES` is refused for the chat ("too large to send
   to the AI; attach it in a note instead").
-- **Transport:** `api.upload(vault, name, note, blob)` = `fetch` `POST` with the Bearer header and
+- **Transport:** `api.upload(vault, name, { note } | { source }, blob)` = `fetch` `POST` with the Bearer header and
   `Content-Type: application/octet-stream`. No progress bar (fetch has no upload progress in Safari); the chip or the
   editor shows "Uploading…". No CSP change: `connect-src 'self'` covers the request, and a chip's thumbnail is a
   `blob:` URL, which `img-src` already allows.
 
 ## Web: the editor
 
-After a `201`, `NotePane` asks the editor to insert the embed at the cursor:
+After a `201`, `NotePane` asks the editor to insert the embed:
 
-- `EditorHandle.insertAtCursor(text)`: one CodeMirror transaction at the main selection's head. The embed goes on its
-  own line (`\n![[name]]\n`, without doubling an existing line break), so the block widget shows below it.
-- Embed text: `![[<basename>]]` if no other path in the file list has that basename, else `![[<vault path>]]`.
-- The insert is a normal edit: autosave, drafts and stale saves work as today. The editor's file list learns the new
-  path from `files-changed`; until then the embed resolves against the path returned by the upload (the store adds it
-  to the list right away), so the image shows without a "missing" flash.
-- The cursor position is read when the upload **starts** and mapped through later changes (`ChangeSet.mapPos`), so
-  typing during the upload doesn't misplace the embed.
+- **`EditorHandle.insertAt(pos, text)`** is one CodeMirror transaction. For the button, `pos` is the main
+  selection's head; for a drop, it is the drop point (below). The embed goes on its own line (`\n![[name]]\n`,
+  without doubling an existing line break), so the block widget shows below it. Several files from one drop or pick
+  go in as consecutive lines, in order.
+- **`embedText(path, notePath, paths, form)`** is a pure function in `lib/attach.ts`:
+  - The target is the bare name if the file sits in the note's folder, or if no other path has that name. Otherwise
+    it is the vault path.
+  - `form` is `wikilink` → `![[target]]`, or `markdown` → `![stem](target)` with spaces as `%20` and a path relative
+    to the note.
+- **The insert is a normal edit:** autosave, drafts and stale saves work as today. The editor's file list learns the
+  new path from `files-changed`. Until then the embed resolves against the path returned by the upload (the store
+  adds it to the list right away), so the image shows without a "missing" flash.
+- **Typing during the upload:** the insert position is read when the upload **starts** and mapped through later
+  changes (`ChangeSet.mapPos`), so typing doesn't misplace the embed.
+
+### Following a move
+
+An editor upload may move the open page, so the store wraps it:
+
+1. Before the POST: `flush()` the note, so the server moves the latest text, and **pause autosave** for it. Typing
+   continues into the draft. A save to the old path while the server moves the page would recreate the old file.
+2. On `201` with `moved`: `retarget(from, to)`.
+   - `noteRef.current.path` becomes `to`, and the version is re-read from the response.
+   - The local draft moves from the old `karpathy.draft:*` key to the new one.
+   - The hash route is replaced (`history.replaceState`, no new history entry).
+   - Back links in open lists update through `files-changed`.
+
+   Then autosave resumes and saves anything typed meanwhile to the new path.
+3. On an error: autosave resumes on the old path and the toast shows the server's message.
+
+### Drop
+
+- **Handler:** `EditorView.domEventHandlers` in `lib/cm.ts`.
+  - **`dragover`:** if the data transfer contains files, `preventDefault` (to allow the drop) and show a drop outline
+    on the editor (`cm-drop-target`).
+  - **`drop`:** with files, `preventDefault`. The drop point is `view.posAtCoords({ x, y })`, or the end of the
+    document if that is null. Hand the `File`s to the same path as the button: `prepare`, the growth check, upload,
+    insert.
+  - Returning `true` keeps CodeMirror from inserting the file name as text (F19).
+  - A drag without files (text moved within the editor) is left to CodeMirror.
+- **Where it works:** in Write mode with a note open, online and not in conflict. Elsewhere a file drop is caught
+  and ignored, so the browser doesn't navigate to the file.
+- **Refusals:** non-uploadable files in a drop are refused with one toast naming them, and the rest still go in.
+- **Not built:** dropping a file that's already in the vault, for example from the tree (the tree has no drag
+  source today), and paste (`paste` with `clipboardData.files`). Paste would reuse this path.
 
 ## Backend: prompts with attachments
 
@@ -208,7 +336,7 @@ sequenceDiagram
     participant V as Vaults
     participant H as harness/opencode.ts
     participant O as opencode
-    W->>A: POST prompt {text: "ingest this", attachments: ["Sources/media/x.jpg"]}
+    W->>A: POST prompt {text: "ingest this", attachments: ["Sources/upload-2026-10-04-x/x.jpg"]}
     A->>A: zod: text ≤ 100k (may be empty with attachments), ≤ 5 paths
     A->>C: prompt(vault, chat, text, attachments)
     C->>C: queue.push({chatId, text, attachments}), saveQueue
@@ -276,9 +404,13 @@ sequenceDiagram
 | Decision | Chosen | Rejected because |
 |---|---|---|
 | Upload transport | `POST /raw?name=&note=` with a binary body | JSON with base64: the 10 MB JSON limit, a third more bytes, and a parse of the whole string. Multipart: needs a parser dependency (`multer`/`busboy`) for one file. `PUT /raw?path=`: PUT means "store at this path", but the server picks the final name and folder. |
-| Who picks folder and name suffix | Server (folder from `app.json`, `-2` on collisions, `wx` write) | Client: races between two uploads, and the client can't read `.obsidian/` (raw route refuses dot paths). |
-| Chat attachments | Upload to `Sources/media/` first, send the path, opencode reads the `file:` URL | base64 in the prompt: over the JSON limit for PDFs, bytes in the persisted queue, and the file is gone after the chat. Not storing chat photos: the AI can't link to or re-read them, a PDF can't be ingested. |
-| Chat attachment folder | Always `Sources/media/` | Obsidian's attachment folder: chat files are sources to ingest, and `Sources/` is where ingest skills look. |
+| Who picks folder and name suffix | Server (folder from `app.json` or the own-folder rule, `-2` on collisions, `wx` write) | Client: races between two uploads, and the client can't read `.obsidian/` (raw route refuses dot paths). |
+| Editor upload folder | Obsidian's setting if set, else the page's own folder | A fixed `Sources/media/`: pages and their images end up far apart, unlike the vaults' existing layout (F17). The note's folder without a move: a flat `Wiki/` would collect every page's images in one folder. |
+| Flat page on first upload | Move it into `dir/stem/stem.md` and rewrite path-form links | Leave it flat and put the file next to it: breaks the user's rule "a page with attachments has its own folder". Ask each time: one more dialog for a rule that has no exceptions. Move without rewriting: about 1 in 20 links in the vaults is path-form (F17) and would break in Obsidian. |
+| Which links to rewrite | Path-form links that resolve to the old path, plus relative links inside the moved page | All links to the page: bare `[[foo]]` still resolves, and rewriting it adds diff noise. Leave the app's basename fallback (F18) to cope: only the app would see working links. |
+| Move during an AI turn | Refused (`409 ai-busy`) | Allowed: the turn may write the old path and recreate it. Take the exclusive lock and wait: an upload would hang for a whole turn. |
+| Chat attachments | Upload into a source folder first, send the path, opencode reads the `file:` URL | base64 in the prompt: over the JSON limit for PDFs, bytes in the persisted queue, and the file is gone after the chat. Not storing chat photos: the AI can't link to or re-read them, a PDF can't be ingested. |
+| Chat attachment folder | A new `Sources/upload-<date>-<stem>/` per message | `Sources/media/`: one shared pile, unlike the per-source folders (`mail-…`, `insta-…`) the ingest skills write. Next to the open note: chat files are sources, not part of the page on screen. |
 | HEIC | iOS converts (explicit `accept` list), the browser converts what still arrives (Safari 17+), server refuses HEIC (415) | Server-side conversion with `sharp`/libvips: a native dependency (libvips) per architecture in the backend image, with its own security updates, for files that iOS already converts. `heic2any`-style WASM in the browser: ~1 MB for a path that Safari covers natively. |
 | Photo resizing | Browser canvas, 2048 px, JPEG 0.85, JPEG/HEIC only | Server: needs `sharp` too, and the full photo crosses the phone's network first. No resize: 3–5 MB per photo in git forever, plus GPS location in git and at the provider. opencode's own resize only shrinks what the model sees, not what the vault stores. |
 | PNG, GIF, WebP | Uploaded unchanged | Re-encoding: screenshots get JPEG artifacts, GIFs lose animation; these rarely carry GPS. |
@@ -287,7 +419,9 @@ sequenceDiagram
 | Text-only model | Warn on the chip, send anyway; opencode substitutes an error note (F4) | Block the attachment: the file is still useful in the vault and the model can say what to do. Strip the part on our side: duplicates opencode's capability logic. |
 | Model capability source | opencode's `capabilities.input` via `config.providers` | A list of our own: goes stale, and ADR 0002 keeps provider knowledge in opencode. |
 | Camera entry | Separate **Take photo** input with `capture` | Only `capture` on the one input: hides the photo library and Files on iOS. No `capture`: one more tap to the camera, the main use. |
-| Embed text | `![[basename]]`, full path only when ambiguous | Always the full path: longer than Obsidian writes. Markdown links (`useMarkdownLinks`): not honored in this change; the vaults use wikilinks. |
+| Embed text | Bare name (the file sits next to the page); full path only when ambiguous; form from `useMarkdownLinks` | Always Markdown `![x](x.jpg)`: the vaults use `![[x]]` everywhere (F17), and Obsidian's default is wikilinks. Always the full path: longer than Obsidian writes. |
+| Drag and drop | CodeMirror `drop` handler, insert at the drop point, same upload path | Insert at the cursor: the user aimed somewhere else. A separate drop zone: Obsidian drops onto the text. |
+| Paste | Not built | Same handler shape, noticed as a small follow-up; not asked for. |
 | Upload from the editor in Read mode | Not offered | Read mode has no cursor; appending at the end surprises. |
 
 ## Risks
@@ -298,4 +432,13 @@ sequenceDiagram
   ~190 MB briefly. `createImageBitmap` with `resizeWidth`/`resizeHeight` lowers that where supported (Safari 17+,
   Chrome); the plan measures on the iPhone project.
 - **Text-only production model:** chat attachments are inert until the model changes (proposal, Risks).
+- **Link rewrite misses or over-reaches:**
+  - Unusual link forms (HTML `<img src>`, links in frontmatter, links built by Dataview) are not rewritten.
+  - A path-form link in a code block is skipped on purpose.
+
+  The rewrite only touches links that resolved to the old path, so it can't redirect a link that pointed elsewhere.
+  The Changes list shows every touched page before the commit.
+- **Many touched pages:** a much-linked page can rewrite dozens of pages at once, and each one is an uncommitted
+  change. The response lists them, and the toast says "Moved to … · updated links in N pages".
+- **Obsidian's `app.json` keys are unconfirmed** (F16). The plan checks them in a real vault before relying on them.
 - **Repo growth:** bounded per file, not per vault.
