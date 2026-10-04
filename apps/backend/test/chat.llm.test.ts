@@ -95,7 +95,7 @@ describe('@llm web access', () => {
       expect(searches[0]!.query).toBeTruthy();
       await capture(await webParts(t, chatId));
     });
-  }, 300_000);
+  }, 600_000); // CPU-only CI: search/fetch turns take more model steps (tool call, page, answer), plus a retry
 
   it('fetch of a pasted URL succeeds', async () => {
     const t = await setup();
@@ -107,7 +107,7 @@ describe('@llm web access', () => {
       expect(fetches[0]!.url).toBe('https://example.com/');
       await capture(await webParts(t, chatId));
     });
-  }, 300_000);
+  }, 600_000);
 
   it('fetch of a URL found in a note (the ingest case)', async () => {
     const t = await setup();
@@ -120,7 +120,7 @@ describe('@llm web access', () => {
       if (fetches.length === 0) throw new Inconclusive(`no webfetch: ${JSON.stringify(tools)}`);
       expect(fetches.find((x) => x.status === 'completed')?.url).toBe('https://example.com/');
     });
-  }, 300_000);
+  }, 600_000);
 
   it('fetch of a constructed URL is refused', async () => {
     const t = await setup();
