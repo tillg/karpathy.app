@@ -27,16 +27,14 @@ its bare file name (`![[hello.jpg]]`), so nobody has to think about paths. There
 
 **A page with attachments lives in its own folder.** The folder has the page's name, and so does the `.md` file in
 it. This is how the vaults already hold pages with images: `Wiki/werkbank-frechen/werkbank-frechen.md` sits next to
-`werkbank-v2-staender-seitenansicht.png`. Sources follow the same idea as `Sources/<slug>/index.md`. So when a flat
+`werkbank-v2-staender-seitenansicht.png`. Sources follow the same idea as `Sources/<slug>/<slug>.md` (or `Sources/<slug>/index.md`). So when a flat
 page (`Wiki/foo.md`) gets its first attachment, the app first **moves it into its own folder**
 (`Wiki/foo/foo.md`). Links to it that name its path are updated, so they keep working in Obsidian. A page that
 already sits in its own folder stays where it is.
 
-If a vault sets Obsidian's **Default location for new attachments** to anything other than "Same folder as current
-file", that setting wins: the app puts the file where Obsidian would and moves nothing. "Same folder as current
-file" means the folder rule above. The same goes for Obsidian's **Use Wikilinks** setting. The vaults get the folder
-rule and `![[name]]` embeds, the form every existing page uses. A vault that
-switches to Markdown links gets `![hello](hello.jpg)` instead.
+The app reads **no Obsidian settings**. It always uses the folder rule above and writes `![[name]]` embeds, the form
+every existing page uses. The vaults gitignore `.obsidian/`, so the app's clones have no `app.json` to read, and the
+user's Obsidian is set to "Same folder as current file", which agrees with the folder rule.
 
 Every uploaded file, moved page and updated link is an **uncommitted change** like any other. It reaches GitHub
 (and Obsidian) only when the user commits ([ADR 0001](../../../docs/adr/0001-user-triggered-commits.md)). Discard
@@ -59,34 +57,28 @@ and `obsidian.d.ts` on 2026-10-04.
 
 | | Obsidian | This change |
 |---|---|---|
-| Where a new attachment goes | Setting "Default location for new attachments": vault folder, a fixed folder, the same folder as the note, or a subfolder under the note's folder (created on demand). | That setting if the vault sets it. Otherwise the page's own folder, moving the page into one first. |
+| Where a new attachment goes | Setting "Default location for new attachments": vault folder, a fixed folder, the same folder as the note, or a subfolder under the note's folder (created on demand). | Always the page's own folder, moving the page into one first. The setting isn't read. |
 | Paste an image | "Obsidian creates a file with the pasted content in the default attachment location." | Not built (see Scope). |
 | Drag a file from the file system | "Obsidian copies the file to the default attachment location and embeds it in the note." | The same, into the folder above. |
-| Embed text | "Use Wikilinks" on → `![[image.png]]`, off → Markdown `![](image.png)`. Spaces in Markdown links are written as `%20`. "New link format": shortest path when possible, relative, or absolute. | The same switch. The file sits next to the page, so the name alone is enough in both forms. |
+| Embed text | "Use Wikilinks" on → `![[image.png]]`, off → Markdown `![](image.png)`. Spaces in Markdown links are written as `%20`. "New link format": shortest path when possible, relative, or absolute. | Always `![[name]]`. The file sits next to the page, so the name alone is enough. |
 | Name collisions | `getAvailablePathForAttachment` "dedupes the filename if the destination filename already exists". | `-2`, `-3`, … before the extension. An upload never overwrites a file. |
 | Moving a note | Never moves a note by itself. "Automatically update internal links" rewrites links when the user renames or moves one. | Moves a page into its own folder on its first attachment, and updates path-form links to it. |
 | Formats shown | avif, bmp, gif, jpeg, jpg, png, svg, webp (and PDF). No HEIC. | Uploads accept jpg, jpeg, png, gif, webp and pdf. HEIC becomes JPEG. |
 | Resizing | Not documented. | Photos are scaled down in the browser before upload (see below). |
 
-The research could not confirm these points:
+Obsidian does **not** resolve a path-form link (`[[serien/foo]]`) after its note moved to `serien/foo/foo.md`:
+its resolver only accepts a candidate whose path ends with `serien/foo.md` (checked in Obsidian 1.13.7's code on
+2026-10-04, architecture F16). That is why the move rewrites those links.
 
-- the `app.json` values (`attachmentFolderPath` `/`, `./`, `./sub`, `Folder`; `useMarkdownLinks`);
-- the default when unset (probably the vault root);
-- the "Pasted image …" naming;
-- whether Obsidian resolves a path-form link (`[[serien/foo]]`) after its note moved to `serien/foo/foo.md`.
-
-The plan treats that last one as "no", which is why the move rewrites those links.
-
-**Both tools now use the same rule.** Until 2026-10-04 both vaults left the attachment location unset, so Obsidian's
-own paste and drop put images at the vault root. Since then, both are set to "Same folder as current file"
-(`attachmentFolderPath: "./"` in the local `.obsidian/app.json`). The app treats exactly that setting as the
-own-folder rule:
+**Both tools use the same rule.** Since 2026-10-04 the user's Obsidian is set to "Same folder as current file"
+(`attachmentFolderPath: "./"` in the local, gitignored `.obsidian/app.json`):
 
 - a page in its own folder gets the file next to it, in both tools;
 - a flat page is moved into its own folder first by the app, while Obsidian leaves it flat and puts the file next
   to it.
 
-The vaults gitignore `.obsidian/`, so the app's clones see no `app.json` at all and use the own-folder rule anyway.
+The app doesn't read `app.json` (decided 2026-10-04): the clones never have one, and supporting the other Obsidian
+settings would be code for a vault that doesn't exist.
 
 ## This reverses three documented rules
 
@@ -117,7 +109,6 @@ flowchart LR
       A3["Upload route<br/>POST /vaults/:id/raw?name="]
       A9[Move a flat page into its<br/>own folder + update links]
       A4[Client-side resize and<br/>HEIC → JPEG for photos]
-      A5[Obsidian settings win:<br/>attachment location, link form]
       A6[Size cap + git growth warning]
       A7[Model capability shown:<br/>can it see images / PDFs?]
     end
@@ -129,6 +120,7 @@ flowchart LR
       X5[PDF text extraction for<br/>text-only models]
       X6[Upload to a folder from the tree]
       X7[Dragging a file that's<br/>already in the vault]
+      X8[Obsidian's attachment-location<br/>and link-form settings]
     end
 ```
 
@@ -140,17 +132,17 @@ Pasting an image is noticed but not added. It would be the same handler as the d
   photos from an iPhone arrive as JPEG (iOS converts them, or the app does). Anything else is refused with a plain
   message.
 - **Where files land:**
-  - **From the editor (button or drop):**
-    - If the vault sets Obsidian's attachment location, the file goes there.
-    - Otherwise it goes into the page's own folder:
-      - `Wiki/foo/foo.md` → `Wiki/foo/`;
-      - `Sources/x/index.md` → `Sources/x/`;
-      - `Wiki/foo.md` → moved to `Wiki/foo/foo.md` first, then `Wiki/foo/`.
-  - **From the chat:** a new source folder `Sources/upload-YYYY-MM-DD-<name>/`, one per message. This follows the
+  - **From the editor (button or drop):** into the page's own folder:
+    - `Wiki/foo/foo.md` → `Wiki/foo/`;
+    - `Sources/x/index.md` → `Sources/x/`;
+    - `Wiki/foo.md` → moved to `Wiki/foo/foo.md` first, then `Wiki/foo/`.
+  - **From the chat:** a new source folder `Sources/upload-YYYY-MM-DD-HHMMSS/` (the device's local time of the
+    first upload), one per message. This follows the
     vaults' `mail-…` and `insta-…` pattern. All files of one message share that folder. The AI writes the source page
-    (`index.md`) into it when it ingests.
+    into it when it ingests. The app doesn't prescribe that page's name (`index.md` or `<folder>.md`): the vault's
+    ingest skill decides.
 - **Moving a page into its own folder:**
-  - It happens once, on the first attachment, and only without an Obsidian attachment location.
+  - It happens once, on the first attachment.
   - The editor stays on the page, and the address bar shows the new path.
   - Links that name the page's path (`[[serien/foo]]`, `[x](../serien/foo.md)`) are rewritten across the vault.
     Links by bare name (`[[foo]]`) already keep working, so they stay as they are.
@@ -162,7 +154,8 @@ Pasting an image is noticed but not added. It would be the same handler as the d
     - when `Wiki/foo/foo.md` already exists.
 - **Names:** the device's file name, cleaned. Characters that break file names or wikilinks become `-`. A camera
   photo is `photo-YYYYMMDD-HHMMSS.jpg`. There's no date prefix, because the page's folder already says what the file
-  belongs to. A taken name gets `-2`, `-3`, …; an upload never overwrites a file.
+  belongs to. A name that is taken **anywhere in the vault** gets `-2`, `-3`, …, so `![[name]]` is never ambiguous
+  in any tool; an upload never overwrites a file.
 - **Photos are made smaller before upload:** at most 2048 px on the long edge, JPEG quality 0.85. That keeps a
   12-megapixel photo near 0.5–1 MB instead of 3–5 MB. It also **drops the photo's metadata (GPS location)**, which
   would otherwise go into git and to the model provider. PNG, GIF and WebP are uploaded as they are: screenshots stay
@@ -175,16 +168,23 @@ Pasting an image is noticed but not added. It would be the same handler as the d
 - **Drag and drop:** works in Write mode with a note open. While files are dragged over the note, it shows a drop
   outline. Dropping several files embeds each on its own line, in order. A file that isn't uploadable is refused
   with a toast; the others still go in. Text dragged within the editor behaves as before.
+- **Several files at once** (a drop or a multi-pick) upload one after another, in order. When the first one moves a
+  flat page, the rest go to the moved page.
 - **Chat attachments:**
   - Up to 5 files per prompt, each at most 20 MB. A bigger PDF can still be uploaded from a note, but not sent to
     the AI.
-  - Each file shows as a removable chip with a thumbnail, or with the PDF's name and size.
+  - Each file shows as a removable chip with a thumbnail, or with the PDF's name and size. Removing a chip deletes
+    the uploaded file (it is new and uncommitted, so nothing is lost), and the folder too once it is empty.
+  - Chips not yet sent survive a reload: they are remembered per chat on the device. A remembered chip whose file
+    is gone is dropped.
   - The text may be empty when a file is attached.
   - The sent prompt shows its attachments as thumbnails or file cards, also after a reload.
 - **Models that can't see images or PDFs:** the chip says so ("glm-5.3 can't see images: the AI only gets the
   file's path"), and the file can still be sent. opencode then tells the model it couldn't read the file, and the
-  model says so. Before this change ships to production, the production model has to change, because today it is
-  text-only (see Risks).
+  model says so. The production model is text-only today (see Risks); switching it is a separate operator decision,
+  not a gate for this change.
+- **Undo:** undoing an inserted embed removes only the text. The uploaded file (and a move) stay, and show in
+  Changes.
 - **Conflict and offline:** Attach and drop are disabled in both. Uploads are writes, and a vault in conflict
   refuses writes (423).
 
@@ -201,7 +201,7 @@ flowchart TB
     end
     subgraph backend["apps/backend"]
       UP["POST /vaults/:id/raw?name=<br/>Vaults.upload"]
-      AF[attachment folder:<br/>Obsidian setting or own folder]
+      AF[attachment folder:<br/>own folder or source folder]
       MV[move page into own folder,<br/>rewrite path-form links]
       CH[chat.ts: attachments<br/>→ file parts]
       MAP[harness/map.ts:<br/>file parts → chat parts]
@@ -239,13 +239,13 @@ flowchart TB
 - **iPhone, editor:** in `Wiki/korsika-2026.md` in Write mode, tap **+** → Take photo. The photo shows below the
   cursor's line within a few seconds. The page is now `Wiki/korsika-2026/korsika-2026.md` and contains
   `![[photo-20261004-143012.jpg]]`. The photo is `Wiki/korsika-2026/photo-20261004-143012.jpg`. Changes lists the
-  photo, the move, and every page whose `[[…/korsika-2026]]` link was updated. After a commit, Obsidian on the Mac
+  photo, the move (as a deleted and an added path), and every page whose `[[…/korsika-2026]]` link was updated. After a commit, Obsidian on the Mac
   shows the same page, photo and working links.
 - **Mac, drag and drop:** drag two screenshots from Finder onto line 5 of `Wiki/werkbank-frechen/werkbank-frechen.md`.
   Both land in `Wiki/werkbank-frechen/`, and two `![[…png]]` lines appear at line 5. Nothing moves, because the page
   already has its own folder.
 - **Chat, vision-capable model:** a photo of a book page + "ingest this into the wiki". The AI reads the photo, writes
-  `Sources/upload-2026-10-04-photo-091500/index.md` next to it, and writes wiki pages that link to it.
+  the source page into `Sources/upload-2026-10-04-091500/` next to it, and writes wiki pages that link to it.
 - **Chat, PDF:** a PDF attached in the chat lands in its own `Sources/upload-…/` folder and is sent to the model. A
   PDF-capable model reads it.
 - **Chat, text-only model:** the user sees before sending that the AI can't see the file.
@@ -255,15 +255,20 @@ flowchart TB
 - **The production model is text-only.** models.dev lists `openrouter/z-ai/glm-5.3` with input `["text"]`. Images and
   PDFs reach it only as an "ERROR: Cannot read …" note. Chat attachments are useful only after the operator picks a
   model with image input, ideally also PDF input. Examples: `anthropic/claude-sonnet-5` (text, image, pdf) or
-  `openrouter/z-ai/glm-5.3-flash` (text, image, no PDF). Editor uploads don't depend on the model.
+  `openrouter/z-ai/glm-5.3-flash` (text, image, no PDF). Editor uploads don't depend on the model. The change ships
+  anyway: the chip warns, and the model switch is the operator's call.
 - **The move roughly doubles this change.** Moving a page and rewriting links is new behavior with its own failure
   modes:
   - a page whose links are written in an unusual form;
   - a rewrite that touches many pages at once.
 
-  Path-form links are common: about 540 of 9 900 links in one vault name a folder (`[[filme/…]]`). The move can be
-  split into its own prerequisite change if that's preferred. The upload itself would then fall back to the page's
-  folder without moving the page.
+  Path-form links are common: about 540 of 9 900 links in one vault name a folder (`[[filme/…]]`). It stays in this
+  change (decided 2026-10-04): shipping uploads without it would put files next to flat pages that later need
+  cleaning up.
+- **Discarding half a move.** Changes shows the move as two rows, the old path deleted and the new one added.
+  Discarding only the added row deletes the page with its edits since the last commit; discarding the deleted row
+  then brings back the committed version. Nothing committed is lost, and pairing the rows is left to a later
+  Changes-list change.
 - **PDFs need a PDF-capable model.** opencode's `read` tool returns a PDF only as a file attachment for the model. It
   doesn't extract text, and `bash` (for `pdftotext`) is denied. With a model without PDF input, a PDF in `Sources/` is
   inert for the AI. Text extraction is a possible follow-up.

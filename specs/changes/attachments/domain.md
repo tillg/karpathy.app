@@ -18,12 +18,12 @@ edited: 2026-10-04
 | **Drop** *(new)* | Dragging one or more files from the device's file system onto the note in Write mode. Each file becomes an upload, embedded at the drop point. | web `Editor` drop handler |
 | **Uploadable file** *(new)* | A file whose extension is `jpg`, `jpeg`, `png`, `gif`, `webp` or `pdf`. Only these can be uploaded. They are the formats opencode reads as images or PDFs and that model providers accept. HEIC, SVG, video and audio are not uploadable. | shared `UPLOADABLE` |
 | **Own folder** *(new)* | A folder that belongs to exactly one page and holds that page's attachments. A page is **in its own folder** when its folder carries its name (`Wiki/foo/foo.md`, compared case-insensitively) or when it is the folder's `index.md` (`Sources/x/index.md`). A page that isn't is **flat** (`Wiki/foo.md`). | `Vaults.ownFolder` |
-| **Move into own folder** *(new)* | What the app does to a flat page before its first attachment lands, when the vault sets no Obsidian attachment location: `Wiki/foo.md` → `Wiki/foo/foo.md`, plus the link rewrite. It is the only move the app makes. *Avoid:* rename (no general rename exists). | `Vaults.moveIntoOwnFolder` |
+| **Move into own folder** *(new)* | What the app does to a flat page before its first attachment lands: `Wiki/foo.md` → `Wiki/foo/foo.md`, plus the link rewrite. It is the only move the app makes. *Avoid:* rename (no general rename exists). | `Vaults.moveIntoOwnFolder` |
 | **Path-form link** *(new)* | A link that names a folder on the way to its target: `[[serien/foo]]`, `[[Wiki/serien/foo.md\|Foo]]`, `[Foo](../serien/foo.md)`, `![](img/a.png)`. It is the opposite of a **bare link** (`[[foo]]`), which resolves by name alone. A move breaks path-form links to the moved page in Obsidian, so the app rewrites them. Bare links keep resolving. | `rewriteLinks` |
-| **Attachment folder** *(changed)* | Where an upload from the editor lands. With Obsidian's `attachmentFolderPath` set in `<vault root>/.obsidian/app.json`, Obsidian's rule decides. Without it, the page's own folder decides. Uploads from the chat land in a new source folder. | `Vaults.attachmentFolder` |
-| **Source folder (upload)** *(new)* | The folder a chat message's attachments go into: `Sources/upload-YYYY-MM-DD-<stem>/`, named after the first file, with `-2`, `-3` … if the name is taken. One per message. The AI writes the source page `index.md` into it when it ingests. | `Vaults.upload` with `source` |
-| **Embed form** *(new)* | How an inserted embed is written. It follows Obsidian's `useMarkdownLinks`: unset or false → `![[name]]`, true → `![name](name)` with spaces as `%20`. | web `embedText` |
-| **Upload name** *(changed)* | The file name an upload gets: the device's file name, cleaned, or `photo-YYYYMMDD-HHMMSS.jpg` for a camera photo. There is no date prefix any more. Characters that break file names or wikilinks become `-`. A taken name gets `-2`, `-3`, …. | web `lib/attach.ts` `uploadName`; server `freeName` |
+| **Attachment folder** *(changed)* | Where an upload from the editor lands: always the page's own folder. Obsidian's attachment-location setting is not read. Uploads from the chat land in a new source folder. | `Vaults.attachmentFolder` |
+| **Source folder (upload)** *(new)* | The folder a chat message's attachments go into: `Sources/upload-YYYY-MM-DD-HHMMSS/`, named after the device's local time of the message's first upload, with `-2`, `-3` … if the name is taken. One per message. The AI writes the source page into it when it ingests; its name (`index.md` or `<folder>.md`) is up to the vault's ingest skill. | `Vaults.upload` with `source` |
+| **Embed** *(unchanged)* | An inserted embed is always `![[name]]`. Obsidian's "Use Wikilinks" setting is not read. | web `NotePane` insert |
+| **Upload name** *(changed)* | The file name an upload gets: the device's file name, cleaned, or `photo-YYYYMMDD-HHMMSS.jpg` for a camera photo. There is no date prefix any more. Characters that break file names or wikilinks become `-`. A name taken anywhere in the vault (case-insensitively) gets `-2`, `-3`, …, so the bare `![[name]]` is unambiguous. | web `lib/attach.ts` `uploadName`; server `freeName` |
 | **Photo preparation** *(new)* | What the browser does to a JPEG or HEIC before upload: decode, scale to at most 2048 px on the long edge, and re-encode as JPEG (quality 0.85). This drops the metadata (GPS location, camera). Other formats are uploaded unchanged. | web `lib/attach.ts` `prepare` |
 | **Upload cap** *(new)* | 50 MB per file. The server refuses bigger bodies (413). | `MAX_UPLOAD_BYTES` |
 | **Growth warning** *(new)* | The question asked before an upload over 10 MB: the file stays in the git history for good, even if it is deleted later. | `WARN_UPLOAD_BYTES` |
@@ -40,39 +40,27 @@ At archive time, `CONTEXT.md` gets **Upload**, **Own folder**, **Path-form link*
 ```mermaid
 flowchart TD
     S{Uploaded from?}
-    S -->|chat composer| SF["Sources/upload-YYYY-MM-DD-stem/<br/>(new per message; Sources/ case kept)"]
-    S -->|"editor: button or drop"| A{"&lt;root&gt;/.obsidian/app.json<br/>attachmentFolderPath?"}
-    A -->|"'/'"| R[vault root]
-    A -->|"'./' (same folder as note)"| O
-    A -->|"'./sub'"| NS[sub inside the note's folder]
-    A -->|"'Folder/x'"| F[Folder/x]
-    A -->|missing, unreadable, empty| O{page in its own folder?<br/>dir/stem/stem.md or dir/x/index.md}
+    S -->|chat composer| SF["Sources/upload-YYYY-MM-DD-HHMMSS/<br/>(new per message; Sources/ case kept)"]
+    S -->|"editor: button or drop"| O{page in its own folder?<br/>dir/stem/stem.md or dir/x/index.md}
     O -->|yes| OF[the page's folder]
     O -->|"no: flat page dir/stem.md"| MV[move the page to dir/stem/stem.md,<br/>rewrite path-form links]
     MV --> OF
-    R & NS & F --> CHK{inside the vault root,<br/>no dot segment?}
-    CHK -->|no| O
-    CHK -->|yes| NAME
-    OF & SF --> NAME[upload name, -2, -3 … if taken<br/>case-insensitively]
+    OF & SF --> NAME[upload name, -2, -3 … if taken anywhere<br/>in the vault, case-insensitively]
 ```
 
-- The four `attachmentFolderPath` forms are Obsidian's: `/` is the vault root, `./` the note's folder, `./sub` a
-  subfolder of the note's folder, and anything else a fixed folder from the vault root. The research could not
-  confirm the exact `app.json` values from a primary source, so the plan checks them in a real vault.
-- **`./` ("Same folder as current file") counts as the own-folder rule.** A page already in its own folder gets the
-  file next to it, the same place Obsidian would choose. A flat page is moved first, which Obsidian doesn't do but
-  doesn't contradict: afterwards Obsidian also puts that page's images in its own folder. So with `./` both tools
-  agree, except that Obsidian leaves flat pages flat. Every other setting means "do what Obsidian does", with no move.
-- **The vaults ignore `.obsidian/` in git** (`.gitignore`: `.obsidian/`). The app's clones therefore never see
-  `app.json`, and they always use the own-folder rule. That matches the user's Obsidian, which is set to `./` since
-  2026-10-04. A vault that commits its `.obsidian/app.json` gets that file's setting.
+- **Obsidian's settings are not read** (decided 2026-10-04). The vaults ignore `.obsidian/` in git, so the app's
+  clones never see `app.json`. The user's Obsidian is set to "Same folder as current file" since 2026-10-04, which
+  agrees with the own-folder rule: a page already in its own folder gets the file next to it in both tools. A flat
+  page is moved first by the app, which Obsidian doesn't do but doesn't contradict: afterwards Obsidian also puts
+  that page's images in its own folder.
 - `Sources/` is found case-insensitively, as the attach preflight does: a vault with `sources/` gets
   `sources/upload-…/`. Creating `Sources/` next to `sources/` would be a case twin, which the vault refuses.
-- The user's real vaults set no `attachmentFolderPath`. Their `app.json` has only `userIgnoreFilters: ["Sources/"]`,
-  `alwaysUpdateLinks` and display settings. They already keep pages with images in their own folders
+- The vaults already keep pages with images in their own folders
   (`Wiki/korsika-unterkunft-2026/korsika-unterkunft-2026.md` and five `.jpeg` files next to it).
-- Why the chat makes a source folder: a file sent to the AI is a source to ingest. `Sources/<slug>/` with an
-  `index.md` is how the vaults hold sources (`mail-…`, `insta-…`), and it is where ingest skills look.
+- Why the chat makes a source folder: a file sent to the AI is a source to ingest. `Sources/<slug>/` with a source
+  page is how the vaults hold sources (`mail-…`, `insta-…`), and it is where ingest skills look. The source page is
+  mostly `<slug>/<slug>.md` (1 458 + 82 in the two vaults), sometimes `<slug>/index.md` (264 + 31); both count as
+  the page's own folder.
 
 ## Move a page into its own folder
 
@@ -84,7 +72,7 @@ sequenceDiagram
     U->>W: drop shot.png on Wiki/serien/foo.md (flat)
     W->>W: flush the editor's text, pause autosave
     W->>B: POST /raw?name=shot.png&note=Wiki/serien/foo.md
-    B->>B: no attachmentFolderPath → own folder? no → move
+    B->>B: own folder? no → move
     alt AI turn running
       B-->>W: 409 ai-busy → toast, nothing changed
     else Wiki/serien/foo/foo.md exists
@@ -142,10 +130,11 @@ sequenceDiagram
     end
 ```
 
-- **The embed text is the name alone** when the file is in the note's own folder. Embeds already prefer the note's
-  folder when a name is taken elsewhere. With an Obsidian attachment location elsewhere, the name is used if no other
-  vault file has it, else the vault path. That is Obsidian's default "shortest path when possible".
-- **The embed form** follows `useMarkdownLinks`: `![[photo.jpg]]`, or `![photo](photo.jpg)`.
+- **The embed text is the name alone**, `![[photo.jpg]]`: the file is in the note's own folder, and its name is
+  unique in the vault, so every tool resolves it.
+- **Undo** of the inserted embed removes the text only; the file and a move stay.
+- **Several files** from one drop or pick upload one after another, in order. If the first moves the page, the rest
+  name the moved page.
 
 ## Send a chat attachment
 
@@ -157,9 +146,9 @@ sequenceDiagram
     participant O as opencode
     participant M as Model provider
     U->>W: + → photo, "ingest this"
-    W->>B: POST /raw?name=photo-20261004-091500.jpg&source=new
-    B-->>W: 201 {path: Sources/upload-2026-10-04-photo-20261004-091500/photo-20261004-091500.jpg}
-    W->>B: second file: POST /raw?name=doc.pdf&source=upload-2026-10-04-photo-20261004-091500
+    W->>B: POST /raw?name=photo-20261004-091500.jpg&source=new&at=2026-10-04-091500
+    B-->>W: 201 {path: Sources/upload-2026-10-04-091500/photo-20261004-091500.jpg}
+    W->>B: second file: POST /raw?name=doc.pdf&source=upload-2026-10-04-091500
     B-->>W: 201 {path: Sources/upload-…/doc.pdf}
     W->>W: chips with thumbnails (+ "can't see images" if the model can't)
     U->>W: Send
@@ -173,7 +162,7 @@ sequenceDiagram
     else it hasn't
       O->>M: text + "ERROR: Cannot read … Inform the user."
     end
-    M-->>O: reply, tool calls (writes Sources/upload-…/index.md, Wiki/…)
+    M-->>O: reply, tool calls (writes the source page in Sources/upload-…/, Wiki/…)
     O-->>B: events
     B-->>W: parts → chips, the prompt shows the attachment
 ```
@@ -187,7 +176,11 @@ sequenceDiagram
   The cost: every chat photo is an uncommitted change. The user discards it if it was only for the question.
 - **The first file of a message makes the folder** (`source=new`), and the following ones join it
   (`source=<folder name>`). The server accepts a folder name only if it exists, sits directly in `Sources/` and
-  starts with `upload-`. Removing every chip before sending leaves the files in the vault. Discard removes them.
+  starts with `upload-`.
+- **Removing a chip deletes its file** (`DELETE /file` with the version from the upload), and the folder too once
+  it is empty. The file is new and uncommitted, so nothing is lost, and no orphan is left for a later ingest.
+- **Unsent chips survive a reload:** the composer remembers them per chat on the device, and drops one whose file is
+  gone.
 - **A vanished path fails the turn.** If a path was discarded or deleted before the turn starts, the turn fails with
   "Attachment not found: `<path>`", like a failed pull.
 - **The sent prompt shows its attachments** from the stored chat: a thumbnail through `/raw`, or a file card for a
@@ -204,15 +197,14 @@ Changed rules (replacing the system's wording):
   - The AI creates no binary files.
   - Pasting images is not built.
   - Offline, nothing can be uploaded.
-- **A page with attachments lives in its own folder** (no Obsidian attachment location set):
+- **A page with attachments lives in its own folder:**
   - The first editor upload to a flat page moves it there.
   - Path-form links to it, and relative links inside it, are rewritten in the same step.
   - The move is refused while an AI turn runs, or when the target `<stem>/<stem>.md` exists. A refused move uploads
     nothing.
   - The app moves pages only in this case. There is no general rename.
-- **Obsidian's settings win** where they exist: `attachmentFolderPath` decides the folder, and `useMarkdownLinks`
-  decides the embed form. `./` means the own-folder rule, including the move. Any other value means Obsidian's
-  folder, with no move.
+- **Obsidian's settings are not read:** no `attachmentFolderPath`, no `useMarkdownLinks`. Uploads always go to the
+  own folder and are embedded as `![[name]]`.
 - **Conflict blocks writes:** saves, deletes, discards, commits, **uploads and moves** are refused (423). So no chat
   attachment can be added during a conflict. A turn during a conflict runs read-only as before.
 - **New file names** (unchanged list) apply to uploads and moved pages too:
@@ -239,4 +231,4 @@ Changed rules (replacing the system's wording):
 | **AI** | Unchanged tools. Receives attached images and PDFs as message content when its model supports them. Writes the source page into the chat's upload folder when it ingests. |
 | **LLM provider** | Sees the prompts, the notes the AI reads, **and every image or PDF the user attaches or the AI reads**. |
 | **Device (iOS)** | Converts HEIC photos to JPEG when the picker's accepted types are an explicit list without HEIC. |
-| **Obsidian** | Its attachment-location and link-form settings, when set, decide where uploads land and how they are embedded. |
+| **Obsidian** | Unchanged. Its settings are not read; the user's "Same folder as current file" agrees with the own-folder rule. |

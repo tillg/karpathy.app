@@ -28,18 +28,8 @@ New fixtures in `e2e/fixtures/media/` are tiny real files, made once on the Mac 
 Playwright feeds files with `setInputFiles`, and drops with a `DataTransfer` built in `page.evaluateHandle`. Phone
 projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
 
-## Phase 0: confirm Obsidian's settings
-
-- [ ] Record Obsidian's real `app.json` values for the attachment location and the link form
-  - Test first: none, because this is a check of a closed-source app. In a scratch vault in Obsidian on the Mac (ask
-    the user to click through it), set each "Default location for new attachments" option in turn: vault folder,
-    folder `Assets/Pics`, same folder as current file, and subfolder `img`. Record `attachmentFolderPath` for each.
-    Toggle "Use Wikilinks" and record `useMarkdownLinks`. Drop a PNG named `a b.png` twice, and record the second
-    name (`a b 1.png`?) and the Markdown form (`%20`?). Then move a note into a subfolder **with** "Automatically
-    update internal links" off: does `[[serien/foo]]` still resolve? Write the results into F16 of architecture.md.
-    If they differ from `/`, `./`, `./img`, `Assets/Pics`, adjust the next steps first.
-  - Verify: `grep -n "F16" specs/changes/attachments/architecture.md` shows the recorded values with "confirmed
-    2026-…".
+Obsidian's `app.json` settings are not read (architecture, Key decisions), so there is no Obsidian check before
+phase 1.
 
 ## Phase 1: shared table, link resolver and upload route
 
@@ -71,10 +61,11 @@ projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
     Also upload to `note=Sources/x/index.md` → `Sources/x/a.png`. It fails today: 404, no route.
   - Verify: `npm test -w apps/backend -- api` → green; `just check` → green.
 
-- [ ] Uploads never overwrite; case twins count as taken
-  - Test first: `api.test.ts` › "upload: -2, -3 on collisions, case-insensitive".
+- [ ] Uploads never overwrite; names are unique in the whole vault, case-insensitively
+  - Test first: `api.test.ts` › "upload: -2, -3 on collisions, vault-wide, case-insensitive".
     - Upload `x.png` twice → `x.png`, then `x-2.png`.
     - With an existing `Wiki/foo/Y.png`, upload `y.png` → `y-2.png`.
+    - With an existing `Other/deep/w.png` (another folder), upload `w.png` to `Wiki/foo/foo.md` → `Wiki/foo/w-2.png`.
     - Ten parallel uploads of `z.png` → ten distinct paths, every file intact.
 
     It fails today: no route.
@@ -93,18 +84,6 @@ projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
     A 2 MB JSON `PUT /file` still works, because the raw parser is scoped. It fails today: no route.
   - Verify: `npm test -w apps/backend -- api` → green; `just check` → green.
 
-- [ ] The attachment folder follows `.obsidian/app.json` when it's set
-  - Test first: `api.test.ts` › "upload: Obsidian attachment location". Write `.obsidian/app.json` into the clone
-    (values as confirmed in phase 0) and upload with `note=Notes/Day.md` (a flat page):
-    - `"/"` → vault root;
-    - `"./img"` → `Notes/img/`;
-    - `"Assets/Pics"` → `Assets/Pics/`.
-
-    In these cases `Notes/Day.md` is **not** moved and `moved` is absent. `"./"`, `"../out"` and `".hidden"` take the
-    own-folder rule: they are asserted in phase 2 (the move), where `"./"` moves `Notes/Day.md` to
-    `Notes/Day/Day.md`. A vault with a subfolder root reads `<root>/.obsidian/app.json`. It fails today: no lookup.
-  - Verify: `npm test -w apps/backend -- api` → green.
-
 ## Phase 2: move a page into its own folder
 
 - [ ] The first upload to a flat page moves it into its own folder
@@ -114,7 +93,8 @@ projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
     - the old file gone, and the new one with the same bytes;
     - `GET /changes` lists both paths and `a.png`.
 
-    The same with `{"attachmentFolderPath":"./"}` in `app.json`. Also: a root-level `foo.md` → `foo/foo.md`. `Wiki/Foo/foo.md` (case differs) counts as its own folder, and
+    The same with `{"attachmentFolderPath":"Assets"}` in a committed `.obsidian/app.json`: it is ignored. Also: a
+    root-level `foo.md` → `foo/foo.md`; `Sources/x/x.md` is already in its own folder. `Wiki/Foo/foo.md` (case differs) counts as its own folder, and
     `Sources/x/index.md` is never moved. An existing `Wiki/serien/foo/` holding only images is fine. It fails today:
     nothing moves, so the upload lands next to the flat page.
   - Verify: `npm test -w apps/backend -- api` → green.
@@ -157,20 +137,15 @@ projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
 
 ## Phase 3: upload from the editor
 
-- [ ] `uploadName` builds safe names without a date prefix; `embedText` picks the form
+- [ ] `uploadName` builds safe names without a date prefix
   - Test first: `apps/web/src/lib/attach.test.ts`, with `now = 2026-10-04 14:30:12`.
-    - **`uploadName`:**
-      - camera → `photo-20261004-143012.jpg`;
-      - `IMG_1234.HEIC` (converted) → `IMG_1234.jpg`;
-      - `a#b[c]|d^e?.PNG` → `a-b-c-d-e.png`;
-      - `.hidden.pdf` → `hidden.pdf`;
-      - `my scan.pdf` → `my scan.pdf`;
-      - a 200-character stem is cut to 80;
-      - `con.pdf` → `con-file.pdf`.
-    - **`embedText`:**
-      - `Wiki/foo/a b.png` from `Wiki/foo/foo.md` → `![[a b.png]]`, or `![a b](a%20b.png)` in the markdown form;
-      - the same name existing elsewhere doesn't matter when the file is in the note's folder;
-      - with `Assets/x.png` and `Other/x.png` both present, from `Notes/n.md` → `![[Assets/x.png]]`.
+    - camera → `photo-20261004-143012.jpg`;
+    - `IMG_1234.HEIC` (converted) → `IMG_1234.jpg`;
+    - `a#b[c]|d^e?.PNG` → `a-b-c-d-e.png`;
+    - `.hidden.pdf` → `hidden.pdf`;
+    - `my scan.pdf` → `my scan.pdf`;
+    - a 200-character stem is cut to 80;
+    - `con.pdf` → `con-file.pdf`.
 
     It fails today: no module.
   - Verify: `npm test -w apps/web -- attach` → green.
@@ -199,6 +174,7 @@ projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
     4. Assert that `api.changes` lists `Wiki/home/shot.png`, and the tree shows it.
     5. Type a character during a slow upload (`page.route` delaying the POST): the embed still lands at the original
        cursor position.
+    6. Cmd+Z removes the embed line; `Wiki/home/shot.png` still exists and is still in `api.changes`.
 
     It fails today: no button.
   - Verify: `just e2e e2e/attach.spec.ts e2e/editing.spec.ts e2e/media.spec.ts` → green on `desktop` and
@@ -215,6 +191,10 @@ projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
     5. Reload: the local draft key follows, and no "unsaved" warning about the old path appears.
     6. With an AI turn running (`@llm`-free: hold the busy state through the test helper), the attach shows "The AI
        is working" and nothing moves.
+    7. Multi-pick `shot.png` and `doc.pdf` on a fresh flat `Wiki/flat2.md`: the POSTs go out one after another
+       (record request start/end times with `page.on('request')`/`'requestfinished'`), the first names
+       `note=Wiki/flat2.md` and the second `note=Wiki/flat2/flat2.md`, and both files land in `Wiki/flat2/` with
+       their embeds in order.
 
     It fails today: no move.
   - Verify: `just e2e e2e/attach.spec.ts` → green on `desktop` and `webkit-desktop`.
@@ -234,16 +214,14 @@ projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
     so the device check in phase 6 covers Safari by hand. It fails today: CodeMirror inserts the file name.
   - Verify: `just e2e e2e/attach.spec.ts --project desktop` → green.
 
-- [ ] Ambiguous names get the full path; the embed form follows Obsidian; the button hides where it can't work
+- [ ] A name taken elsewhere gets a suffix and still embeds bare; the button hides where it can't work
   - Test first: `e2e/attach.spec.ts` › "embed text and button visibility".
-    1. With `{"attachmentFolderPath":"Assets"}` and `Other/shot.png` pushed first (`pushFromObsidian`), the inserted
-       text is `![[Assets/shot.png]]`.
-    2. With `{"useMarkdownLinks":true}`, attaching `my shot.png` to an own-folder page inserts
-       `![my shot](my%20shot.png)`, and it renders.
-    3. `attach` is absent in Read mode, on a media file, offline (`context.setOffline`) and in conflict
+    1. With `Other/shot.png` pushed first (`pushFromObsidian`), attaching `shot.png` to `Wiki/home/home.md` inserts
+       `![[shot-2.png]]`, and it renders the new file.
+    2. `attach` is absent in Read mode, on a media file, offline (`context.setOffline`) and in conflict
        (`makeConflict`).
-    4. The `attach-photo` input has `capture="environment"` and `accept="image/jpeg"`.
-    5. The `attach-choose` input's `accept` is exactly `image/jpeg,image/png,image/gif,image/webp,application/pdf`
+    3. The `attach-photo` input has `capture="environment"` and `accept="image/jpeg"`.
+    4. The `attach-choose` input's `accept` is exactly `image/jpeg,image/png,image/gif,image/webp,application/pdf`
        (no wildcard, no HEIC).
 
     It fails today: no button.
@@ -263,9 +241,10 @@ projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
 
 - [ ] Chat uploads create one source folder per message
   - Test first: `api.test.ts` › "upload: source folders".
-    - `name=photo.jpg&source=new` → `Sources/upload-2026-10-04-photo/photo.jpg` (fixed clock).
-    - `name=doc.pdf&source=upload-2026-10-04-photo` → `Sources/upload-2026-10-04-photo/doc.pdf`.
-    - A second `source=new` with `photo.jpg` → `Sources/upload-2026-10-04-photo-2/photo.jpg`.
+    - `name=photo.jpg&source=new&at=2026-10-04-091500` → `Sources/upload-2026-10-04-091500/photo.jpg`.
+    - `name=doc.pdf&source=upload-2026-10-04-091500` → `Sources/upload-2026-10-04-091500/doc.pdf`.
+    - A second `source=new` with the same `at` and `x.jpg` → `Sources/upload-2026-10-04-091500-2/x.jpg`.
+    - `source=new` without `at`, or with `at=yesterday` or `at=../x` → 400.
     - `source=../Wiki`, `source=mail-x` and `source=upload-missing` → 400 `bad-path`.
     - A vault with `sources/` (lower case) → `sources/upload-…`, and no `Sources/` is created.
 
@@ -317,13 +296,12 @@ projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
     It fails today: the `file` part is dropped (`default` branch).
   - Verify: `npm test -w apps/backend -- harness-map` → green.
 
-- [ ] Settings report what the model can read and the vault's embed form
-  - Test first: `chat.test.ts` (it has the opencode container) › "settings expose modelInput and embedForm".
+- [ ] Settings report what the model can read
+  - Test first: `chat.test.ts` (it has the opencode container) › "settings expose modelInput".
     - With the test container's provider config, give the Ollama test model
       `modalities: { input: ['text', 'image'] }`: `GET /settings` → `modelInput: { image: true, pdf: false }`.
     - With a model id opencode doesn't list → `modelInput: null`.
     - `PATCH /settings` returns it too.
-    - `embedForm` is `'wikilink'` without `app.json`, and `'markdown'` with `{"useMarkdownLinks":true}`.
 
     It fails today: no fields.
   - Verify: `npm test -w apps/backend -- chat api` → green; `just check` → green.
@@ -332,13 +310,17 @@ projects (`iphone`, `webkit-iphone`) run the tests tagged `@iphone`.
   - Test first: `e2e/attach.spec.ts` › "attach in the chat".
     1. In a new chat, `chat-attach` → `setInputFiles([shot.png, doc.pdf])`. Assert two chips (`attach-chip`), one
        with a thumbnail `img` and one with "doc.pdf" and its size, both in the same `Sources/upload-…/` folder.
-    2. `✕` on the PDF chip removes it; the uploaded file stays in the vault and in Changes.
-    3. Send with empty text. The user message shows a `.embed img` for the PNG, rendered through `/raw`, not a
+    2. `✕` on the PDF chip removes it and deletes `doc.pdf` (gone from disk and from Changes); the PNG and its folder
+       stay. Removing the last chip too deletes the folder, and the next file sends `source=new` again.
+    3. Reload with one chip unsent: the chip comes back with its thumbnail. Delete its file through the API and
+       reload: the chip is gone.
+    4. Send with empty text. The user message shows a `.embed img` for the PNG, rendered through `/raw`, not a
        `data:` URL: assert the `src` starts with `blob:` and a `/raw?path=` request happened.
-    4. Reload: still shown. Delete the file and reload: a `miss` file card.
-    5. The next message's first file gets a new folder.
-    6. With the dev model (text only, `modelInput.image === false`), the chip shows "can't see images".
-    7. A sixth file → the picker refuses with "At most 5 files per message".
+    5. Reload: still shown. Delete the file and reload: a `miss` file card.
+    6. The next message's first file gets a new folder, named after the browser's local time (`upload-YYYY-MM-DD-HHMMSS`
+       with the page's clock set through `page.clock`).
+    7. With the dev model (text only, `modelInput.image === false`), the chip shows "can't see images".
+    8. A sixth file → the picker refuses with "At most 5 files per message".
 
     It fails today: no button.
   - Verify: `just e2e e2e/attach.spec.ts e2e/chat.spec.ts` → green on `desktop` and `webkit-desktop`; `just check` →

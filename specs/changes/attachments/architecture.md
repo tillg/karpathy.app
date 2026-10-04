@@ -71,8 +71,7 @@ Checked on 2026-10-04 against the pinned versions. Paths in opencode are in `pac
 | F13 | `express.json({ limit: '10mb' })` parses only `application/json` bodies; the API has no binary body parser. Caddy sets no `request_body` limit. | `apps/backend/src/app.ts`; `deploy/proxy/Caddyfile` |
 | F14 | The queue of prompts is persisted in `config.json` (`saveQueue`), text only. | `apps/backend/src/chat.ts` (`prompt`, `saveQueue`) |
 | F15 | `harness/map.ts` maps `text` (skipping `synthetic`), `reasoning` and `tool` parts; a `file` part falls to `default` and is dropped. | `apps/backend/src/harness/map.ts` 80–88 |
-| F16 | Obsidian: the attachment location has four options (vault folder, a specified folder, same folder as the note, a subfolder under the note's folder, created on demand). Paste creates a file there. Dropping a file from the file system "copies the file to the default attachment location and embeds it in the note". "Use Wikilinks" switches `![[x]]` / `![](x)`, and Markdown links encode spaces as `%20`. "Automatically update internal links" rewrites links on rename. Not confirmed from a primary source: the `app.json` keys and values (`attachmentFolderPath`, `useMarkdownLinks`), the default when unset, and whether a path-form link survives a move without the update. | [obsidian.md/help/attachments](https://obsidian.md/help/attachments), [/help/settings](https://obsidian.md/help/settings), [/help/links](https://obsidian.md/help/links), `obsidian.d.ts` (`getAvailablePathForAttachment`, `renameFile`), fetched 2026-10-04 |
-| F17 | The vaults keep pages with images in their own folders (`Wiki/<slug>/<slug>.md`, sources as `Sources/<slug>/index.md`). They embed with `![[name]]` only and set no `useMarkdownLinks`. They gitignore `.obsidian/`, so the app's clones never see `app.json`. The user's local Obsidian has been set to `attachmentFolderPath: "./"` since 2026-10-04. Path-form wikilinks: 540 of 9 871 in `mylife_wiki/Wiki`, 379 of 2 977 in `frechen_wiki/Wiki`. Relative Markdown links: 0 and 1. | the user's vault clones, counted 2026-10-04 |
+| F16 | Obsidian: the attachment location has four options (vault folder, a specified folder, same folder as the note, a subfolder under the note's folder, created on demand). Paste creates a file there. Dropping a file from the file system "copies the file to the default attachment location and embeds it in the note". "Use Wikilinks" switches `![[x]]` / `![](x)`, and Markdown links encode spaces as `%20`. "Automatically update internal links" rewrites links on rename. The app reads none of these settings (Key decisions). **Link resolution** (`MetadataCache.getLinkpathDest`, read in the installed app's code): candidates are the files with the link's base name (`.md` appended if the name has no dot). A single candidate is returned only if the link is the bare name. Otherwise the result is an exact path match, else the candidates whose lower-cased path **ends with** the link, those under the linking note's folder first. So `[[serien/foo]]` does **not** resolve to `Wiki/serien/foo/foo.md` (it ends `foo/foo.md`): a path-form link breaks when its page moves. A bare `[[foo]]` keeps resolving, and with several `foo.md` the one under the linking note's folder wins. | [obsidian.md/help/attachments](https://obsidian.md/help/attachments), [/help/settings](https://obsidian.md/help/settings), [/help/links](https://obsidian.md/help/links), `obsidian.d.ts` (`getAvailablePathForAttachment`, `renameFile`), fetched 2026-10-04; `getLinkpathDest` in `app.js` of `~/Library/Application Support/obsidian/obsidian-1.13.7.asar`, read 2026-10-04 || F17 | The vaults keep pages with images in their own folders (`Wiki/<slug>/<slug>.md`; sources as `Sources/<slug>/<slug>.md`, 1 458 + 82, or `Sources/<slug>/index.md`, 264 + 31). They embed with `![[name]]` only and set no `useMarkdownLinks`. They gitignore `.obsidian/`, so the app's clones never see `app.json`. The user's local Obsidian has been set to `attachmentFolderPath: "./"` since 2026-10-04. Path-form wikilinks: 540 of 9 871 in `mylife_wiki/Wiki`, 379 of 2 977 in `frechen_wiki/Wiki`. Relative Markdown links: 0 and 1. | the user's vault clones, counted 2026-10-04 |
 | F18 | The app's resolver finds `[[serien/foo]]` after a move to `serien/foo/foo.md` through its basename fallback. So only Obsidian (and other tools) would break. | `apps/web/src/lib/wikilink.ts` 50–63 (`resolveWikilink`) |
 | F19 | CodeMirror inserts a dropped file's name or path as text unless the `drop` event is handled. `EditorView.domEventHandlers({ dragover, drop })` returning `true` takes over, and `view.posAtCoords({x, y})` gives the document position under the pointer. | CodeMirror 6 `@codemirror/view` docs (`domEventHandlers`, `posAtCoords`) |
 
@@ -82,8 +81,9 @@ browser's photo preparation (below) turns any HEIC that still arrives into JPEG,
 
 ## Backend: the upload route
 
-`POST /vaults/:id/raw?name=<file name>[&note=<note path> | &source=new | &source=<folder name>]`. The body is the
-file's bytes, behind the bearer auth. Exactly one of `note` (editor) and `source` (chat) is given.
+`POST /vaults/:id/raw?name=<file name>[&note=<note path> | &source=new&at=<YYYY-MM-DD-HHMMSS> | &source=<folder name>]`.
+The body is the file's bytes, behind the bearer auth. Exactly one of `note` (editor) and `source` (chat) is given.
+`at` is the browser's local time, required with `source=new`.
 
 ```mermaid
 sequenceDiagram
@@ -96,20 +96,19 @@ sequenceDiagram
     A->>V: upload(id, name, {note} | {source}, bytes)
     V->>V: requireReady, extension in UPLOADABLE? else 415
     V->>V: checkNewName(name), no "/" in name, no leading dot
-    V->>F: read <root>/.obsidian/app.json (plain fs, optional)
     V->>V: lock.withShared('save')
     alt conflict
       V-->>A: 423 conflict
     else note given
       V->>V: attachmentFolder(note) → {folder, move?}
-      opt move (flat page, no Obsidian setting)
+      opt move (flat page)
         V->>V: moveIntoOwnFolder(note) → 409 ai-busy / folder-taken, or {to, rewritten}
       end
     else source given
-      V->>V: new → Sources/upload-<date>-<stem>[-n]/, else check the given folder
+      V->>V: new → Sources/upload-<date>-<time>[-n]/, else check the given folder
     end
     loop name, name-2, name-3 … (max 100)
-      V->>V: refuseCaseTwin check → taken? next
+      V->>V: name taken anywhere in the vault (case-insensitive)? next
       V->>F: mkdir -p, writeFile(path, bytes, { flag: 'wx' })
     end
     V-->>A: { path, version, size, moved?, rewritten? }
@@ -121,9 +120,11 @@ sequenceDiagram
   most 50 MB, acceptable. Streaming to a temp file was considered and left out (more code, a cleanup path).
 - **Never overwrite:** `writeFile(…, { flag: 'wx' })` fails with `EEXIST` if a file appeared since the name check, and
   the loop takes the next suffix. Two uploads of `photo.jpg` at once both succeed with different names.
-- **Case twins:** a name that differs from an existing one only in case counts as taken (next suffix), instead of the
-  `409 exists-case` of `writeFile`. Folders are matched case-insensitively and the existing spelling is kept
-  (`sources/media/`), the same idea as the attach preflight.
+- **Unique in the vault** (decided 2026-10-04): a name counts as taken if any file in the vault has it as its base
+  name, compared case-insensitively, not only in the target folder. So the bare `![[name]]` resolves to this file in
+  every tool, without relying on a resolver preferring the note's folder. The check uses the vault's file list
+  (the one `GET /files` builds). Case twins in the folder are covered by it. Folders are matched case-insensitively
+  and the existing spelling is kept (`sources/upload-…/`), the same idea as the attach preflight.
 - **Errors** (`HttpError` JSON):
   - `400 bad-name`;
   - `413 too-large`;
@@ -131,6 +132,7 @@ sequenceDiagram
   - `423 conflict`;
   - `400 bad-path` for a `note` outside the vault, or for a `source` folder that isn't an existing
     `Sources/upload-…` folder;
+  - `400` for `source=new` without a valid `at` (`YYYY-MM-DD-HHMMSS`);
   - `400` when both or neither of `note` and `source` are given;
   - `409 ai-busy` and `409 folder-taken` from the move.
 - **Version:** `versionOf(bytes)`, the same hash `GET /file` gives, so Delete works on the new file at once.
@@ -140,33 +142,21 @@ sequenceDiagram
 
 ### Attachment folder
 
-`Vaults.attachmentFolder(id, note: string): { folder: string; move: boolean }`:
+`Vaults.attachmentFolder(note: string): { folder: string; move: boolean }`, a pure function of the path. Let the
+note be `dir/stem.md`:
 
-1. Read `<vault root>/.obsidian/app.json` with plain `fs`. The raw route refuses dot paths, but this read is
-   server-internal. If the file is missing, unreadable or invalid JSON, or has no string `attachmentFolderPath`, or
-   it is `''`, go to step 4.
-2. Map the setting:
-   - `/` → vault root;
-   - `./` → go to step 4 (the own-folder rule, including the move);
-   - `./x` → `x` inside the note's folder;
-   - anything else → that path from the vault root.
+- It is in its own folder if `base(dir)` equals `stem` case-insensitively, or if `stem` is `index`. Then →
+  `{ folder: dir, move: false }`.
+- Otherwise → `{ folder: dir/stem, move: true }`.
 
-   The user's vaults gitignore `.obsidian/` (F17), so their clones have no `app.json` and always take step 4.
-3. `normalizeRel` and a dot-segment check on the result. If it passes → `{ folder, move: false }`. On a `PathError`,
-   go to step 4.
-4. **Own folder:** let the note be `dir/stem.md`.
-   - It is in its own folder if `base(dir)` equals `stem` case-insensitively, or if `stem` is `index`. Then →
-     `{ folder: dir, move: false }`.
-   - Otherwise → `{ folder: dir/stem, move: true }`.
+`.obsidian/app.json` is not read: the vaults gitignore `.obsidian/` (F17), so the clones never have one.
 
 `Vaults.sourceFolder(id, source)`:
 
-- `new` → `Sources/upload-YYYY-MM-DD-<stem of name>`, taking `-2`, `-3` … if the folder exists. The first segment
-  matches an existing `Sources` folder case-insensitively.
+- `new` → `Sources/upload-<at>`, taking `-2`, `-3` … if the folder exists. `at` is the browser's local time,
+  because the server runs on UTC and the camera names use the device's clock too. The first segment matches an
+  existing `Sources` folder case-insensitively.
 - A folder name → it must exist directly under that `Sources` folder and start with `upload-`.
-
-There's no cache: it's one small file read per upload. The same read gives `useMarkdownLinks`, which `GET /settings`
-exposes per vault as `embedForm: 'wikilink' | 'markdown'`, so the web app writes the right embed form.
 
 ### Move into own folder
 
@@ -243,6 +233,11 @@ The composer keeps one source folder per draft message:
 - The first upload sends `source=new`, and the composer stores the folder from the returned path.
 - Later uploads for the same draft send `source=<folder name>`.
 - Sending the message, or clearing the composer, forgets the folder.
+- **✕ on a chip** deletes its file with `DELETE /file` and the version from the upload's response. When it was the
+  folder's last file, the folder goes too, and the next upload sends `source=new` again.
+- **Unsent chips survive a reload:** the composer keeps `{ path, version, mime, size }[]` and the folder per chat in
+  localStorage (`karpathy.chips:<vault>:<chat>`), wrapped in try/catch like the drafts. On load, a chip whose path
+  is no longer in the file list is dropped. Sending clears the entry.
 
 ### `lib/attach.ts`
 
@@ -284,11 +279,9 @@ After a `201`, `NotePane` asks the editor to insert the embed:
   selection's head; for a drop, it is the drop point (below). The embed goes on its own line (`\n![[name]]\n`,
   without doubling an existing line break), so the block widget shows below it. Several files from one drop or pick
   go in as consecutive lines, in order.
-- **`embedText(path, notePath, paths, form)`** is a pure function in `lib/attach.ts`:
-  - The target is the bare name if the file sits in the note's folder, or if no other path has that name. Otherwise
-    it is the vault path.
-  - `form` is `wikilink` → `![[target]]`, or `markdown` → `![stem](target)` with spaces as `%20` and a path relative
-    to the note.
+- **The embed text** is `![[<file name>]]`: the file sits in the note's own folder and its name is unique in the
+  vault.
+- **Undo** (Cmd+Z) of the insert removes the text only. The file and a move stay on the server and show in Changes.
 - **The insert is a normal edit:** autosave, drafts and stale saves work as today. The editor's file list learns the
   new path from `files-changed`. Until then the embed resolves against the path returned by the upload (the store
   adds it to the list right away), so the image shows without a "missing" flash.
@@ -309,6 +302,11 @@ An editor upload may move the open page, so the store wraps it:
 
    Then autosave resumes and saves anything typed meanwhile to the new path.
 3. On an error: autosave resumes on the old path and the toast shows the server's message.
+
+**Several files** from one drop or pick are uploaded **one after another**, in order, with the same flush and pause
+around the whole batch. Each POST names the note's current path, so after the first one moves the page, the rest
+name `to`. In parallel, the later POSTs would name the old path and fail with `bad-path`. A failed file is skipped
+with a toast, and the rest still go in.
 
 ### Drop
 
@@ -404,13 +402,25 @@ sequenceDiagram
 | Decision | Chosen | Rejected because |
 |---|---|---|
 | Upload transport | `POST /raw?name=&note=` with a binary body | JSON with base64: the 10 MB JSON limit, a third more bytes, and a parse of the whole string. Multipart: needs a parser dependency (`multer`/`busboy`) for one file. `PUT /raw?path=`: PUT means "store at this path", but the server picks the final name and folder. |
-| Who picks folder and name suffix | Server (folder from `app.json` or the own-folder rule, `-2` on collisions, `wx` write) | Client: races between two uploads, and the client can't read `.obsidian/` (raw route refuses dot paths). |
-| Editor upload folder | Obsidian's setting if set, else the page's own folder | A fixed `Sources/media/`: pages and their images end up far apart, unlike the vaults' existing layout (F17). The note's folder without a move: a flat `Wiki/` would collect every page's images in one folder. |
+| Who picks folder and name suffix | Server (own-folder rule, `-2` on collisions, `wx` write) | Client: races between two uploads. |
+| Editor upload folder | Always the page's own folder | A fixed `Sources/media/`: pages and their images end up far apart, unlike the vaults' existing layout (F17). The note's folder without a move: a flat `Wiki/` would collect every page's images in one folder. |
+| Obsidian's settings (2026-10-04) | Not read: always the own folder and `![[name]]` | Read `attachmentFolderPath` and `useMarkdownLinks` from `.obsidian/app.json`: the vaults gitignore `.obsidian/` (F17), so the code, a manual Obsidian check and three test steps would serve a vault that doesn't exist. A vault that commits `app.json` later gets the own-folder rule anyway. |
+| Move in this change (2026-10-04) | Upload and move in one change | A prerequisite change for the move: ceremony without less risk. Uploads first, move later: files land next to flat pages and need cleaning up later. |
 | Flat page on first upload | Move it into `dir/stem/stem.md` and rewrite path-form links | Leave it flat and put the file next to it: breaks the user's rule "a page with attachments has its own folder". Ask each time: one more dialog for a rule that has no exceptions. Move without rewriting: about 1 in 20 links in the vaults is path-form (F17) and would break in Obsidian. |
 | Which links to rewrite | Path-form links that resolve to the old path, plus relative links inside the moved page | All links to the page: bare `[[foo]]` still resolves, and rewriting it adds diff noise. Leave the app's basename fallback (F18) to cope: only the app would see working links. |
 | Move during an AI turn | Refused (`409 ai-busy`) | Allowed: the turn may write the old path and recreate it. Take the exclusive lock and wait: an upload would hang for a whole turn. |
 | Chat attachments | Upload into a source folder first, send the path, opencode reads the `file:` URL | base64 in the prompt: over the JSON limit for PDFs, bytes in the persisted queue, and the file is gone after the chat. Not storing chat photos: the AI can't link to or re-read them, a PDF can't be ingested. |
-| Chat attachment folder | A new `Sources/upload-<date>-<stem>/` per message | `Sources/media/`: one shared pile, unlike the per-source folders (`mail-…`, `insta-…`) the ingest skills write. Next to the open note: chat files are sources, not part of the page on screen. |
+| Chat attachment folder | A new `Sources/upload-YYYY-MM-DD-HHMMSS/` per message (2026-10-04) | `Sources/media/`: one shared pile, unlike the per-source folders (`mail-…`, `insta-…`) the ingest skills write. Next to the open note: chat files are sources, not part of the page on screen. `upload-<date>-<stem>`: a camera photo repeats the date (`upload-2026-10-04-photo-20261004-091500`). |
+| Source page name in an upload folder (2026-10-04) | Not prescribed; the vault's ingest skill picks `index.md` or `<folder>.md` | Always `index.md`: the vaults mostly use `<slug>/<slug>.md` (F17), and the app shouldn't override the skill. |
+| Removing a chat chip (2026-10-04) | Deletes the uploaded file, and the folder once empty | Keep the file: orphan uploads pile up in `Sources/` and get ingested later by mistake. |
+| Several files to one page (2026-10-04) | Uploaded one after another, each naming the note's current path | In parallel: after the first moves the page, the rest name the old path. The server accepting a just-moved path: state to keep for one client's ordering problem. |
+| Discarding a move (2026-10-04) | Two independent Changes rows (old path deleted, new added), as git sees them | One paired "moved" row: a Changes-list feature of its own. Discarding only the added row loses the uncommitted edits, but the committed version comes back by discarding the deleted row. |
+| Unsent chips (2026-10-04) | Remembered per chat in localStorage; a chip whose file is gone is dropped | Lost on reload: orphan uploads again (see chip removal). Server-side draft state: a new store for one device's composer. |
+| Upload name uniqueness (2026-10-04) | Unique across the vault, case-insensitively | Unique in the folder only: `![[name]]` then depends on each tool preferring the note's folder when the name exists elsewhere. Both the app and Obsidian do (F16, F18), so this is a safeguard for other tools, not a fix. Cost: an occasional `-2` with no visible reason. |
+| Undo of an inserted embed (2026-10-04) | Removes the text only | Delete the file on undo: redo would need a re-upload, and a move can't be undone that way. |
+| Time in the chat folder name (2026-10-04) | The browser's local time, sent as `at` | Server time: UTC, so it disagrees with the camera names. `TZ=Europe/Berlin` on the backend: wrong when travelling, and one more deploy setting. |
+| Markdown links in the move (2026-10-04) | Rewrite inbound Markdown links and relative links inside the moved page | Wikilinks only: the vaults have almost no relative Markdown links (F17), but a silently broken link is what the move promises to avoid, and the resolver port handles them already. |
+| Production model (2026-10-04) | Not a release gate; the chip warns | Switch the prod model in this change: an operator decision about cost and provider, separate from uploads. |
 | HEIC | iOS converts (explicit `accept` list), the browser converts what still arrives (Safari 17+), server refuses HEIC (415) | Server-side conversion with `sharp`/libvips: a native dependency (libvips) per architecture in the backend image, with its own security updates, for files that iOS already converts. `heic2any`-style WASM in the browser: ~1 MB for a path that Safari covers natively. |
 | Photo resizing | Browser canvas, 2048 px, JPEG 0.85, JPEG/HEIC only | Server: needs `sharp` too, and the full photo crosses the phone's network first. No resize: 3–5 MB per photo in git forever, plus GPS location in git and at the provider. opencode's own resize only shrinks what the model sees, not what the vault stores. |
 | PNG, GIF, WebP | Uploaded unchanged | Re-encoding: screenshots get JPEG artifacts, GIFs lose animation; these rarely carry GPS. |
@@ -419,7 +429,7 @@ sequenceDiagram
 | Text-only model | Warn on the chip, send anyway; opencode substitutes an error note (F4) | Block the attachment: the file is still useful in the vault and the model can say what to do. Strip the part on our side: duplicates opencode's capability logic. |
 | Model capability source | opencode's `capabilities.input` via `config.providers` | A list of our own: goes stale, and ADR 0002 keeps provider knowledge in opencode. |
 | Camera entry | Separate **Take photo** input with `capture` | Only `capture` on the one input: hides the photo library and Files on iOS. No `capture`: one more tap to the camera, the main use. |
-| Embed text | Bare name (the file sits next to the page); full path only when ambiguous; form from `useMarkdownLinks` | Always Markdown `![x](x.jpg)`: the vaults use `![[x]]` everywhere (F17), and Obsidian's default is wikilinks. Always the full path: longer than Obsidian writes. |
+| Embed text | `![[name]]`, the bare name (the file sits next to the page) | Markdown `![x](x.jpg)`: the vaults use `![[x]]` everywhere (F17), and Obsidian's default is wikilinks. The full path: longer than Obsidian writes. |
 | Drag and drop | CodeMirror `drop` handler, insert at the drop point, same upload path | Insert at the cursor: the user aimed somewhere else. A separate drop zone: Obsidian drops onto the text. |
 | Paste | Not built | Same handler shape, noticed as a small follow-up; not asked for. |
 | Upload from the editor in Read mode | Not offered | Read mode has no cursor; appending at the end surprises. |
@@ -440,5 +450,4 @@ sequenceDiagram
   The Changes list shows every touched page before the commit.
 - **Many touched pages:** a much-linked page can rewrite dozens of pages at once, and each one is an uncommitted
   change. The response lists them, and the toast says "Moved to … · updated links in N pages".
-- **Obsidian's `app.json` keys are unconfirmed** (F16). The plan checks them in a real vault before relying on them.
 - **Repo growth:** bounded per file, not per vault.
