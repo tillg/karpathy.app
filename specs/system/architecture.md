@@ -305,7 +305,7 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 - **Local prod test** (`compose.prodtest.yml`, `just prodtest`): the prod images on https://localhost:9443 next to
   the dev stack.
 - **CI** (`.github/workflows/ci.yml`): lint, typecheck, tests, web build, a compose config check, and
-  `ansible-lint` + syntax checks of the playbook on every push and PR; nightly GitHub and LLM test suites.
+  `ansible-lint` + syntax checks of the playbook on every push and PR; weekly (and on demand) GitHub and LLM test suites.
 - **Website** (`.github/workflows/pages.yml`): the site test, then `_site/` to GitHub Pages on every push to `main`
   that touches `site/`, `assets/icons/` or the app's stylesheet.
 - **Releases and production:** a tag `vX.Y.Z` builds the images (amd64 + arm64) to GHCR; the Ansible playbook
@@ -367,8 +367,8 @@ The ones that shape the whole system:
   config and tools as prod; CI builds it once before `npm test`. A scripted fake LLM provider would count as a mock.
 - **Three tiers:** *default* (`npm test`, every push: unit + git integration + opencode lifecycle, no secrets; chat
   tests use a model name Ollama doesn't have, so turns fail fast and the lifecycle is tested without an LLM),
-  *`@github`* (nightly + locally: against the private throwaway repo `tillg/karpathy-app-test-vault`, pushing only
-  to temporary `test-<ts>` branches) and *`@llm`* (nightly + locally: real model turns).
+  *`@github`* (weekly + locally: against the private throwaway repo `tillg/karpathy-app-test-vault`, pushing only
+  to temporary `test-<ts>` branches) and *`@llm`* (weekly + locally: real model turns).
 - **Attach and token tests:** test remotes carry `Sources/` and `Wiki/` (backend `makeRemote`, e2e `make-vault.py`, the
   GitHub test vault), so ordinary tests attach without a `409`; preflight tests opt out (`structure: false`). Token
   storage, precedence, masking and redaction run in the default tier; the `/user` identity check and a token changed

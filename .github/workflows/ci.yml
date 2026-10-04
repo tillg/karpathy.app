@@ -2,7 +2,7 @@ name: CI
 on:
   push: { branches: [main] }
   pull_request:
-  schedule: [{ cron: '0 3 * * *' }]
+  schedule: [{ cron: '0 3 * * 1' }] # weekly, Monday 03:00 UTC
   workflow_dispatch:
   # The release workflow runs the same checks before it builds images.
   workflow_call:
