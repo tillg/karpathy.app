@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { flushSync } from 'react-dom';
+import { incomingView } from '../lib/incoming';
 import { useApp } from '../store';
 import { Admin } from './Admin';
 import { ChatPane } from './ChatPane';
@@ -19,6 +20,7 @@ const TABS = [
 export function Shell() {
   const s = useApp();
   const { phone, wide, phoneTab, phoneNote, status } = s;
+  const inc = incomingView(status, s.pulling);
   const cls = [
     phone ? 'phone' : wide ? 'wide' : 'tablet',
     s.chatOpen && !phone ? 'insp' : '',
@@ -87,7 +89,10 @@ export function Shell() {
               <button key={t.id} className={phoneTab === t.id ? 'on' : ''} aria-current={phoneTab === t.id ? 'page' : undefined} data-testid={`tab-${t.id}`}
                 onClick={() => { if (phoneTab === t.id) s.setPhoneNote(false); s.setPhoneTab(t.id); }}>
                 <span className="tab-ic"><Icon n={t.icon} size={25} />
-                  {t.id === 'changes' && status?.changedCount ? <span className="tab-badge" data-testid="changes-badge-tab">{status.changedCount}</span> : null}
+                  {t.id === 'changes' && (status?.changedCount || inc.tabMark)
+                    ? <span className="tab-badge" data-testid="changes-badge-tab">{[status?.changedCount || '', inc.tabMark ? '↓' : ''].filter(Boolean).join(' ')}</span>
+                    : null}
+                  {t.id === 'changes' && inc.tabMark && <span className="sr-only"> · {inc.count} incoming</span>}
                 </span>
                 {t.label}
               </button>

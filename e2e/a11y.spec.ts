@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { expect, makeConflict, makePlainRemote, openApp, openNote, runId, test, uid } from './helpers';
+import { expect, makeConflict, makePlainRemote, openApp, openNote, pushFromObsidian, runId, test, uid } from './helpers';
 
 // Automated WCAG 2.1 A/AA + best-practice scan (axe-core) of the main screens, light and dark
 // (issues #39–#47). Only serious/critical findings fail; moderate/minor best-practice rules
@@ -80,6 +80,21 @@ test.describe('accessibility (axe)', () => {
     await page.getByTestId('new-chat').click();
     await expect(page.getByTestId('chat-messages')).toContainText('New chat');
     await scan(page, 'chat conversation');
+  });
+
+  test('incoming changes: pill segment, open-note bar, Changes banner and list', async ({ page, vault }) => {
+    await openApp(page, vault.id);
+    await openNote(page, 'Ideas.md');
+    pushFromObsidian(vault.bare, 'Ideas.md', '# Ideas from Obsidian\n');
+    // Each connect of the event stream fetches; one that joins an earlier fetch may miss the push.
+    await expect(async () => {
+      await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      await expect(page.getByTestId('incoming-note')).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 20_000 });
+    await expect(page.getByTestId('incoming-badge')).toBeVisible();
+    await page.getByTestId('section-changes').click();
+    await expect(page.getByTestId('incoming-list')).toBeVisible();
+    await scan(page, 'incoming changes');
   });
 
   test('admin views: list, details, settings, add with the missing-folders dialog, help dialog', async ({ page, api, vault }) => {

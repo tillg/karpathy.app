@@ -4,6 +4,7 @@ import { isPdf } from '@karpathy/shared';
 import { mountEmbed, mountEmbeds, type Mounted } from '../lib/embed';
 import { mediaKind, resolveEmbed } from '../lib/media';
 import { scrollToLine, topBlockLine } from '../lib/place';
+import { incomingView } from '../lib/incoming';
 import { formatRoute } from '../lib/route';
 import { parseWikilink, resolveRelativeLink, resolveWikilink, wikilinkLabel, WIKILINK_RE } from '../lib/wikilink';
 import { useApp } from '../store';
@@ -160,6 +161,9 @@ export function NotePane({ inert }: { inert?: boolean }) {
   const { note, mode, setMode, readOnly, online, conflict, phone, wide } = s;
   const editor = useRef<EditorHandle>(null);
   const rctx = useRenderCtx();
+  const inc = incomingView(s.status, s.pulling);
+  // Warns only; editing stays allowed (the pull's stash, re-apply and conflict flow protect the text).
+  const noteIncoming = inc.show && !!note && s.status!.incomingPaths.includes(note.path);
 
   // A fresh open lands at the top; Back to a seen note (`restore`) returns to where it was left. The
   // restore is re-applied for a second while the layout settles (CodeMirror measuring, embeds loading).
@@ -266,6 +270,11 @@ export function NotePane({ inert }: { inert?: boolean }) {
           </div>
         )}
         {online && conflict && <div className="banner warn" data-testid="conflict-banner">This vault is in conflict with GitHub — read-only until resolved in <button className="link" onClick={() => { s.setSection('changes'); s.setPhoneTab('changes'); s.setPhoneNote(false); s.setSidebarOpen(true); }}>Changes</button>.</div>}
+        {noteIncoming && (
+          <div className="banner" data-testid="incoming-note">
+            Changed on GitHub · <button className="link" disabled={inc.disabled} aria-label={inc.label} title={inc.title} onClick={() => void s.pull()}>{s.pulling ? 'Pulling…' : 'Pull'}</button>
+          </div>
+        )}
         {note?.binary ? (
           <MediaView key={note.path} path={note.path} />
         ) : note ? (

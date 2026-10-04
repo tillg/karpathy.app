@@ -73,7 +73,12 @@ columns, putting the chat in the large main column; the browser remembers the ch
 and PDFs in a note show up as **embeds** (`![[photo.png]]`, `![[clip.mp4|300]]`, `![alt](img/a.png)`) in Read mode, in
 Write mode (a block below the line; the text stays as written) and in chat answers; tapping an image opens
 it, Back returns to the same place, and media over 50 MB loads only on a tap. The **Write/Read mode is sticky**:
-it stays as you chose it for every note you open and survives a reload (Write is the default). How it works today: [`specs/system/`](specs/system/) (domain,
+it stays as you chose it for every note you open and survives a reload (Write is the default). **Incoming
+changes**: while the app is open, the backend fetches the vault from GitHub every 2 minutes and whenever you
+switch back to the app; files pushed from elsewhere (e.g. Obsidian) show as "· N incoming" next to the git
+status pill (on a phone, a "↓" on the Changes tab), are listed in Changes, and the open note says "Changed on
+GitHub · Pull" when it is one of them. One tap pulls them in (the same pull as before a commit; nothing is
+pulled automatically). How it works today: [`specs/system/`](specs/system/) (domain,
 functional, architecture, security, deployment); key decisions: [`docs/adr/`](docs/adr/). The
 original MVP spec, plan, opencode spike and implementation log are in git history
 ([`specs/01_mvp/` at 9c25f72](https://github.com/tillg/karpathy.app/tree/9c25f7242ad08a53ac6d57ec57180036a4c9a14e/specs/01_mvp)).

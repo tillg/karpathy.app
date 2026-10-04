@@ -1,7 +1,7 @@
 ---
 feature: remote-changes
 title: "Architecture: background fetch, incoming count and the user's pull"
-status: applying
+status: applied
 order: 3
 created: 2026-10-04
 edited: 2026-10-04

@@ -102,6 +102,15 @@ mark { background: rgba(245,158,11,.35); color: var(--label); border-radius: 3px
 .gitpill.dirty .dot { background: var(--orange); }
 .gitpill.conflict .dot { background: var(--red); }
 .gitpill.busy .dot { background: var(--tint); animation: pulse 1s infinite; }
+/* Incoming changes: a second button joined to the pill's right end (taps pull, the pill opens Changes). */
+.gitpill-group { display: inline-flex; align-items: center; }
+.gitpill:has(+ .gitpill-incoming) { border-top-right-radius: 0; border-bottom-right-radius: 0; padding-right: 4px; margin-right: 0; }
+.gitpill-incoming { display: inline-flex; align-items: center; height: 34px; padding: 0 12px 0 0; border-radius: 0 17px 17px 0; background: var(--fill2); font-size: 13px; font-weight: 600; color: var(--tint); white-space: nowrap; }
+.gitpill-incoming.small { height: 30px; margin-right: 4px; }
+.incoming-list { margin: 0 16px 8px; font-size: 14px; }
+.incoming-head { color: var(--label2); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding: 4px 0; }
+.incoming-item { padding: 6px 0; border-bottom: .5px solid var(--sep); }
+.incoming-item.more { color: var(--label2); }
 @keyframes pulse { 50% { opacity: .3; } }
 
 /* file tree */

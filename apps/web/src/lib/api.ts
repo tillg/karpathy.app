@@ -97,6 +97,7 @@ export const api = {
   /** `paths` = the changed files the user reviewed; 409 `changes-moved` if others arrived (#33). */
   commit: (id: string, message: string, paths?: string[]) => json<CommitResult>('POST', `${v(id)}/commit`, { message, paths }),
   push: (id: string) => json<CommitResult>('POST', `${v(id)}/push`),
+  pull: (id: string) => json<VaultStatus>('POST', `${v(id)}/pull`),
   conflictSides: (id: string, path: string) => json<{ mine: string | null; theirs: string | null }>('GET', `${v(id)}/conflicts/sides?${q(path)}`),
   resolve: (id: string, path: string, choice: ConflictChoice) => json<VaultStatus>('POST', `${v(id)}/conflicts/resolve`, { path, choice }),
 

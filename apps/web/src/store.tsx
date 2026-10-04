@@ -170,6 +170,20 @@ function useAppState() {
   const status = usable && statusOf?.vault === activeId ? statusOf.status : null;
   const setStatusFor = useCallback((vault: string, st: VaultStatus) => setStatusOf({ vault, status: st }), []);
   const setStatus = useCallback((st: VaultStatus) => { if (activeRef.current) setStatusFor(activeRef.current, st); }, [setStatusFor]);
+  // The user's pull (tap on the incoming count). Changed files arrive as files-changed events.
+  const [pulling, setPulling] = useState(false);
+  const pull = useCallback(async () => {
+    const id = activeRef.current;
+    if (!id) return;
+    const n = status?.incomingCount ?? 0;
+    setPulling(true);
+    try {
+      const st = await api.pull(id);
+      setStatusFor(id, st);
+      if (st.pullError) toast("Couldn't reach GitHub");
+      else if (st.state === 'ready') toast(`Pulled ${n} change${n === 1 ? '' : 's'} from GitHub`);
+    } catch (e) { toast(errorText(e)); } finally { setPulling(false); }
+  }, [status, toast, setStatusFor]);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [changesNonce, setChangesNonce] = useState(0);
   /** Bumped when cached media bytes were dropped (their file changed): shown embeds remount. */
@@ -617,7 +631,7 @@ function useAppState() {
   return {
     online, phone, wide, toast, toastMsg,
     vaults, reloadVaults, settings, setSettings, active, activeId, setActiveId, usable,
-    status, setStatus, files, paths, refreshFiles, changesNonce, mediaEpoch,
+    status, setStatus, pull, pulling, files, paths, refreshFiles, changesNonce, mediaEpoch,
     note, currentText, openNote, isEditing, closeNote, forgetVault, editDraft, flush, reloadNote, overwriteNote, deleteNote, newNote, stale, setStale,
     keepDeletedNote, closeDeletedNote,
     followLink, exists, readOnly, conflict,

@@ -1,6 +1,7 @@
 import type { Change, ConflictChoice } from '@karpathy/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { api, errorText } from '../lib/api';
+import { incomingView } from '../lib/incoming';
 import { collapse, lineDiff } from '../lib/linediff';
 import { useApp } from '../store';
 import { Modal } from './Dialogs';
@@ -133,7 +134,7 @@ function ConflictFile({ path }: { path: string }) {
 }
 
 export function ChangesPanel() {
-  const { activeId, status, changesNonce, setCommitOpen, readOnly, toast, setStatus, online, usable, note, active, setAdminOpen } = useApp();
+  const { activeId, status, changesNonce, setCommitOpen, readOnly, toast, setStatus, online, usable, note, active, setAdminOpen, pull, pulling } = useApp();
   // Tagged with its vault, so another vault's list is never shown (issue #22).
   const [loaded, setLoaded] = useState<{ vault: string; changes: Change[] } | null>(null);
   const [pushing, setPushing] = useState(false);
@@ -154,6 +155,7 @@ export function ChangesPanel() {
   };
 
   const unpushed = status?.unpushedCount ?? 0;
+  const inc = incomingView(status, pulling);
   if (!usable) {
     return (
       <div className="changes">
@@ -177,6 +179,18 @@ export function ChangesPanel() {
         <div className="banner" data-testid="unpushed">
           {unpushed} unpushed commit{unpushed === 1 ? '' : 's'} · <button className="link" disabled={pushing} onClick={() => void retryPush()}>{pushing ? 'pushing…' : 'retry'}</button>
         </div>
+      )}
+      {inc.show && (
+        <>
+          <div className="banner" data-testid="incoming">
+            {inc.count} incoming change{inc.count === 1 ? '' : 's'} · <button className="link" disabled={inc.disabled} aria-label={inc.label} title={inc.title} onClick={() => void pull()}>{pulling ? 'pulling…' : 'pull'}</button>
+          </div>
+          <div className="incoming-list" data-testid="incoming-list">
+            <div className="incoming-head">Incoming from GitHub</div>
+            {status!.incomingPaths.map((p) => <div key={p} className="incoming-item"><PathLabel path={p} /></div>)}
+            {inc.moreCount > 0 && <div className="incoming-item more">…and {inc.moreCount} more</div>}
+          </div>
+        </>
       )}
       <div className="commit-bar">
         <span>{changes ? `${changes.length} change${changes.length === 1 ? '' : 's'}` : '…'}</span>
