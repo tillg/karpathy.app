@@ -73,4 +73,44 @@ describe('VaultLock', () => {
     await expect(lock.exclusiveThenShared('turn', async () => { throw new Error('boom'); })).rejects.toThrow('boom');
     expect(lock.isFree).toBe(true);
   });
+
+  it('tryShared grants next to shared holders, refuses while exclusive holds or waits', async () => {
+    const lock = new VaultLock();
+    const f1 = lock.tryShared('fetch');
+    expect(f1).not.toBeNull();
+    expect(lock.busy).toBe('none');
+    f1!();
+    const turn = await lock.acquireShared('turn');
+    const f2 = lock.tryShared('fetch');
+    expect(f2).not.toBeNull();
+    expect(lock.busy).toBe('turn');
+    f2!();
+    turn();
+    const ex = await lock.acquireExclusive();
+    expect(lock.tryShared('fetch')).toBeNull();
+    ex();
+    const save = await lock.acquireShared('save');
+    const queued = lock.acquireExclusive();
+    expect(lock.tryShared('fetch')).toBeNull();
+    save();
+    (await queued)();
+    // A running fetch makes an exclusive op wait until it ends.
+    const fetch = lock.tryShared('fetch')!;
+    let got = false;
+    const exP = lock.acquireExclusive().then((r) => { got = true; return r; });
+    await tick();
+    expect(got).toBe(false);
+    fetch();
+    (await exP)();
+    expect(got).toBe(true);
+    expect(lock.isFree).toBe(true);
+  });
+
+  it('a fetch holder alone does not notify listeners (no status event per tick)', async () => {
+    const lock = new VaultLock();
+    let n = 0;
+    lock.onChange(() => n++);
+    lock.tryShared('fetch')!();
+    expect(n).toBe(0);
+  });
 });

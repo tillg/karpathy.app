@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { VaultEvent } from '@karpathy/shared';
+import { INCOMING_PATHS_MAX, type VaultEvent } from '@karpathy/shared';
 import { makeApp, TOKEN } from './app-helpers.js';
 import { makeRemote, sh } from './helpers.js';
 
@@ -734,6 +734,104 @@ describe('git API', () => {
   });
 });
 
+describe('incoming changes', () => {
+  it('status reports incoming changes after a fetch, files untouched', async () => {
+    const t = await vaultApp();
+    expect((await t.api.get(`/vaults/${t.id}/status`)).body).toMatchObject({ incomingCount: 0, incomingPaths: [] });
+    await t.remote.obsidianPush({ 'Other.md': 'remote v2\n' });
+    expect(await t.vaults.fetchRemote(t.id)).toBe('fetched');
+    expect((await t.api.get(`/vaults/${t.id}/status`)).body).toMatchObject({ incomingCount: 1, incomingPaths: ['Other.md'] });
+    expect((await t.api.get(`/vaults/${t.id}/file?path=Other.md`)).body.content).toBe('other\n');
+  });
+
+  it('incomingPaths is capped at INCOMING_PATHS_MAX, incomingCount stays exact', async () => {
+    const t = await vaultApp();
+    const files: Record<string, string> = {};
+    for (let i = 0; i < INCOMING_PATHS_MAX + 5; i++) files[`many/f${i}.md`] = `${i}\n`;
+    await t.remote.obsidianPush(files);
+    expect(await t.vaults.fetchRemote(t.id)).toBe('fetched');
+    const st = (await t.api.get(`/vaults/${t.id}/status`)).body;
+    expect(st.incomingCount).toBe(INCOMING_PATHS_MAX + 5);
+    expect(st.incomingPaths).toHaveLength(INCOMING_PATHS_MAX);
+  });
+
+  it('background fetch runs next to a turn, skips while a git op holds the lock', async () => {
+    const t = await vaultApp();
+    const lock = t.vaults.lock(t.id);
+    const turn = await lock.acquireShared('turn');
+    await t.remote.obsidianPush({ 'Other.md': 'remote v2\n' });
+    expect(await t.vaults.fetchRemote(t.id)).toBe('fetched');
+    expect((await t.api.get(`/vaults/${t.id}/status`)).body).toMatchObject({ incomingCount: 1, busy: 'turn' });
+    turn();
+    const ex = await lock.acquireExclusive();
+    await t.remote.obsidianPush({ 'Home.md': 'remote home\n' });
+    expect(await t.vaults.fetchRemote(t.id)).toBe('skipped');
+    ex();
+    const a = t.vaults.fetchRemote(t.id);
+    const b = t.vaults.fetchRemote(t.id);
+    expect(b).toBe(a);
+    expect(await a).toBe('fetched');
+    expect((await t.api.get(`/vaults/${t.id}/status`)).body.incomingCount).toBe(2);
+  });
+
+  it('offline background fetch keeps the last count and reports pullError', async () => {
+    const t = await vaultApp();
+    await t.remote.obsidianPush({ 'Other.md': 'remote v2\n' });
+    expect(await t.vaults.fetchRemote(t.id)).toBe('fetched');
+    await rename(t.remote.bare, `${t.remote.bare}.away`);
+    expect(await t.vaults.fetchRemote(t.id)).toBe('offline');
+    const st = (await t.api.get(`/vaults/${t.id}/status`)).body;
+    expect(st.pullError).toBeTruthy();
+    expect(st.pullError).not.toContain(TOKEN);
+    expect(st.incomingCount).toBe(1);
+    await rename(`${t.remote.bare}.away`, t.remote.bare);
+    expect(await t.vaults.fetchRemote(t.id)).toBe('fetched');
+    expect((await t.api.get(`/vaults/${t.id}/status`)).body.pullError).toBeUndefined();
+  });
+
+  it('open pulls even while a background fetch runs', async () => {
+    const t = await vaultApp();
+    await t.remote.obsidianPush({ 'Other.md': 'remote v2\n' });
+    const fetching = t.vaults.fetchRemote(t.id);
+    const st = (await t.api.post(`/vaults/${t.id}/open`)).body;
+    expect(st.incomingCount).toBe(0);
+    expect((await t.api.get(`/vaults/${t.id}/file?path=Other.md`)).body.content).toBe('remote v2\n');
+    await fetching;
+  });
+
+  it('pull route: takes incoming changes, waits for a racing turn, refuses in conflict', async () => {
+    const t = await vaultApp();
+    await t.remote.obsidianPush({ 'Other.md': 'remote v2\n' });
+    await t.vaults.fetchRemote(t.id);
+    const ok = await t.api.post(`/vaults/${t.id}/pull`);
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ state: 'ready', incomingCount: 0 });
+    expect((await t.api.get(`/vaults/${t.id}/file?path=Other.md`)).body.content).toBe('remote v2\n');
+
+    const turn = await t.vaults.lock(t.id).acquireShared('turn');
+    let done = false;
+    const waiting = t.api.post(`/vaults/${t.id}/pull`).then((r) => { done = true; return r; });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(done).toBe(false);
+    turn();
+    expect((await waiting).status).toBe(200);
+
+    await rename(t.remote.bare, `${t.remote.bare}.away`);
+    expect((await t.api.post(`/vaults/${t.id}/pull`)).body.pullError).toBeTruthy();
+    await rename(`${t.remote.bare}.away`, t.remote.bare);
+
+    const f = (await t.api.get(`/vaults/${t.id}/file?path=Other.md`)).body;
+    await t.api.put(`/vaults/${t.id}/file?path=Other.md`, { content: 'mine\n', version: f.version });
+    await t.remote.obsidianPush({ 'Other.md': 'theirs\n' });
+    const clash = await t.api.post(`/vaults/${t.id}/pull`);
+    expect(clash.status).toBe(200);
+    expect(clash.body).toMatchObject({ state: 'conflict', conflictPaths: ['Other.md'] });
+    const again = await t.api.post(`/vaults/${t.id}/pull`);
+    expect(again.status).toBe(423);
+    expect(again.body.code).toBe('conflict');
+  });
+});
+
 describe('event stream', () => {
   it('snapshot first; a file written behind the back → files-changed + status within 1 s', async () => {
     const t = await vaultApp();
@@ -780,5 +878,67 @@ describe('event stream', () => {
     expect(fc).toMatchObject({ type: 'files-changed', files: [{ path: 'Other.md', version: expect.any(String) }] });
     ctrl.abort();
     await pump;
+  });
+
+  it('connect fetches, the interval fetches while connected, nothing after disconnect', async () => {
+    const remote = await makeRemote({ 'Home.md': '# Home\n', 'Other.md': 'other\n' });
+    const t = await makeApp(remote.remoteBase, {}, undefined, undefined, { fetchIntervalMs: 200 });
+    cleanups.push(() => t.vaults.close());
+    const id = await t.addVault(remote.repo);
+    const server = http.createServer(t.app).listen(0);
+    cleanups.push(() => void server.close());
+    await new Promise((r) => server.once('listening', r));
+    const port = (server.address() as AddressInfo).port;
+    const connect = async () => {
+      const ctrl = new AbortController();
+      cleanups.push(() => ctrl.abort());
+      const res = await fetch(`http://127.0.0.1:${port}/api/vaults/${id}/events`, { headers: { Authorization: `Bearer ${TOKEN}` }, signal: ctrl.signal });
+      const reader = res.body!.getReader();
+      const events: VaultEvent[] = [];
+      const pump = (async () => {
+        const dec = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
+          if (done) return;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, i).trim();
+            buf = buf.slice(i + 1);
+            if (line) events.push(JSON.parse(line));
+          }
+        }
+      })();
+      const waitFor = async (pred: (e: VaultEvent) => boolean, ms: number) => {
+        const end = Date.now() + ms;
+        while (!events.some(pred)) {
+          if (Date.now() > end) throw new Error(`timeout; events: ${JSON.stringify(events)}`);
+          await new Promise((r) => setTimeout(r, 20));
+        }
+      };
+      return { waitFor, close: async () => { ctrl.abort(); await pump; } };
+    };
+    const incoming = (n: number) => (e: VaultEvent) => e.type === 'status' && e.status.incomingCount === n;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+    await remote.obsidianPush({ 'Other.md': 'v2\n' });
+    const s1 = await connect();
+    await s1.waitFor(incoming(1), 1000);
+    await remote.obsidianPush({ 'Home.md': 'home v2\n' });
+    await s1.waitFor(incoming(2), 1000);
+    await s1.close();
+    await sleep(250);
+    await remote.obsidianPush({ 'new.md': 'n\n' });
+    await sleep(1000);
+    expect((await t.api.get(`/vaults/${id}/status`)).body.incomingCount).toBe(2);
+
+    const s2 = await connect();
+    await s2.waitFor(incoming(3), 1000);
+    // Removing the vault while subscribed: no tick may run (and reject) for a vault that is gone.
+    await t.api.post(`/vaults/${id}/open`);
+    expect((await t.api.delete(`/vaults/${id}`)).status).toBe(204);
+    await sleep(1000);
+    await s2.close();
   });
 });

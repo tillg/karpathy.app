@@ -254,3 +254,65 @@ describe('Repo clone', () => {
     expect((await lstat(join(dir, 'link'))).isSymbolicLink()).toBe(false);
   });
 });
+
+describe('Repo incoming changes', () => {
+  it("incomingPaths lists fetched files on GitHub's side only, one entry per file", async () => {
+    const { remote, repo, write } = await setup();
+    await remote.obsidianPush({ 'b.md': 'b1\n' }, 'one');
+    await remote.obsidianPush({ 'b.md': 'b2\n' }, 'two');
+    await remote.obsidianPush({ 'c.md': 'c\n' }, 'three');
+    await repo.git.run(['fetch', 'origin', 'main']);
+    expect((await repo.incomingPaths()).sort()).toEqual(['b.md', 'c.md']);
+    await write('a.md', 'local\n');
+    await repo.commit('local only', false);
+    expect((await repo.incomingPaths()).sort()).toEqual(['b.md', 'c.md']);
+    expect(await repo.unpushedCount()).toBe(1);
+  });
+
+  it('incomingPaths ignores files outside a subfolder vault root', async () => {
+    const { remote, repo } = await setup({ 'wiki/a.md': 'a\n', 'outside.md': 'o\n' }, 'wiki');
+    await remote.obsidianPush({ 'outside.md': 'O\n' });
+    await repo.git.run(['fetch', 'origin', 'main']);
+    expect(await repo.incomingPaths()).toEqual([]);
+    await remote.obsidianPush({ 'wiki/a.md': 'A\n' });
+    await repo.git.run(['fetch', 'origin', 'main']);
+    expect(await repo.incomingPaths()).toEqual(['a.md']);
+  });
+
+  it('incomingPaths falls back to the tree diff without a merge base', async () => {
+    const { remote, repo } = await setup();
+    const { mkdtemp } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const orphan = await mkdtemp(join(tmpdir(), 'orphan-'));
+    sh(orphan, 'init', '-q', '-b', 'main');
+    await writeFiles(orphan, { 'x.md': 'x\n' });
+    sh(orphan, 'add', '-A');
+    sh(orphan, 'commit', '-q', '-m', 'orphan');
+    sh(orphan, 'push', '-q', '-f', remote.bare, 'main');
+    await repo.git.run(['fetch', 'origin', 'main']);
+    const local = sh(repo.dir, 'ls-files').trim().split('\n');
+    expect((await repo.incomingPaths()).sort()).toEqual([...local, 'x.md'].sort());
+  });
+
+  it('fetchUpstream updates the remote ref and nothing else', async () => {
+    const { remote, repo, write, read } = await setup();
+    const moved = `${remote.bare}.away`;
+    await rename(remote.bare, moved);
+    await write('k.md', 'unpushed\n');
+    await repo.commit('local only', false);
+    await rename(moved, remote.bare);
+    await write('a.md', 'uncommitted\n');
+    await remote.obsidianPush({ 'b.md': 'remote\n' });
+    const changesBefore = await repo.changes();
+    expect(await repo.fetchUpstream()).toEqual({ ok: true });
+    expect(await repo.incomingPaths()).toEqual(['b.md']);
+    expect(await repo.changes()).toEqual(changesBefore);
+    expect(await repo.unpushedCount()).toBe(1);
+    expect(await read('b.md')).toBe('b\n');
+    await rename(remote.bare, moved);
+    const r = await repo.fetchUpstream();
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.error).toBeTruthy();
+    expect(await repo.incomingPaths()).toEqual(['b.md']);
+  });
+});

@@ -2,18 +2,19 @@ import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import type {
-  Change,
-  CommitResult,
-  ConflictChoice,
-  FileContent,
-  FileEntry,
-  SearchHit,
-  Vault,
-  VaultConfig,
-  VaultEvent,
-  VaultState,
-  VaultStatus,
+import {
+  INCOMING_PATHS_MAX,
+  type Change,
+  type CommitResult,
+  type ConflictChoice,
+  type FileContent,
+  type FileEntry,
+  type SearchHit,
+  type Vault,
+  type VaultConfig,
+  type VaultEvent,
+  type VaultState,
+  type VaultStatus,
 } from '@karpathy/shared';
 import type { ConfigStore, StoredVault } from './config-store.js';
 import { listTree, search, versionOf, versionOfFile } from './files.js';
@@ -26,6 +27,10 @@ import { VaultWatcher } from './watcher.js';
 
 /** A repo check that takes longer than this has hung (a stalled remote); the add is refused. */
 const PREFLIGHT_TIMEOUT_MS = 60_000;
+/** How often a vault that a browser has open is fetched in the background. */
+const FETCH_INTERVAL_MS = 120_000;
+/** A background fetch holds the vault lock (shared) at most this long; a commit or turn waits for it. */
+const FETCH_TIMEOUT_MS = 30_000;
 
 export class HttpError extends Error {
   constructor(
@@ -47,6 +52,8 @@ export interface VaultsEnv {
   /** Redacts every token value seen since startup; defaults to the current token. */
   redact?: (msg: string) => string;
   identity: GitIdentity;
+  /** Background fetch interval while a browser has the vault open; default 2 min. */
+  fetchIntervalMs?: number;
 }
 
 interface Runtime {
@@ -58,7 +65,13 @@ interface Runtime {
   statusTimer?: NodeJS.Timeout;
   cloning?: Promise<void>;
   pullError?: string;
+  /** The running background fetch; a second caller joins it. */
+  fetching?: Promise<FetchOutcome>;
+  /** Background fetch timer while the vault has event-stream subscribers. */
+  fetchTimer?: NodeJS.Timeout;
 }
+
+type FetchOutcome = 'fetched' | 'offline' | 'skipped';
 
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
@@ -93,6 +106,7 @@ export class Vaults {
   }
 
   async close(): Promise<void> {
+    for (const r of this.rt.values()) this.stopFetching(r);
     await Promise.all([...this.rt.values()].map((r) => r.watcher?.close()));
   }
 
@@ -239,6 +253,7 @@ export class Vaults {
         delete c.conflicts[id];
       });
     });
+    this.stopFetching(r);
     this.rt.delete(id);
   }
 
@@ -261,21 +276,34 @@ export class Vaults {
   async status(id: string): Promise<VaultStatus> {
     const v = this.config(id);
     const r = this.runtime(id);
-    const base: VaultStatus = { state: this.stateOf(v), changedCount: 0, unpushedCount: 0, busy: r.lock.busy, conflictPaths: [], ...(r.pullError ? { pullError: r.pullError } : {}) };
+    const base: VaultStatus = { state: this.stateOf(v), changedCount: 0, unpushedCount: 0, incomingCount: 0, incomingPaths: [], busy: r.lock.busy, conflictPaths: [], ...(r.pullError ? { pullError: r.pullError } : {}) };
     if (r.state !== 'ready') return base;
     const repo = this.repo(v);
-    const [changes, unpushed] = await Promise.all([repo.changes(), repo.unpushedCount()]);
+    const [changes, unpushed, incoming] = await Promise.all([repo.changes(), repo.unpushedCount(), repo.incomingPaths()]);
     base.changedCount = changes.length;
     base.unpushedCount = unpushed;
+    base.incomingCount = incoming.length;
+    base.incomingPaths = incoming.slice(0, INCOMING_PATHS_MAX);
     if (r.conflict)
       base.conflictPaths = (this.store.get().conflicts[id] ?? []).map((p) => repo.toVaultPath(p) ?? p);
     return base;
   }
 
+  /** The only subscriber is the event stream, so "someone listens" = "a browser has the vault open": fetch on connect and every interval. */
   subscribe(id: string, fn: (e: VaultEvent) => void): () => void {
     const r = this.runtime(id);
     r.listeners.add(fn);
-    return () => r.listeners.delete(fn);
+    r.fetchTimer ??= setInterval(() => void this.fetchRemote(id), this.env.fetchIntervalMs ?? FETCH_INTERVAL_MS);
+    void this.fetchRemote(id);
+    return () => {
+      r.listeners.delete(fn);
+      if (r.listeners.size === 0) this.stopFetching(r);
+    };
+  }
+
+  private stopFetching(r: Runtime) {
+    clearInterval(r.fetchTimer);
+    r.fetchTimer = undefined;
   }
 
   private emit(id: string, e: VaultEvent) {
@@ -421,10 +449,46 @@ export class Vaults {
     return this.repo(this.config(id)).fullDiff();
   }
 
+  /**
+   * Background fetch: updates origin/<branch> only, so the status can count incoming changes.
+   * Runs next to saves and turns (shared 'fetch' holder), skips while a git op holds or waits for
+   * the lock; a second caller joins the running fetch. Never rejects: it runs from a timer.
+   */
+  fetchRemote(id: string): Promise<FetchOutcome> {
+    const r = this.rt.get(id);
+    if (!r) return Promise.resolve('skipped');
+    r.fetching ??= this.fetchOnce(id, r).catch(() => 'skipped' as const).finally(() => { r.fetching = undefined; });
+    return r.fetching;
+  }
+
+  private async fetchOnce(id: string, r: Runtime): Promise<FetchOutcome> {
+    if (r.state !== 'ready') return 'skipped';
+    const release = r.lock.tryShared('fetch');
+    if (!release) return 'skipped';
+    try {
+      const v = this.config(id);
+      const repo = new Repo(this.cloneDir(id), v.branch, v.root, { identity: this.env.identity, token: this.env.githubToken?.(), timeoutMs: FETCH_TIMEOUT_MS });
+      const ref = async () => (await repo.git.run(['rev-parse', '-q', '--verify', `origin/${v.branch}`], { allowFail: true })).stdout.trim();
+      const before = await ref();
+      const result = await repo.fetchUpstream();
+      const pullError = result.ok ? undefined : this.redact(result.error);
+      const errorChanged = pullError !== r.pullError;
+      if (pullError && !r.pullError) console.warn(`background fetch of ${v.repo} failed:`, pullError);
+      r.pullError = pullError;
+      // Only on a change: every status event makes the web app reload the Changes list.
+      if (errorChanged || (await ref()) !== before) this.emitStatusSoon(id);
+      return result.ok ? 'fetched' : 'offline';
+    } finally {
+      release();
+    }
+  }
+
   /** The pull on vault open: skipped when the lock isn't immediately free. */
   async open(id: string): Promise<VaultStatus> {
     const r = this.runtime(id);
     this.config(id);
+    // A background fetch started by the same app load would make tryExclusive skip the pull.
+    await r.fetching;
     if (r.state === 'ready' && !r.conflict) {
       const release = r.lock.tryExclusive();
       if (release) {
@@ -435,6 +499,17 @@ export class Vaults {
         }
       }
     }
+    return this.status(id);
+  }
+
+  /** The user's pull (tap on the incoming count): the same pull as on open, commit and turn. */
+  async pull(id: string): Promise<VaultStatus> {
+    this.requireReady(id);
+    const r = this.runtime(id);
+    await r.lock.withExclusive(async () => {
+      if (r.conflict) throw new HttpError(423, 'vault is in conflict; resolve it first', 'conflict');
+      await this.pullUnlocked(id);
+    });
     return this.status(id);
   }
 

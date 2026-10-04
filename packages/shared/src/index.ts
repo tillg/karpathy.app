@@ -50,12 +50,19 @@ export interface VaultStatus {
   state: VaultState;
   changedCount: number;
   unpushedCount: number;
+  /** Files inside the vault root that GitHub's branch changed since its last commit shared with HEAD (as of the last fetch). */
+  incomingCount: number;
+  /** Their vault-relative paths, at most INCOMING_PATHS_MAX; length === min(incomingCount, INCOMING_PATHS_MAX). */
+  incomingPaths: string[];
   busy: Busy;
   /** Vault-root-relative paths that are still unresolved while in Conflict. */
   conflictPaths: string[];
-  /** Set when the last pull couldn't reach GitHub (git's error). */
+  /** Set when the last pull or background fetch couldn't reach GitHub (git's error, redacted). */
   pullError?: string;
 }
+
+/** Cap on `VaultStatus.incomingPaths`, so a status event stays small after a remote replacement (#36). */
+export const INCOMING_PATHS_MAX = 200;
 
 export interface FileEntry {
   /** Vault-root-relative, `/`-separated. */

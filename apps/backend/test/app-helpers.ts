@@ -5,18 +5,18 @@ import request from 'supertest';
 import { createApp, type AppDeps } from '../src/app.js';
 import { ConfigStore } from '../src/config-store.js';
 import { GitHubToken } from '../src/github-token.js';
-import { Vaults } from '../src/vaults.js';
+import { Vaults, type VaultsEnv } from '../src/vaults.js';
 import { identity } from './helpers.js';
 
 export const TOKEN = 'test-token-123';
 
-export async function makeApp(remoteBase: string, extra: Partial<AppDeps> = {}, dirs?: { config: string; vaults: string }, githubSecret?: string) {
+export async function makeApp(remoteBase: string, extra: Partial<AppDeps> = {}, dirs?: { config: string; vaults: string }, githubSecret?: string, env: Partial<VaultsEnv> = {}) {
   const base = dirs ? null : await mkdtemp(join(tmpdir(), 'kai-app-'));
   const configDir = dirs?.config ?? join(base!, 'config');
   const vaultsDir = dirs?.vaults ?? join(base!, 'vaults');
   const store = await ConfigStore.open(configDir);
   const githubToken = new GitHubToken(store, githubSecret);
-  const vaults = new Vaults(store, { vaultsDir, remoteBase, identity, githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m) });
+  const vaults = new Vaults(store, { vaultsDir, remoteBase, identity, githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), ...env });
   await vaults.init();
   const app = createApp({ token: TOKEN, vaults, store, githubToken, ...extra });
   const auth = { Authorization: `Bearer ${TOKEN}` };

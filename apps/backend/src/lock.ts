@@ -1,11 +1,11 @@
 /**
  * Per-vault lock (mvp §2.4 "Vault lock"). Shared holders: file saves and a running AI
- * turn. Exclusive holders: pull, commit, discard, conflict resolution, clone, remove.
- * Exclusive waiters block new shared holders (writer preference), so a commit is never
- * starved by a stream of saves.
+ * turn, and opportunistically a background fetch. Exclusive holders: pull, commit, discard,
+ * conflict resolution, clone, remove. Exclusive waiters block new shared holders (writer
+ * preference), so a commit is never starved by a stream of saves.
  */
 export type Release = () => void;
-export type SharedLabel = 'save' | 'turn';
+export type SharedLabel = 'save' | 'turn' | 'fetch';
 
 interface Waiter {
   kind: 'shared' | 'exclusive';
@@ -56,6 +56,15 @@ export class VaultLock {
     });
   }
 
+  /**
+   * Shared lock only if no exclusive op holds or waits for it, else null (background fetch).
+   * A fetch doesn't change `busy`, so granting and releasing it alone notifies nobody.
+   */
+  tryShared(label: SharedLabel): Release | null {
+    if (this.exclusiveHeld || this.queue.some((w) => w.kind === 'exclusive')) return null;
+    return this.grantShared(label);
+  }
+
   /** Exclusive lock only when immediately free (vault-open pull), else null. */
   tryExclusive(): Release | null {
     return this.isFree ? this.grantExclusive() : null;
@@ -101,13 +110,14 @@ export class VaultLock {
   private grantShared(label: SharedLabel): Release {
     const id = this.nextId++;
     this.shared.set(id, label);
-    this.emit();
+    const quiet = label === 'fetch';
+    if (!quiet) this.emit();
     let done = false;
     return () => {
       if (done) return;
       done = true;
       this.shared.delete(id);
-      this.drain();
+      if (!quiet || this.queue.length > 0) this.drain();
     };
   }
 

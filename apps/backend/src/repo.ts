@@ -84,6 +84,22 @@ export class Repo {
     return r.code === 0 ? Number(r.stdout.trim()) : 0;
   }
 
+  /** Vault-relative paths inside the root that origin/<branch> changed since the merge base with HEAD. Local refs only, no network. */
+  async incomingPaths(): Promise<string[]> {
+    // Three dots = GitHub's side only. No merge base (remote replaced, #36): fall back to the plain tree diff.
+    let r = await this.git.run(['diff', '--name-only', '-z', `HEAD...${this.upstream}`, ...this.pathspec], { allowFail: true });
+    if (r.code !== 0) r = await this.git.run(['diff', '--name-only', '-z', 'HEAD', this.upstream, ...this.pathspec], { allowFail: true });
+    if (r.code !== 0) return [];
+    return r.stdout.split('\0').filter(Boolean).map((p) => this.toVaultPath(p)).filter((p): p is string => p !== null);
+  }
+
+  /** Updates origin/<branch> only: no merge, no index, no working tree (background fetch). */
+  async fetchUpstream(): Promise<{ ok: true } | { ok: false; error: string }> {
+    // No auto maintenance: no `gc --auto` repack while a turn or status read runs next to it.
+    const r = await this.git.run(['fetch', '-q', '--no-auto-maintenance', '--end-of-options', 'origin', this.branch], { allowFail: true });
+    return r.code === 0 ? { ok: true } : { ok: false, error: r.stderr.trim() || `git fetch failed (exit ${r.code})` };
+  }
+
   async inConflict(): Promise<boolean> {
     return (await this.pullStashRef()) !== null;
   }

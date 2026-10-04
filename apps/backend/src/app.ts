@@ -243,6 +243,9 @@ export function createApp(d: AppDeps) {
   api.post('/vaults/:id/push', async (req, res) => {
     res.json(await d.vaults.push(req.params.id!));
   });
+  api.post('/vaults/:id/pull', async (req, res) => {
+    res.json(await d.vaults.pull(req.params.id!));
+  });
   api.get('/vaults/:id/conflicts/sides', async (req, res) => {
     res.json(await d.vaults.conflictSides(req.params.id!, qs(req, 'path')));
   });

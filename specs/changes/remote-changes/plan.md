@@ -1,7 +1,7 @@
 ---
 feature: remote-changes
 title: "Plan: background fetch, incoming count and the user's pull"
-status: proposed
+status: applying
 order: 4
 created: 2026-10-04
 edited: 2026-10-04
@@ -22,14 +22,14 @@ Each step is one red → green cycle. Nothing is mocked: git runs for real again
 
 ## Phase 1: count and fetch in the repo
 
-- [ ] `Repo.incomingPaths()` lists the files GitHub changed, GitHub's side only
+- [x] `Repo.incomingPaths()` lists the files GitHub changed, GitHub's side only
   - Test first: `repo.test.ts` › "incomingPaths lists fetched files on GitHub's side only, one entry per file".
     Clone, Obsidian pushes 3 commits: two to `b.md`, one to `c.md`; `repo.git.run(['fetch', 'origin', 'main'])`:
     `incomingPaths()` is `['b.md', 'c.md']` (3 commits, 2 files). Then commit a local change to `a.md` (no push):
     still `['b.md', 'c.md']`, `unpushedCount()` 1. Fails today: the method doesn't exist.
   - Verify: `npm test -w apps/backend -- repo` → green.
 
-- [ ] The list is scoped to the vault root and survives a replaced remote
+- [x] The list is scoped to the vault root and survives a replaced remote
   - Test first: `repo.test.ts` › "incomingPaths ignores files outside a subfolder vault root". Remote with
     `wiki/a.md` and `outside.md`, `Repo` with root `wiki`; Obsidian pushes a change to `outside.md`, fetch: `[]`;
     pushes a change to `wiki/a.md`, fetch: `['a.md']` (vault-relative). Fails until pathspec and `toVaultPath`.
@@ -37,7 +37,7 @@ Each step is one red → green cycle. Nothing is mocked: git runs for real again
     to the bare remote with `x.md` only, fetch: `incomingPaths()` lists every file that differs (no error, not `[]`).
   - Verify: `npm test -w apps/backend -- repo` → green.
 
-- [ ] `Repo.fetchUpstream()` moves only `origin/<branch>`
+- [x] `Repo.fetchUpstream()` moves only `origin/<branch>`
   - Test first: `repo.test.ts` › "fetchUpstream updates the remote ref and nothing else". Local uncommitted edit of
     `a.md` plus one unpushed commit; Obsidian pushes `b.md`. After `fetchUpstream()`: `{ ok: true }`,
     `incomingPaths()` `['b.md']`, `changes()` and `unpushedCount()` unchanged, `b.md` on disk still the old text. Then rename
@@ -46,14 +46,14 @@ Each step is one red → green cycle. Nothing is mocked: git runs for real again
 
 ## Phase 2: lock and vault
 
-- [ ] `VaultLock.tryShared('fetch')` never waits and never shows as busy
+- [x] `VaultLock.tryShared('fetch')` never waits and never shows as busy
   - Test first: `lock.test.ts` › "tryShared grants next to shared holders, refuses while exclusive holds or waits".
     Free lock → granted, `busy` `none`. With a `turn` holder → granted, `busy` `turn`. With an exclusive held → null.
     With a `save` holder and an exclusive queued → null. With a `fetch` holder, `acquireExclusive()` resolves only
     after the fetch releases. Fails today: no `tryShared`, no `fetch` label.
   - Verify: `npm test -w apps/backend -- lock` → green.
 
-- [ ] `VaultStatus.incomingCount` and `incomingPaths` are reported
+- [x] `VaultStatus.incomingCount` and `incomingPaths` are reported
   - Test first: `api.test.ts` › "status reports incoming changes after a fetch, files untouched". `vaultApp()`,
     `obsidianPush({'Other.md': 'remote v2\n'})`, `await t.vaults.fetchRemote(t.id)` → `'fetched'`;
     `GET /status` has `incomingCount: 1`, `incomingPaths: ['Other.md']`; `GET /file?path=Other.md` still `other\n`.
@@ -61,34 +61,34 @@ Each step is one red → green cycle. Nothing is mocked: git runs for real again
     `INCOMING_PATHS_MAX` to `packages/shared`.)
   - Verify: `npm test -w apps/backend -- api` → green; `npm run typecheck` → green.
 
-- [ ] The path list is capped, the count is exact
+- [x] The path list is capped, the count is exact
   - Test first: `api.test.ts` › "incomingPaths is capped at INCOMING_PATHS_MAX, incomingCount stays exact". Obsidian
     pushes `INCOMING_PATHS_MAX + 5` new files in one commit, `fetchRemote`: `incomingCount` is `MAX + 5`,
     `incomingPaths.length` is `MAX`. Fails until the cap.
   - Verify: `npm test -w apps/backend -- api` → green.
 
-- [ ] `fetchRemote` runs during an AI turn and skips git operations
+- [x] `fetchRemote` runs during an AI turn and skips git operations
   - Test first: `api.test.ts` › "background fetch runs next to a turn, skips while a git op holds the lock". Hold
     `acquireShared('turn')`, Obsidian pushes, `fetchRemote` → `'fetched'`, status `incomingCount: 1`,
     `busy: 'turn'`. Hold `acquireExclusive()` instead: `fetchRemote` → `'skipped'` without waiting. Two calls at
     once return the same promise. Fails today: no lock rules in `fetchRemote`.
   - Verify: `npm test -w apps/backend -- api` → green.
 
-- [ ] A failed fetch sets `pullError` and keeps the count; a good one clears it
+- [x] A failed fetch sets `pullError` and keeps the count; a good one clears it
   - Test first: `api.test.ts` › "offline background fetch keeps the last count and reports pullError". Obsidian
     pushes, `fetchRemote` → count 1. Rename `remote.bare` away: `fetchRemote` → `'offline'`, status `pullError` set
     and without the token text, `incomingCount` still 1. Rename back: `'fetched'`, `pullError` gone. Fails today:
     fetch errors aren't recorded.
   - Verify: `npm test -w apps/backend -- api` → green.
 
-- [ ] The pull on open waits for a running background fetch
+- [x] The pull on open waits for a running background fetch
   - Test first: `api.test.ts` › "open pulls even while a background fetch runs". Obsidian pushes, start
     `fetchRemote` without awaiting it, `POST /open` → `Other.md` is `remote v2\n` and `incomingCount: 0`. Fails
     today: `tryExclusive` sees the `fetch` holder and skips the pull.
   - Verify: `npm test -w apps/backend -- api` → green; the existing "pull on open … skipped while a shared holder
     runs" stays green.
 
-- [ ] The event stream drives the schedule
+- [x] The event stream drives the schedule
   - Test first: `api.test.ts`, `describe('event stream')` › "connect fetches, the interval fetches while
     connected, nothing after disconnect". App with `fetchIntervalMs: 200` (new `makeApp` option passed to
     `VaultsEnv`). Obsidian pushes before connecting: the first events include a `status` with `incomingCount: 1`
@@ -98,7 +98,7 @@ Each step is one red → green cycle. Nothing is mocked: git runs for real again
     unhandled rejection (vitest fails on one). Fails today: nothing fetches.
   - Verify: `npm test -w apps/backend -- api` → green.
 
-- [ ] `POST /vaults/:id/pull` runs the existing pull
+- [x] `POST /vaults/:id/pull` runs the existing pull
   - Test first: `api.test.ts` › "pull route: takes incoming changes, waits for a racing turn, refuses in conflict". Obsidian
     pushes, `fetchRemote`, `POST /pull` → 200, `incomingCount: 0`, `Other.md` is `remote v2\n`. With a `turn`
     holder: the request doesn't finish within 200 ms, finishes after release. With a local edit and a clashing
