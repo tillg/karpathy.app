@@ -83,6 +83,7 @@ edited: 2026-10-04
   - [15:44 — note-outline-properties: outline first, then a CST-preserving YAML form that refuses lossy edits](#run-2026-10-04-1514-10)
   - [15:44 — remote-changes: a shared-lock background fetch every 2 minutes while a vault is open](#run-2026-10-04-1514-11)
   - [15:44 — attachments: upload into Sources/media/ first, send the AI the path; warn on a text-only model](#run-2026-10-04-1514-12)
+  - [15:48 — Nothing added to the demo vault; agents' choices logged as one entry per change; #120 filed](#run-2026-10-04-1514-13)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1060,3 +1061,18 @@ edited: 2026-10-04
 - **Alternatives:** base64 in the prompt only; multipart; server-side HEIC conversion with sharp.
 - **Consequences:** chat attachments are only useful once prod uses a vision model; every chat photo is an uncommitted
   change until committed or discarded.
+
+## 15:48 — Nothing added to the demo vault; agents' choices logged as one entry per change; #120 filed {#run-2026-10-04-1514-13}
+
+- **Status:** open
+- **Context:** the task asks to add samples and descriptions to `Karpathy Demo` between steps. Its guide (updated
+  2026-10-04) already covers media embeds, sticky mode and web access. The four agents made 13–21 choices each.
+- **Question:** Edit the demo vault anyway; log every agent choice as its own decision?
+- **Decision:** No demo-vault edit: this run shipped no new feature to describe. The agents' choices are bundled into
+  one decision per change (above); the full lists with alternatives are in each change's `architecture.md`. The
+  opencode command-endpoint finding is filed as issue #120 (label `security`) so it outlives this log. Added a
+  cross-reference between `attachments` and `chat-commands-research`, which both change the chat composer and the
+  prompt path.
+- **Why:** a guide chapter for unbuilt features would mislead; 60+ entries would bury the few that matter.
+- **Alternatives:** one entry per agent choice (the format's default).
+- **Consequences:** demo pages come with `/spec:apply` of each change.

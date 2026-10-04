@@ -173,3 +173,6 @@ flowchart TB
 - **The roadmap** ([v1 plan](../v1/v1-plan.md), V1.1) pairs #64 with the bash allowlist and Python skills
   (M5). This change does only the command part. It works for every skill that runs today, and a later M5
   change adds more skills to the same palette.
+- **[`attachments`](../attachments/proposal.md)** changes the same composer (a **+** button) and the same prompt
+  path (file parts). Whichever is applied second rebases onto the first; both keep a single `promptAsync` call
+  with one `tools` map.

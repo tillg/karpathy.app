@@ -166,3 +166,8 @@ flowchart TB
 
 The [V1 plan draft](../v1/v1-plan.md) lists #87 as out of V1 ("Capture via #65 first"). This change doesn't touch
 that draft. The upload route here is also the binary write path a later capture or share feature (#65) can reuse.
+
+[`chat-commands-research`](../chat-commands-research/proposal.md) changes the same chat composer (`/` palette,
+chips) and the same prompt path in `chat.ts` (hidden skill parts, `tools` forced off for `/research`). Whichever is
+applied second rebases onto the first: the **+** button sits next to the palette, and file parts and the `tools` map
+go into the same `promptAsync` call.
