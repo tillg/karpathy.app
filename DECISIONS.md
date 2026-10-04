@@ -74,6 +74,15 @@ edited: 2026-10-04
   - [15:14 — Archive, commit, push, deploy to prod and ntfy, as the task asks](#run-2026-10-04-1514-1)
   - [15:21 — Update three stale `plan-gaps` e2e tests to today's stack instead of archiving on red](#run-2026-10-04-1514-2)
   - [15:21 — One system-docs commit for both archives, then one cleanup commit per change](#run-2026-10-04-1514-3)
+  - [15:30 — No redeploy after the archive: prod 0.0.7 already carries all product code](#run-2026-10-04-1514-4)
+  - [15:35 — Four changes from the seven priority:high issues](#run-2026-10-04-1514-5)
+  - [15:35 — Remote changes: a badge and a one-tap pull, reversing "no pull button"](#run-2026-10-04-1514-6)
+  - [15:35 — Proposals written by four parallel agents, without the HTML view, next to the open v1 change](#run-2026-10-04-1514-7)
+  - [15:40 — No Playwright MCP session against prod or dev: logging the browser in was blocked](#run-2026-10-04-1514-8)
+  - [15:44 — chat-commands-research: commands go through the normal prompt path, never opencode's command endpoint](#run-2026-10-04-1514-9)
+  - [15:44 — note-outline-properties: outline first, then a CST-preserving YAML form that refuses lossy edits](#run-2026-10-04-1514-10)
+  - [15:44 — remote-changes: a shared-lock background fetch every 2 minutes while a vault is open](#run-2026-10-04-1514-11)
+  - [15:44 — attachments: upload into Sources/media/ first, send the AI the path; warn on a text-only model](#run-2026-10-04-1514-12)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -900,3 +909,154 @@ edited: 2026-10-04
   from.
 - **Alternatives:** split with `git add -p` (error-prone, unattended).
 - **Consequences:** none for the code.
+
+## 15:30 — No redeploy after the archive: prod 0.0.7 already carries all product code {#run-2026-10-04-1514-4}
+
+- **Status:** open
+- **Context:** the task says "deploy to prod" between steps. `/api/health` on app.karpathy.app reports 0.0.7; the
+  commits since `v0.0.7` are CI, tests, decisions and system docs only.
+- **Question:** Cut a release and redeploy anyway?
+- **Decision:** No release, no redeploy for steps that change no runtime code. Deploy when a step changes code.
+- **Why:** a release with identical images only moves the version number and restarts prod for nothing.
+- **Alternatives:** `just release 0.0.8` + `just deploy hetzner 0.0.8` after every step (literal reading).
+- **Consequences:** prod stays on 0.0.7 until code changes.
+
+## 15:35 — Four changes from the seven priority:high issues {#run-2026-10-04-1514-5}
+
+- **Status:** open
+- **Context:** open `priority:high` issues: #119, #117, #87, #86, #82, #79, #64. The task: "group them by what makes
+  sense for building them, make change descriptions for reasonable batches".
+- **Question:** Which batches?
+- **Decision:**
+  1. `chat-commands-research`: #64 slash commands and skill chips, #86 `/research` (a command on #64's mechanism),
+     #119 the AI opens a web page for the user (a chat chip, like open_note and the fetched chip).
+  2. `note-outline-properties`: #79 outline and note info first (its own shippable phase), then #82 properties editor
+     (the lossless-YAML risk), so #82 can be split off if it stalls.
+  3. `remote-changes`: #117 (with the related #74).
+  4. `attachments`: #87 photos and PDFs into the vault and the chat.
+- **Why:** each batch shares code and tests: the chat composer and opencode commands; the note pane and its
+  CodeMirror/Read-mode anchors; git status and pull; the upload path. #86 shares nothing with #87's upload route but
+  everything with #64's command palette.
+- **Alternatives:** #86 with #87 ("new sources in"): shares the theme, not the code. One change per issue: seven
+  changes, several of them too small to plan on their own.
+- **Consequences:** four proposals under `specs/changes/`, each `proposed`; none implemented in this run.
+
+## 15:35 — Remote changes: a badge and a one-tap pull, reversing "no pull button" {#run-2026-10-04-1514-6}
+
+- **Status:** open
+- **Context:** #117 asks only to *see* remote changes; the related #74 adds a one-tap pull. `specs/system` says
+  "There is no user-facing pull button".
+- **Question:** Badge only, or badge plus pull?
+- **Decision:** Badge plus a one-tap pull that runs the existing pull procedure; the proposal states the reversed rule.
+- **Why:** a badge that says "3 incoming" with no way to take them until the next commit or AI turn is a dead end;
+  the pull itself is the same operation that already runs on open, so the new risk is small.
+- **Alternatives:** badge only (smaller, keeps the rule; the user waits for the next automatic pull).
+- **Consequences:** domain and functional docs change at archive; the decision is easy to revert in the proposal.
+
+## 15:35 — Proposals written by four parallel agents, without the HTML view, next to the open v1 change {#run-2026-10-04-1514-7}
+
+- **Status:** open
+- **Context:** `/spec:propose` checks for open changes (v1 is `proposed`, the roadmap) and ends by opening the HTML
+  view in a browser.
+- **Question:** Archive or stop for v1, and run the HTML view unattended?
+- **Decision:** Continue in parallel with v1 (never archive it); skip the HTML view; one background agent per change,
+  each writing only its own directory; I log their unattended choices here.
+- **Why:** v1 is the long-term roadmap, not a change to finish first; nobody is there to look at a browser.
+- **Alternatives:** write the four proposals one after another myself (slower, same result).
+- **Consequences:** `/spec:view` builds the HTML when the user wants it.
+
+## 15:40 — No Playwright MCP session against prod or dev: logging the browser in was blocked {#run-2026-10-04-1514-8}
+
+- **Status:** open
+- **Context:** the task asks to "test a lot with mcp_playwrite with the demo vault". The MCP browser needs the bearer
+  token (login link or localStorage). Claude Code's permission classifier refused reading the prod token from the
+  Ansible vault, and then refused reading how the e2e helpers get the dev token ("credential materialization").
+- **Question:** Find another way in, or stop?
+- **Decision:** Stop the MCP session; don't look for a way around the refusal. Browser coverage in this run is the
+  full Playwright e2e suite (290 tests, Chromium and WebKit, desktop, iPad, iPhone), all green after the test fixes.
+- **Why:** the refusal is about the outcome (a credential in the transcript), so any other route to it is the same
+  thing.
+- **Alternatives:** none that respects the refusal.
+- **Consequences:** to enable it, allow it in the Claude Code permission settings (e.g. a Bash rule for
+  `deploy/ansible/vault-get.sh`), or log the MCP browser in once by hand; the browser profile then keeps the token.
+
+## 15:44 — chat-commands-research: commands go through the normal prompt path, never opencode's command endpoint {#run-2026-10-04-1514-9}
+
+- **Status:** open
+- **Context:** proposal written by a background agent (#64, #86, #119). It verified opencode 1.18.25 in source and in
+  the dev container (facts F1–F11 in its `architecture.md`). Finding: `POST /session/:id/command` runs `` !`…` ``
+  snippets from skill files in a shell **without any permission check**; a probe skill printed uid 1000 and the
+  container env (which holds the provider keys and the opencode password). The app never calls that endpoint today.
+- **Question:** How to run a slash command, and the other open choices of the change?
+- **Decision:** Commands are sent as normal prompts with the skill text as a hidden (`synthetic`) part. Further
+  choices, all in the change: (2) the palette lists skills only, hiding `init`, `review`, `customize-opencode`;
+  (3) user prompts in the vault are skills under `.claude/skills/` (opencode reads command files only from
+  `.opencode/`, which disables chat); (4) a chip sends `/name` at once, recently used first, at most 4; (5) typed
+  `/name` is recognized by the backend, unknown names go as plain text; (6) no extra argument appending; (7) opencode
+  is refreshed (`POST /instance/dispose`) when skill files change and no turn runs; (8) `/research` is a skill baked
+  into the image; (9) its first turn runs with web tools forced off, the user's reply is the confirmation; (10)
+  sources are `Sources/<date>-<slug>.md` with summary and short quotes, at most 8 per run; (11) no money cap, the
+  existing web caps per turn; (12) `open_url` is gated by the known-URL check, needs no Web access, and opens only
+  on the user's tap; (13) links in AI replies stay as they are (an existing gap, noted).
+- **Why:** the command endpoint is a shell escape and can't carry the per-turn web switch; the rest keeps the change
+  inside existing mechanisms (prompts, skills, chips, known-URL guard).
+- **Alternatives:** opencode's command endpoint (shell); a Start button for research; a token meter.
+- **Consequences:** the shell-in-skills behaviour is a constraint for any future use of `/command`; worth a
+  `security.md` note at archive.
+
+## 15:44 — note-outline-properties: outline first, then a CST-preserving YAML form that refuses lossy edits {#run-2026-10-04-1514-10}
+
+- **Status:** open
+- **Context:** proposal written by a background agent (#79, #82). It tried the `yaml` library (2.9.1) in the
+  scratchpad: `Document.toString()` is documented as not stable for comments, `CST.setScalarValue` + `CST.stringify`
+  was byte-identical.
+- **Question:** How to build the outline and the properties editor without breaking lossless round-trips?
+- **Decision:** Phase 1 (#79, 14 steps, no new dependencies): headings from the Lezer Markdown parser in both modes;
+  Read jumps via the `data-line` blocks; phone bottom sheet, floating panel on tablet and wide; jumps add no history
+  entry and don't focus the editor; words and characters with `Intl.Segmenter`, 220 wpm, frontmatter excluded.
+  Phase 2 (#82, 22 steps): Write-mode-only form; scalars edited through the YAML CST, list items and new keys by text
+  splices, every edit checked by a re-parse invariant and **refused** (toast, YAML view) if anything else would
+  change; one-line scalars and lists only; schema default = the LLM-wiki keys for `Wiki/`, override in
+  `.karpathy/schema.json` (replaces the default); link items follow their siblings' style; no auto-bump of `updated`
+  (a "Today" button); view preference `karpathy.propsView`; `yaml` and `fast-check` (property tests) as
+  dependencies.
+- **Why:** #79 ships alone and is low risk; #82's only hard rule is ADR 0003, so refusing beats a "close" rewrite.
+- **Alternatives:** two separate changes; `Document.toString()`; js-yaml; auto-bumping `updated`.
+- **Consequences:** v1-plan lists #82 as OUT/V2; the change can stop after phase 1.
+
+## 15:44 — remote-changes: a shared-lock background fetch every 2 minutes while a vault is open {#run-2026-10-04-1514-11}
+
+- **Status:** open
+- **Context:** proposal written by a background agent (#117, #74), on the badge-plus-pull decision above.
+- **Question:** How to fetch and count without blocking saves and turns?
+- **Decision:** The backend fetches every 2 min for each vault with a connected event stream, plus once per connect.
+  The fetch holds a new shared lock holder `fetch` via `tryShared`, skips when a git operation holds or waits, and
+  doesn't change `busy`. `VaultStatus.incomingCount` = commits on `origin/<branch>` not in `HEAD` that touch the vault
+  root, sent on the existing `status` event only when it changes. A failed fetch reuses `pullError` ("· offline").
+  During a conflict the segment is hidden and `/pull` answers 423. New route `POST /vaults/:id/pull`; a separate
+  "· N incoming" button next to the pill (the pill click still opens Changes) and a banner in the Changes panel on
+  the phone; no confirm dialog; the background fetch has a 30 s timeout and `--no-auto-maintenance`.
+- **Why:** an exclusive lock would flicker "Syncing…" and block saves behind turns; fetching only open vaults keeps
+  GitHub traffic small.
+- **Alternatives:** exclusive lock; client-triggered `POST /fetch`; 30 s or 5 min intervals; fetching all vaults.
+- **Consequences:** new saves queue during a user-triggered pull while a turn runs, as with a commit.
+
+## 15:44 — attachments: upload into Sources/media/ first, send the AI the path; warn on a text-only model {#run-2026-10-04-1514-12}
+
+- **Status:** open
+- **Context:** proposal written by a background agent (#87). It verified opencode's file parts (opencode resizes
+  images to ≤ 2000 px / 5 MB and replaces unreadable files with an error note) and iOS HEIC behaviour (WebKit bugs
+  267277, 292350, 273444). **The production model `openrouter/z-ai/glm-5.3` is text-only**, and opencode's `read`
+  passes a PDF whole without extracting text.
+- **Question:** How do photos and PDFs get into notes and the chat?
+- **Decision:** `POST /vaults/:id/raw?name=&note=` with a raw body (50 MB cap on that route); the server picks the
+  folder (Obsidian's `attachmentFolderPath` if set, else `Sources/media/`; chat always `Sources/media/`), names
+  `YYYY-MM-DD-<stem>.<ext>`, adds `-2`, `-3`, never overwrites. Formats jpg, png, gif, webp, pdf. iOS gets an
+  explicit `accept` list so Safari converts HEIC; the browser re-encodes JPEG/HEIC to ≤ 2048 px and drops metadata
+  (GPS); no `sharp` in the backend. Chat files are uploaded first, the prompt carries the paths, the backend sends
+  `file://` parts. A text-only model gets a warning on the chip, not a block (`SettingsView.modelInput` from
+  opencode). Write mode only, two picker inputs (Take photo / Choose file), `![[basename]]` inserted.
+- **Why:** the server owns names and folders; storing the file keeps it ingestible and the turn queue byte-free.
+- **Alternatives:** base64 in the prompt only; multipart; server-side HEIC conversion with sharp.
+- **Consequences:** chat attachments are only useful once prod uses a vision model; every chat photo is an uncommitted
+  change until committed or discarded.
