@@ -95,6 +95,23 @@ mark { background: rgba(245,158,11,.35); color: var(--label); border-radius: 3px
 .menu .mi small { display: block; color: var(--label2); font-size: 12px; }
 .menu .mi .ck { width: 18px; color: var(--tint); }
 .menu hr { border: 0; height: .5px; background: var(--sep); margin: 4px 0; }
+.attach { position: relative; }
+.attach-menu { left: auto; right: 0; width: max-content; min-width: 220px; }
+.attach-menu.up { top: auto; bottom: 100%; left: 0; right: auto; margin-bottom: 6px; }
+.attach-menu .mi { cursor: pointer; }
+.achips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 8px; }
+.achip { position: relative; flex: none; display: flex; flex-direction: column; gap: 4px; max-width: 160px; padding: 6px; border-radius: 12px; background: var(--bg2); border: .5px solid var(--sep); font-size: 12.5px; }
+.achip .embed img { display: block; width: 64px; height: 64px; object-fit: cover; border-radius: 8px; }
+.achip .embed .embed-skel { width: 64px !important; height: 64px; aspect-ratio: auto !important; }
+.achip.up { flex-direction: row; align-items: center; color: var(--label2); }
+.achip-doc { display: flex; align-items: center; gap: 6px; min-height: 64px; padding-right: 18px; }
+.achip-doc b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
+.achip-doc small, .achip-warn { color: var(--label2); font-size: 11.5px; }
+.achip-warn { color: var(--orange, var(--label2)); max-width: 148px; }
+.achip-x { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; border-radius: 50%; background: var(--fill2); display: flex; align-items: center; justify-content: center; }
+.u-files { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.u-files .embed img { max-width: 220px; max-height: 220px; border-radius: 10px; }
+.cm-editor.cm-drop-target { outline: 2px dashed var(--tint); outline-offset: 4px; border-radius: 6px; }
 .sbfoot { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); border-top: .5px solid var(--sep); }
 .gitpill { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 17px; background: var(--fill2); font-size: 13px; font-weight: 500; color: var(--label); white-space: nowrap; }
 .gitpill.small { height: 30px; margin-right: 4px; }

@@ -47,3 +47,19 @@ export function rawType(path: string): { type: string; attachment: boolean } {
   if (Object.hasOwn(MEDIA, ext)) return { type: MEDIA[ext]!.type, attachment: false };
   return { type: ext === 'pdf' ? 'application/pdf' : 'application/octet-stream', attachment: true };
 }
+
+/** Files the user may upload (editor, chat): what opencode reads as an image or PDF and model providers accept. */
+export const UPLOADABLE = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'] as const;
+/** Server cap per upload (413 above). */
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+/** The browser asks before an upload above this: it stays in the git history for good. */
+export const WARN_UPLOAD_BYTES = 10 * 1024 * 1024;
+/** Per chat attachment (keeps the base64 request under provider limits). */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+/** Chat attachments per prompt. */
+export const MAX_ATTACHMENTS = 5;
+
+export const isUploadable = (path: string) => (UPLOADABLE as readonly string[]).includes(extOf(path));
+
+/** Content type of an uploadable file, by extension. */
+export const uploadMime = (path: string) => (isPdf(path) ? 'application/pdf' : rawType(path).type);

@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { rawType, type Settings, type SettingsView, type TokenTest, type VaultEvent } from '@karpathy/shared';
+import { MAX_ATTACHMENTS, MAX_UPLOAD_BYTES, rawType, type ModelInput, type Settings, type SettingsView, type TokenTest, type VaultEvent } from '@karpathy/shared';
 import { bearerAuth } from './auth.js';
 import { aiUnavailable, type ChatService } from './chat.js';
 import { fallbackMessage, type CommitMessages } from './commit-message.js';
@@ -17,8 +17,8 @@ export interface AppDeps {
   chat?: ChatService;
   commitMessages?: CommitMessages;
   opencodeHealthy?: () => Promise<boolean>;
-  /** `provider/model` ids the harness can run right now (configured + credentials). */
-  availableModels?: () => Promise<string[]>;
+  /** The models the harness can run right now (configured + credentials): `provider/model` and what they read. */
+  availableModels?: () => Promise<{ id: string; input: ModelInput }[]>;
   /** Release version (APP_VERSION, baked into the image); `dev` for dev and prodtest builds. */
   version?: string;
   /** When the release's images were built (BUILT_AT, ISO 8601, set by the release workflow); unset for local builds. */
@@ -59,7 +59,9 @@ const patchSettings = z.object({
 const putFile = z.object({ content: z.string(), version: z.string().nullable(), force: z.boolean().optional() });
 const commitBody = z.object({ message: z.string().min(1).max(10_000), paths: z.array(z.string()).optional() });
 const resolveBody = z.object({ path: z.string().min(1), choice: z.enum(['mine', 'theirs', 'both']) });
-const promptBody = z.object({ text: z.string().trim().min(1).max(100_000) });
+const promptBody = z
+  .object({ text: z.string().trim().max(100_000), attachments: z.array(z.string().min(1).max(1000)).max(MAX_ATTACHMENTS, { error: `At most ${MAX_ATTACHMENTS} files per message` }).optional() })
+  .refine((b) => b.text.length > 0 || (b.attachments?.length ?? 0) > 0, { error: 'Write a prompt or attach a file' });
 
 const githubTokenBody = z.object({
   token: z.string().trim().min(20, { error: 'GitHub token: that is too short to be a token' }).max(255).regex(/^\S+$/, { error: 'GitHub token: must not contain spaces' }),
@@ -103,12 +105,20 @@ export function createApp(d: AppDeps) {
     res.json({ backend: 'ok', opencode: opencode ? 'ok' : 'down', version: d.version ?? 'dev', built: d.built ?? null, deployed: d.deployed ?? null });
   });
 
-  const settingsView = (): SettingsView => {
+  /** The harness's models, or null when it is down or doesn't answer within 3 s (the settings must still load). */
+  const models = () => (d.availableModels ? Promise.race([
+    d.availableModels().catch(() => null),
+    new Promise<null>((r) => setTimeout(() => r(null), 3000).unref()),
+  ]) : Promise.resolve(null));
+  const settingsView = async (): Promise<SettingsView> => {
     const t = d.githubToken?.current();
-    return { ...d.store.get().settings, githubToken: { source: d.githubToken?.source() ?? 'none', last4: t ? t.slice(-4) : null } };
+    const settings = d.store.get().settings;
+    const list = await models();
+    const modelInput = list?.find((m) => m.id === settings.model)?.input ?? null;
+    return { ...settings, githubToken: { source: d.githubToken?.source() ?? 'none', last4: t ? t.slice(-4) : null }, modelInput };
   };
-  api.get('/settings', (_req, res) => {
-    res.json(settingsView());
+  api.get('/settings', async (_req, res) => {
+    res.json(await settingsView());
   });
   api.put('/settings/github-token', async (req, res) => {
     if (!d.githubToken) throw new HttpError(404, 'not available');
@@ -131,15 +141,15 @@ export function createApp(d: AppDeps) {
   });
   api.patch('/settings', async (req, res) => {
     const body = patchSettings.parse(req.body);
-    if (body.model && body.model !== d.store.get().settings.model && d.availableModels) {
-      const models = await d.availableModels().catch(() => null);
-      if (models && !models.includes(body.model))
-        throw new HttpError(400, `Model ${body.model} is not available. Available: ${models.join(', ') || 'none (no provider configured)'}`, 'unknown-model');
+    if (body.model && body.model !== d.store.get().settings.model) {
+      const ids = (await models())?.map((m) => m.id);
+      if (ids && !ids.includes(body.model))
+        throw new HttpError(400, `Model ${body.model} is not available. Available: ${ids.join(', ') || 'none (no provider configured)'}`, 'unknown-model');
     }
     await d.store.update((c) => {
       c.settings = { ...c.settings, ...body } as Settings;
     });
-    res.json(settingsView());
+    res.json(await settingsView());
   });
 
   // ---- vault admin ----
@@ -203,6 +213,14 @@ export function createApp(d: AppDeps) {
     res.sendFile(abs, { etag: false, lastModified: false, cacheControl: false, dotfiles: 'allow' }, (err) => {
       if (err && !res.headersSent) next(err);
     });
+  });
+  // Upload: the body is the file's bytes; the raw parser is scoped to this route (the API is JSON elsewhere).
+  api.post('/vaults/:id/raw', express.raw({ type: () => true, limit: MAX_UPLOAD_BYTES }), async (req, res) => {
+    const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    const { note, source, at } = req.query;
+    if ((typeof note === 'string') === (typeof source === 'string')) throw new HttpError(400, 'give exactly one of note and source', 'invalid');
+    const target = typeof note === 'string' ? { note } : { source: source as string, ...(typeof at === 'string' ? { at } : {}) };
+    res.status(201).json(await d.vaults.upload(req.params.id!, qs(req, 'name'), target, bytes));
   });
   api.put('/vaults/:id/file', async (req, res) => {
     const body = putFile.parse(req.body);
@@ -270,7 +288,8 @@ export function createApp(d: AppDeps) {
     res.status(204).end();
   });
   api.post('/vaults/:id/chats/:chatId/prompt', async (req, res) => {
-    await chat().prompt(req.params.id!, req.params.chatId!, promptBody.parse(req.body).text);
+    const b = promptBody.parse(req.body);
+    await chat().prompt(req.params.id!, req.params.chatId!, b.text, b.attachments);
     res.status(202).json({ queued: true });
   });
   api.get('/vaults/:id/chats/:chatId/stream', async (req, res) => {
@@ -290,6 +309,7 @@ export function createApp(d: AppDeps) {
     if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message, code: err.code, ...err.extra });
     if (err instanceof PathError) return void res.status(400).json({ error: err.message, code: 'bad-path' });
     if (err instanceof z.ZodError) return void res.status(400).json({ error: err.issues.map((i) => i.message).join('; '), code: 'invalid' });
+    if ((err as { type?: string }).type === 'entity.too.large') return void res.status(413).json({ error: 'The file is larger than 50 MB.', code: 'too-large' });
     if ((err as { type?: string }).type === 'entity.parse.failed') return void res.status(400).json({ error: 'invalid JSON' });
     // opencode unreachable (connection refused, reset, DNS): the AI is down, not the app.
     const cause = (err as { cause?: { code?: string } }).cause?.code ?? (err as { code?: string }).code;

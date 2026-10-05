@@ -1,7 +1,7 @@
 ---
 feature: attachments
 title: "Domain: uploads and chat attachments"
-status: proposed
+status: applying
 order: 2
 created: 2026-10-04
 edited: 2026-10-04

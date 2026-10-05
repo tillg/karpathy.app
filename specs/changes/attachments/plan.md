@@ -1,7 +1,7 @@
 ---
 feature: attachments
 title: "Plan: uploads and chat attachments"
-status: proposed
+status: applying
 order: 4
 created: 2026-10-04
 edited: 2026-10-04
@@ -33,7 +33,7 @@ phase 1.
 
 ## Phase 1: shared table, link resolver and upload route
 
-- [ ] Shared `UPLOADABLE`, `isUploadable`, `uploadMime` and the limits
+- [x] Shared `UPLOADABLE`, `isUploadable`, `uploadMime` and the limits
   - Test first: `packages/shared/src/media.test.ts` › "uploadable files".
     - `isUploadable` is true for `'a/B.JPG'`, `.jpeg`, `.png`, `.gif`, `.webp` and `.pdf`.
     - It is false for `.heic`, `.svg`, `.avif`, `.mp4`, `.md` and `png` (no dot).
@@ -43,12 +43,12 @@ phase 1.
     It fails today: no such exports.
   - Verify: `npm test -w packages/shared` → green; `just check` → green.
 
-- [ ] Move the wikilink resolver to `packages/shared` (refactor)
+- [x] Move the wikilink resolver to `packages/shared` (refactor)
   - Test first: the existing `apps/web/src/lib/wikilink.test.ts` passes before and after. It moves with the code to
     `packages/shared/src/wikilink.test.ts`. `apps/web` re-exports from shared, so no web import changes.
   - Verify: `npm test -w packages/shared` and `npm test -w apps/web` → green; `just check` → green.
 
-- [ ] `POST /vaults/:id/raw` stores the bytes as a new file next to a page in its own folder
+- [x] `POST /vaults/:id/raw` stores the bytes as a new file next to a page in its own folder
   - Test first: `apps/backend/test/api.test.ts` › "upload: stores bytes, returns path and version". Seed
     `Wiki/foo/foo.md`. POST a 3-byte body `application/octet-stream` to `/raw?name=a.png&note=Wiki/foo/foo.md`.
     Expect:
@@ -61,7 +61,7 @@ phase 1.
     Also upload to `note=Sources/x/index.md` → `Sources/x/a.png`. It fails today: 404, no route.
   - Verify: `npm test -w apps/backend -- api` → green; `just check` → green.
 
-- [ ] Uploads never overwrite; names are unique in the whole vault, case-insensitively
+- [x] Uploads never overwrite; names are unique in the whole vault, case-insensitively
   - Test first: `api.test.ts` › "upload: -2, -3 on collisions, vault-wide, case-insensitive".
     - Upload `x.png` twice → `x.png`, then `x-2.png`.
     - With an existing `Wiki/foo/Y.png`, upload `y.png` → `y-2.png`.
@@ -71,7 +71,7 @@ phase 1.
     It fails today: no route.
   - Verify: `npm test -w apps/backend -- api` → green.
 
-- [ ] Uploads are refused when not uploadable, too large, badly named, in conflict or unauthenticated
+- [x] Uploads are refused when not uploadable, too large, badly named, in conflict or unauthenticated
   - Test first: `api.test.ts` › "upload: refusals".
     - `name=a.heic` → 415 `not-uploadable`; `a.svg` → 415.
     - A body of `MAX_UPLOAD_BYTES + 1` bytes → 413, and no file is written.
@@ -86,7 +86,7 @@ phase 1.
 
 ## Phase 2: move a page into its own folder
 
-- [ ] The first upload to a flat page moves it into its own folder
+- [x] The first upload to a flat page moves it into its own folder
   - Test first: `api.test.ts` › "upload: flat page moves into its own folder". With no `app.json`, seed
     `Wiki/serien/foo.md`, then upload `a.png` with `note=Wiki/serien/foo.md`. Expect:
     - `201 { path: 'Wiki/serien/foo/a.png', moved: { from: 'Wiki/serien/foo.md', to: 'Wiki/serien/foo/foo.md' } }`;
@@ -99,7 +99,7 @@ phase 1.
     nothing moves, so the upload lands next to the flat page.
   - Verify: `npm test -w apps/backend -- api` → green.
 
-- [ ] The move is refused while an AI turn runs or when the target exists
+- [x] The move is refused while an AI turn runs or when the target exists
   - Test first: `api.test.ts` › "upload: move refusals".
     - `Wiki/serien/foo/foo.md` exists → `409 folder-taken`, and so does a case twin `Wiki/serien/foo/FOO.md`.
     - Busy state `turn` (hold the vault lock as `ChatService` does) → `409 ai-busy`.
@@ -107,7 +107,7 @@ phase 1.
     In all cases nothing changed on disk and no `a.png` was written. It fails today: no move.
   - Verify: `npm test -w apps/backend -- api` → green.
 
-- [ ] `rewriteLinks` rewrites path-form links that resolve to the moved page, and nothing else
+- [x] `rewriteLinks` rewrites path-form links that resolve to the moved page, and nothing else
   - Test first: `packages/shared/src/relink.test.ts`, a pure function over text, old path, new path and the file list.
     Cases, for a move from `Wiki/serien/foo.md` to `Wiki/serien/foo/foo.md`:
     - `[[serien/foo]]`, `[[serien/foo|Foo]]` and `![[serien/foo#Plot]]` → the same with `serien/foo/foo`;
@@ -122,7 +122,7 @@ phase 1.
     `![[a.png]]` unchanged. It fails today: no module.
   - Verify: `npm test -w packages/shared` → green.
 
-- [ ] The move rewrites inbound links across the vault and keeps AI-touched marks
+- [x] The move rewrites inbound links across the vault and keeps AI-touched marks
   - Test first: `api.test.ts` › "upload: move rewrites path-form links".
     - Seed `Wiki/a.md` containing `[[serien/foo]] and [[foo]]` and `Wiki/b.md` containing `[[filme/foo]]`.
     - Upload to `Wiki/serien/foo.md`.
@@ -137,7 +137,7 @@ phase 1.
 
 ## Phase 3: upload from the editor
 
-- [ ] `uploadName` builds safe names without a date prefix
+- [x] `uploadName` builds safe names without a date prefix
   - Test first: `apps/web/src/lib/attach.test.ts`, with `now = 2026-10-04 14:30:12`.
     - camera → `photo-20261004-143012.jpg`;
     - `IMG_1234.HEIC` (converted) → `IMG_1234.jpg`;
@@ -150,7 +150,7 @@ phase 1.
     It fails today: no module.
   - Verify: `npm test -w apps/web -- attach` → green.
 
-- [ ] `prepare` shrinks JPEG and HEIC, drops metadata, passes the rest through
+- [x] `prepare` shrinks JPEG and HEIC, drops metadata, passes the rest through
   - Test first: `e2e/attach.spec.ts` › "photo preparation". In the page, run `prepare` on `photo.jpg` (via
     `page.evaluate` on a `File` built from the fixture bytes). Expect:
     - result type `image/jpeg`;
@@ -164,7 +164,7 @@ phase 1.
     because canvas and `createImageBitmap` don't exist in vitest. It fails today: no module.
   - Verify: `just e2e e2e/attach.spec.ts` → green on `desktop` and `webkit-desktop`.
 
-- [ ] The editor's Attach button uploads and inserts an embed at the cursor
+- [x] The editor's Attach button uploads and inserts an embed at the cursor
   - Test first: `e2e/attach.spec.ts` › "attach in the editor inserts an embed".
     1. Open `Wiki/home/home.md` (own folder) in Write mode, put the cursor at the end of line 2, click `attach` →
        `attach-choose`, and `setInputFiles(shot.png)`.
@@ -180,7 +180,7 @@ phase 1.
   - Verify: `just e2e e2e/attach.spec.ts e2e/editing.spec.ts e2e/media.spec.ts` → green on `desktop` and
     `webkit-desktop`; `just check` → green.
 
-- [ ] The editor follows its page when the upload moves it
+- [x] The editor follows its page when the upload moves it
   - Test first: `e2e/attach.spec.ts` › "attach to a flat page moves it, the editor follows".
     1. Push `Wiki/flat.md` and `Wiki/ref.md` (containing `[[Wiki/flat]]`), then open `flat.md` in Write mode.
     2. Type `hello` and attach `shot.png` with the POST delayed. Type ` world` during the delay.
@@ -199,7 +199,7 @@ phase 1.
     It fails today: no move.
   - Verify: `just e2e e2e/attach.spec.ts` → green on `desktop` and `webkit-desktop`.
 
-- [ ] Dropping files on the note uploads them at the drop point
+- [x] Dropping files on the note uploads them at the drop point
   - Test first: `e2e/attach.spec.ts` › "drop files into the editor".
     1. Open `Wiki/home/home.md` in Write mode.
     2. Dispatch `dragenter`/`dragover`/`drop` on the line-4 coordinates with a `DataTransfer` holding `shot.png` and
@@ -214,7 +214,7 @@ phase 1.
     so the device check in phase 6 covers Safari by hand. It fails today: CodeMirror inserts the file name.
   - Verify: `just e2e e2e/attach.spec.ts --project desktop` → green.
 
-- [ ] A name taken elsewhere gets a suffix and still embeds bare; the button hides where it can't work
+- [x] A name taken elsewhere gets a suffix and still embeds bare; the button hides where it can't work
   - Test first: `e2e/attach.spec.ts` › "embed text and button visibility".
     1. With `Other/shot.png` pushed first (`pushFromObsidian`), attaching `shot.png` to `Wiki/home/home.md` inserts
        `![[shot-2.png]]`, and it renders the new file.
@@ -227,7 +227,7 @@ phase 1.
     It fails today: no button.
   - Verify: `just e2e e2e/attach.spec.ts` → green on `desktop` and `webkit-desktop`.
 
-- [ ] Large files ask first; refusals show a toast
+- [x] Large files ask first; refusals show a toast
   - Test first: `e2e/attach.spec.ts` › "growth warning and refusals".
     - A generated 11 MB PDF (`Buffer.alloc` with a `%PDF-` header) triggers a `dialog` whose message contains
       "11 MB" and "git history". Dismissing it sends no POST, and accepting it uploads the file.
@@ -239,7 +239,7 @@ phase 1.
 
 ## Phase 4: chat attachments
 
-- [ ] Chat uploads create one source folder per message
+- [x] Chat uploads create one source folder per message
   - Test first: `api.test.ts` › "upload: source folders".
     - `name=photo.jpg&source=new&at=2026-10-04-091500` → `Sources/upload-2026-10-04-091500/photo.jpg`.
     - `name=doc.pdf&source=upload-2026-10-04-091500` → `Sources/upload-2026-10-04-091500/doc.pdf`.
@@ -251,7 +251,7 @@ phase 1.
     It fails today: no `source` parameter.
   - Verify: `npm test -w apps/backend -- api` → green.
 
-- [ ] The prompt body accepts attachments and the queue keeps them
+- [x] The prompt body accepts attachments and the queue keeps them
   - Test first: `apps/backend/test/chat.test.ts` › "prompt with attachments is queued and survives a restart".
     - POST `{ text: '', attachments: ['Sources/upload-x/a.png'] }` → 202; `{ text: '' }` → 400; six paths → 400.
     - Restart the `ChatService` from the same config store: the queued turn still has its attachment
@@ -261,7 +261,7 @@ phase 1.
     It fails today: `text` must be non-empty, and there's no `attachments` field.
   - Verify: `npm test -w apps/backend -- chat` → green.
 
-- [ ] A turn sends the attachment to opencode as a file part
+- [x] A turn sends the attachment to opencode as a file part
   - Test first: `chat.test.ts` › "attachment reaches opencode as a file part". Upload `shot.png` through the API with
     `source=new`, and prompt with it. The default tier's model doesn't exist in Ollama, so the turn fails fast.
     Assert on the stored session through the real opencode container: the user message has a `file` part with
@@ -273,7 +273,7 @@ phase 1.
     user message after such a failed turn. It fails today: only a text part is sent.
   - Verify: `npm test -w apps/backend -- chat` → green; `just check` → green.
 
-- [ ] Attachment paths are checked at turn start
+- [x] Attachment paths are checked at turn start
   - Test first: `chat.test.ts` › "bad attachment paths end the turn".
     - Prompt with `Sources/upload-x/gone.png` (never existed) → stream event `error` "Attachment not found:
       Sources/upload-x/gone.png", the turn goes idle, and nothing is sent to opencode (the session has no new user
@@ -285,7 +285,7 @@ phase 1.
     It fails today: attachments are not read.
   - Verify: `npm test -w apps/backend -- chat` → green.
 
-- [ ] History shows attachments as file parts, never as data URLs
+- [x] History shows attachments as file parts, never as data URLs
   - Test first: `apps/backend/test/harness-map.test.ts` › "user file part maps to a file chat part". Capture the
     stored message from the previous step as a fixture.
     - `mapMessages` yields `{ type: 'file', path: 'Sources/upload-…/shot.png', mime: 'image/png' }`, and no string
@@ -296,7 +296,7 @@ phase 1.
     It fails today: the `file` part is dropped (`default` branch).
   - Verify: `npm test -w apps/backend -- harness-map` → green.
 
-- [ ] Settings report what the model can read
+- [x] Settings report what the model can read
   - Test first: `chat.test.ts` (it has the opencode container) › "settings expose modelInput".
     - With the test container's provider config, give the Ollama test model
       `modalities: { input: ['text', 'image'] }`: `GET /settings` → `modelInput: { image: true, pdf: false }`.
@@ -306,7 +306,7 @@ phase 1.
     It fails today: no fields.
   - Verify: `npm test -w apps/backend -- chat api` → green; `just check` → green.
 
-- [ ] The composer attaches, shows chips and sends
+- [x] The composer attaches, shows chips and sends
   - Test first: `e2e/attach.spec.ts` › "attach in the chat".
     1. In a new chat, `chat-attach` → `setInputFiles([shot.png, doc.pdf])`. Assert two chips (`attach-chip`), one
        with a thumbnail `img` and one with "doc.pdf" and its size, both in the same `Sources/upload-…/` folder.
@@ -326,7 +326,7 @@ phase 1.
   - Verify: `just e2e e2e/attach.spec.ts e2e/chat.spec.ts` → green on `desktop` and `webkit-desktop`; `just check` →
     green.
 
-- [ ] Phone layout: the chips and the menu fit
+- [x] Phone layout: the chips and the menu fit
   - Test first: `e2e/attach.spec.ts` › "@iphone attach menu and chips fit the composer". On the phone projects:
     1. Open the chat and tap `chat-attach`. Both `attach-photo` and `attach-choose` are visible and at least 44 px
        high.
@@ -336,11 +336,12 @@ phase 1.
     It fails today: no button.
   - Verify: `just e2e e2e/attach.spec.ts --grep @iphone` → green on `iphone` and `webkit-iphone`.
 
-- [ ] A vision model reads an attached image (`@llm`)
+- [x] A vision model reads an attached image (`@llm`)
   - Test first: `apps/backend/test/chat.llm.test.ts` › "@llm the model reads an attached image".
-    - This needs a vision model: add `qwen2.5vl:3b` to `deploy/opencode/dev-ollama.json` with
+    - This needs a vision model with tool calls: add `qwen3-vl:2b` to `deploy/opencode/dev-ollama.json` with
       `"modalities": { "input": ["text", "image"], "output": ["text"] }`, selected through `LLM_VISION_MODEL`
-      (default `ollama/qwen2.5vl:3b`).
+      (default `ollama/qwen3-vl:2b`). (Changed while applying: Ollama's `qwen2.5vl:3b` has no tool support,
+      so opencode refuses every turn with it.)
     - Upload `word.png` and prompt "Use the write tool to create Notes/seen.md containing only the word in the
       attached image."
     - Assert a write tool event for `Notes/seen.md`, and that the file contains `kiwi` (case-insensitive).
@@ -351,7 +352,7 @@ phase 1.
 
 ## Phase 5: production check and docs
 
-- [ ] Uploads and chips pass the prod CSP and proxy
+- [x] Uploads and chips pass the prod CSP and proxy
   - Test first: none new, because the CSP can only be proven on the prod images. Run
     `just prodtest e2e e2e/attach.spec.ts` before any proxy change. It is expected to be green without a change
     (`connect-src 'self'`, `img-src blob:`, no Caddy body limit). If it fails, fix the cause; don't widen the CSP
@@ -380,7 +381,7 @@ phase 1.
     - **Obsidian on the Mac**, after a commit and pull: the moved page, its image and a rewritten `[[…/…]]` link all
       work.
 
-- [ ] README: mention uploads, drag and drop, own folders and chat attachments
+- [x] README: mention uploads, drag and drop, own folders and chat attachments
   - Test first: none, docs.
   - Verify: `rtk grep -n -i "attach\|drag" README.md` → matches the new lines; `just check` → green.
 

@@ -18,7 +18,7 @@ export interface ConfigData {
   /** Per-vault unresolved Conflict paths (repo-relative), kept while the pull stash exists. */
   conflicts: Record<string, string[]>;
   /** Per-vault queued chat prompts, so a backend restart doesn't drop them (#37). */
-  queued: Record<string, { chatId: string; text: string }[]>;
+  queued: Record<string, { chatId: string; text: string; attachments?: string[] }[]>;
   /** GitHub token set in the app; kept out of `settings`, which GET /settings returns verbatim. */
   githubToken?: string;
 }

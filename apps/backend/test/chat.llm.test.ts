@@ -8,7 +8,7 @@ import { OpencodeCommitMessages } from '../src/commit-message.js';
 import { OpencodeHarness } from '../src/harness/opencode.js';
 import { makeApp, TOKEN } from './app-helpers.js';
 import { makeRemote, sh } from './helpers.js';
-import { LLM_MODEL, startOpencode, testDir } from './opencode-container.js';
+import { LLM_MODEL, LLM_VISION_MODEL, startOpencode, testDir } from './opencode-container.js';
 
 // @llm tier: a real model (default: local Ollama qwen2.5:3b). Rules (plan): prompts name the
 // tool; assertions check tool events and the file system, never answer text; no tool call at
@@ -294,4 +294,25 @@ describe('@llm AI reads and writes', () => {
     expect(t.vaults.lock(t.id).isFree).toBe(true);
   });
 
+});
+
+describe('@llm chat attachments', () => {
+  it('@llm the model reads an attached image', async () => {
+    const t = await setup();
+    await t.store.update((c) => { c.settings.model = LLM_VISION_MODEL; });
+    const png = await readFile(join(import.meta.dirname, '../../../e2e/fixtures/media/word.png'));
+    const { path } = await t.vaults.upload(t.id, 'word.png', { source: 'new', at: '2026-10-04-091500' }, png);
+    await withRetry(async () => {
+      const id = (await t.chat.create(t.id)).chatId;
+      const tools = new Map<string, ToolCall>();
+      await t.chat.prompt(t.id, id, 'Use the write tool to create Notes/seen.md containing only the word in the attached image.', [path]);
+      await new Promise<void>((resolve) => {
+        t.chat.stream(t.id, id, (e) => { if (e.type === 'part' && e.part.type === 'tool') tools.set(e.part.id, e.part.call); }, resolve);
+      });
+      const writes = [...tools.values()].filter((c) => c.writes && c.path === 'Notes/seen.md');
+      if (!tools.size) throw new Inconclusive('no tool call');
+      expect(writes.length).toBeGreaterThan(0);
+      expect((await readFile(join(t.vaults.vaultRootDir(t.id), 'Notes/seen.md'), 'utf8')).toLowerCase()).toContain('kiwi');
+    });
+  });
 });
