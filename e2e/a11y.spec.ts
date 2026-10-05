@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { expect, makeConflict, makePlainRemote, openApp, openNote, pushFromObsidian, runId, test, uid } from './helpers';
+import { expect, makeConflict, makePlainRemote, openApp, openNote, openSettings, openVaults, pushFromObsidian, runId, test, uid } from './helpers';
 
 // Automated WCAG 2.1 A/AA + best-practice scan (axe-core) of the main screens, light and dark
 // (issues #39–#47). Only serious/critical findings fail; moderate/minor best-practice rules
@@ -68,7 +68,7 @@ test.describe('accessibility (axe)', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('commit-dialog')).toBeHidden();
 
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     await expect(page.getByTestId('admin-vault').first()).toBeVisible();
     await scan(page, 'admin dialog');
     await page.keyboard.press('Escape');
@@ -97,11 +97,11 @@ test.describe('accessibility (axe)', () => {
     await scan(page, 'incoming changes');
   });
 
-  test('admin views: list, details, settings, add with the missing-folders dialog, help dialog', async ({ page, api, vault }) => {
+  test('admin views: list, details, add with the missing-folders dialog, help dialog, settings', async ({ page, api, vault }) => {
     const plain = `e2e-a11y-plain-${runId()}-${uid()}`;
     makePlainRemote(plain);
     await openApp(page, vault.id);
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     const admin = page.getByTestId('admin');
     await expect(admin.getByTestId('admin-vault').first()).toBeVisible();
     await scan(page, 'admin list');
@@ -113,12 +113,6 @@ test.describe('accessibility (axe)', () => {
     await expect(admin.getByTestId('vault-details')).toBeVisible();
     await scan(page, 'vault details');
     await admin.getByTestId('admin-back').click();
-    await admin.getByTestId('admin-open-settings').click();
-    await expect(admin.getByTestId('token-input')).toBeVisible();
-    await admin.getByTestId('token-test').click();
-    await expect(admin.getByTestId('token-result')).toBeVisible({ timeout: 20_000 });
-    await scan(page, 'settings with token test result');
-    await admin.getByTestId('admin-back').click();
     await admin.getByTestId('admin-open-add').click();
     await page.getByTestId('admin-repo').fill(`e2e/${plain}`);
     await page.getByTestId('admin-add').click();
@@ -126,6 +120,12 @@ test.describe('accessibility (axe)', () => {
     await scan(page, 'missing-folders dialog');
     await page.getByTestId('folders-cancel').click();
     expect((await api.vaults()).some((v) => v.repo === `e2e/${plain}`)).toBe(false);
+    await admin.getByRole('button', { name: 'Close', exact: true }).click();
+    await openSettings(page);
+    const settings = page.getByTestId('settings-dialog');
+    await settings.getByTestId('token-test').click();
+    await expect(settings.getByTestId('token-result')).toBeVisible({ timeout: 20_000 });
+    await scan(page, 'settings with token test result');
   });
 
   test('conflict view and the larger compare dialog', async ({ page, api, vault }) => {

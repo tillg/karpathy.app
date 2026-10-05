@@ -87,6 +87,11 @@ edited: 2026-10-05
 - [2026-10-05 12:00 — Finish tests, merge both agents' work, release the next version and deploy to prod](#run-2026-10-05-1200)
   - [12:00 — Push, release and deploy to prod, as the task asks](#run-2026-10-05-1200-1)
   - [12:00 — Skip the iPhone and Obsidian device checks: they need a person](#run-2026-10-05-1200-2)
+- [2026-10-05 13:46 — Build, ship and archive separate-settings-and-vault-management](#run-2026-10-05-1346)
+  - [13:46 — Push, release, deploy to prod and archive, as the task asks](#run-2026-10-05-1346-1)
+  - [13:46 — Treat `/spec:apply` as the OK for the e2e test changes the proposal lists](#run-2026-10-05-1346-2)
+  - [13:46 — Treat the backend auth test failure as flaky, not as a red baseline](#run-2026-10-05-1346-3)
+  - [14:20 — No link from a token error in the Vaults dialog to Settings](#run-2026-10-05-1346-4)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1119,3 +1124,67 @@ edited: 2026-10-05
   (iOS converts HEIC, the browser converts what's left, the server refuses the rest).
 - **Alternatives:** hold the release until the user is back.
 - **Consequences:** if the iPhone shows a problem, it is fixed in a follow-up release.
+
+# 2026-10-05 13:46 — Build, ship and archive separate-settings-and-vault-management {#run-2026-10-05-1346}
+
+- **Started by:** `/autonomous` (driving `/spec:apply separate-settings-and-vault-management`)
+- **Task, as given:**
+
+  > Wait for the local tests to finish
+  > then build your feature and test it
+  > then commit & push it
+  > then deploy it to PROD
+  > then archive it
+  >
+  > After every step inform me via ntfy
+
+## 13:46 — Push, release, deploy to prod and archive, as the task asks {#run-2026-10-05-1346-1}
+
+- **Status:** open
+- **Context:** `/autonomous` doesn't push, archive or do anything irreversible without the user; the task asks for
+  each of these by name.
+- **Question:** follow the skill's guardrail or the task?
+- **Decision:** the task: commit and push `main`, tag the next patch release (`just release 0.0.9`), deploy it with
+  `just deploy hetzner`, then `/spec:archive` (commit + push). An ntfy push after each step, to the topic from run
+  2026-10-03 09:25 (decision 3), cached in `tmp/.ntfy_topic`.
+- **Why:** the user named every step in their own words, as in the runs of 2026-10-04 and 2026-10-05 12:00.
+- **Alternatives:** stop before the push and leave the rest to the user.
+- **Consequences:** prod runs the split dialogs when the run ends; rollback is `just deploy hetzner 0.0.8`.
+
+## 13:46 — Treat `/spec:apply` as the OK for the e2e test changes the proposal lists {#run-2026-10-05-1346-2}
+
+- **Status:** open
+- **Context:** the global rule forbids changing tests without permission. The proposal's section "Tests this change
+  has to touch" asked for that OK; the user's next action was `/spec:apply`, then this task.
+- **Question:** wait for an explicit "yes" or go ahead?
+- **Decision:** go ahead, only with the changes the proposal names: path changes through `openVaults` /
+  `openSettings` (assertions unchanged) and the deliberate assertion changes in `a11y-keyboard.spec.ts:71-73`,
+  `a11y.spec.ts:100` and `mobile.spec.ts:49`. No other test is weakened.
+- **Why:** the user read the proposal (it was opened for them) and started the implementation; the change can't
+  ship without these edits.
+- **Alternatives:** stop the run until the user confirms.
+- **Consequences:** review the test diff in the commit; every changed assertion is named in the proposal.
+
+## 13:46 — Treat the backend auth test failure as flaky, not as a red baseline {#run-2026-10-05-1346-3}
+
+- **Status:** open
+- **Context:** the baseline `just check` failed once in `apps/backend/test/api.test.ts` › auth › "401 without or
+  with a wrong token, 200 with the right one" (404 instead of 401). This change touches no backend code; the test
+  passes when run alone.
+- **Question:** stop on a red baseline, or go on?
+- **Decision:** go on, and require `just check` green again before the push.
+- **Why:** the failure isn't caused by this change and doesn't reproduce in isolation.
+- **Alternatives:** debug the backend test first (out of scope for this change).
+- **Consequences:** if it fails again, it gets its own issue.
+
+## 14:20 — No link from a token error in the Vaults dialog to Settings {#run-2026-10-05-1346-4}
+
+- **Status:** open
+- **Context:** `/spec:adversarial-code-review` (Defects, MEDIUM): a vault that fails with "the server's GitHub token
+  has no access" opens in the Vaults dialog, and the token is no longer one tap away (the list's Settings button is
+  gone). The proposal lists cross-links as out of scope.
+- **Question:** add a "GitHub token in Settings" link to the clone-failed details and the add-vault error?
+- **Decision:** no, ship the strict split.
+- **Why:** the request says "no setting here"; the gear is always visible next to the vault menu (sidebar header).
+- **Alternatives:** a link that calls `setAdminOpen('settings')` from clone-failed details and add-vault errors.
+- **Consequences:** possible follow-up issue if the extra step bothers in practice.

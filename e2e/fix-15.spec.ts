@@ -1,9 +1,9 @@
-import { expect, openApp, test } from './helpers';
+import { expect, openApp, openVaults, test } from './helpers';
 
 // #15: adding the same repo/branch/root twice is refused with the backend's message.
 test('adding a duplicate vault shows the duplicate error', async ({ page, api, vault }) => {
   await openApp(page, vault.id);
-  await page.getByTestId('open-admin').click();
+  await openVaults(page);
   await page.getByTestId('admin-open-add').click();
   await page.getByTestId('admin-name').fill('Duplicate');
   await page.getByTestId('admin-repo').fill(`e2e/${vault.name}`);

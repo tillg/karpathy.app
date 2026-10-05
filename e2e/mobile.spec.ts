@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test';
-import { expect, openApp, test, treeItem } from './helpers';
+import { expect, openApp, openSettings, openVaults, test, treeItem } from './helpers';
 
 /** On screen horizontally (panes slide in/out with transforms; IntersectionObserver is unreliable here). */
 async function expectOnScreen(l: Locator) {
@@ -49,12 +49,12 @@ test.describe('phone layout', () => {
   test('@iphone admin views fit 375px without horizontal scroll', async ({ page, vault }) => {
     await page.setViewportSize({ width: 375, height: 740 });
     await openApp(page, vault.id);
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     const admin = page.getByTestId('admin');
-    const body = admin.locator('.modal-body');
-    const fits = async (label: string) => {
+    const fits = async (label: string, dialog = admin) => {
+      const body = dialog.locator('.modal-body');
       await expect.poll(() => body.evaluate((e) => e.scrollWidth <= e.clientWidth), { message: `${label}: no horizontal scroll` }).toBe(true);
-      const b = await admin.boundingBox();
+      const b = await dialog.boundingBox();
       expect(b!.x >= 0 && b!.x + b!.width <= 375 + 1, `${label}: dialog inside the viewport`).toBe(true);
       await page.screenshot({ path: `tmp/08/phone-${label}.png`, scale: 'css' });
     };
@@ -63,12 +63,13 @@ test.describe('phone layout', () => {
     await admin.locator(`[data-testid="admin-vault"][data-vault="${vault.id}"]`).click();
     await admin.getByTestId('vault-edit').click();
     await fits('details');
-    await admin.getByTestId('admin-back').click();
-    await admin.getByTestId('admin-open-settings').click();
-    await admin.getByTestId('token-test').click();
-    await expect(admin.getByTestId('token-result')).toBeVisible({ timeout: 20_000 });
-    await fits('settings');
-    await admin.getByTestId('version-server').scrollIntoViewIfNeeded();
+    await admin.getByRole('button', { name: 'Close', exact: true }).click();
+    await openSettings(page);
+    const settings = page.getByTestId('settings-dialog');
+    await settings.getByTestId('token-test').click();
+    await expect(settings.getByTestId('token-result')).toBeVisible({ timeout: 20_000 });
+    await fits('settings', settings);
+    await settings.getByTestId('version-server').scrollIntoViewIfNeeded();
     await page.screenshot({ path: 'tmp/08/phone-settings-bottom.png', scale: 'css' });
   });
 

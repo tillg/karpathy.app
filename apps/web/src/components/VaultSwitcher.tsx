@@ -69,8 +69,8 @@ export function VaultSwitcher({ compact }: { compact?: boolean }) {
             </button>
           ))}
           <hr />
-          <button className="mi" role="menuitem" tabIndex={-1} data-testid="manage-vaults" onClick={() => { dismiss(); setAdminOpen(true); }}>
-            <span className="ck"><Icon n="gear_alt" size={17} /></span><span>Manage vaults…<small>Add / configure repos, settings</small></span>
+          <button className="mi" role="menuitem" tabIndex={-1} data-testid="manage-vaults" onClick={() => { dismiss(); setAdminOpen('vaults'); }}>
+            <span className="ck"><Icon n="rectangle_stack" size={17} /></span><span>Manage vaults…<small>Add / configure GitHub repos</small></span>
           </button>
         </div>
       )}

@@ -9,7 +9,7 @@ interface Form { name: string; repo: string; branch: string; root: string }
 const emptyForm: Form = { name: '', repo: '', branch: 'main', root: '' };
 
 /** The modal's views; there is no router, the view is modal-internal state. */
-type View = { kind: 'list' } | { kind: 'details'; id: string } | { kind: 'add' } | { kind: 'settings' };
+type View = { kind: 'list' } | { kind: 'details'; id: string } | { kind: 'add' };
 
 function VaultFields({ f, set, prefix }: { f: Form; set(f: Form): void; prefix: string }) {
   const field = (k: keyof Form, label: string, placeholder: string) => (
@@ -284,14 +284,33 @@ function VaultHelp({ close }: { close(): void }) {
 }
 
 export function Admin() {
+  const { adminOpen } = useApp();
+  return adminOpen && adminOpen.view === 'settings' ? <SettingsDialog /> : <VaultsDialog />;
+}
+
+function SettingsDialog() {
+  const { setAdminOpen } = useApp();
+  return (
+    <Modal title="Settings" onClose={() => setAdminOpen(false)} wide testid="settings-dialog" focusTitle>
+      <div className="gh">GitHub</div>
+      <GitHubTokenForm />
+      <div className="gh">App</div>
+      <SettingsForm />
+      <div className="gh">Version</div>
+      <Versions />
+    </Modal>
+  );
+}
+
+function VaultsDialog() {
   const { vaults, reloadVaults, setAdminOpen, adminOpen } = useApp();
-  const start = adminOpen ? adminOpen.vault : undefined;
+  const start = adminOpen && adminOpen.view === 'vaults' ? adminOpen.vault : undefined;
   const [view, setView] = useState<View>(start ? { kind: 'details', id: start } : { kind: 'list' });
   const [help, setHelp] = useState(false);
   useEffect(() => { void reloadVaults(); }, [reloadVaults]);
   const list = () => setView({ kind: 'list' });
   const current = view.kind === 'details' ? vaults?.find((v) => v.id === view.id) : undefined;
-  const title = view.kind === 'details' ? (current?.name ?? 'Vault') : view.kind === 'add' ? 'Add vault' : view.kind === 'settings' ? 'Settings' : 'Vaults & settings';
+  const title = view.kind === 'details' ? (current?.name ?? 'Vault') : view.kind === 'add' ? 'Add vault' : 'Vaults';
   return (
     // Focus starts on the title, not on a field (issue #39).
     <Modal title={title} onClose={() => setAdminOpen(false)} wide testid="admin" focusTitle>
@@ -307,23 +326,12 @@ export function Admin() {
           {vaults?.length === 0 && <p className="muted">No vaults yet. Each vault is an existing GitHub repo.</p>}
           {vaults?.map((v) => <VaultRow key={v.id} v={v} open={() => setView({ kind: 'details', id: v.id })} />)}
           <div className="acts">
-            <button className="btn g" data-testid="admin-open-settings" onClick={() => setView({ kind: 'settings' })}><Icon n="gear_alt" size={16} />Settings</button>
             <button className="btn" data-testid="admin-open-add" onClick={() => setView({ kind: 'add' })}>Add vault</button>
           </div>
         </>
       )}
       {view.kind === 'details' && (current ? <VaultDetails v={current} back={list} /> : vaults && <p className="muted">This vault no longer exists.</p>)}
       {view.kind === 'add' && <AddVault done={list} />}
-      {view.kind === 'settings' && (
-        <>
-          <div className="gh">GitHub</div>
-          <GitHubTokenForm />
-          <div className="gh">App</div>
-          <SettingsForm />
-          <div className="gh">Version</div>
-          <Versions />
-        </>
-      )}
       {help && <VaultHelp close={() => setHelp(false)} />}
     </Modal>
   );

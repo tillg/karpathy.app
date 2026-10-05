@@ -1,4 +1,4 @@
-import { expect, openApp, openNote, test, typeAtEnd } from './helpers';
+import { expect, openApp, openNote, openVaults, test, typeAtEnd } from './helpers';
 
 // #24: removing the active vault closes its note, drops its drafts and never saves into it again.
 test('removing the active vault closes its note cleanly', async ({ page, api, vault }) => {
@@ -9,7 +9,7 @@ test('removing the active vault closes its note cleanly', async ({ page, api, va
     await openNote(page, 'Ideas.md');
     await typeAtEnd(page, ' unsaved');
 
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     const row = page.locator(`[data-testid="admin-vault"][data-vault="${vault.id}"]`);
     await row.click();
     await page.getByTestId('vault-details').getByTestId('vault-remove').click();

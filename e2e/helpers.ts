@@ -187,6 +187,26 @@ export async function openApp(page: Page, vaultId?: string) {
   if (vaultId) await expect(page.getByTestId('vault-switcher').first()).toContainText(vaultId, { timeout: 20_000 });
 }
 
+/** On a tablet the sidebar is an overlay: shows it if it is hidden. */
+async function showSidebar(page: Page) {
+  if ((await page.locator('#sidebar').getAttribute('inert')) !== null) await page.getByTestId('sidebar-toggle').click();
+}
+
+/** Opens the vault manager the way the user does: vault menu → Manage vaults…. */
+export async function openVaults(page: Page) {
+  await showSidebar(page);
+  await page.getByTestId('vault-switcher').filter({ visible: true }).first().click();
+  await page.getByTestId('manage-vaults').click();
+  await expect(page.getByTestId('admin')).toBeVisible();
+}
+
+/** Opens the settings the way the user does. */
+export async function openSettings(page: Page) {
+  await showSidebar(page);
+  await page.getByTestId('open-settings').click();
+  await expect(page.getByTestId('settings-dialog')).toBeVisible();
+}
+
 export const treeItem = (page: Page, path: string) => page.locator(`[data-testid="tree-item"][data-path="${path}"]`);
 
 /** Expands the (collapsed by default, #53) folders above `path` in the file tree. */

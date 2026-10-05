@@ -25,7 +25,7 @@ export function Sidebar({ inert }: { inert?: boolean }) {
           </div>
         )}
         <span className="sp" />
-        <button className="ib" title="Vaults & settings" data-testid="open-admin" onClick={() => setAdminOpen(true)}><Icon n="gear_alt" /></button>
+        <button className="ib" title="Settings" aria-label="Settings" data-testid="open-settings" onClick={() => setAdminOpen('settings')}><Icon n="gear_alt" /></button>
         {!wide && !phone && <button className="ib" title="Close sidebar" onClick={() => setSidebarOpen(false)}><Icon n="sidebar_left" /></button>}
       </header>
       <div className="scroll">

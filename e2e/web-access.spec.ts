@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync } from 'node:fs';
 import type { BrowserContext, Page } from '@playwright/test';
-import { expect, openApp, test } from './helpers';
+import { expect, openApp, openSettings, test } from './helpers';
 
 // The Web access setting (spec change web-search): a server-wide switch, on by default, and the
 // chips of the AI's web calls. Settings are server-wide: the tests restore what they changed.
@@ -15,13 +15,6 @@ async function withSetting<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 const sw = (page: Page) => page.getByTestId('settings-web-access');
-async function openSettings(page: Page) {
-  // On a tablet the sidebar is an overlay.
-  if ((await page.locator('#sidebar').getAttribute('inert')) !== null) await page.getByTestId('sidebar-toggle').click();
-  await page.getByTestId('open-admin').click();
-  await page.getByTestId('admin-open-settings').click();
-  await expect(sw(page)).toBeVisible();
-}
 
 async function switchTest(page: Page, api: { settings(): Promise<{ webAccess: boolean }>; patchSettings(s: { webAccess?: boolean }): Promise<unknown> }, shot: string) {
   await withSetting(() => switchTestLocked(page, api, shot));
@@ -32,7 +25,7 @@ async function switchTestLocked(page: Page, api: { settings(): Promise<{ webAcce
     await openApp(page);
     await openSettings(page);
     await expect(sw(page)).toBeChecked(); // 1. on by default
-    await page.getByTestId('admin').screenshot({ path: `tmp/web-access/${shot}-on.png`, scale: 'css' });
+    await page.getByTestId('settings-dialog').screenshot({ path: `tmp/web-access/${shot}-on.png`, scale: 'css' });
 
     await sw(page).uncheck(); // 2. off, saved, survives a reload
     await page.getByTestId('settings-save').click();
@@ -41,7 +34,7 @@ async function switchTestLocked(page: Page, api: { settings(): Promise<{ webAcce
     await page.reload();
     await openSettings(page);
     await expect(sw(page)).not.toBeChecked();
-    await page.getByTestId('admin').screenshot({ path: `tmp/web-access/${shot}-off.png`, scale: 'css' });
+    await page.getByTestId('settings-dialog').screenshot({ path: `tmp/web-access/${shot}-off.png`, scale: 'css' });
 
     await sw(page).check(); // 3. back on
     await page.getByTestId('settings-save').click();

@@ -1,9 +1,9 @@
-import { expect, makePlainRemote, makeRemote, openApp, runId, test, treeItem, uid } from './helpers';
+import { expect, makePlainRemote, makeRemote, openApp, openSettings, openVaults, runId, test, treeItem, uid } from './helpers';
 
 test.describe('admin area', () => {
   test('list → details → back', async ({ page, vault }) => {
     await openApp(page, vault.id);
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     const admin = page.getByTestId('admin');
     const row = admin.locator(`[data-testid="admin-vault"][data-vault="${vault.id}"]`);
     await expect(row).toContainText(vault.name);
@@ -24,7 +24,7 @@ test.describe('admin area', () => {
     page.on('dialog', (d) => void d.accept());
     await openApp(page);
 
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     const admin = page.getByTestId('admin');
     await expect(admin).toBeVisible();
     await admin.getByTestId('admin-open-add').click();
@@ -56,7 +56,7 @@ test.describe('admin area', () => {
     await expect(treeItem(page, 'Home.md')).toBeVisible();
 
     // Remove (confirm dialog auto-accepted).
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     await row.click();
     await details.getByTestId('vault-remove').click();
     // Back on the list once the removal is done.
@@ -68,7 +68,7 @@ test.describe('admin area', () => {
   test('an unreachable repo is refused inline and not attached', async ({ page, api }) => {
     const name = `e2e-missing-${runId()}-${uid()}`;
     await openApp(page);
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     await page.getByTestId('admin-open-add').click();
     await page.getByTestId('admin-name').fill(name);
     await page.getByTestId('admin-repo').fill(`e2e/${name}`);
@@ -79,7 +79,7 @@ test.describe('admin area', () => {
 
   test('an invalid repo name is rejected inline', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     await page.getByTestId('admin-open-add').click();
     await page.getByTestId('admin-repo').fill('not a repo');
     await page.getByTestId('admin-add').click();
@@ -90,7 +90,7 @@ test.describe('admin area', () => {
     const name = `e2e-plain-${runId()}-${uid()}`;
     makePlainRemote(name);
     await openApp(page);
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     const admin = page.getByTestId('admin');
     await admin.getByTestId('admin-open-add').click();
     await page.getByTestId('admin-name').fill(name);
@@ -120,9 +120,8 @@ test.describe('admin area', () => {
 
   test('settings: GitHub token is masked; Test token lists each vault', async ({ page, api, vault }) => {
     await openApp(page, vault.id);
-    await page.getByTestId('open-admin').click();
-    const admin = page.getByTestId('admin');
-    await admin.getByTestId('admin-open-settings').click();
+    await openSettings(page);
+    const admin = page.getByTestId('settings-dialog');
     const input = admin.getByTestId('token-input');
     const tok = `ghp_e2e${uid()}abcdefghijklmnopqrstuv`;
     await input.fill(tok);
@@ -144,7 +143,7 @@ test.describe('admin area', () => {
 
   test('"What is a vault?" explains Sources and Wiki', async ({ page }) => {
     await openApp(page);
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     await page.getByTestId('admin-help').click();
     const help = page.getByTestId('vault-help');
     await expect(help).toContainText('Sources/');

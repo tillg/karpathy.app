@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, makeConflict, openApp, openNote, test, treeItem } from './helpers';
+import { expect, makeConflict, openApp, openNote, openVaults, test, treeItem } from './helpers';
 
 // Keyboard and screen-reader behaviour (issues #39, #43, #44, #45, #46, #47).
 
@@ -68,9 +68,9 @@ test.describe('keyboard and screen readers', () => {
     await page.keyboard.press('ArrowUp');
     await expect(page.getByTestId('manage-vaults')).toBeFocused();
     await page.keyboard.press('Enter');
-    const admin = page.getByRole('dialog', { name: 'Vaults & settings' });
+    const admin = page.getByRole('dialog', { name: 'Vaults', exact: true });
     await expect(admin).toBeVisible();
-    await expect(admin.getByRole('heading', { name: 'Vaults & settings' })).toBeFocused();
+    await expect(admin.getByRole('heading', { name: 'Vaults', exact: true })).toBeFocused();
     await expectTabTrapped(page, 12);
     await page.keyboard.press('Escape');
     await expect(admin).toBeHidden();
@@ -197,7 +197,7 @@ test.describe('keyboard and screen readers', () => {
     await minSide(page.getByTestId('mode-read'), 'Read');
     await page.getByTestId('back').click();
 
-    await page.getByTestId('open-admin').click();
+    await openVaults(page);
     const admin = page.getByTestId('admin');
     await admin.getByTestId('admin-vault').first().click();
     await minSide(admin.getByTestId('vault-edit'), 'admin Edit');

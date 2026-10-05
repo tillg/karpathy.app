@@ -471,9 +471,10 @@ function useAppState() {
     setModeState(m);
     try { localStorage.setItem(MODE_KEY, m); } catch { /* not remembered */ }
   }, []);
-  /** Open admin modal; `vault` opens that vault's details instead of the list. */
-  const [adminOpen, setAdminOpenState] = useState<false | { vault?: string }>(false);
-  const setAdminOpen = useCallback((open: boolean, vault?: string) => setAdminOpenState(open ? { vault } : false), []);
+  /** Open admin modal: the vaults dialog (`vault` opens that vault's details instead of the list) or the settings dialog. */
+  const [adminOpen, setAdminOpenState] = useState<false | { view: 'vaults'; vault?: string } | { view: 'settings' }>(false);
+  const setAdminOpen = useCallback((open: false | 'vaults' | 'settings', vault?: string) =>
+    setAdminOpenState(open === false ? false : open === 'settings' ? { view: 'settings' } : { view: 'vaults', vault }), []);
   const [commitOpen, setCommitOpen] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
 

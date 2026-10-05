@@ -1,4 +1,4 @@
-import { expect, openApp, test } from './helpers';
+import { expect, openApp, openSettings, test } from './helpers';
 
 // #16: settings show "Saved", reject bad input with human-readable messages and unknown models.
 // Settings are server-wide: the test only saves the current values, and restores them regardless.
@@ -6,8 +6,7 @@ test('settings: saved feedback, readable validation errors, unknown model refuse
   const cur = await api.settings();
   try {
     await openApp(page);
-    await page.getByTestId('open-admin').click();
-    await page.getByTestId('admin-open-settings').click();
+    await openSettings(page);
     const threshold = page.getByTestId('settings-threshold');
     const model = page.getByTestId('settings-model');
     const save = page.getByTestId('settings-save');
@@ -32,7 +31,7 @@ test('settings: saved feedback, readable validation errors, unknown model refuse
     await save.click();
     await expect(page.getByTestId('settings-saved')).toHaveText(/Saved$/);
     await expect(error).toBeHidden();
-    await page.getByTestId('admin').screenshot({ path: 'tmp/fix2/16-settings.png' });
+    await page.getByTestId('settings-dialog').screenshot({ path: 'tmp/fix2/16-settings.png' });
     expect((await api.settings()).model).toBe(cur.model);
     // Editing again clears the confirmation (not saved).
     await threshold.fill(String(cur.commitReminderThreshold + 1));

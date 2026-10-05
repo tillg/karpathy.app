@@ -33,7 +33,7 @@ backend (file API + opencode client + git sync) get built.
 
 ## Sync
 
-Every vault is a **GitHub repo**. In the app's admin area you configure which repos
+Every vault is a **GitHub repo**. In the app's **Vaults** dialog (vault menu → **Manage vaults…**) you configure which repos
 are your vaults; the backend clones them. Your and the AI's edits stay uncommitted until
 you hit **Commit & Push**. Obsidian mobile and desktop are attached to the same remotes. No second sync system.
 
@@ -42,15 +42,15 @@ you hit **Commit & Push**. Obsidian mobile and desktop are attached to the same 
 Lowercase `sources/` and `wiki/` count too. When you add a repo, the app checks it before attaching
 anything: is it reachable with the token, do the branch and root exist, and are `Sources/` and `Wiki/`
 there? If folders are missing, it offers to create them (as uncommitted `.gitkeep` files). If you
-decline, the vault is not attached. The `(?)` next to "Vaults" in the admin area explains this in the app.
+decline, the vault is not attached. The `(?)` in the **Vaults** dialog explains this in the app.
 
-**GitHub token.** One token is used for every vault. Set or replace it under admin area → Settings, and
+**GitHub token.** One token is used for every vault. Set or replace it in **Settings** (the gear in the sidebar), and
 check it with **Test token**, which shows whose token it is, its expiry, and whether each vault's repo
 is reachable. The app shows only its last 4 characters. Without a token set in the app, the
 backend uses the `github_token` secret of the deployment.
 
 **Web access.** The AI can search the web and read pages. It is on by default; switch it off under
-admin area → Settings → Web access (one switch for all vaults). Each search and page read shows as a
+Settings (the gear) → Web access (one switch for all vaults). Each search and page read shows as a
 chip in the chat (`searched the web: "…"`, `fetched example.com/post`); a fetched chip opens the page.
 Searches go to Exa. `EXA_API_KEY` in `deploy/opencode.env` is optional (see `deploy/opencode.env.example`);
 without it Exa's anonymous endpoint is used, which is rate-limited, so set a key in production
@@ -120,7 +120,7 @@ the login QR code and the deploy scripts).
 
 Notes open at `https://localhost:8443/#/<vault>/<path>` (Back/Forward work). Binary files
 (images, PDFs, …) are listed but not editable. A vault whose clone failed can be retried
-from the admin area. Unsaved edits
+from the **Vaults** dialog. Unsaved edits
 are also kept on the device and restored after a reload or a lost connection. For the
 offline cache / PWA install in your own browser, trust Caddy's dev CA (in the proxy
 container under `/data/caddy/pki/authorities/local/root.crt`). The app reloads itself when
