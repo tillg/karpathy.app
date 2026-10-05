@@ -684,7 +684,8 @@ The ones that shape the whole system:
   opencode provider config. Ollama otherwise truncates opencode's prompt to about 2k tokens silently, and the model
   then ignores `AGENTS.md` and misuses tools. The vision test uses `qwen3-vl:2b` (`LLM_VISION_MODEL`, declared with
   `modalities.input: [text, image]`); Ollama's `qwen2.5vl` has no tool support, so opencode refuses every turn with
-  it. The test container declares image input on the not-pulled `DEAD_MODEL_2`, so `modelInput` is tested without
+  it. Both models must be in the Ollama volume (CI pulls both into `ollama-models`); a missing model fails the test
+  fast as *inconclusive: no tool call*. The test container declares image input on the not-pulled `DEAD_MODEL_2`, so `modelInput` is tested without
   a model run.
 - **Upload tests:** default tier: the upload route, collisions, refusals, the move and its link rewrite, source
   folders, prompts with attachments (a stored opencode user message with a file part is the
