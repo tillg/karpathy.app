@@ -55,10 +55,10 @@ jobs:
       - run: npm ci
       - run: npm run test:github
         env: { TEST_VAULT_TOKEN: '${{ secrets.TEST_VAULT_TOKEN }}' }
-      # Real model turns on a local Ollama (no provider key): pull the model into a volume once.
+      # Real model turns on a local Ollama (no provider key): pull the models (text + vision) into a volume once.
       - run: |
           docker volume create ollama-models
           docker run -d --name pull -v ollama-models:/root/.ollama ollama/ollama
-          sleep 3 && docker exec pull ollama pull qwen2.5:3b && docker rm -f pull
+          sleep 3 && docker exec pull ollama pull qwen2.5:3b && docker exec pull ollama pull qwen3-vl:2b && docker rm -f pull
       - run: npm run test:llm
         env: { OLLAMA_VOLUME: ollama-models }
