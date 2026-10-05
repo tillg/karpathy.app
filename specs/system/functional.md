@@ -40,12 +40,31 @@ collaboration, a sync protocol of its own, offline AI, creating GitHub repos fro
 - **PWA:** installable (standalone, app icons); updates itself when a new version is deployed, re-checking whenever
   the app comes back to the foreground.
 
-### Vaults and settings (admin modal "Vaults & settings")
+### Vaults and settings (two dialogs: "Vaults" and "Settings")
 
-The modal has four views, switched inside it (no router). Every view but the list has an "All vaults" back button.
+Vault management and settings are separate dialogs, one per entry point:
+
+| Entry point | Opens |
+|---|---|
+| Vault menu → **Manage vaults…** ("Add / configure GitHub repos") | **Vaults** dialog, on the vault list |
+| **Edit vault** (note pane, changes panel) | **Vaults** dialog, on that vault's details |
+| Sidebar **gear** (tooltip "Settings") | **Settings** dialog |
+
+The Vaults dialog holds nothing that applies to every vault; the Settings dialog holds nothing per vault.
+
+```mermaid
+flowchart LR
+    M[Manage vaults…] --> L[Vaults: list]
+    L --> D[details] & A[Add vault] & H[What is a vault?]
+    E[Edit vault] --> D
+    G[gear] --> S[Settings: GitHub · App · Version]
+```
+
+The **Vaults** dialog has three views, switched inside it (no router). Details and Add vault have an "All vaults" back
+button to the list.
 
 - **Vault list** (opens first): one row per vault with name, `repo · branch · /root` and the state badge; a row opens
-  its details. Below: **Add vault** and **Settings**. A `(?)` button next to "Vaults" opens **What is a vault?**: a
+  its details. Below: **Add vault**. A `(?)` button next to "Vaults" opens **What is a vault?**: a
   short explanation of `Sources/` (immutable source documents), `Wiki/` (the AI-maintained knowledge base) and optional
   `Schema/` (instructions for the AI), with a folder sketch and the note that the app offers to create missing folders.
   "Edit vault" in the note pane and the changes panel (vault not cloned) opens that vault's details directly.
@@ -58,7 +77,7 @@ The modal has four views, switched inside it (no router). Every view but the lis
   stored and clones in the background only if the check passes (list refreshes every 2 s). A failure after the check
   shows the git error with **Retry** and **Edit**.
 - **Switch vault** from the vault menu (shows `name · branch`); the open note is saved first.
-- **Settings** view, in three groups:
+- **Settings** dialog (the gear; no back button), in three groups:
   - **GitHub:** the server-wide token ([GitHub token](#github-token)).
   - **App:** commit reminder threshold (1–1000 changed files), the model (`provider/model`, server-wide; the
     server rejects models opencode doesn't offer) and the **Web access** switch (on by default, for all vaults: "Lets

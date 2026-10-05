@@ -92,6 +92,7 @@ edited: 2026-10-05
   - [13:46 — Treat `/spec:apply` as the OK for the e2e test changes the proposal lists](#run-2026-10-05-1346-2)
   - [13:46 — Treat the backend auth test failure as flaky, not as a red baseline](#run-2026-10-05-1346-3)
   - [14:20 — No link from a token error in the Vaults dialog to Settings](#run-2026-10-05-1346-4)
+  - [14:50 — Archive on the 14:12 test run and my own commit messages](#run-2026-10-05-1346-5)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1188,3 +1189,16 @@ edited: 2026-10-05
 - **Why:** the request says "no setting here"; the gear is always visible next to the vault menu (sidebar header).
 - **Alternatives:** a link that calls `setAdminOpen('settings')` from clone-failed details and add-vault errors.
 - **Consequences:** possible follow-up issue if the extra step bothers in practice.
+
+## 14:50 — Archive on the 14:12 test run and my own commit messages {#run-2026-10-05-1346-5}
+
+- **Status:** open
+- **Context:** `/spec:archive` runs the full suite again and asks the user to approve the commit message. Since the
+  full run at 14:12 (e2e 367 passed, 5 skipped; `just check` green) only tests were tightened after the review
+  (`settings-split`, `version`, `admin`: re-run, 26 passed) and `specs/system/` and `README.md` were edited.
+- **Question:** re-run the 11-minute suite and wait for a message approval?
+- **Decision:** no; archive on those results plus the plan's grep Verify commands and lint (clean), with the commit
+  message of the implementation commit.
+- **Why:** no app code changed since the green run; the user asked for the archive without being asked back.
+- **Alternatives:** a second full e2e run before archiving.
+- **Consequences:** two commits: system description update, then "- cleaned from change".

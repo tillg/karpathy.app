@@ -97,12 +97,16 @@ flowchart LR
   block carries `data-line` (its source line, frontmatter included) on its own tag, no wrapper elements; Read mode
   uses it for hit positions and mode switches.
 - **API client** (`lib/api.ts`, `lib/ndjson.ts`): fetch wrapper with Bearer token, typed `ApiError`, NDJSON reader.
-- **Admin modal** (`Admin.tsx`): one `Modal` with local view state `list | details | add | settings` (no router;
-  `adminOpen` stays a boolean plus an optional vault id). Every view but the list has a "All vaults" back button; closing
-  resets to the list. The list opens details on a row click; "Edit vault" in `NotePane` / `ChangesPanel` opens that
-  vault's details directly (`setAdminOpen(true, vaultId)`), the sidebar gear and vault switcher open the list. The
-  settings view holds the GitHub token form, `SettingsForm` and the versions. A nested help `Modal` ("What is a
-  vault?", static, no backend) and a nested confirm `Modal` for missing folders.
+- **Admin modal** (`Admin.tsx`): renders one of two dialogs from the store's
+  `adminOpen: false | { view: 'vaults'; vault?: string } | { view: 'settings' }`, set by
+  `setAdminOpen(false | 'vaults' | 'settings', vault?)`. `Shell` mounts it while `adminOpen` is set; closing unmounts it.
+  - `VaultsDialog` (`testid="admin"`, title "Vaults"): local view state `list | details | add` (no router), "All
+    vaults" back button on details and add, `reloadVaults()` on mount. The list opens details on a row click; "Edit
+    vault" in `NotePane` / `ChangesPanel` opens that vault's details directly (`setAdminOpen('vaults', vaultId)`);
+    the vault switcher's **Manage vaults…** opens the list. A nested help `Modal` ("What is a vault?", static, no
+    backend) and a nested confirm `Modal` for missing folders.
+  - `SettingsDialog` (`testid="settings-dialog"`, title "Settings"): the GitHub token form, `SettingsForm` and the
+    versions; no back button. Opened by the sidebar gear (`open-settings`).
 - **Service worker**: precaches the app shell; `vault-api` NetworkFirst cache (5 s timeout) for the vault list, file
   tree and opened notes; auto-update with a re-check whenever the app becomes visible.
 
