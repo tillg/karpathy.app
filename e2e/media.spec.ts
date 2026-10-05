@@ -238,7 +238,17 @@ const tapAndBack = async ({ page, api, vault }: { page: Page; api: import('./hel
   await expect.poll(async () => Math.abs((await sc.evaluate((e) => e.scrollTop)) - before), { timeout: 5000 }).toBeLessThan(10);
 
   // Write mode: the same through the block widget (CodeMirror's pixel heights are estimates, so compare where the image is).
+  // Within a second of Back, the Back's place restore is still running: the switch must stop it, or it pins
+  // Read mode's pixel offset onto the Write view and fights the switch's own alignment.
+  /** Text of the first line (Write) or block (Read) not hidden behind the header. */
+  const firstVisible = (sel: string) => sc.evaluate((el, sel) => {
+    const top = el.getBoundingClientRect().top + parseFloat(getComputedStyle(el).paddingTop);
+    return [...el.querySelectorAll(sel)].find((e) => e.getBoundingClientRect().bottom > top + 1 && e.textContent)?.textContent ?? '';
+  }, sel);
+  const readTop = await firstVisible('.read .rd > [data-line]');
+  expect(readTop).toMatch(/^Filler \d+\.$/);
   await page.getByTestId('mode-write').click();
+  await expect.poll(() => firstVisible('.cm-line'), { timeout: 600 }).toBe(readTop);
   const wdot = page.locator('.cm-embed img[alt="dot.png"]');
   // The cursor sits in a text line; a tap on the embed must not move it to the embed's line.
   await page.locator('.cm-line', { hasText: 'Filler 29.' }).scrollIntoViewIfNeeded().catch(() => {});

@@ -176,6 +176,8 @@ export function NotePane({ inert }: { inert?: boolean }) {
     if (s.scrollRef.current) s.scrollRef.current.scrollTop = byLine ? 0 : note?.restore?.top ?? 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [noteKey, note?.restore, s.scrollRef]);
+  /** Stops a running place restore (below); a mode switch does, so it can't fight the switch's own alignment. */
+  const stopRestore = useRef(() => {});
   s.placeNow.current = () => ({ top: s.scrollRef.current?.scrollTop ?? 0, ...(mode === 'write' ? { line: editor.current?.topLine() } : {}) });
   useEffect(() => {
     const el = s.scrollRef.current;
@@ -187,6 +189,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
     let raf = 0;
     const t0 = performance.now();
     const halt = () => { stop = true; };
+    stopRestore.current = halt;
     const events = ['wheel', 'touchstart', 'keydown', 'mousedown'] as const;
     for (const e of events) el.addEventListener(e, halt, { passive: true });
     const tick = () => {
@@ -219,6 +222,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
   const pendingLine = useRef<number | null>(null);
   const switchMode = (m: 'write' | 'read') => {
     if (m === mode) return;
+    stopRestore.current();
     const sc = s.scrollRef.current;
     pendingLine.current = (mode === 'write' ? editor.current?.topLine() : sc && topBlockLine(sc)) ?? null;
     setMode(m);
