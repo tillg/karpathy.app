@@ -10,7 +10,16 @@ import { identity } from './helpers.js';
 
 export const TOKEN = 'test-token-123';
 
-export async function makeApp(remoteBase: string, extra: Partial<AppDeps> = {}, dirs?: { config: string; vaults: string }, githubSecret?: string, env: Partial<VaultsEnv> = {}) {
+export interface MakeAppOptions {
+  /** Overrides for the app's dependencies (health checks, models, version, …). */
+  deps?: Partial<AppDeps>;
+  /** Reuse these config/vaults dirs (a "restart"); default: fresh temp dirs. */
+  dirs?: { config: string; vaults: string };
+  githubSecret?: string;
+  env?: Partial<VaultsEnv>;
+}
+
+export async function makeApp(remoteBase: string, { deps = {}, dirs, githubSecret, env = {} }: MakeAppOptions = {}) {
   const base = dirs ? null : await mkdtemp(join(tmpdir(), 'kai-app-'));
   const configDir = dirs?.config ?? join(base!, 'config');
   const vaultsDir = dirs?.vaults ?? join(base!, 'vaults');
@@ -18,7 +27,7 @@ export async function makeApp(remoteBase: string, extra: Partial<AppDeps> = {}, 
   const githubToken = new GitHubToken(store, githubSecret);
   const vaults = new Vaults(store, { vaultsDir, remoteBase, identity, githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), ...env });
   await vaults.init();
-  const app = createApp({ token: TOKEN, vaults, store, githubToken, ...extra });
+  const app = createApp({ token: TOKEN, vaults, store, githubToken, ...deps });
   const auth = { Authorization: `Bearer ${TOKEN}` };
   const api = {
     get: (p: string) => request(app).get(`/api${p}`).set(auth),

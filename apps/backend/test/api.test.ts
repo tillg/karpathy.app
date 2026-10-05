@@ -29,7 +29,7 @@ async function appWithFailedVault(remoteBase: string, v: { repo: string; root: s
   await mkdir(dirs.config, { recursive: true });
   const vault = { id: 'v', name: 'v', branch: 'main', ...v, cloned: false, cloneError: "Couldn't clone" };
   await writeFile(join(dirs.config, 'config.json'), JSON.stringify({ vaults: [vault] }));
-  const t = await makeApp(remoteBase, {}, dirs);
+  const t = await makeApp(remoteBase, { dirs });
   cleanups.push(() => t.vaults.close());
   return t;
 }
@@ -44,17 +44,17 @@ describe('auth', () => {
   });
 
   it('health reports backend + opencode', async () => {
-    const { api } = await makeApp('file:///nowhere/', { opencodeHealthy: async () => true });
+    const { api } = await makeApp('file:///nowhere/', { deps: { opencodeHealthy: async () => true } });
     expect((await api.get('/health')).body).toEqual({ backend: 'ok', opencode: 'ok', version: 'dev', built: null, deployed: null });
   });
 
   it('health reports the release version (APP_VERSION)', async () => {
-    const { api } = await makeApp('file:///nowhere/', { opencodeHealthy: async () => true, version: '0.3.0' });
+    const { api } = await makeApp('file:///nowhere/', { deps: { opencodeHealthy: async () => true, version: '0.3.0' } });
     expect((await api.get('/health')).body).toEqual({ backend: 'ok', opencode: 'ok', version: '0.3.0', built: null, deployed: null });
   });
 
   it('health reports when the release was built and deployed (BUILT_AT, DEPLOYED_AT)', async () => {
-    const { api } = await makeApp('file:///nowhere/', { opencodeHealthy: async () => true, version: '0.3.0', built: '2026-10-02T16:20:00Z', deployed: '2026-10-02T16:28:00Z' });
+    const { api } = await makeApp('file:///nowhere/', { deps: { opencodeHealthy: async () => true, version: '0.3.0', built: '2026-10-02T16:20:00Z', deployed: '2026-10-02T16:28:00Z' } });
     expect((await api.get('/health')).body).toMatchObject({ version: '0.3.0', built: '2026-10-02T16:20:00Z', deployed: '2026-10-02T16:28:00Z' });
   });
 });
@@ -123,7 +123,7 @@ describe('vault admin', () => {
     await mkdir(dirs.config, { recursive: true });
     const vault = { id: 'v', name: 'v', repo: remote.repo, branch: 'main', root: '', cloned: false, pendingFolders: ['Sources'] };
     await writeFile(join(dirs.config, 'config.json'), JSON.stringify({ vaults: [vault] }));
-    const t = await makeApp(remote.remoteBase, {}, dirs);
+    const t = await makeApp(remote.remoteBase, { dirs });
     cleanups.push(() => t.vaults.close());
     await t.vaults.whenCloned('v');
     expect((await t.api.get('/vaults/v/changes')).body.map((c: { path: string }) => c.path)).toEqual(['Sources/.gitkeep']);
@@ -143,7 +143,7 @@ describe('vault admin', () => {
     const base = await mkdtemp(join(tmpdir(), 'kai-app-'));
     const dirs = { config: join(base, 'config'), vaults: join(base, 'vaults') };
     await mkdir(join(dirs.vaults, '.preflight', 'pre-crashed', 'c'), { recursive: true });
-    const t = await makeApp('file:///nowhere/', {}, dirs);
+    const t = await makeApp('file:///nowhere/', { dirs });
     cleanups.push(() => t.vaults.close());
     expect(await readdir(join(dirs.vaults, '.preflight')).catch(() => [])).toEqual([]);
   });
@@ -238,7 +238,7 @@ describe('vault admin', () => {
   });
 
   it('settings: unknown model → 400 with a readable message; bad threshold → readable message (#16)', async () => {
-    const { api } = await makeApp('file:///nowhere/', { availableModels: async () => [{ id: 'ollama/qwen2.5:3b', input: { image: false, pdf: false } }] });
+    const { api } = await makeApp('file:///nowhere/', { deps: { availableModels: async () => [{ id: 'ollama/qwen2.5:3b', input: { image: false, pdf: false } }] } });
     const bad = await api.patch('/settings', { model: 'nope/model-x' });
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/not available/i);
@@ -252,7 +252,7 @@ describe('vault admin', () => {
   });
 
   it('settings answer while opencode hangs: modelInput null', async () => {
-    const { api } = await makeApp('file:///nowhere/', { availableModels: () => new Promise(() => undefined) });
+    const { api } = await makeApp('file:///nowhere/', { deps: { availableModels: () => new Promise(() => undefined) } });
     const t0 = Date.now();
     const r = await api.get('/settings').timeout(10_000);
     expect(r.status).toBe(200);
@@ -271,7 +271,7 @@ describe('vault admin', () => {
   });
 
   it('PUT github token → GET shows source settings + last4, never the token; DELETE → secret; bad token → 400', async () => {
-    const { api } = await makeApp('file:///nowhere/', {}, undefined, 'ghp_secretsecretsecretsecret1111');
+    const { api } = await makeApp('file:///nowhere/', { githubSecret: 'ghp_secretsecretsecretsecret1111' });
     expect((await api.get('/settings')).body.githubToken).toEqual({ source: 'secret', last4: '1111' });
     const tok = 'github_pat_abcdefghijklmnopqrstuvwxyz9876';
     expect((await api.put('/settings/github-token', { token: tok })).status).toBe(204);
@@ -625,7 +625,7 @@ describe('git API', () => {
 
     await writeFile(join(t.vaults.vaultRootDir(t.id), 'Other.md'), 'ai again');
     await t.vaults.markAiTouched(t.id, ['Other.md']);
-    const t2 = await makeApp(t.remote.remoteBase, {}, t.dirs);
+    const t2 = await makeApp(t.remote.remoteBase, { dirs: t.dirs });
     cleanups.push(() => t2.vaults.close());
     expect(t2.vaults.aiTouched(t.id)).toEqual(['Other.md']);
     await t2.api.post(`/vaults/${t.id}/commit`, { message: 'with ai' });
@@ -732,7 +732,7 @@ describe('git API', () => {
     expect((await t.api.put(`/vaults/${t.id}/file?path=Home.md`, { content: 'x', version: null, force: true })).status).toBe(423);
     expect((await t.api.get(`/vaults/${t.id}/conflicts/sides?path=Other.md`)).body).toEqual({ mine: 'mine\n', theirs: 'theirs\n' });
 
-    const t2 = await makeApp(t.remote.remoteBase, {}, t.dirs);
+    const t2 = await makeApp(t.remote.remoteBase, { dirs: t.dirs });
     cleanups.push(() => t2.vaults.close());
     expect((await t2.api.get(`/vaults/${t.id}`)).body.state).toBe('conflict');
     const res = await t2.api.post(`/vaults/${t.id}/conflicts/resolve`, { path: 'Other.md', choice: 'both' });
@@ -789,7 +789,7 @@ describe('incoming changes', () => {
     const secret = 'ghs_backgroundFetchSecret123';
     const remote = await makeRemote({ 'Home.md': '# Home\n', 'Other.md': 'other\n' });
     await symlink(join(remote.base, 'remotes'), join(remote.base, secret));
-    const t = await makeApp(`file://${remote.base}/${secret}/`, {}, undefined, secret);
+    const t = await makeApp(`file://${remote.base}/${secret}/`, { githubSecret: secret });
     cleanups.push(() => t.vaults.close());
     const id = await t.addVault(remote.repo);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -928,7 +928,7 @@ describe('event stream', () => {
 
   it('connect fetches, the interval fetches while connected, nothing after disconnect', async () => {
     const remote = await makeRemote({ 'Home.md': '# Home\n', 'Other.md': 'other\n' });
-    const t = await makeApp(remote.remoteBase, {}, undefined, undefined, { fetchIntervalMs: 200 });
+    const t = await makeApp(remote.remoteBase, { env: { fetchIntervalMs: 200 } });
     cleanups.push(() => t.vaults.close());
     const id = await t.addVault(remote.repo);
     const connect = await eventStreams(t.app);

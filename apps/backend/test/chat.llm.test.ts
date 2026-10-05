@@ -27,7 +27,7 @@ class Inconclusive extends Error {}
 
 async function setup() {
   const remote = await makeRemote({ 'Home.md': '# Home\n', 'notes/Todo.md': 'Buy milk\n' }, { name: `l${Math.random().toString(36).slice(2, 7)}` });
-  const t = await makeApp(remote.remoteBase, {}, { config: join(base, `config-${Math.random()}`), vaults: vaultsDir });
+  const t = await makeApp(remote.remoteBase, { dirs: { config: join(base, `config-${Math.random()}`), vaults: vaultsDir } });
   await t.store.update((c) => { c.settings.model = LLM_MODEL; });
   const harness = new OpencodeHarness(oc.url, oc.password);
   const chat = new ChatService(t.vaults, t.store, harness, '/vaults');
@@ -242,7 +242,7 @@ describe('@llm AI reads and writes', () => {
       await new Promise((r) => setTimeout(r, 200));
     }
     // "Restart": a fresh ChatService + lock state, same opencode.
-    const t2 = await makeApp(t.remote.remoteBase, {}, t.dirs);
+    const t2 = await makeApp(t.remote.remoteBase, { dirs: t.dirs });
     const chat2 = new ChatService(t2.vaults, t2.store, t.harness, '/vaults');
     await chat2.init();
     expect(chat2.turnState(t.id, chatId)).toBe('running');

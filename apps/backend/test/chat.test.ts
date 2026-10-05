@@ -25,7 +25,7 @@ afterAll(() => oc?.stop());
 
 async function setup() {
   const remote = await makeRemote({ 'Home.md': '# Home\n', 'Other.md': 'other\n' }, { name: `v${Math.random().toString(36).slice(2, 7)}` });
-  const t = await makeApp(remote.remoteBase, {}, { config: join(base, `config-${Math.random()}`), vaults: vaultsDir });
+  const t = await makeApp(remote.remoteBase, { dirs: { config: join(base, `config-${Math.random()}`), vaults: vaultsDir } });
   await t.store.update((c) => { c.settings.model = DEAD_MODEL; });
   const harness = new OpencodeHarness(oc.url, oc.password);
   const chat = new ChatService(t.vaults, t.store, harness, '/vaults');
@@ -284,7 +284,7 @@ describe('chat API against a real opencode container', () => {
     await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'survive me' });
     t.chat.close();
     // "Restart": fresh Vaults (fresh locks) + ChatService on the same config and clones.
-    const t2 = await makeApp(t.remote.remoteBase, {}, t.dirs);
+    const t2 = await makeApp(t.remote.remoteBase, { dirs: t.dirs });
     await t2.store.update((c) => { c.settings.model = DEAD_MODEL; });
     const chat2 = new ChatService(t2.vaults, t2.store, t.harness, '/vaults');
     await chat2.init();
@@ -312,7 +312,7 @@ describe('chat API against a real opencode container', () => {
     }
     t.chat.close();
     // "Restart": the queue is read back from config.json, which holds the path and no bytes.
-    const t2 = await makeApp(t.remote.remoteBase, {}, t.dirs);
+    const t2 = await makeApp(t.remote.remoteBase, { dirs: t.dirs });
     expect(t2.store.get().queued[t.id]).toEqual([{ chatId, text: '', attachments: ['Sources/upload-x/a.png'] }]);
     await t2.vaults.close();
   });

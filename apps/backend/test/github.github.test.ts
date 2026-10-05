@@ -71,7 +71,7 @@ describe('@github test vault', () => {
     const remote = 'https://github.com/';
     const base = await mkdtemp(join(tmpdir(), 'kai-gh-'));
     const { makeApp } = await import('./app-helpers.js');
-    const t = await makeApp(remote, {}, { config: join(base, 'config'), vaults: join(base, 'vaults') }, token);
+    const t = await makeApp(remote, { dirs: { config: join(base, 'config'), vaults: join(base, 'vaults') }, githubSecret: token });
     const v = await t.vaults.add({ name: 'tt', repo: REPO });
     await t.vaults.whenCloned(v.id);
     const good = await t.api.post('/settings/github-token/test', {});
