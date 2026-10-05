@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-04
+edited: 2026-10-05
 ---
 
 **Contents**
@@ -84,6 +84,9 @@ edited: 2026-10-04
   - [15:44 — remote-changes: a shared-lock background fetch every 2 minutes while a vault is open](#run-2026-10-04-1514-11)
   - [15:44 — attachments: upload into Sources/media/ first, send the AI the path; warn on a text-only model](#run-2026-10-04-1514-12)
   - [15:48 — Nothing added to the demo vault; agents' choices logged as one entry per change; #120 filed](#run-2026-10-04-1514-13)
+- [2026-10-05 12:00 — Finish tests, merge both agents' work, release the next version and deploy to prod](#run-2026-10-05-1200)
+  - [12:00 — Push, release and deploy to prod, as the task asks](#run-2026-10-05-1200-1)
+  - [12:00 — Skip the iPhone and Obsidian device checks: they need a person](#run-2026-10-05-1200-2)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1076,3 +1079,43 @@ edited: 2026-10-04
 - **Why:** a guide chapter for unbuilt features would mislead; 60+ entries would bury the few that matter.
 - **Alternatives:** one entry per agent choice (the format's default).
 - **Consequences:** demo pages come with `/spec:apply` of each change.
+
+# 2026-10-05 12:00 — Finish tests, merge both agents' work, release the next version and deploy to prod {#run-2026-10-05-1200}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > Finish your tests
+  > Align with the other agent that is workiong on the same repo but uses worktree
+  > Commit and push all
+  > Make sure also the other agent commits and pushes his work
+  > Get the entire, most up-to-date code in this repo
+  > Make a new version, increased from the last one
+  > Publish it to PROD
+  > Send me an update via ntfy after each step
+
+## 12:00 — Push, release and deploy to prod, as the task asks {#run-2026-10-05-1200-1}
+
+- **Status:** open
+- **Context:** `/autonomous` doesn't push or do anything irreversible without the user; the task asks for exactly
+  that (commit and push, a new version, publish to prod).
+- **Question:** follow the skill's guardrail or the task?
+- **Decision:** the task: push `main`, tag the next patch release with `just release`, deploy it with
+  `just deploy hetzner`, and send an ntfy push (the `hetzner` topic, `ntfy.sh`) after each step.
+- **Why:** the user asked for each of these steps explicitly, in their own words; the guardrail protects against
+  doing them unasked.
+- **Alternatives:** stop before the push and release and leave them for the user (what the guardrail defaults to).
+- **Consequences:** prod runs the new release when the run ends; a rollback is `just deploy hetzner <old version>`.
+
+## 12:00 — Skip the iPhone and Obsidian device checks: they need a person {#run-2026-10-05-1200-2}
+
+- **Status:** open
+- **Context:** "Finish your tests": the attachments change was archived with its device check partly open (iPhone
+  camera, library, HEIC → `.jpg`; Obsidian after a commit). Safari drag and drop on the Mac was checked by the user.
+- **Question:** wait for those checks before releasing?
+- **Decision:** no; finish every automated suite (unit, integration, `@llm` vision, e2e on dev and the prod images)
+  and release. The open device checks stay listed in `specs/system/functional.md`.
+- **Why:** they need the user's hands and phone; every automated layer is green, and the features degrade safely
+  (iOS converts HEIC, the browser converts what's left, the server refuses the rest).
+- **Alternatives:** hold the release until the user is back.
+- **Consequences:** if the iPhone shows a problem, it is fixed in a follow-up release.
