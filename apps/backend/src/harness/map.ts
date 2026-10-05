@@ -85,6 +85,9 @@ export function mapPart(part: Json, root: string): ChatPart | null {
       return { type: 'reasoning', id, text: str(part.text) ?? '' };
     case 'tool':
       return { type: 'tool', id, call: mapToolPart(part, root) };
+    case 'file':
+      // `url` is a data: URL by now (the bytes): only the vault path we sent as the file name goes on.
+      return str(part.filename) ? { type: 'file', id, path: str(part.filename)!, mime: str(part.mime) ?? '' } : null;
     default:
       return null;
   }

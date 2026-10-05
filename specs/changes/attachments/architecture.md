@@ -1,7 +1,7 @@
 ---
 feature: attachments
 title: "Architecture: uploads and chat attachments"
-status: proposed
+status: applying
 order: 3
 created: 2026-10-04
 edited: 2026-10-04

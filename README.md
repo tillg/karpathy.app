@@ -72,7 +72,13 @@ done; never while you are typing). On a wide screen the ⇄ button on the note/c
 columns, putting the chat in the large main column; the browser remembers the choice. Images, video, audio
 and PDFs in a note show up as **embeds** (`![[photo.png]]`, `![[clip.mp4|300]]`, `![alt](img/a.png)`) in Read mode, in
 Write mode (a block below the line; the text stays as written) and in chat answers; tapping an image opens
-it, Back returns to the same place, and media over 50 MB loads only on a tap. The **Write/Read mode is sticky**:
+it, Back returns to the same place, and media over 50 MB loads only on a tap. **Attach photos and PDFs**: the
+**+** in Write mode (Take photo / Choose file) or **drag and drop** from Finder uploads JPEG, PNG, GIF, WebP or PDF
+into the page's **own folder** (`Wiki/foo/foo.md`; a flat `Wiki/foo.md` is moved there first and path-form links
+to it are rewritten) and embeds it as `![[name]]`. Photos are scaled to 2048 px and lose their GPS metadata;
+50 MB cap, a warning above 10 MB. The **+** in the chat composer uploads up to 5 files into a new
+`Sources/upload-…/` folder and sends them to the AI with the prompt (a model without image/PDF input only gets
+the path; the chip says so). Uploads are uncommitted changes like any edit. The **Write/Read mode is sticky**:
 it stays as you chose it for every note you open and survives a reload (Write is the default). **Incoming
 changes**: while the app is open, the backend fetches the vault from GitHub every 2 minutes and whenever you
 switch back to the app; files pushed from elsewhere (e.g. Obsidian) show as "· N incoming" next to the git

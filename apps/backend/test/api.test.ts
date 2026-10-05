@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
-import { INCOMING_PATHS_MAX, type VaultEvent } from '@karpathy/shared';
+import { INCOMING_PATHS_MAX, MAX_UPLOAD_BYTES, type VaultEvent } from '@karpathy/shared';
 import { makeApp, TOKEN } from './app-helpers.js';
 import { makeRemote, sh } from './helpers.js';
 
@@ -238,7 +238,7 @@ describe('vault admin', () => {
   });
 
   it('settings: unknown model → 400 with a readable message; bad threshold → readable message (#16)', async () => {
-    const { api } = await makeApp('file:///nowhere/', { availableModels: async () => ['ollama/qwen2.5:3b'] });
+    const { api } = await makeApp('file:///nowhere/', { availableModels: async () => [{ id: 'ollama/qwen2.5:3b', input: { image: false, pdf: false } }] });
     const bad = await api.patch('/settings', { model: 'nope/model-x' });
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/not available/i);
@@ -249,6 +249,16 @@ describe('vault admin', () => {
       expect(r.status).toBe(400);
       expect(r.body.error).toBe('Commit reminder: enter a whole number between 1 and 1000');
     }
+  });
+
+  it('settings answer while opencode hangs: modelInput null', async () => {
+    const { api } = await makeApp('file:///nowhere/', { availableModels: () => new Promise(() => undefined) });
+    const t0 = Date.now();
+    const r = await api.get('/settings').timeout(10_000);
+    expect(r.status).toBe(200);
+    expect(r.body.modelInput).toBeNull();
+    expect(Date.now() - t0).toBeLessThan(5000);
+    expect((await api.patch('/settings', { commitReminderThreshold: 5 }).timeout(10_000)).body.modelInput).toBeNull();
   });
 
   it('PATCH /settings webAccess round-trips; a non-boolean is 400', async () => {
@@ -940,5 +950,214 @@ describe('event stream', () => {
     expect((await t.api.delete(`/vaults/${id}`)).status).toBe(204);
     await sleep(1000);
     await s2.close();
+  });
+});
+
+describe('upload', () => {
+  /** POST /raw with a binary body (the `api.post` helper sends JSON). */
+  const upload = (t: { app: Parameters<typeof request>[0]; id: string }, query: string, body: Buffer = Buffer.from([1, 2, 3])) =>
+    request(t.app).post(`/api/vaults/${t.id}/raw?${query}`).set('Authorization', `Bearer ${TOKEN}`).set('Content-Type', 'application/octet-stream').send(body);
+
+  it('upload: stores bytes, returns path and version', async () => {
+    const t = await vaultApp({ 'Wiki/foo/foo.md': '# Foo\n', 'Sources/x/index.md': '# X\n' });
+    const r = await upload(t, 'name=a.png&note=Wiki/foo/foo.md');
+    expect(r.status).toBe(201);
+    expect(r.body).toEqual({ path: 'Wiki/foo/a.png', version: expect.any(String), size: 3 });
+    expect((await readFile(join(t.vaults.vaultRootDir(t.id), 'Wiki/foo/a.png'))).equals(Buffer.from([1, 2, 3]))).toBe(true);
+    expect((await t.api.get(`/vaults/${t.id}/file?path=Wiki/foo/a.png`)).body.version).toBe(r.body.version);
+    expect((await t.api.get(`/vaults/${t.id}/changes`)).body.map((c: { path: string }) => c.path)).toContain('Wiki/foo/a.png');
+    expect(t.vaults.aiTouched(t.id)).toEqual([]);
+
+    const s = await upload(t, 'name=b.png&note=Sources/x/index.md');
+    expect(s.status).toBe(201);
+    expect(s.body.path).toBe('Sources/x/b.png');
+  });
+
+  it('upload: -2, -3 on collisions, vault-wide, case-insensitive', async () => {
+    const t = await vaultApp({ 'Wiki/foo/foo.md': '# Foo\n', 'Wiki/foo/Y.png': 'y', 'Other/deep/w.png': 'w' });
+    const note = 'note=Wiki/foo/foo.md';
+    expect((await upload(t, `name=x.png&${note}`)).body.path).toBe('Wiki/foo/x.png');
+    expect((await upload(t, `name=x.png&${note}`)).body.path).toBe('Wiki/foo/x-2.png');
+    expect((await upload(t, `name=x.png&${note}`)).body.path).toBe('Wiki/foo/x-3.png');
+    expect((await upload(t, `name=y.png&${note}`)).body.path).toBe('Wiki/foo/y-2.png');
+    expect((await upload(t, `name=w.png&${note}`)).body.path).toBe('Wiki/foo/w-2.png');
+    const many = await Promise.all(Array.from({ length: 10 }, (_, i) => upload(t, `name=z.png&${note}`, Buffer.from([i]))));
+    expect(many.map((r) => r.status)).toEqual(Array(10).fill(201));
+    const paths = many.map((r) => r.body.path as string);
+    expect(new Set(paths).size).toBe(10);
+    for (const [i, r] of many.entries()) expect([...(await readFile(join(t.vaults.vaultRootDir(t.id), r.body.path)))]).toEqual([i]);
+  });
+
+  it('upload: refusals', async () => {
+    const t = await vaultApp({ 'Wiki/foo/foo.md': '# Foo\n', 'Other.md': 'other\n' });
+    const note = 'note=Wiki/foo/foo.md';
+    const files = async () => (await t.api.get(`/vaults/${t.id}/files`)).body.map((f: { path: string }) => f.path);
+    const before = await files();
+    for (const name of ['a.heic', 'a.svg']) expect((await upload(t, `name=${name}&${note}`)).body).toMatchObject({ code: 'not-uploadable' });
+    expect((await upload(t, `name=a.heic&${note}`)).status).toBe(415);
+    expect((await upload(t, `name=big.pdf&${note}`, Buffer.alloc(MAX_UPLOAD_BYTES + 1))).body).toMatchObject({ code: 'too-large' });
+    for (const name of ['a|b.png', 'sub/a.png', '.a.png', 'opencode.json', 'a[1].png', 'a#b.png'])
+      expect((await upload(t, `name=${encodeURIComponent(name)}&${note}`)).body, name).toMatchObject({ code: 'bad-name' });
+    expect((await upload(t, 'name=a.png&note=../x.md')).body).toMatchObject({ code: 'bad-path' });
+    expect((await upload(t, `name=a.png&${note}&source=new&at=2026-10-04-091500`)).status).toBe(400);
+    expect((await upload(t, 'name=a.png')).status).toBe(400);
+    const unauth = await request(t.app).post(`/api/vaults/${t.id}/raw?name=a.png&${note}`).set('Content-Type', 'application/octet-stream').send(Buffer.from([1]));
+    expect(unauth.status).toBe(401);
+    expect(await files()).toEqual(before);
+    // The raw parser is scoped to the upload route: a 2 MB JSON save still works.
+    expect((await t.api.put(`/vaults/${t.id}/file?path=Big.md`, { content: 'x'.repeat(2 * 1024 * 1024), version: null })).status).toBe(200);
+
+    const f = (await t.api.get(`/vaults/${t.id}/file?path=Other.md`)).body;
+    await t.api.put(`/vaults/${t.id}/file?path=Other.md`, { content: 'mine\n', version: f.version });
+    await t.remote.obsidianPush({ 'Other.md': 'theirs\n' });
+    await t.api.post(`/vaults/${t.id}/commit`, { message: 'x' });
+    expect((await t.api.get(`/vaults/${t.id}`)).body.state).toBe('conflict');
+    expect((await upload(t, `name=c.png&${note}`)).status).toBe(423);
+  });
+
+  it('upload: flat page moves into its own folder', async () => {
+    const t = await vaultApp({
+      'Wiki/serien/foo.md': '# Foo\n',
+      'bar.md': '# Bar\n',
+      'Sources/x/x.md': '# X\n',
+      'Sources/y/index.md': '# Y\n',
+      'Wiki/Foo2/foo2.md': '# Foo2\n',
+      'Wiki/imgs.md': '# Imgs\n',
+      'Wiki/imgs/old.png': 'png',
+      '.obsidian/app.json': '{"attachmentFolderPath":"Assets"}',
+    });
+    const root = t.vaults.vaultRootDir(t.id);
+    const r = await upload(t, 'name=a.png&note=Wiki/serien/foo.md');
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ path: 'Wiki/serien/foo/a.png', moved: { from: 'Wiki/serien/foo.md', to: 'Wiki/serien/foo/foo.md' } });
+    await expect(readFile(join(root, 'Wiki/serien/foo.md'))).rejects.toThrow();
+    expect(await readFile(join(root, 'Wiki/serien/foo/foo.md'), 'utf8')).toBe('# Foo\n');
+    expect((await t.api.get(`/vaults/${t.id}/changes`)).body.map((c: { path: string }) => c.path)).toEqual(
+      expect.arrayContaining(['Wiki/serien/foo.md', 'Wiki/serien/foo/foo.md', 'Wiki/serien/foo/a.png']),
+    );
+    expect((await upload(t, 'name=b.png&note=bar.md')).body).toMatchObject({ path: 'bar/b.png', moved: { from: 'bar.md', to: 'bar/bar.md' } });
+    for (const [note, folder] of [['Sources/x/x.md', 'Sources/x'], ['Sources/y/index.md', 'Sources/y'], ['Wiki/Foo2/foo2.md', 'Wiki/Foo2']] as const) {
+      const u = await upload(t, `name=${folder.split('/').pop()}-c.png&note=${note}`);
+      expect(u.body.path, note).toMatch(new RegExp(`^${folder}/`));
+      expect(u.body.moved, note).toBeUndefined();
+    }
+    // A folder of that name holding only images: the page moves in next to them.
+    expect((await upload(t, 'name=d.png&note=Wiki/imgs.md')).body).toMatchObject({ path: 'Wiki/imgs/d.png', moved: { to: 'Wiki/imgs/imgs.md' } });
+    expect(await readFile(join(root, 'Wiki/imgs/old.png'), 'utf8')).toBe('png');
+  });
+
+  it('upload: move refusals', async () => {
+    const tree = async (t: { api: { get: (p: string) => request.Test }; id: string }) => (await t.api.get(`/vaults/${t.id}/files`)).body;
+    for (const existing of ['Wiki/serien/foo/foo.md', 'Wiki/serien/foo/FOO.md']) {
+      const t = await vaultApp({ 'Wiki/serien/foo.md': '# Foo\n', [existing]: 'there\n' });
+      const before = await tree(t);
+      const r = await upload(t, 'name=a.png&note=Wiki/serien/foo.md');
+      expect(r.status, existing).toBe(409);
+      expect(r.body.code, existing).toBe('folder-taken');
+      expect(await tree(t)).toEqual(before);
+    }
+    const t = await vaultApp({ 'Wiki/serien/foo.md': '# Foo\n' });
+    const before = await tree(t);
+    const release = await t.vaults.lock(t.id).acquireShared('turn');
+    try {
+      const r = await upload(t, 'name=a.png&note=Wiki/serien/foo.md');
+      expect(r.status).toBe(409);
+      expect(r.body).toMatchObject({ code: 'ai-busy', error: "The AI is working. Attach again when it's done." });
+      // A page already in its own folder doesn't move, so it may get files during a turn.
+    } finally {
+      release();
+    }
+    expect(await tree(t)).toEqual(before);
+  });
+
+  it('upload: move rewrites path-form links', async () => {
+    const files = { 'Wiki/serien/foo.md': '# Foo\n![](img/p.png)\n', 'Wiki/a.md': '[[serien/foo]] and [[foo]]', 'Wiki/b.md': '[[filme/foo]]', 'Wiki/filme/foo.md': 'film' };
+    const t = await vaultApp(files);
+    const root = t.vaults.vaultRootDir(t.id);
+    await t.vaults.markAiTouched(t.id, ['Wiki/serien/foo.md']);
+    const r = await upload(t, 'name=a.png&note=Wiki/serien/foo.md');
+    expect(r.status).toBe(201);
+    expect(r.body.rewritten).toEqual(['Wiki/a.md']);
+    expect(await readFile(join(root, 'Wiki/a.md'), 'utf8')).toBe('[[serien/foo/foo]] and [[foo]]');
+    expect(await readFile(join(root, 'Wiki/b.md'), 'utf8')).toBe('[[filme/foo]]');
+    expect(await readFile(join(root, 'Wiki/serien/foo/foo.md'), 'utf8')).toBe('# Foo\n![](../img/p.png)\n');
+    expect(t.vaults.aiTouched(t.id)).toEqual(['Wiki/serien/foo/foo.md']);
+
+    // A page changed between the scan and the write: 409 stale, and the page stays where it was.
+    const t2 = await vaultApp(files);
+    const root2 = t2.vaults.vaultRootDir(t2.id);
+    t2.vaults.afterRelinkScan = () => writeFile(join(root2, 'Wiki/a.md'), 'edited meanwhile [[serien/foo]]');
+    const s = await upload(t2, 'name=a.png&note=Wiki/serien/foo.md');
+    expect(s.status).toBe(409);
+    expect(s.body.code).toBe('stale');
+    expect(await readFile(join(root2, 'Wiki/serien/foo.md'), 'utf8')).toBe('# Foo\n![](img/p.png)\n');
+    expect(await readFile(join(root2, 'Wiki/a.md'), 'utf8')).toBe('edited meanwhile [[serien/foo]]');
+  });
+
+  it('upload: the note must be an existing page outside hidden and harness folders', async () => {
+    const t = await vaultApp({ 'Wiki/foo/foo.md': '# Foo\n', 'Wiki/pic.png': 'png', 'notes.txt': 'n' });
+    const files = async () => (await t.api.get(`/vaults/${t.id}/files`)).body.map((f: { path: string }) => f.path);
+    const before = await files();
+    const { readdir } = await import('node:fs/promises');
+    const rootBefore = await readdir(t.vaults.vaultRootDir(t.id));
+    for (const note of ['.opencode/index.md', 'opencode.json/index.md', '.obsidian/index.md', 'Wiki/.hidden/x.md', 'Wiki/missing/missing.md', 'Sources/x/index.md', 'Wiki/pic.png', 'notes.txt', 'Wiki/a|b/a|b.md']) {
+      const r = await upload(t, `name=a.png&note=${encodeURIComponent(note)}`);
+      expect(r.status, note).toBeGreaterThanOrEqual(400);
+      expect(r.status, note).toBeLessThan(500);
+    }
+    expect(await files()).toEqual(before);
+    expect(await readdir(t.vaults.vaultRootDir(t.id))).toEqual(rootBefore);
+    expect(t.vaults.harnessConfigIn(t.id)).toBeNull();
+  });
+
+  it('upload: the move checks everything before its first write', async () => {
+    // dir/stem is a file: refused, and no link was rewritten.
+    const a = await vaultApp({ 'Wiki/serien/foo.md': '# Foo\n', 'Wiki/serien/foo': 'a file', 'Wiki/a.md': '[[serien/foo]]' });
+    const ra = await upload(a, 'name=a.png&note=Wiki/serien/foo.md');
+    expect(ra.body).toMatchObject({ code: 'folder-taken' });
+    expect(await readFile(join(a.vaults.vaultRootDir(a.id), 'Wiki/a.md'), 'utf8')).toBe('[[serien/foo]]');
+    expect(await readFile(join(a.vaults.vaultRootDir(a.id), 'Wiki/serien/foo.md'), 'utf8')).toBe('# Foo\n');
+
+    // A folder of that name in other case: the page moves into it, keeping its spelling (no case twin).
+    const b = await vaultApp({ 'Wiki/serien/foo.md': '# Foo\n', 'Wiki/serien/Foo/x.png': 'x' });
+    const rb = await upload(b, 'name=a.png&note=Wiki/serien/foo.md');
+    expect(rb.body).toMatchObject({ path: 'Wiki/serien/Foo/a.png', moved: { to: 'Wiki/serien/Foo/foo.md' } });
+    expect((await b.api.get(`/vaults/${b.id}/files`)).body.map((f: { path: string }) => f.path).filter((p: string) => p.startsWith('Wiki/serien/'))).toEqual(
+      ['Wiki/serien/Foo', 'Wiki/serien/Foo/a.png', 'Wiki/serien/Foo/foo.md', 'Wiki/serien/Foo/x.png']);
+
+    // The page itself changes during the move: 409 stale, the edit stays at the old path, nothing else changed.
+    const c = await vaultApp({ 'Wiki/serien/foo.md': '# Foo\n', 'Wiki/a.md': '[[serien/foo]]' });
+    const root = c.vaults.vaultRootDir(c.id);
+    c.vaults.afterRelinkScan = () => writeFile(join(root, 'Wiki/serien/foo.md'), '# Foo edited\n');
+    const rc = await upload(c, 'name=a.png&note=Wiki/serien/foo.md');
+    expect(rc.body).toMatchObject({ code: 'stale' });
+    expect(await readFile(join(root, 'Wiki/serien/foo.md'), 'utf8')).toBe('# Foo edited\n');
+    expect(await readFile(join(root, 'Wiki/a.md'), 'utf8')).toBe('[[serien/foo]]');
+    expect((await c.api.get(`/vaults/${c.id}/files`)).body.map((f: { path: string }) => f.path).filter((p: string) => p.includes('a.png'))).toEqual([]);
+  });
+
+  it('upload: the move finds percent-encoded links to a page with umlauts', async () => {
+    const t = await vaultApp({ 'Wiki/serien/München.md': '# München\n', 'Wiki/a.md': '[M](serien/M%C3%BCnchen.md)' });
+    const r = await upload(t, `name=a.png&note=${encodeURIComponent('Wiki/serien/München.md')}`);
+    expect(r.body).toMatchObject({ moved: { to: 'Wiki/serien/München/München.md' }, rewritten: ['Wiki/a.md'] });
+    expect(await readFile(join(t.vaults.vaultRootDir(t.id), 'Wiki/a.md'), 'utf8')).toBe('[M](serien/M%C3%BCnchen/M%C3%BCnchen.md)');
+  });
+
+  it('upload: source folders', async () => {
+    const t = await vaultApp({ 'Sources/mail-x/mail-x.md': '# Mail\n' });
+    const at = 'at=2026-10-04-091500';
+    expect((await upload(t, `name=photo.jpg&source=new&${at}`)).body).toMatchObject({ path: 'Sources/upload-2026-10-04-091500/photo.jpg' });
+    expect((await upload(t, 'name=doc.pdf&source=upload-2026-10-04-091500')).body).toMatchObject({ path: 'Sources/upload-2026-10-04-091500/doc.pdf' });
+    expect((await upload(t, `name=x.jpg&source=new&${at}`)).body).toMatchObject({ path: 'Sources/upload-2026-10-04-091500-2/x.jpg' });
+    for (const q of ['source=new', 'source=new&at=yesterday', 'source=new&at=../x'])
+      expect((await upload(t, `name=y.jpg&${q}`)).status, q).toBe(400);
+    for (const source of ['../Wiki', 'mail-x', 'upload-missing'])
+      expect((await upload(t, `name=y.jpg&source=${encodeURIComponent(source)}`)).body, source).toMatchObject({ code: 'bad-path' });
+    expect((await t.api.get(`/vaults/${t.id}/files`)).body.map((f: { path: string }) => f.path).filter((p: string) => p.includes('y.jpg'))).toEqual([]);
+
+    // A vault with sources/ (lower case) keeps its spelling: no Sources/ twin.
+    const l = await vaultApp({ 'sources/a/a.md': '# A\n', 'Wiki/w.md': 'w' });
+    expect((await upload(l, `name=p.jpg&source=new&${at}`)).body).toMatchObject({ path: 'sources/upload-2026-10-04-091500/p.jpg' });
+    expect(await readdir(l.vaults.vaultRootDir(l.id))).not.toContain('Sources');
   });
 });

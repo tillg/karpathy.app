@@ -26,9 +26,17 @@ export interface Settings {
   webAccess: boolean;
 }
 
+/** What a model reads besides text (opencode's `capabilities.input`). */
+export interface ModelInput {
+  image: boolean;
+  pdf: boolean;
+}
+
 /** `GET /settings`: the settings plus the GitHub token's state — never the token itself. */
 export interface SettingsView extends Settings {
   githubToken: { source: 'settings' | 'secret' | 'none'; last4: string | null };
+  /** What the current model reads; null when opencode is down or doesn't list the model. */
+  modelInput: ModelInput | null;
 }
 
 /** `POST /settings/github-token/test`. */
@@ -78,6 +86,17 @@ export interface FileContent {
   binary: boolean;
   /** Content hash; send back as `version` on PUT. */
   version: string;
+}
+
+/** `POST /vaults/:id/raw` (upload): where the file landed. */
+export interface UploadResult {
+  path: string;
+  version: string;
+  size: number;
+  /** The note was flat and moved into its own folder first. */
+  moved?: { from: string; to: string };
+  /** Pages whose path-form links to the moved note were rewritten. */
+  rewritten?: string[];
 }
 
 export interface PutFileRequest {
@@ -152,7 +171,9 @@ export interface ToolCall {
 export type ChatPart =
   | { type: 'text'; id: string; text: string }
   | { type: 'reasoning'; id: string; text: string }
-  | { type: 'tool'; id: string; call: ToolCall };
+  | { type: 'tool'; id: string; call: ToolCall }
+  /** A file sent with a prompt (chat attachment): its vault path, never its bytes. */
+  | { type: 'file'; id: string; path: string; mime: string };
 
 export interface ChatMessage {
   id: string;
@@ -190,3 +211,5 @@ export interface ApiError {
 }
 
 export * from './media.js';
+export * from './wikilink.js';
+export * from './relink.js';

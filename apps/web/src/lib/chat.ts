@@ -34,7 +34,7 @@ export function applyChatEvent(c: ChatView, e: ChatEvent): ChatView {
         const i = parts.findIndex((p) => p.id === e.partId);
         if (i < 0) return [...parts, { type: 'text', id: e.partId, text: e.delta }];
         const p = parts[i]!;
-        if (p.type === 'tool') return parts;
+        if (p.type === 'tool' || p.type === 'file') return parts;
         const next = [...parts];
         next[i] = { ...p, text: p.text + e.delta };
         return next;

@@ -1,6 +1,7 @@
-import type { FileEntry, SettingsView, Vault, VaultEvent, VaultStatus } from '@karpathy/shared';
+import { MAX_UPLOAD_BYTES, rewriteLinks, WARN_UPLOAD_BYTES, type FileEntry, type SettingsView, type Vault, type VaultEvent, type VaultStatus } from '@karpathy/shared';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError, api, errorText } from './lib/api';
+import { prepare } from './lib/attach';
 import { draftAction, dropDraft, dropVaultDrafts, getDraft, putDraft } from './lib/drafts';
 import { invalidate } from './lib/media';
 import { readNdjson } from './lib/ndjson';
@@ -18,6 +19,10 @@ export interface NoteView {
   version: string;
   dirty: boolean;
   saving: boolean;
+  /** Files from the device are being uploaded for this note. */
+  uploading?: boolean;
+  /** The path the note was opened at, while it has moved since (into its own folder): keeps the editor mounted. */
+  openedAs?: string;
   /** Deleted elsewhere (AI, another device, discard) while open. */
   deleted?: boolean;
   /** Not text (image, video, PDF…): shown as a player or file card (MediaView), never edited or saved (issue #20). */
@@ -220,6 +225,10 @@ function useAppState() {
   /** Why the last save of the open note failed: 'stale' and 'deleted' block leaving the note. */
   const failed = useRef<'stale' | 'deleted' | 'error' | null>(null);
   const [stale, setStale] = useState<{ vault: string; path: string } | null>(null);
+  /** The note whose uploads are running: its autosave waits (the server may move it meanwhile). */
+  const autosavePaused = useRef<OpenNote | null>(null);
+  /** The next route sync replaces the history entry (the open note moved, it wasn't navigated to). */
+  const replaceRoute = useRef(false);
 
   /** Resolves true when the open note's text is on the server (nothing to save counts). */
   const save = useCallback(async (force = false, keepalive = false): Promise<boolean> => {
@@ -286,7 +295,7 @@ function useAppState() {
     persist(n);
     setNote((v) => v && (v.dirty === (text !== n.saved) ? v : { ...v, dirty: text !== n.saved }));
     clearTimeout(timer.current);
-    if (!n.deleted) timer.current = setTimeout(() => void save(false), AUTOSAVE_MS);
+    if (!n.deleted && autosavePaused.current !== n) timer.current = setTimeout(() => void save(false), AUTOSAVE_MS);
   }, [save]);
 
   /** Loads a note; a locally stored draft is restored (or, if the note changed since, goes stale). */
@@ -349,6 +358,74 @@ function useAppState() {
     const n = noteRef.current;
     if (online && n && n.draft !== n.saved && failed.current !== 'stale') void save(false);
   }, [online, save]);
+
+  /** The open note `n` was moved into its own folder by an upload: follow it (path, draft key, route). */
+  const retarget = useCallback(async (n: OpenNote, to: string, rewritten: string[], setText: (text: string) => void) => {
+    const from = n.path;
+    const paths = pathsRef.current; // still the list from before the move
+    dropDraft(drafts(), n.vault, from);
+    n.path = to;
+    try {
+      // The server rewrote the page's relative links one level deeper: unedited, take its text; edited, rewrite ours the same way.
+      const f = await api.file(n.vault, to);
+      n.version = f.version;
+      n.draft = n.draft === n.saved ? f.content : rewriteLinks(n.draft, from, from, to, paths);
+      n.saved = f.content;
+    } catch { /* the next save goes through the stale-save flow */ }
+    // Into the editor now, before the embed goes in (an insert reports the editor's whole text as the draft).
+    if (noteRef.current === n) setText(n.draft);
+    persist(n);
+    if (noteRef.current !== n) return;
+    replaceRoute.current = true;
+    setNote((v) => v && { ...v, path: to, openedAs: v.openedAs ?? from, version: n.version, dirty: n.draft !== n.saved });
+    void refreshFiles();
+    const k = rewritten.length;
+    toast(`Moved to ${to}${k ? ` · updated links in ${k} page${k === 1 ? '' : 's'}` : ''}`);
+  }, [refreshFiles, toast]);
+
+  /**
+   * Uploads files from the device for the open note, one after another, and hands each stored file's
+   * name to `insert` (the editor puts the embed in). A file that fails is skipped with a toast.
+   */
+  const uploadToNote = useCallback(async (list: File[], fromCamera: boolean, editor: { insert(embed: string): boolean; setText(text: string): void }) => {
+    const n = noteRef.current;
+    if (!n || n.binary || !list.length) return;
+    if (!(await save(false))) { toast('Save the note first'); return; }
+    autosavePaused.current = n;
+    /** The editor is gone (Read mode, another note): the embed goes on a line at the end of the note's text. */
+    const append = (embed: string) => {
+      n.draft = `${n.draft}${!n.draft || n.draft.endsWith('\n') ? '' : '\n'}${embed}\n`;
+      persist(n);
+      if (noteRef.current === n) setNote((v) => v && { ...v, loadNonce: Date.now(), dirty: true });
+    };
+    setNote((v) => v && { ...v, uploading: true });
+    try {
+      for (const file of list) {
+        try {
+          const { blob, name } = await prepare(file, fromCamera);
+          if (blob.size > MAX_UPLOAD_BYTES) { toast(`${file.name} is larger than 50 MB and can’t be uploaded.`); continue; }
+          const mb = Math.round(blob.size / 2 ** 20);
+          if (blob.size > WARN_UPLOAD_BYTES && !confirm(`${file.name} adds ${mb} MB to the vault’s git history for good, even if you delete it later. Upload anyway?`)) continue;
+          const r = await api.upload(n.vault, name, { note: n.path }, blob);
+          if (r.moved) await retarget(n, r.moved.to, r.rewritten ?? [], editor.setText);
+          // Known at once, so the embed resolves before the file event arrives.
+          if (activeRef.current === n.vault) setFiles((f) => (f.some((x) => x.path === r.path) ? f : [...f, { path: r.path, type: 'file' }]));
+          const embed = `![[${r.path.split('/').pop()}]]`;
+          if (noteRef.current !== n || !editor.insert(embed)) append(embed);
+        } catch (e) {
+          toast(`${file.name}: ${errorText(e)}`);
+        }
+      }
+    } finally {
+      if (autosavePaused.current === n) autosavePaused.current = null;
+      setNote((v) => v && { ...v, uploading: false });
+      if (n.draft !== n.saved) {
+        if (noteRef.current === n) timer.current = setTimeout(() => void save(false), AUTOSAVE_MS);
+        // Left meanwhile: save it here, the way leaving it would have.
+        else void api.putFile(n.vault, n.path, n.draft, n.version).then((r) => { n.version = r.version; n.saved = n.draft; persist(n); }, (e) => toast(`Save failed: ${errorText(e)}`));
+      }
+    }
+  }, [save, toast, retarget]);
 
   // ---- UI state ----
   const [section, setSection] = useState<Section>('files');
@@ -560,7 +637,10 @@ function useAppState() {
     if (replace || !location.hash) history.replaceState(null, '', url);
     else history.pushState(null, '', url);
   }, []);
-  useEffect(() => syncRoute(), [activeId, note?.path, syncRoute]);
+  useEffect(() => {
+    syncRoute(replaceRoute.current);
+    replaceRoute.current = false;
+  }, [activeId, note?.path, syncRoute]);
 
   // Open the note from the URL once its vault is usable.
   useEffect(() => {
@@ -632,7 +712,7 @@ function useAppState() {
     online, phone, wide, toast, toastMsg,
     vaults, reloadVaults, settings, setSettings, active, activeId, setActiveId, usable,
     status, setStatus, pull, pulling, files, paths, refreshFiles, changesNonce, mediaEpoch,
-    note, currentText, openNote, isEditing, closeNote, forgetVault, editDraft, flush, reloadNote, overwriteNote, deleteNote, newNote, stale, setStale,
+    note, currentText, openNote, isEditing, closeNote, forgetVault, editDraft, flush, uploadToNote, reloadNote, overwriteNote, deleteNote, newNote, stale, setStale,
     keepDeletedNote, closeDeletedNote,
     followLink, exists, readOnly, conflict,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain,

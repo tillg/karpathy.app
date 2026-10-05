@@ -1,5 +1,6 @@
 import { posix } from 'node:path';
-import type { ChatDetail, ChatEvent, ChatSummary, TurnState } from '@karpathy/shared';
+import { pathToFileURL } from 'node:url';
+import { uploadMime, type ChatDetail, type ChatEvent, type ChatSummary, type TurnState } from '@karpathy/shared';
 import type { ConfigStore } from './config-store.js';
 import type { Harness } from './harness/opencode.js';
 import type { HarnessEvent } from './harness/map.js';
@@ -11,6 +12,8 @@ type Listener = (e: ChatEvent) => void;
 interface Turn {
   chatId: string;
   text: string;
+  /** Vault paths of files sent with the prompt (uploaded before); checked when the turn starts. */
+  attachments?: string[];
 }
 
 interface Running {
@@ -66,7 +69,7 @@ export class ChatService {
     const q = this.v.get(vaultId)?.queue ?? [];
     return this.store
       .update((c) => {
-        if (q.length) c.queued[vaultId] = q.map(({ chatId, text }) => ({ chatId, text }));
+        if (q.length) c.queued[vaultId] = q.map(({ chatId, text, attachments }) => ({ chatId, text, ...(attachments?.length ? { attachments } : {}) }));
         else delete c.queued[vaultId];
       })
       .catch(() => undefined);
@@ -220,15 +223,15 @@ export class ChatService {
     await this.harness.deleteSession(this.dir(vaultId), chatId);
   }
 
-  async prompt(vaultId: string, chatId: string, text: string): Promise<void> {
+  async prompt(vaultId: string, chatId: string, text: string, attachments?: string[]): Promise<void> {
     await this.requireChat(vaultId, chatId);
     const c = this.v.get(vaultId)!;
     if (this.turnState(vaultId, chatId) !== 'idle') throw new HttpError(409, 'this chat already has a turn running or queued', 'busy');
-    c.queue.push({ chatId, text });
+    c.queue.push({ chatId, text, ...(attachments?.length ? { attachments } : {}) });
     // 202 means the prompt survives a backend restart (#37).
     await this.saveQueue(vaultId);
     this.emit(vaultId, chatId, this.queuedEvent(vaultId));
-    void this.titleFromFirstPrompt(vaultId, chatId, text);
+    void this.titleFromFirstPrompt(vaultId, chatId, text || (attachments?.[0]?.split('/').pop() ?? ''));
     void this.kick(vaultId);
   }
 
@@ -326,6 +329,13 @@ export class ChatService {
       this.emit(vaultId, turn.chatId, { type: 'error', message: unsafeMessage(unsafe) });
       return this.endTurn(vaultId);
     }
+    // Checked now, not at prompt time: a file may be discarded while the turn waits.
+    try {
+      for (const path of turn.attachments ?? []) await this.vaults.checkAttachment(vaultId, path);
+    } catch (e) {
+      this.emit(vaultId, turn.chatId, { type: 'error', message: (e as Error).message });
+      return this.endTurn(vaultId);
+    }
     running.readonly = this.vaults.isConflict(vaultId);
     running.startedAt = Date.now();
     this.emit(vaultId, turn.chatId, { type: 'turn', state: 'running', ...(running.readonly ? { readonly: true } : {}) });
@@ -337,6 +347,7 @@ export class ChatService {
         model: settings.model,
         // Sent with every turn, `false` included: opencode keeps the rule on the session.
         tools: { websearch: settings.webAccess, webfetch: settings.webAccess },
+        ...(turn.attachments?.length ? { files: turn.attachments.map((path) => ({ path, mime: uploadMime(path), url: pathToFileURL(posix.join(this.dir(vaultId), path)).href })) } : {}),
       });
       running.started = true;
       this.startPoll(vaultId);

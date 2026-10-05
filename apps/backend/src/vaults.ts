@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
   INCOMING_PATHS_MAX,
   type Change,
@@ -10,14 +10,16 @@ import {
   type FileContent,
   type FileEntry,
   type SearchHit,
+  type UploadResult,
   type Vault,
   type VaultConfig,
   type VaultEvent,
   type VaultState,
   type VaultStatus,
 } from '@karpathy/shared';
+import { isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
 import type { ConfigStore, StoredVault } from './config-store.js';
-import { listTree, search, versionOf, versionOfFile } from './files.js';
+import { filesMentioning, listTree, search, versionOf, versionOfFile } from './files.js';
 import { Git, GitError, type GitIdentity } from './git.js';
 import { VaultLock } from './lock.js';
 import { normalizeRel, resolveInVault } from './paths.js';
@@ -82,6 +84,8 @@ export class Vaults {
   private adding = new Set<string>();
   /** Called when a vault's clone becomes ready (the chat service opens its subscription). */
   onReady?: (id: string) => void;
+  /** Test seam: runs between a move's link scan and its first write. */
+  afterRelinkScan?: () => Promise<void>;
   /** Called under the lock once removal is allowed (the chat service deletes the vault's chats). */
   beforeRemove?: (id: string) => Promise<void>;
 
@@ -363,6 +367,22 @@ export class Vaults {
     return abs;
   }
 
+  /**
+   * A chat attachment may be sent: a raw-servable file (inside the vault root, no hidden segment, no
+   * symlink), uploadable, at most MAX_ATTACHMENT_BYTES. The only guard: opencode reads the `file:` URL as given.
+   */
+  async checkAttachment(id: string, path: string): Promise<void> {
+    let abs;
+    try {
+      abs = await this.rawFile(id, path);
+    } catch (e) {
+      if (e instanceof HttpError && e.status === 404) throw new HttpError(404, `Attachment not found: ${path}`);
+      throw new HttpError(400, `Attachment can't be sent: ${path} (${(e as Error).message})`);
+    }
+    if (!isUploadable(path)) throw new HttpError(400, `Attachment can't be sent: ${path} (only JPEG, PNG, GIF, WebP and PDF)`);
+    if ((await stat(abs)).size > MAX_ATTACHMENT_BYTES) throw new HttpError(400, `Attachment can't be sent: ${path} (larger than 20 MB)`);
+  }
+
   /** Writes a file if `version` still matches (null = must not exist yet). 409 stale, 423 in Conflict. */
   async writeFile(id: string, path: string, content: string, version: string | null, force = false): Promise<{ version: string }> {
     this.requireReady(id);
@@ -383,6 +403,142 @@ export class Vaults {
       this.emitStatusSoon(id);
       return { version: versionOf(content) };
     });
+  }
+
+  /** Stores an uploaded file next to the note it is for (its own folder); never overwrites. 423 in Conflict. */
+  async upload(id: string, name: string, target: { note: string } | { source: string; at?: string }, bytes: Buffer): Promise<UploadResult> {
+    this.requireReady(id);
+    checkUploadName(name);
+    const r = this.runtime(id);
+    return r.lock.withShared('save', async () => {
+      if (r.conflict) throw new HttpError(423, 'vault is in conflict; resolve it first', 'conflict');
+      if ('source' in target) {
+        const path = await this.writeNew(id, await this.sourceFolder(id, target.source, target.at), name, bytes);
+        this.emitStatusSoon(id);
+        return { path, version: versionOf(bytes), size: bytes.length };
+      }
+      const note = await this.checkNote(id, target.note);
+      const { folder, move } = attachmentFolder(note);
+      const write = (into: string) => this.writeNew(id, into, name, bytes);
+      const moved = move ? await this.moveIntoOwnFolder(id, note, folder, write) : undefined;
+      const path = moved?.path ?? (await write(folder));
+      this.emitStatusSoon(id);
+      return { path, version: versionOf(bytes), size: bytes.length, ...(moved ? { moved: { from: note, to: moved.to }, rewritten: moved.rewritten } : {}) };
+    });
+  }
+
+  /** The page an editor upload is for: an existing `.md`, not in a hidden folder, a name every clone can hold. */
+  private async checkNote(id: string, path: string): Promise<string> {
+    const note = normalizeRel(path);
+    if (!/\.md$/i.test(note)) throw new HttpError(400, `attachments go next to a page (.md): ${note}`, 'bad-path');
+    if (note.split('/').some((seg) => seg.startsWith('.'))) throw new HttpError(400, `not a page in the vault: ${note}`, 'bad-path');
+    checkNewName(note);
+    const st = await stat(await resolveInVault(this.vaultRootDir(id), note)).catch(() => null);
+    if (!st?.isFile()) throw new HttpError(404, `not found: ${note}`);
+    return note;
+  }
+
+  /**
+   * Moves the flat page `dir/stem.md` to `folder/stem.md` (its own folder) before its first attachment,
+   * rewriting the path-form links to it and the relative links in it. Every check runs before the first write.
+   */
+  private async moveIntoOwnFolder(id: string, note: string, folder: string, write: (folder: string) => Promise<string>): Promise<{ to: string; rewritten: string[]; path: string }> {
+    const root = this.vaultRootDir(id);
+    const base = note.slice(note.lastIndexOf('/') + 1);
+    // A running turn could write the old path again.
+    if (this.runtime(id).lock.busy === 'turn') throw new HttpError(409, "The AI is working. Attach again when it's done.", 'ai-busy');
+    // A folder of that name in other case is the page's folder: no case twin next to it.
+    const dir = dirname(folder) === '.' ? '' : dirname(folder);
+    const existing = (await readdir(join(root, dir), { withFileTypes: true })).find((e) => e.name.toLowerCase() === basename(folder).toLowerCase());
+    if (existing && !existing.isDirectory()) throw new HttpError(409, `${dir ? `${dir}/` : ''}${existing.name} is a file, so ${note} can't move into its own folder`, 'folder-taken');
+    const own = existing ? `${dir ? `${dir}/` : ''}${existing.name}` : folder;
+    const to = `${own}/${base}`;
+    const from = await resolveInVault(root, note);
+    const dest = await resolveInVault(root, to);
+    const there = await readdir(dirname(dest)).catch(() => [] as string[]);
+    if (there.some((n) => n.toLowerCase() === base.toLowerCase())) throw new HttpError(409, `${to} already exists, so ${note} can't move into its own folder`, 'folder-taken');
+
+    const paths = (await listTree(root)).filter((f) => f.type === 'file').map((f) => f.path);
+    const stem = base.replace(/\.md$/i, '');
+    const edits: { path: string; abs: string; version: string; text: string }[] = [];
+    for (const path of await filesMentioning(root, [...new Set([stem, stem.replaceAll(' ', '%20'), encodeURI(stem)])])) {
+      if (path === note) continue;
+      const abs = join(root, path);
+      const buf = await readFile(abs);
+      const text = rewriteLinks(buf.toString('utf8'), path, note, to, paths);
+      if (text !== buf.toString('utf8')) edits.push({ path, abs, version: versionOf(buf), text });
+    }
+    const ownBuf = await readFile(from);
+    const ownText = rewriteLinks(ownBuf.toString('utf8'), note, note, to, paths);
+    await this.afterRelinkScan?.();
+    // Every check before the first write: a page changed since the scan (the moved one too) refuses the move.
+    for (const e of [...edits, { path: note, abs: from, version: versionOf(ownBuf) }])
+      if ((await versionOfFile(e.abs)) !== e.version) throw new HttpError(409, `${e.path} changed while moving ${note}; attach again`, 'stale');
+    // The attachment first: if it can't be written, nothing has moved.
+    const path = await write(own);
+    for (const e of edits) await writeFile(e.abs, e.text);
+    await rename(from, dest);
+    if (ownText !== ownBuf.toString('utf8')) await writeFile(dest, ownText);
+    if (this.aiTouched(id).includes(note))
+      await this.store.update((c) => { c.aiTouched[id] = c.aiTouched[id]!.map((p) => (p === note ? to : p)); });
+    return { to, rewritten: edits.map((e) => e.path), path };
+  }
+
+
+  /**
+   * The source folder a chat upload goes into: `new` makes `Sources/upload-<at>` (`-2`, `-3` … if taken),
+   * anything else must name an existing `upload-…` folder directly in `Sources/`. `Sources/` is matched
+   * case-insensitively and keeps its spelling.
+   */
+  private async sourceFolder(id: string, source: string, at?: string): Promise<string> {
+    const root = this.vaultRootDir(id);
+    const top = (await readdir(root, { withFileTypes: true })).find((e) => e.isDirectory() && e.name.toLowerCase() === 'sources')?.name ?? 'Sources';
+    const names = await readdir(join(root, top)).catch(() => [] as string[]);
+    if (source !== 'new') {
+      if (!/^upload-[^/\\]+$/.test(source) || !names.includes(source)) throw new HttpError(400, `not an upload folder in ${top}/: ${source}`, 'bad-path');
+      return `${top}/${source}`;
+    }
+    if (!at || !/^\d{4}-\d{2}-\d{2}-\d{6}$/.test(at)) throw new HttpError(400, 'at must be the local time as YYYY-MM-DD-HHMMSS', 'invalid');
+    await mkdir(join(root, top), { recursive: true });
+    for (let n = 1; n <= 100; n++) {
+      const folder = `upload-${at}${n === 1 ? '' : `-${n}`}`;
+      if (names.some((x) => x.toLowerCase() === folder.toLowerCase())) continue;
+      try {
+        // Claims the folder: a second `new` at the same second gets the next one.
+        await mkdir(join(root, top, folder));
+        return `${top}/${folder}`;
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      }
+    }
+    throw new HttpError(409, `no free upload folder for ${at}`, 'exists');
+  }
+
+  /**
+   * Writes `bytes` as `folder/name`, or `name-2`, `name-3` … when a file of that base name exists
+   * anywhere in the vault (case-insensitive), so a bare `![[name]]` is never ambiguous. Never overwrites.
+   */
+  private async writeNew(id: string, folder: string, name: string, bytes: Buffer): Promise<string> {
+    const root = this.vaultRootDir(id);
+    const taken = new Set((await listTree(root)).filter((f) => f.type === 'file').map((f) => f.path.slice(f.path.lastIndexOf('/') + 1).toLowerCase()));
+    const dot = name.lastIndexOf('.');
+    const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+    for (let n = 1; n <= 100; n++) {
+      const candidate = n === 1 ? name : `${stem}-${n}${ext}`;
+      if (taken.has(candidate.toLowerCase())) continue;
+      const path = folder ? `${folder}/${candidate}` : candidate;
+      const abs = await resolveInVault(root, path);
+      await mkdir(dirname(abs), { recursive: true });
+      try {
+        await writeFile(abs, bytes, { flag: 'wx' });
+        return path;
+      } catch (e) {
+        // Another upload took it since the listing.
+        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+        taken.add(candidate.toLowerCase());
+      }
+    }
+    throw new HttpError(409, `no free name for ${name}`, 'exists');
   }
 
   /**
@@ -799,6 +955,20 @@ export class Vaults {
   }
 }
 
+/**
+ * Where an editor upload for `note` (`dir/stem.md`) goes: the note's own folder. It is in one when the
+ * folder carries its name (case-insensitive) or it is the folder's `index.md`; otherwise it must move
+ * into `dir/stem/` first.
+ */
+export function attachmentFolder(note: string): { folder: string; move: boolean } {
+  const slash = note.lastIndexOf('/');
+  const dir = slash < 0 ? '' : note.slice(0, slash);
+  const stem = note.slice(slash + 1).replace(/\.md$/i, '');
+  const own = stem.toLowerCase() === 'index' || dir.slice(dir.lastIndexOf('/') + 1).toLowerCase() === stem.toLowerCase();
+  if (own) return { folder: dir, move: false };
+  return { folder: dir ? `${dir}/${stem}` : stem, move: true };
+}
+
 const RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
 
 /** opencode loads these from a vault as project config: plugins, tools, MCP servers = code (#27). */
@@ -814,6 +984,15 @@ function checkNewName(path: string) {
     if (RESERVED.test(seg)) throw new HttpError(400, `"${seg}" is a reserved name on Windows`, 'bad-name');
     if (/[. ]$/.test(seg)) throw new HttpError(400, `"${seg}" must not end with a dot or space`, 'bad-name');
   }
+}
+
+/** An upload's file name: a new-file name without folders, and nothing that breaks a `![[name]]` embed. */
+function checkUploadName(name: string) {
+  if (name.includes('/') || name.includes('\\')) throw new HttpError(400, 'An upload name must not contain a folder', 'bad-name');
+  if (name.startsWith('.')) throw new HttpError(400, 'An upload name must not start with a dot', 'bad-name');
+  if (/[#^[\]|]/.test(name)) throw new HttpError(400, `"${name}" contains a character that breaks links (#^[]|)`, 'bad-name');
+  checkNewName(name);
+  if (!isUploadable(name)) throw new HttpError(415, 'Only JPEG, PNG, GIF, WebP and PDF can be uploaded.', 'not-uploadable');
 }
 
 /** Valid UTF-8 without NUL bytes. */

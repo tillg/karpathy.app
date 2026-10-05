@@ -1,7 +1,7 @@
 ---
 feature: attachments
 title: "Proposal: attach photos and PDFs"
-status: proposed
+status: applying
 order: 1
 created: 2026-10-04
 edited: 2026-10-04

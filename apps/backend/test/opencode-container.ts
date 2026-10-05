@@ -15,6 +15,8 @@ const OLLAMA = 'kai-test-ollama';
 /** Volume that holds the Ollama models (qwen2.5:3b pulled once). */
 const OLLAMA_VOLUME = process.env.OLLAMA_VOLUME ?? 'kai-spike-ollama';
 export const LLM_MODEL = process.env.LLM_TEST_MODEL ?? 'ollama/qwen2.5:3b';
+/** A model that reads images (pulled once into the Ollama volume, like LLM_MODEL). */
+export const LLM_VISION_MODEL = process.env.LLM_VISION_MODEL ?? 'ollama/qwen3-vl:2b';
 /** Declared to opencode but not pulled in Ollama: every turn fails fast with a non-retryable 404. */
 export const DEAD_MODEL = 'ollama/kai-no-such-model';
 /** A second declared-but-not-pulled model, to observe a model switch without an LLM. */
@@ -131,9 +133,13 @@ export async function startOpencode(vaultsDir: string, env: Record<string, strin
       srv.close(() => resolve(p));
     });
   });
-  const models = Object.fromEntries(
+  const models: Record<string, Record<string, unknown>> = Object.fromEntries(
     [LLM_MODEL, DEAD_MODEL, DEAD_MODEL_2].map((m) => m.split('/').slice(1).join('/')).map((id) => [id, { name: id, tool_call: true, limit: { context: 16384, output: 4096 } }]),
   );
+  // DEAD_MODEL_2 declares image input, so the settings can be seen reporting what a model reads.
+  Object.assign(models[DEAD_MODEL_2.split('/').slice(1).join('/')]!, { modalities: { input: ['text', 'image'], output: ['text'] } });
+  const vision = LLM_VISION_MODEL.split('/').slice(1).join('/');
+  models[vision] = { name: vision, tool_call: true, limit: { context: 16384, output: 4096 }, modalities: { input: ['text', 'image'], output: ['text'] } };
   const providerCfg = { provider: { ollama: { npm: '@ai-sdk/openai-compatible', name: 'Ollama', options: { baseURL: `http://${OLLAMA}:11434/v1` }, models } } };
   docker(
     'run', '-d', '--name', name, '--network', NET, '--user', `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,

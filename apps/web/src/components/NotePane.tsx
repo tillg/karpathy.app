@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { frontmatterFields, renderMarkdown, splitFrontmatter, type FieldValue, type RenderCtx } from '../lib/markdown';
-import { isPdf } from '@karpathy/shared';
+import { isPdf, isUploadable } from '@karpathy/shared';
 import { mountEmbed, mountEmbeds, type Mounted } from '../lib/embed';
 import { mediaKind, resolveEmbed } from '../lib/media';
 import { scrollToLine, topBlockLine } from '../lib/place';
@@ -8,6 +8,7 @@ import { incomingView } from '../lib/incoming';
 import { formatRoute } from '../lib/route';
 import { parseWikilink, resolveRelativeLink, resolveWikilink, wikilinkLabel, WIKILINK_RE } from '../lib/wikilink';
 import { useApp } from '../store';
+import { AttachButton } from './AttachButton';
 import { Editor, type EditorHandle } from './Editor';
 import { GitPill } from './GitPill';
 import { Icon } from './Icon';
@@ -161,6 +162,8 @@ export function NotePane({ inert }: { inert?: boolean }) {
   const { note, mode, setMode, readOnly, online, conflict, phone, wide } = s;
   const editor = useRef<EditorHandle>(null);
   const rctx = useRenderCtx();
+  // The same note while an upload moves it into its own folder: the editor and the scroll position stay.
+  const noteKey = note && (note.openedAs ?? note.path);
   const inc = incomingView(s.status, s.pulling);
   // Warns only; editing stays allowed (the pull's stash, re-apply and conflict flow protect the text).
   const noteIncoming = inc.show && !!note && s.status!.incomingPaths.includes(note.path);
@@ -171,7 +174,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
     const byLine = mode === 'write' && !!note?.restore?.line; // the editor scrolls to the line itself, below
     if (s.scrollRef.current) s.scrollRef.current.scrollTop = byLine ? 0 : note?.restore?.top ?? 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note?.path, note?.restore, s.scrollRef]);
+  }, [noteKey, note?.restore, s.scrollRef]);
   s.placeNow.current = () => ({ top: s.scrollRef.current?.scrollTop ?? 0, ...(mode === 'write' ? { line: editor.current?.topLine() } : {}) });
   useEffect(() => {
     const el = s.scrollRef.current;
@@ -230,7 +233,25 @@ export function NotePane({ inert }: { inert?: boolean }) {
   // The editor opens with the current text (not `loaded`, which predates our own saves); it only
   // changes on (re)load or mode switch, so typing and saving never replace the editor's text (#101).
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const editorDoc = useMemo(() => s.currentText(), [note?.path, note?.loadNonce, mode]);
+  const editorDoc = useMemo(() => s.currentText(), [noteKey, note?.loadNonce, mode]);
+
+  const canAttach = !!note && mode === 'write' && !note.binary && !readOnly && !note.deleted;
+  /** Uploads files for the note and embeds them at `at` (default: the cursor). */
+  const attach = (files: File[], fromCamera: boolean, at?: number) => {
+    const ok = files.filter((f) => isUploadable(f.name) || /\.hei[cf]$/i.test(f.name));
+    const refused = files.filter((f) => !ok.includes(f));
+    if (refused.length) s.toast(`${refused.map((f) => f.name).join(', ')}: Only JPEG, PNG, GIF, WebP and PDF can be uploaded.`);
+    const pos = editor.current?.track(at);
+    if (pos && ok.length) void s.uploadToNote(ok, fromCamera, { insert: pos.insert, setText: (t) => editor.current?.setDoc(t) }).finally(pos.release);
+    else pos?.release();
+  };
+  // A file dropped anywhere else is swallowed, so the browser doesn't navigate to it.
+  useEffect(() => {
+    const swallow = (e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); };
+    addEventListener('dragover', swallow);
+    addEventListener('drop', swallow);
+    return () => { removeEventListener('dragover', swallow); removeEventListener('drop', swallow); };
+  }, []);
 
   const title = note ? note.path.split('/').pop()!.replace(/\.md$/i, '') : '';
   const del = () => { if (note && confirm(`Delete ${note.path}? It stays recoverable until you commit.`)) void s.deleteNote(); };
@@ -251,6 +272,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
                 <button className={mode === 'read' ? 'on' : ''} aria-pressed={mode === 'read'} data-testid="mode-read" onClick={() => switchMode('read')}>Read</button>
               </div>
             )}
+            {canAttach && <AttachButton testid="attach" multiple onFiles={(files, fromCamera) => attach(files, fromCamera)} />}
             {mode === 'write' && !note.binary && <button className="ib" title="Find in note" data-testid="find-in-note" onClick={() => editor.current?.openSearch()}><Icon n="search" /></button>}
             <button className="ib" title={note.binary ? 'Delete file' : 'Delete note'} data-testid="delete-note" disabled={readOnly || note.deleted} onClick={del}><Icon n="trash" /></button>
           </>
@@ -281,12 +303,13 @@ export function NotePane({ inert }: { inert?: boolean }) {
           <div className="doc">
             <h2 className="note-title">{title}</h2>
             {mode === 'write'
-              ? <Editor key={note.path} ref={editor} doc={editorDoc} docNonce={note.loadNonce} readOnly={readOnly || !!note.deleted}
+              ? <Editor key={noteKey} ref={editor} doc={editorDoc} docNonce={note.loadNonce} readOnly={readOnly || !!note.deleted}
                   onChange={s.editDraft} exists={s.exists} onWikilink={s.followLink} resolveEmbed={rctx.resolveEmbed}
-                  embedCtx={() => ({ vault: s.activeId!, toast: s.toast, onOpen: (p) => void s.openNote(p) })} mediaEpoch={s.mediaEpoch} />
+                  embedCtx={() => ({ vault: s.activeId!, toast: s.toast, onOpen: (p) => void s.openNote(p) })} mediaEpoch={s.mediaEpoch}
+                  onDropFiles={canAttach ? (files, pos) => attach(files, false, pos) : undefined} />
               : <ReadView text={s.currentText()} />}
             <div className="dfoot" data-testid="save-state">
-              {note.saving ? 'Saving…' : note.dirty ? '● Unsaved changes' : 'Saved'}{readOnly ? ' · read-only' : ''}
+              {note.uploading ? 'Uploading…' : note.saving ? 'Saving…' : note.dirty ? '● Unsaved changes' : 'Saved'}{readOnly ? ' · read-only' : ''}
             </div>
           </div>
         ) : (

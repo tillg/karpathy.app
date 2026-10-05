@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MEDIA, isPdf, mediaKind, rawType } from './media.js';
+import { MAX_UPLOAD_BYTES, MEDIA, isPdf, isUploadable, mediaKind, rawType, uploadMime } from './media.js';
 
 describe('mediaKind', () => {
   it.each([
@@ -37,5 +37,16 @@ describe('rawType / isPdf', () => {
     expect(isPdf('a/X.PDF')).toBe(true);
     expect(isPdf('pdf')).toBe(false);
     expect(isPdf('x.pdf.png')).toBe(false);
+  });
+});
+
+describe('uploadable files', () => {
+  it.each(['a/B.JPG', 'x.jpeg', 'x.png', 'x.gif', 'x.webp', 'x.pdf'])('%s is uploadable', (p) => expect(isUploadable(p)).toBe(true));
+  it.each(['x.heic', 'x.svg', 'x.avif', 'x.mp4', 'x.md', 'png'])('%s is not', (p) => expect(isUploadable(p)).toBe(false));
+  it('has a mime per format and a 50 MiB cap', () => {
+    expect(uploadMime('x.JPG')).toBe('image/jpeg');
+    expect(uploadMime('x.pdf')).toBe('application/pdf');
+    expect(uploadMime('x.webp')).toBe('image/webp');
+    expect(MAX_UPLOAD_BYTES).toBe(50 * 1024 * 1024);
   });
 });

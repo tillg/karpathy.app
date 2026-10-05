@@ -1,6 +1,6 @@
 import type {
   ChatDetail, ChatSummary, Change, CommitResult, ConflictChoice, Diff, FileContent, FileEntry,
-  SearchHit, Settings, SettingsView, TokenTest, Vault, VaultConfig, VaultStatus,
+  SearchHit, Settings, SettingsView, TokenTest, UploadResult, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
 import { parseLoginCode } from './login-code';
@@ -35,8 +35,10 @@ export class ApiError extends Error {
 /** Raw authed fetch against /api; throws ApiError for non-2xx. */
 export async function request(method: string, path: string, body?: unknown, signal?: AbortSignal, keepalive = false): Promise<Response> {
   const headers: Record<string, string> = { Authorization: `Bearer ${getToken() ?? ''}` };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const data = body === undefined ? undefined : JSON.stringify(body);
+  // A Blob is a file's bytes (upload); everything else is JSON.
+  const bytes = body instanceof Blob;
+  if (body !== undefined) headers['Content-Type'] = bytes ? 'application/octet-stream' : 'application/json';
+  const data = body === undefined ? undefined : bytes ? body : JSON.stringify(body);
   // keepalive lets a save outlive the page (pagehide), but browsers cap such bodies at 64 KiB.
   const res = await fetch(`/api${path}`, { method, headers, body: data, signal, keepalive: keepalive && new Blob([data ?? '']).size < 60_000 });
   if (res.ok) return res;
@@ -85,6 +87,12 @@ export const api = {
     json<{ version: string }>('PUT', `${v(id)}/file?${q(path)}`, { content, version, ...(force ? { force } : {}) }, undefined, keepalive),
   deleteFile: (id: string, path: string, version: string) =>
     json<void>('DELETE', `${v(id)}/file?${q(path)}&version=${encodeURIComponent(version)}`),
+  /**
+   * Stores a file from the device: next to the note `note` (its own folder), or in a chat's source folder
+   * (`source: 'new'` with the local time `at`, or the folder name of an earlier upload). The server picks the final name.
+   */
+  upload: (id: string, name: string, target: { note: string } | { source: string; at?: string }, bytes: Blob) =>
+    json<UploadResult>('POST', `${v(id)}/raw?name=${encodeURIComponent(name)}&${new URLSearchParams(target as Record<string, string>)}`, bytes),
   search: (id: string, text: string, signal?: AbortSignal) =>
     json<{ hits: SearchHit[]; truncated: boolean }>('GET', `${v(id)}/search?q=${encodeURIComponent(text)}`, undefined, signal),
 
@@ -105,7 +113,8 @@ export const api = {
   newChat: (id: string) => json<{ chatId: string }>('POST', `${v(id)}/chats`),
   chat: (id: string, chatId: string) => json<ChatDetail>('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
   deleteChat: (id: string, chatId: string) => json<void>('DELETE', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
-  prompt: (id: string, chatId: string, text: string) => json<{ queued: boolean }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, { text }),
+  prompt: (id: string, chatId: string, text: string, attachments?: string[]) =>
+    json<{ queued: boolean }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, { text, ...(attachments?.length ? { attachments } : {}) }),
   chatStream: (id: string, chatId: string, signal: AbortSignal) => request('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}/stream`, undefined, signal),
   abort: (id: string, chatId: string) => json<void>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/abort`),
 };

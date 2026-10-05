@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseWikilink, resolveWikilink, wikilinkLabel } from './wikilink';
+import { parseWikilink, resolveWikilink, wikilinkLabel } from './wikilink.js';
 
 const paths = ['index.md', 'log.md', 'wiki/concepts/llm-wiki.md', 'wiki/entities/obsidian.md', 'raw/notes.txt', 'wiki/entities/Andrej Karpathy.md'];
 

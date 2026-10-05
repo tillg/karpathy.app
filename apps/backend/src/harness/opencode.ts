@@ -1,5 +1,5 @@
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2/client';
-import type { ChatMessage, ChatSummary } from '@karpathy/shared';
+import type { ChatMessage, ChatSummary, ModelInput } from '@karpathy/shared';
 import { mapEvent, mapMessages, writtenPaths, type HarnessEvent } from './map.js';
 
 export type AgentName = 'vault' | 'vault-readonly' | 'commit-message';
@@ -11,7 +11,15 @@ export interface PromptInput {
   model: string;
   /** Per-turn tool switches (`{ websearch: true }`); opencode stores them as session permission rules. */
   tools?: Record<string, boolean>;
+  /** Files sent with the prompt: vault path (the part's file name), `file:` URL as the harness sees it, type. */
+  files?: { path: string; url: string; mime: string }[];
 }
+
+/** The prompt as opencode parts: the text (left out when empty), then one file part per attachment. */
+const promptParts = (input: PromptInput) => [
+  ...(input.text ? [{ type: 'text' as const, text: input.text }] : []),
+  ...(input.files ?? []).map((f) => ({ type: 'file' as const, mime: f.mime, filename: f.path, url: f.url })),
+];
 
 /** Everything the backend needs from the agent harness. `dir` = vault root as the harness sees it. */
 export interface Harness {
@@ -27,8 +35,8 @@ export interface Harness {
   promptSync(dir: string, id: string, input: PromptInput, signal?: AbortSignal): Promise<string>;
   abort(dir: string, id: string): Promise<void>;
   busySessions(dir: string): Promise<string[]>;
-  /** `provider/model` ids the harness can run (providers with credentials). */
-  models(): Promise<string[]>;
+  /** The models the harness can run (providers with credentials): `provider/model` and what they read. */
+  models(): Promise<{ id: string; input: ModelInput }[]>;
   /** One event subscription per directory; reconnects until stopped, only while `mayConnect()`. */
   subscribe(dir: string, onEvent: (e: HarnessEvent) => void, mayConnect?: () => boolean): () => void;
 }
@@ -96,7 +104,7 @@ export class OpencodeHarness implements Harness {
       sessionID: id,
       agent: input.agent,
       model: splitModel(input.model),
-      parts: [{ type: 'text', text: input.text }],
+      parts: promptParts(input),
       ...(input.tools ? { tools: input.tools } : {}),
     });
     if (r.error !== undefined) throw new Error(`opencode prompt failed: ${JSON.stringify(r.error)}`);
@@ -126,8 +134,12 @@ export class OpencodeHarness implements Harness {
   }
 
   async models() {
-    const data = unwrap(await this.c.config.providers(), 'config.providers') as { providers: { id: string; models: Record<string, unknown> }[] };
-    return data.providers.flatMap((p) => Object.keys(p.models).map((m) => `${p.id}/${m}`));
+    type M = { capabilities?: { input?: { image?: boolean; pdf?: boolean } } };
+    const data = unwrap(await this.c.config.providers(), 'config.providers') as { providers: { id: string; models: Record<string, M> }[] };
+    return data.providers.flatMap((p) => Object.entries(p.models).map(([m, info]) => ({
+      id: `${p.id}/${m}`,
+      input: { image: !!info.capabilities?.input?.image, pdf: !!info.capabilities?.input?.pdf },
+    })));
   }
 
   subscribe(dir: string, onEvent: (e: HarnessEvent) => void, mayConnect: () => boolean = () => true): () => void {

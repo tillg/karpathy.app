@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { mapEvent, mapToolPart, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
+import { mapEvent, mapMessages, mapToolPart, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
 
 // Real opencode 1.18.25 event captures from the Phase 0 spike (vault root /vaults/a).
 const raw = readFileSync(join(import.meta.dirname, 'fixtures/opencode-events.jsonl'), 'utf8')
@@ -103,5 +103,24 @@ describe('mapping edge cases', () => {
   it('abort → error event with aborted flag', () => {
     const e = mapEvent({ type: 'session.error', properties: { sessionID: 's', error: { name: 'MessageAbortedError', data: { message: 'Aborted' } } } }, '/v');
     expect(e).toEqual({ type: 'error', sessionId: 's', message: 'Aborted', aborted: true });
+  });
+});
+
+describe('user file parts (real capture: a prompt with an attached PNG, chat.test "file part")', () => {
+  const stored = JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures/opencode-user-file.json'), 'utf8'));
+
+  it('user file part maps to a file chat part', () => {
+    const [m] = mapMessages([stored], '/vaults/x');
+    expect(m!.parts).toEqual([
+      { type: 'text', id: expect.any(String), text: 'what is this?' },
+      { type: 'file', id: expect.any(String), path: 'Sources/upload-2026-10-04-091500/shot.png', mime: 'image/png' },
+    ]);
+    // The data URL (the file's bytes) never goes to the browser.
+    expect(JSON.stringify(m)).not.toContain('data:');
+  });
+
+  it('a file part without a file name maps to nothing', () => {
+    const noName = { ...stored, parts: stored.parts.map((p: Record<string, unknown>) => (p.type === 'file' ? { ...p, filename: undefined } : p)) };
+    expect(mapMessages([noName], '/vaults/x')[0]!.parts.map((p) => p.type)).toEqual(['text']);
   });
 });

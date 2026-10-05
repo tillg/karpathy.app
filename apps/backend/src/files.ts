@@ -37,6 +37,18 @@ export async function listTree(root: string): Promise<FileEntry[]> {
   return out;
 }
 
+/** Markdown files under `root` containing any of `terms` (ripgrep, fixed strings, case-insensitive), sorted. */
+export async function filesMentioning(root: string, terms: string[]): Promise<string[]> {
+  const stdout = await new Promise<string>((resolve, reject) => {
+    execFile('rg', ['--files-with-matches', '--sort', 'path', '--fixed-strings', '--ignore-case', '--glob', '*.md', ...terms.flatMap((t) => ['-e', t]), '--', '.'], { cwd: root, maxBuffer: 32 * 1024 * 1024 }, (err, out) => {
+      // Exit code 1 = no matches.
+      if (err && (err as { code?: number }).code !== 1) reject(err);
+      else resolve(out);
+    });
+  });
+  return stdout.split('\n').filter(Boolean).map((p) => p.replace(/^\.\//, ''));
+}
+
 export const MAX_HITS = 200;
 
 /** Words of a query: whitespace-separated, or "quoted phrases" kept whole. */

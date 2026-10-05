@@ -1,6 +1,6 @@
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, history, historyKeymap, isolateHistory } from '@codemirror/commands';
 import { openSearchPanel, search, searchKeymap } from '@codemirror/search';
-import { Annotation, Compartment, EditorState } from '@codemirror/state';
+import { Annotation, Compartment, EditorState, Transaction } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { liveMarkdown, refreshLinks } from '../lib/cm';
@@ -15,6 +15,19 @@ export interface EditorHandle {
   gotoLine(line: number, opts?: { focus?: boolean; align?: 'center' | 'start' }): void;
   /** The document line at the top of the visible pane. */
   topLine(): number;
+  /**
+   * A place in the text (default: the cursor) that follows later edits, for embeds inserted after an
+   * upload. `insert` puts `![[name]]` there on its own line; several inserts follow each other.
+   */
+  track(at?: number): TrackedPos;
+  /** Replaces the text now, as a minimal change (selection and tracked positions follow); not reported as an edit. */
+  setDoc(text: string): void;
+}
+
+export interface TrackedPos {
+  /** False when the editor is gone (another note or Read mode): the caller puts the embed in itself. */
+  insert(embed: string): boolean;
+  release(): void;
 }
 
 interface Props {
@@ -29,7 +42,11 @@ interface Props {
   embedCtx(): EmbedCtx;
   /** Changes when cached media bytes were dropped (see store `mediaEpoch`). */
   mediaEpoch: number;
+  /** Files dropped from the device at document position `pos`; absent = file drops are ignored. */
+  onDropFiles?(files: File[], pos: number): void;
 }
+
+const hasFiles = (e: DragEvent) => !!e.dataTransfer?.types.includes('Files');
 
 /** Marks transactions that load content from the server (not user edits). */
 const External = Annotation.define<boolean>();
@@ -41,6 +58,8 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
   const latest = useRef(props);
   latest.current = props;
   const ro = useRef(new Compartment());
+  /** Positions handed out by `track`, mapped through every change. */
+  const tracked = useRef(new Set<{ pos: number }>());
 
   useEffect(() => {
     const doc = props.doc;
@@ -57,29 +76,56 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
           epoch: () => latest.current.mediaEpoch,
         }),
         ro.current.of([EditorState.readOnly.of(props.readOnly), EditorView.editable.of(!props.readOnly)]),
+        // A file from the device is uploaded and embedded where it was dropped; text drags stay CodeMirror's.
+        EditorView.domEventHandlers({
+          dragover: (e, v) => {
+            if (!hasFiles(e)) return false;
+            e.preventDefault();
+            v.dom.classList.toggle('cm-drop-target', !!latest.current.onDropFiles);
+            return true;
+          },
+          dragleave: (e, v) => {
+            if (!v.dom.contains(e.relatedTarget as Node | null)) v.dom.classList.remove('cm-drop-target');
+            return false;
+          },
+          drop: (e, v) => {
+            if (!hasFiles(e)) return false;
+            e.preventDefault();
+            v.dom.classList.remove('cm-drop-target');
+            const pos = v.posAtCoords({ x: e.clientX, y: e.clientY }) ?? v.state.doc.length;
+            latest.current.onDropFiles?.([...e.dataTransfer!.files], pos);
+            return true;
+          },
+        }),
         EditorView.contentAttributes.of({ spellcheck: 'false', autocapitalize: 'sentences', 'aria-label': 'Note editor' }),
         EditorView.updateListener.of((u) => {
+          if (u.docChanged) for (const t of tracked.current) t.pos = u.changes.mapPos(t.pos, 1);
           if (u.docChanged && !u.transactions.some((t) => t.annotation(External))) latest.current.onChange(editorText(u.state));
         }),
       ],
     });
     const v = new EditorView({ state, parent: host.current! });
     view.current = v;
-    return () => v.destroy();
+    return () => {
+      v.destroy();
+      if (view.current === v) view.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reload in place as a minimal change, so the selection and scroll position survive (issue #4).
-  useEffect(() => {
+  /** Replaces the text as a minimal change, so the selection and scroll position survive (issue #4). */
+  const setDoc = (doc: string) => {
     const v = view.current;
     if (!v) return;
     const cur = editorText(v.state);
-    const c = minimalChange(cur, props.doc);
+    const c = minimalChange(cur, doc);
     if (!c) return;
     // With a CRLF separator a line break is one position in CM but two chars in the string.
     const pos = (s: string, i: number) => (v.state.lineBreak === '\r\n' ? i - (s.slice(0, i).match(/\r\n/g)?.length ?? 0) : i);
     v.dispatch({ changes: { from: pos(cur, c.from), to: pos(cur, c.to), insert: c.insert }, annotations: External.of(true) });
-  }, [props.doc, props.docNonce]);
+  };
+  // Reload in place.
+  useEffect(() => setDoc(props.doc), [props.doc, props.docNonce]);
 
   useEffect(() => {
     view.current?.dispatch({ effects: ro.current.reconfigure([EditorState.readOnly.of(props.readOnly), EditorView.editable.of(!props.readOnly)]) });
@@ -124,6 +170,29 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
       };
       requestAnimationFrame(() => requestAnimationFrame(() => retry(8)));
     },
+    track: (at) => {
+      const t = { pos: at ?? view.current?.state.selection.main.head ?? 0 };
+      tracked.current.add(t);
+      return {
+        insert: (embed) => {
+          const v = view.current;
+          if (!v) return false;
+          const pos = Math.min(t.pos, v.state.doc.length);
+          const line = v.state.doc.lineAt(pos);
+          const before = pos > line.from ? '\n' : '';
+          const after = pos < line.to ? '\n' : '';
+          v.dispatch({
+            changes: { from: pos, insert: `${before}${embed}${after}` },
+            annotations: [isolateHistory.of('full'), Transaction.userEvent.of('input.embed')],
+          });
+          // Right after the embed, so the next one goes on the following line.
+          t.pos = pos + before.length + embed.length;
+          return true;
+        },
+        release: () => void tracked.current.delete(t),
+      };
+    },
+    setDoc,
     topLine: () => {
       const v = view.current;
       const sc = v?.dom.closest<HTMLElement>('.scroll');

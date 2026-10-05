@@ -202,6 +202,21 @@ describe('chat API against a real opencode container', () => {
     expect(users.map((m: { model: string }) => m.model)).toEqual([DEAD_MODEL_2, DEAD_MODEL]);
   });
 
+  it('settings expose modelInput', async () => {
+    const t = await setup();
+    const { createApp } = await import('../src/app.js');
+    const request = (await import('supertest')).default;
+    const app = createApp({ token: TOKEN, vaults: t.vaults, store: t.store, chat: t.chat, availableModels: () => t.harness.models() });
+    const auth = { Authorization: `Bearer ${TOKEN}` };
+    const patched = await request(app).patch('/api/settings').set(auth).send({ model: DEAD_MODEL_2 });
+    expect(patched.body.modelInput).toEqual({ image: true, pdf: false });
+    expect((await request(app).get('/api/settings').set(auth)).body.modelInput).toEqual({ image: true, pdf: false });
+    await request(app).patch('/api/settings').set(auth).send({ model: DEAD_MODEL });
+    expect((await request(app).get('/api/settings').set(auth)).body.modelInput).toEqual({ image: false, pdf: false });
+    await t.store.update((c) => { c.settings.model = 'ollama/not-listed'; });
+    expect((await request(app).get('/api/settings').set(auth)).body.modelInput).toBeNull();
+  });
+
   it('queued text, turn state in the list, and a title from the first prompt (#13)', async () => {
     const t = await setup();
     const release = await t.vaults.lock(t.id).acquireExclusive();
@@ -280,6 +295,79 @@ describe('chat API against a real opencode container', () => {
     }
     chat2.close();
     await t2.vaults.close();
+  });
+
+  it('prompt with attachments is queued and survives a restart', async () => {
+    const t = await setup();
+    await t.vaults.lock(t.id).acquireExclusive(); // never released: the turn stays queued
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    const p = `/vaults/${t.id}/chats/${chatId}/prompt`;
+    expect((await t.api.post(p, { text: '' })).status).toBe(400);
+    expect((await t.api.post(p, { text: 'x', attachments: Array.from({ length: 6 }, (_, i) => `Sources/upload-x/${i}.png`) })).status).toBe(400);
+    expect((await t.api.post(p, { text: '', attachments: ['Sources/upload-x/a.png'] })).status).toBe(202);
+    const end = Date.now() + 10_000;
+    while ((await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body.title !== 'a.png') {
+      if (Date.now() > end) throw new Error('title was not set from the attachment');
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    t.chat.close();
+    // "Restart": the queue is read back from config.json, which holds the path and no bytes.
+    const t2 = await makeApp(t.remote.remoteBase, {}, t.dirs);
+    expect(t2.store.get().queued[t.id]).toEqual([{ chatId, text: '', attachments: ['Sources/upload-x/a.png'] }]);
+    await t2.vaults.close();
+  });
+
+  it('attachment reaches opencode as a file part', async () => {
+    const t = await setup();
+    const request = (await import('supertest')).default;
+    const { readFile } = await import('node:fs/promises');
+    const png = await readFile(join(import.meta.dirname, '../../../e2e/fixtures/media/shot.png'));
+    const up = await request(t.app).post(`/api/vaults/${t.id}/raw?name=shot.png&source=new&at=2026-10-04-091500`)
+      .set('Authorization', `Bearer ${TOKEN}`).set('Content-Type', 'application/octet-stream').send(png);
+    expect(up.status).toBe(201);
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    expect((await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'what is this?', attachments: [up.body.path] })).status).toBe(202);
+    await waitIdle(t.chat, t.id, chatId);
+    const msgs = (await t.raw.session.messages({ directory: t.dir, sessionID: chatId })).data ?? [];
+    const user = msgs.find((m) => m.info.role === 'user')!;
+    const file = user.parts.find((p) => p.type === 'file') as { mime: string; filename?: string; url: string } | undefined;
+    expect(file).toMatchObject({ mime: 'image/png', filename: 'Sources/upload-2026-10-04-091500/shot.png' });
+    expect(file!.url.startsWith('data:image/png;base64,')).toBe(true);
+    expect(Buffer.from(file!.url.slice('data:image/png;base64,'.length), 'base64').equals(png)).toBe(true);
+  });
+
+  it('bad attachment paths end the turn', async () => {
+    const t = await setup();
+    const { mkdir, rm, writeFile } = await import('node:fs/promises');
+    const root = t.vaults.vaultRootDir(t.id);
+    await mkdir(join(root, 'Sources/upload-x'), { recursive: true });
+    await mkdir(join(root, 'Notes'), { recursive: true });
+    await writeFile(join(root, 'Notes/n.md'), 'note');
+    await writeFile(join(root, '.env'), 'SECRET=1');
+    await writeFile(join(root, 'Sources/upload-x/big.pdf'), Buffer.alloc(21 * 1024 * 1024));
+    await writeFile(join(root, 'Sources/upload-x/soon-gone.png'), 'png');
+    const cases: [string, string, (() => Promise<void>)?][] = [
+      ['Sources/upload-x/gone.png', 'Attachment not found: Sources/upload-x/gone.png'],
+      ['../other-vault/x.png', '../other-vault/x.png'],
+      ['.env', '.env'],
+      ['Notes/n.md', 'Notes/n.md'],
+      ['Sources/upload-x/big.pdf', 'Sources/upload-x/big.pdf'],
+      // Discarded while the turn waited for the lock.
+      ['Sources/upload-x/soon-gone.png', 'Attachment not found: Sources/upload-x/soon-gone.png', () => rm(join(root, 'Sources/upload-x/soon-gone.png'))],
+    ];
+    for (const [path, message, whileQueued] of cases) {
+      const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+      const events: ChatEvent[] = [];
+      const release = await t.vaults.lock(t.id).acquireExclusive();
+      await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'look', attachments: [path] });
+      const stop = t.chat.stream(t.id, chatId, (e) => events.push(e), () => undefined);
+      await whileQueued?.();
+      release();
+      await waitIdle(t.chat, t.id, chatId);
+      stop();
+      expect(events.find((e) => e.type === 'error'), path).toMatchObject({ message: expect.stringContaining(message) });
+      expect(await userAgents(t.raw, t.dir, chatId), path).toEqual([]);
+    }
   });
 
   it('harness config pulled in right before a turn stops the turn before it reaches opencode (#27 bypass)', async () => {

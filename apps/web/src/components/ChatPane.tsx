@@ -1,9 +1,14 @@
-import type { ChatEvent, ChatPart, ChatSummary, ToolCall } from '@karpathy/shared';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { isPdf, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, WARN_UPLOAD_BYTES, type ChatEvent, type ChatPart, type ChatSummary, type ToolCall } from '@karpathy/shared';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, api, errorText } from '../lib/api';
+import { prepare } from '../lib/attach';
+import { loadChips, localStamp, saveChips, type Chip, type ChipDraft } from '../lib/chips';
+import { mountEmbed } from '../lib/embed';
+import { mediaKind } from '../lib/media';
 import { adoptQueued, applyChatEvent, changedPaths, newOpens, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
 import { readNdjson } from '../lib/ndjson';
 import { useApp } from '../store';
+import { AttachButton } from './AttachButton';
 import { Icon } from './Icon';
 import { Markdown } from './NotePane';
 import { VaultSwitcher } from './VaultSwitcher';
@@ -121,6 +126,7 @@ function Parts({ parts }: { parts: ChatPart[] }) {
   };
   parts.forEach((p, i) => {
     if (p.type === 'tool') { tools.push(p.call); return; }
+    if (p.type === 'file') return;
     flushTools(`t${i}`);
     if (p.type === 'reasoning') out.push(<details key={p.id} className="reason"><summary>Thinking</summary><div>{p.text}</div></details>);
     else out.push(<Markdown key={p.id} text={p.text} className="atext" base="" />);
@@ -129,10 +135,34 @@ function Parts({ parts }: { parts: ChatPart[] }) {
   return <>{out}</>;
 }
 
+/** A vault file shown with the shared embed code: an image through /raw, a PDF as a file card, the missing card once it is gone. */
+function FileEmbed({ path, present }: { path: string; present?: boolean }) {
+  const { activeId, toast, paths, openNote, mediaEpoch } = useApp();
+  const host = useRef<HTMLSpanElement>(null);
+  // The file list is empty until it has loaded: only then can a file be missing. `present`: known to exist (just uploaded).
+  const known = present || (paths.length === 0 ? null : paths.includes(path));
+  useLayoutEffect(() => {
+    if (!host.current || !activeId || known === null) return;
+    const kind = mediaKind(path);
+    return mountEmbed(host.current, !known ? { state: 'missing', target: path } : kind ? { state: 'media', path, kind } : { state: 'file', path },
+      { vault: activeId, toast, onOpen: (p) => void openNote(p) });
+  }, [path, known, activeId, mediaEpoch, toast, openNote]);
+  return <span className="embed" ref={host} />;
+}
+
 /** A user prompt, or one assistant turn: all its steps under one header (#63). */
 function Message({ t, model }: { t: Turn; model: string }) {
   const { openNote } = useApp();
-  if (t.role === 'user') return <div className="u">{t.message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('')}</div>;
+  if (t.role === 'user') {
+    const files = t.message.parts.flatMap((p) => (p.type === 'file' ? [p.path] : []));
+    const text = t.message.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
+    return (
+      <div className="u">
+        {files.length > 0 && <div className="u-files">{files.map((f) => <FileEmbed key={f} path={f} />)}</div>}
+        {text}
+      </div>
+    );
+  }
   const changed = changedPaths(t.parts);
   return (
     <div className="a" data-testid="assistant-message">
@@ -153,10 +183,75 @@ function Message({ t, model }: { t: Turn; model: string }) {
   );
 }
 
+/** An unsent attachment: its thumbnail or name and size, a warning if the model can't read it, and ✕. */
+function ChipView({ chip, model, onRemove }: { chip: Chip; model: string; onRemove(): void }) {
+  const { settings } = useApp();
+  const input = settings?.modelInput;
+  const pdf = isPdf(chip.path);
+  const blind = input && (pdf ? !input.pdf : !input.image);
+  const name = chip.path.split('/').pop()!;
+  const size = chip.size >= 1024 * 1024 ? `${Math.round(chip.size / 2 ** 20)} MB` : chip.size >= 1024 ? `${Math.round(chip.size / 1024)} KB` : `${chip.size} B`;
+  return (
+    <div className="achip" data-testid="attach-chip" data-path={chip.path} title={chip.path}>
+      {pdf ? <span className="achip-doc"><Icon n="doc" size={20} /><span><b>{name}</b><small>{size}</small></span></span> : <FileEmbed path={chip.path} present />}
+      {blind && <small className="achip-warn">{model} can’t see {pdf ? 'PDFs' : 'images'}: the AI only gets the file’s path</small>}
+      <button className="achip-x" aria-label={`Remove ${name}`} data-testid="attach-chip-remove" onClick={onRemove}><Icon n="xmark" size={12} /></button>
+    </div>
+  );
+}
+
 function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) {
-  const { settings, conflict, online, toast } = useApp();
+  const { settings, setSettings, conflict, online, toast, paths, refreshFiles } = useApp();
   const { chat, setChat, error, attach } = useChat(vaultId, chatId);
+  // What the model reads (for the chips' warning) may have changed since the app loaded.
+  useEffect(() => { api.settings().then(setSettings).catch(() => undefined); }, [setSettings]);
   const [text, setText] = useState('');
+  // Files for the next message, uploaded already; remembered on this device until sent.
+  const [draft, setDraftState] = useState<ChipDraft>(() => loadChips(vaultId, chatId));
+  const draftRef = useRef(draft);
+  const setDraft = (d: ChipDraft) => { draftRef.current = d; setDraftState(d); saveChips(vaultId, chatId, d); };
+  const [uploading, setUploading] = useState(0);
+  // A remembered chip whose file is gone (discarded, deleted) is dropped, once, when the file list is known.
+  const checked = useRef(false);
+  useEffect(() => {
+    const d = draftRef.current;
+    if (checked.current || !paths.length) return;
+    checked.current = true;
+    const keep = d.chips.filter((c) => paths.includes(c.path));
+    if (keep.length !== d.chips.length) setDraft({ chips: keep, folder: keep.length ? d.folder : null });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paths]);
+  const addFiles = async (files: File[], fromCamera: boolean) => {
+    if (draftRef.current.chips.length + files.length > MAX_ATTACHMENTS) { toast(`At most ${MAX_ATTACHMENTS} files per message`); return; }
+    setUploading((n) => n + files.length);
+    for (const file of files) {
+      try {
+        const { blob, name } = await prepare(file, fromCamera);
+        if (blob.size > MAX_ATTACHMENT_BYTES) { toast(`${file.name} is too large to send to the AI; attach it in a note instead`); continue; }
+        if (blob.size > WARN_UPLOAD_BYTES && !confirm(`${file.name} adds ${Math.round(blob.size / 2 ** 20)} MB to the vault’s git history for good, even if you delete it later. Upload anyway?`)) continue;
+        const d = draftRef.current;
+        const r = await api.upload(vaultId, name, d.folder ? { source: d.folder } : { source: 'new', at: localStamp(new Date()) }, blob);
+        const cur = draftRef.current;
+        setDraft({ chips: [...cur.chips, { path: r.path, version: r.version, mime: blob.type, size: r.size }], folder: r.path.split('/')[1]! });
+        void refreshFiles();
+      } catch (e) {
+        toast(`${file.name}: ${errorText(e)}`);
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  };
+  /** ✕: the upload is new and uncommitted, so its file is deleted (and its folder once empty, by the server). */
+  const removeChip = async (chip: Chip) => {
+    try {
+      await api.deleteFile(vaultId, chip.path, chip.version);
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 404)) { toast(errorText(e)); return; }
+    }
+    const keep = draftRef.current.chips.filter((c) => c.path !== chip.path);
+    setDraft({ chips: keep, folder: keep.length ? draftRef.current.folder : null });
+    void refreshFiles();
+  };
   const [pending, setPending] = useState<PendingPrompt | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const model = (settings?.model ?? '').split('/').pop() ?? '';
@@ -211,17 +306,20 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
 
   const send = async () => {
     const t = text.trim();
-    if (!t || busy || pending) return;
+    const sending = draftRef.current;
+    if ((!t && !sending.chips.length) || busy || pending || uploading) return;
     setText('');
+    setDraft({ chips: [], folder: null });
     setPending({ text: t, userCount: userCount(chat), sent: false, ran: false });
     try {
-      await api.prompt(vaultId, chatId, t);
+      await api.prompt(vaultId, chatId, t, sending.chips.map((c) => c.path));
       setPending((p) => p && { ...p, sent: true });
       setChat((c) => c && { ...c, turn: 'queued' });
       void attach();
     } catch (e) {
       setPending(null);
       setText(t);
+      setDraft(sending);
       toast(errorText(e));
     }
   };
@@ -246,14 +344,21 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
         </div>
       </div>
       <div className="comp">
+        {(draft.chips.length > 0 || uploading > 0) && (
+          <div className="achips" data-testid="attach-chips">
+            {draft.chips.map((c) => <ChipView key={c.path} chip={c} model={model} onRemove={() => void removeChip(c)} />)}
+            {uploading > 0 && <div className="achip up"><span className="spin" />Uploading…</div>}
+          </div>
+        )}
         <div className="inrow">
+          {online && !conflict && <AttachButton testid="chat-attach" multiple up onFiles={(f, cam) => void addFiles(f, cam)} />}
           <textarea data-testid="chat-composer" rows={1} placeholder={online ? 'Ask about your vault…' : 'Chat needs a connection'}
             value={text} disabled={!online}
             onChange={(e) => { setText(e.target.value); e.target.style.height = ''; e.target.style.height = `${Math.min(120, e.target.scrollHeight)}px`; }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} />
           {busy
             ? <button className="send stop" data-testid="chat-stop" aria-label="Stop" onClick={() => void stop()}><Icon n="stop_fill" size={16} /></button>
-            : <button className="send" data-testid="chat-send" aria-label="Send" disabled={!text.trim() || !online} onClick={() => void send()}><Icon n="arrow_up" size={20} /></button>}
+            : <button className="send" data-testid="chat-send" aria-label="Send" disabled={(!text.trim() && !draft.chips.length) || uploading > 0 || !online} onClick={() => void send()}><Icon n="arrow_up" size={20} /></button>}
         </div>
       </div>
     </>
