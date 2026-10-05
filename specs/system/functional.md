@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-04
+edited: 2026-10-05
 ---
 
 # Functional: karpathy.app
@@ -115,6 +115,21 @@ applies to the next git operation. The deployment's `GITHUB_TOKEN` secret stays 
   show a file card (name, size, Download; Open for a PDF, in the browser's viewer in a new tab). Media over 50 MB shows
   **Load anyway (N MB)**; a missing target shows a "missing" card; offline shows an "offline" card. Remote images
   (`https://…`) stay links. A skeleton holds the space while bytes load. Tapping an image opens it in the note pane.
+- **Attach photos and PDFs** (Write mode, online, not in conflict): the **+** in the toolbar offers **Take photo** (the
+  back camera on a phone; the file picker elsewhere) and **Choose file** (JPEG, PNG, GIF, WebP, PDF; on iOS library,
+  camera or Files). **Drag and drop** from the file system onto the note works too, with a drop outline while dragging.
+  Each file is uploaded into the page's own folder and embedded as `![[name]]` on its own line, at the cursor or the
+  drop point (typing during the upload doesn't move it). Several files go one after another, in order; a file that
+  isn't uploadable is refused with a toast naming it, the others still go in. Photos (JPEG, HEIC) are scaled to
+  2048 px and lose their metadata; HEIC that can't be decoded (Chrome) is refused with a message. Over 10 MB the app
+  asks first ("adds N MB to the vault's git history for good"); over 50 MB is refused. The footer shows "Uploading…".
+  Undo removes the embed text only; the file stays in Changes. An upload that finishes after the user left the note
+  (other note, Read mode) still embeds the file, at the end of the note.
+- **Move into own folder:** the first upload to a flat page (`Wiki/foo.md`) moves it to `Wiki/foo/foo.md`; the editor
+  stays on the page, the address bar shows the new path (no new history entry), the local draft follows, and a toast
+  says "Moved to … · updated links in N pages". Path-form links to the page and relative links inside it are
+  rewritten; Changes shows the move as the old path deleted and the new one added. Refused while an AI turn runs
+  ("The AI is working. Attach again when it's done.") or when the target already exists.
 - **Media view:** opening an image, video or audio file from the tree (or a tapped image) shows it in the note pane;
   a PDF or other binary file shows its file card. No mode toggle, no find-in-note; Delete stays.
 - **Search hit and `[[note#heading]]` in Read mode** scroll to the rendered block that holds the line and highlight it
@@ -179,6 +194,13 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   (the user's messages, notes it read, earlier results); any other URL fails with "URL not in this chat: paste it into
   the chat first", and the turn goes on. At most 20 searches and 20 fetches per turn. Fetched pages stay in the chat;
   they reach the vault only if the AI writes about them. With Web access off, the AI has neither tool.
+- **Chat attachments:** the **+** in the composer (online, not in conflict) uploads up to 5 files per message, each at
+  most 20 MB, into a new `Sources/upload-YYYY-MM-DD-HHMMSS/` folder (the device's local time). Each shows as a chip
+  (thumbnail, or PDF name and size); ✕ deletes its file, and the folder once it is empty. Unsent chips survive a
+  reload; one whose file is gone is dropped. The text may be empty when files are attached. The sent message shows
+  its attachments (thumbnail through the vault, or a file card; a deleted file shows the missing card), right away
+  while it is pending and also after a reload. If the chat's model can't read images or PDFs, the chip says "`<model>` can't see images: the AI only gets
+  the file's path"; the file can still be sent. The settings are read again when a chat opens.
 - **Read-only while in conflict** ("the AI can only read, not change notes"); web search and fetch still work.
 - The AI can read and edit notes in the vault root only; its changes are uncommitted until the user commits.
 
@@ -250,7 +272,8 @@ sequenceDiagram
 | Vault config: repo, branch, root, name (+ "create folders" yes/no) | A cloned vault, an inline error, or the missing-folders question; a clone error after the check |
 | GitHub token (typed, to save or to test) | Masked state (last 4), token test result per account and vault |
 | Note text (Markdown, any UTF-8 text file) | Saved file + new version; rendered HTML in Read mode |
-| Media and other files in the vault (read-only) | Images, video and audio players; file cards with Open (PDF) / Download |
+| Media and other files in the vault (never edited) | Images, video and audio players; file cards with Open (PDF) / Download |
+| Photos and PDFs from the device (Attach button, drop, chat composer) | A new file in the page's own folder or a `Sources/upload-…/` folder; an embed, or a chip sent with the prompt |
 | Search query | Grouped hits with line snippets |
 | Chat prompt | Streamed reply, tool chips, changed notes |
 | Commit message | Commit on GitHub (or an unpushed commit), toast |
@@ -258,7 +281,7 @@ sequenceDiagram
 | Settings: reminder threshold, model, Web access | — |
 | URLs in prompts and notes, web search queries (AI) | Web chips; pages and results in the chat only |
 
-No uploads (also no pasting images), exports, e-mail or push notifications.
+No pasting of images, no video or audio uploads, no exports, e-mail or push notifications.
 
 ## States and transitions
 
@@ -301,7 +324,8 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
   required folder exists only under another name (not just another case) gets a new, empty one.
 - The token test shows an expiry only for tokens GitHub reports one for, and scopes only for classic tokens (the app
   doesn't display scopes today). A tested token is not saved.
-- **No rename or move** of notes or folders, no explicit folder creation, no manual pull button, no per-chat model,
+- **No rename or move** of notes or folders (except the move into its own folder on a page's first upload), no
+  explicit folder creation, no manual pull button, no per-chat model,
   no chat rename, no global keyboard shortcuts.
 - Native `prompt()` / `confirm()` dialogs for new note, delete, discard, remove vault and delete chat.
 - Chat is disabled in vaults that contain `.opencode/`, `opencode.json` or `opencode.jsonc`.
@@ -319,6 +343,21 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
 - **Web access:** a URL the AI builds itself (e.g. adds a query) can't be fetched: the user pastes it. A link deep in a
   long, truncated page isn't known either. Without `EXA_API_KEY`, search uses Exa's rate-limited anonymous endpoint.
   Changing the web caps needs an opencode restart or redeploy.
+- **Uploads:**
+  - Chat attachments are useful only with a model that reads images (and PDFs); the production model is text-only
+    today, so the AI gets only an "ERROR: Cannot read …" note and says so.
+  - PDFs aren't turned into text for text-only models.
+  - opencode keeps attached files in its session store, and loading a chat transfers them in full (bounded by
+    5 × 20 MB per prompt).
+  - Uploads stay in the git history for good; there is no per-vault quota.
+  - PNG, GIF and WebP are uploaded as they are, metadata included.
+  - Stopping a queued prompt puts its text back, but not its attachments: their files stay in `Sources/upload-…/`.
+  - Images a moved page embeds aren't moved with it.
+  - A synthesized drop with files isn't reliable in WebKit's automation: Safari drag and drop is checked by hand.
+  - Still to be checked by hand: on a real iPhone, **Take photo** opening the camera, **Choose file** offering
+    library, camera and Files, a HEIC library photo arriving as `.jpg`; and in Obsidian, a moved page, its image and
+    a rewritten `[[…/…]]` link after a commit and pull. Safari drag and drop on the Mac was checked by hand on
+    2026-10-05.
 - A retryable provider error is retried by opencode for up to about 2 minutes before the turn fails.
 - With the chat in main, Tab still reaches the note before the chat (the swap moves columns visually only). At
   1024–1279 px with the sidebar open, the main column (364 px) is narrower than the side column.

@@ -426,6 +426,23 @@ test('opening a chat reads the settings again (the model may have changed since 
   await expect.poll(() => reads.length).toBeGreaterThan(0);
 });
 
+test('a sent photo shows in the pending message right away', async ({ page, vault }) => {
+  await openApp(page, vault.id);
+  await page.getByTestId('new-chat').click();
+  await expect(page.getByTestId('chat-composer')).toBeEnabled();
+  await page.getByTestId('chat-attach').click();
+  await page.getByTestId('attach-choose').setInputFiles(join(ROOT, 'e2e/fixtures/media/shot.png'));
+  await expect(page.getByTestId('attach-chip')).toHaveCount(1);
+  // The prompt is held: only the pending bubble can show the photo.
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  await page.route('**/prompt', async (route) => { await gate; await route.fallback(); });
+  await page.getByTestId('chat-send').click();
+  await expect(page.getByTestId('chat-pending').locator('.embed img')).toBeVisible();
+  release();
+  if (await page.getByTestId('chat-stop').isVisible().catch(() => false)) await page.getByTestId('chat-stop').click();
+});
+
 test('@iphone attach menu and chips fit the composer', async ({ page, vault }) => {
   // Five uploads are five uncommitted changes: the commit reminder isn't what this is about.
   const reminder = page.getByTestId('reminder-dialog');

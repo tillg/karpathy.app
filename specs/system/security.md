@@ -1,7 +1,7 @@
 ---
 title: "Security: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-04
+edited: 2026-10-05
 ---
 
 # Security: karpathy.app
@@ -128,6 +128,18 @@ the user points to), provider server tools (tied to one model vendor, ADR 0002).
   names to `owner/name`.
 - **File names:** no Windows-reserved names, forbidden characters, trailing dots or spaces, or case twins.
 - **Request validation** with zod; JSON body limit 10 MB.
+- **Uploads** (`POST /vaults/:id/raw`, behind the bearer token):
+  - The body is raw bytes, at most 50 MB (`413`).
+  - The name passes the file-name rules, plus no folder, no leading dot and no `#^[]|`. The kind comes from the
+    extension only: JPEG, PNG, GIF, WebP or PDF (`415`). SVG and HTML are never uploadable, so no active format gets
+    in. The bytes are stored as given and served with the media table's type and `nosniff`.
+  - An editor upload's page must be an existing `.md` outside hidden folders. So an upload can't create `.opencode/`,
+    `opencode.json`, a git hook or anything under a dot folder.
+  - A chat folder name must be an existing `upload-…` folder directly in `Sources/`.
+  - Writes never overwrite (`flag: 'wx'`), and the path goes through the symlink-safe resolver.
+- **Chat attachment paths** are checked by the backend at turn start (raw-file rules: no hidden segment, no symlink,
+  inside the vault root; uploadable; ≤ 20 MB). That check is the only guard: opencode reads a `file:` URL without a
+  directory check of its own. So a path can't make the AI read another vault, `.env` or harness config.
 
 ## Rendering untrusted content
 
@@ -173,7 +185,15 @@ prod proxy adds a strict **CSP** (`default-src 'self'`, `script-src 'self'`, `ob
 - Single shared token: no per-device tokens or revocation other than changing the secret.
 - The GitHub token set in the app is stored unencrypted in `config.json`; request bodies of the token routes are not
   logged, but no rate limit applies to the test route.
-- The LLM provider sees every note the AI reads.
+- The LLM provider sees every note, image and PDF the AI reads, and every image or PDF the user attaches to a prompt.
+  Photos are re-encoded in the browser, which drops their location metadata; PNG, GIF, WebP and PDF files are sent as
+  they are.
+- opencode keeps attached files in its session store (base64) until the chat is deleted.
+- Uploads stay in the git history for good; there is a per-file cap (50 MB), no per-vault quota.
+- `Vaults.rawFile` checks hidden segments before it normalizes `\` to `/`, so `a\.obsidian\x.png` passes that check
+  (found in the attachments review, not fixed).
+- When `Sources` is a symlink, a chat upload with `source=new` creates an empty `upload-…` folder at the link's target
+  before the symlink-safe resolver refuses the file itself (found in the attachments review, not fixed).
 - The Beszel agent mounts the Docker socket (root-equivalent on the host; accepted).
 - Gatus has no authentication on the tailnet; secrets appear briefly in process lists during a deployment.
 - The GoDaddy API key can change every domain of the account and sits on the server.

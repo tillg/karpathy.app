@@ -1,7 +1,7 @@
 ---
 title: "Domain: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-04
+edited: 2026-10-05
 ---
 
 # Domain: karpathy.app
@@ -38,13 +38,26 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Vault state** | `cloning` → `ready` or `clone-failed`; `ready` ↔ `conflict`. The attach preflight comes before the vault exists, so it is not a state. | `VaultState` |
 | **Vault file** | Any file in the vault: a note, a media file or a binary file. The file tree, Delete, the Changes list and commits work on vault files. *Avoid:* note (for anything that isn't text), document, item. | `FileEntry`; web store `note` (identifier kept) |
 | **Note** | A vault file that is UTF-8 text, usually `.md`. Only notes can be edited and have a Write/Read mode. | `FileContent.binary === false` |
-| **Media file** | A vault file whose extension is in the media table: an image, video or audio file. Shown, never edited. Every media file is binary, not every binary file is a media file. *Avoid:* attachment, asset, resource. | `mediaKind(path)` → `image` · `video` · `audio` · `null` |
+| **Media file** | A vault file whose extension is in the media table: an image, video or audio file. Shown, never edited; may be created by an upload. Every media file is binary, not every binary file is a media file. *Avoid:* attachment, asset, resource. | `mediaKind(path)` → `image` · `video` · `audio` · `null` |
 | **Media kind** | `image`, `video` or `audio`, from the extension alone (case-insensitive), never from content sniffing. Decides the HTML element and the Content-Type the backend sends. | `MEDIA` (`packages/shared/src/media.ts`) |
 | **Binary file** | A vault file that isn't text and isn't a media file (`.pdf`, `.zip`, …). Shown as a file card. | `FileContent.binary && !mediaKind(path)` |
 | **Embed** | Markdown that asks for a file to be shown inside a note: `![[target]]`, `![[target\|300]]` (width in px) or `![alt](path)`. Showing it never changes the note. *Avoid:* attachment (that's the file), inline image, transclusion (embedding a note's text, not built). | web `lib/media.ts` `parseEmbed` |
 | **File card** | What shows instead of a player: name, size and **Download**, plus **Open** for a PDF (browser's PDF viewer in a new tab), plus **Load anyway (N MB)** for a media file over the preview limit. Also for missing embeds (marked missing, no buttons) and offline. *Avoid:* placeholder. | web `lib/embed.ts` |
 | **Preview limit** | 50 MB. A media file up to this size loads by itself; a bigger one loads only on **Load anyway**. | `MAX_PREVIEW_BYTES` |
-| **Raw file** | The bytes of a vault file as stored, with a Content-Type from the media table. Read-only, the same path rules as a note. *Avoid:* download (the user action), blob (the browser object). | `GET /vaults/:id/raw?path=` |
+| **Raw file** | The bytes of a vault file as stored, with a Content-Type from the media table. `GET /raw` reads one; `POST /raw` creates one by upload. The same path rules as a note. *Avoid:* download (the user action), blob (the browser object). | `GET`/`POST /vaults/:id/raw` |
+| **Upload** | The user putting a file from the device into the vault: a photo or a PDF. It creates a new vault file and never overwrites one; the result is an uncommitted change. *Avoid:* import, add file, attach (that's the button). | `POST /vaults/:id/raw?name=&note=` / `&source=`, `Vaults.upload` |
+| **Attach button** | The **+** in the editor's toolbar (Write mode) and in the chat composer: **Take photo** and **Choose file**, both ending in an upload. | web `AttachButton` |
+| **Drop** | Dragging files from the device onto the note in Write mode; each becomes an upload, embedded at the drop point. | web `Editor` drop handler |
+| **Uploadable file** | A file whose extension is `jpg`, `jpeg`, `png`, `gif`, `webp` or `pdf`: what opencode reads as an image or PDF and model providers accept. HEIC, SVG, video and audio are not uploadable. | `UPLOADABLE`, `isUploadable` |
+| **Own folder** | A folder that belongs to one page and holds its attachments. A page is in its own folder when the folder carries its name (`Wiki/foo/foo.md`, case-insensitive) or it is the folder's `index.md`; otherwise it is **flat** (`Wiki/foo.md`). | `attachmentFolder` |
+| **Move into own folder** | What the app does to a flat page before its first upload from the editor: `Wiki/foo.md` → `Wiki/foo/foo.md` (into an existing `foo/` folder in any case), plus the link rewrite. The only move the app makes. *Avoid:* rename. | `Vaults.moveIntoOwnFolder` |
+| **Path-form link** | A link that names a folder on the way to its target (`[[serien/foo]]`, `[Foo](../serien/foo.md)`), as opposed to a **bare link** (`[[foo]]`). A move breaks path-form links to the page in Obsidian, so the app rewrites them; percent-encoded links keep their encoding. | `rewriteLinks` (`packages/shared`) |
+| **Source folder (upload)** | Where a chat message's attachments go: `Sources/upload-YYYY-MM-DD-HHMMSS/` (the device's local time of the first upload, `-2` … if taken), one per message. The AI writes the source page into it when it ingests. | `Vaults.upload` with `source` |
+| **Upload name** | The device's file name, cleaned (`<>:"\|?*\#^[]` and control characters → `-`, no leading dot, at most 80 characters), or `photo-YYYYMMDD-HHMMSS.jpg` for a camera photo. A name taken anywhere in the vault (case-insensitive) gets `-2`, `-3` …, so the bare `![[name]]` is unambiguous. | web `uploadName`; server `writeNew` |
+| **Photo preparation** | What the browser does to a JPEG or HEIC before upload: at most 2048 px on the long edge, re-encoded as JPEG 0.85, metadata (GPS, camera) dropped. Other formats go as they are. | web `lib/attach.ts` `prepare` |
+| **Upload cap / growth warning** | 50 MB per file (413 above); above 10 MB the browser asks first, because the file stays in the git history for good. | `MAX_UPLOAD_BYTES`, `WARN_UPLOAD_BYTES` |
+| **Chat attachment** | A vault file sent with a prompt, so the model receives its content (image or PDF), not only its path. Uploaded first; the prompt carries its vault path. Up to 5 per prompt, each at most 20 MB. *Avoid:* attachment for a file in general. | `attachments` in the prompt body; harness file parts |
+| **Model input** | What the chat's model reads besides text: images, PDFs, both or neither, from opencode's model list. An attachment the model can't read reaches it only as a note that it couldn't read the file. | `SettingsView.modelInput` |
 | **Version (of a file)** | The first 16 hex characters of the SHA-256 of a file's content. Saves, deletes and discards carry the version they started from. | `files.ts` `versionOf` |
 | **Chat** | A resumable conversation with the AI, bound to exactly one vault; its reach is that vault's root. *Avoid:* session, thread, conversation. | one opencode session |
 | **Turn** | One user prompt in a chat plus everything the AI reads and changes in response. States `idle`, `queued` (waiting for another turn or for the sync), `running`. | `TurnState` |
@@ -153,18 +166,35 @@ Modeled on Obsidian's accepted formats, limited to what browsers can play:
 | PDF | `pdf` | File card with **Open** (new tab) and **Download** |
 | Anything else non-text | | File card with **Download** |
 
+### Where an upload lands
+
+```mermaid
+flowchart TD
+    S{Uploaded from?}
+    S -->|chat composer| SF["Sources/upload-YYYY-MM-DD-HHMMSS/<br/>(new per message; Sources/ case kept)"]
+    S -->|"editor: button or drop"| O{page in its own folder?<br/>dir/stem/stem.md or dir/x/index.md}
+    O -->|yes| OF[the page's folder]
+    O -->|"no: flat page dir/stem.md"| MV[move the page to dir/stem/stem.md,<br/>rewrite path-form links]
+    MV --> OF
+    OF & SF --> NAME[upload name, -2, -3 … if taken anywhere<br/>in the vault, case-insensitively]
+```
+
+Images a moved page already embeds stay where they are: bare embeds find them by name, relative ones get one `../`
+more.
+
 ## Actors
 
 | Actor | What it can do |
 |---|---|
 | **Operator** (the same person as the user, on the Mac) | Cuts releases, deploys them to the targets, holds the vault passwords (Keychain) and gets the alerts. |
-| **User** (single person, holds the bearer token) | Manage vaults and settings, read and edit notes, search, chat with the AI, review diffs, discard, commit and push, resolve conflicts. Uses the app as a PWA on phone, iPad and desktop. |
-| **AI** (opencode agent, on the user's behalf) | Inside one vault root only: read notes; write notes unless the vault is in conflict (then read-only); open one note in the user's editor when the user asks to see it (also in conflict). With Web access on: web search, and web fetch of known URLs (also in conflict). It can't run shell commands, fetch URLs it built itself, reach internal hosts, read `.env` files, edit `.git` or harness config, commit or push. |
+| **User** (single person, holds the bearer token) | Manage vaults and settings, read and edit notes, upload photos and PDFs (button or drop; the first upload to a flat page moves it into its own folder), attach them to prompts, search, chat with the AI, review diffs, discard, commit and push, resolve conflicts. Uses the app as a PWA on phone, iPad and desktop. |
+| **AI** (opencode agent, on the user's behalf) | Inside one vault root only: read notes; write notes unless the vault is in conflict (then read-only); open one note in the user's editor when the user asks to see it (also in conflict). Receives attached images and PDFs as message content when its model reads them. With Web access on: web search, and web fetch of known URLs (also in conflict). It can't run shell commands, fetch URLs it built itself, reach internal hosts, read `.env` files, edit `.git` or harness config, create binary files, commit or push. |
+| **Device (iOS)** | Converts HEIC photos to JPEG when the picker's accepted types are an explicit list without HEIC. |
 | **Search backend (Exa)** | Receives the AI's web search queries; returns results. |
 | **Public web** | Serves fetched pages; untrusted. |
 | **Obsidian / other git clients** | Change the same GitHub repo from other devices; their changes arrive on the next pull and can cause a conflict. |
 | **GitHub** | Hosts the vault repos; the backend clones, fetches and pushes with the GitHub token, and asks `GET /user` to test it. |
-| **LLM provider** (e.g. Anthropic; Ollama in dev) | Runs the model behind opencode. Sees the prompts and the note content the AI reads. |
+| **LLM provider** (e.g. Anthropic; Ollama in dev) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
 
 ## Processes
 
@@ -356,7 +386,7 @@ flowchart TD
   commit does, and it records **all** uncommitted changes of the vault root (no partial staging).
 - **Everything is scoped to the vault root:** file access, search, git status/diff/add, and the AI's session
   directory. Changes outside the root are invisible.
-- **Conflict blocks writes:** saves, deletes, discards and commits are refused (423); AI turns run read-only; repo,
+- **Conflict blocks writes:** saves, deletes, discards, commits, uploads and moves are refused (423); AI turns run read-only; repo,
   branch or root changes and vault removal are refused.
 - **Optimistic concurrency everywhere:** saves, deletes and discards carry the file version they started from; a
   commit carries the paths the user reviewed.
@@ -368,7 +398,8 @@ flowchart TD
 - **Removing a vault deletes only the local clone** (never the GitHub repo) and requires no uncommitted changes and no
   unpushed commits. Changing repo, branch or root has the same precondition.
 - **New file names** may not contain `<>:"|?*\` or control characters, may not be Windows-reserved names, end in a dot
-  or space, differ from an existing file only by case, or be harness config.
+  or space, differ from an existing file only by case, or be harness config. Upload names also avoid `#^[]|` (they
+  break wikilinks) and leading dots.
 - **Chat is disabled** in vaults that contain harness config.
 - **The AI opens a note only when the user asks to see it**, never on its own after writing. Any file the file tree
   lists can be opened (media files in the media view, other binaries as a file card); dot-paths and `.git` can't. Opening is not a change: it never
@@ -394,7 +425,22 @@ flowchart TD
   their controls.
 - **Place:** Back to a note seen in this session returns to where the user left it; switching Write ↔ Read keeps the
   same source line (per top-level block). A new open lands at the top or its hit position.
-- **Media is read-only** for the user and the AI; there is no upload or paste. Offline, media isn't available.
+- **The user may upload images and PDFs** (uploadable files, at most 50 MB), with the button or by dropping them on
+  the note. An upload creates a new file and never overwrites one; existing files that aren't notes can't be
+  replaced or edited; the AI creates no binary files; pasting images is not built. Offline, nothing can be uploaded
+  and media isn't available.
+- **A page with attachments lives in its own folder.** The first editor upload to a flat page moves it there and
+  rewrites, in the same step, the path-form links to it and the relative links inside it. The move is refused while
+  an AI turn runs, or when the target exists or `dir/stem` is a file; a refused move uploads nothing. Every check runs
+  before the first write. The app moves pages only in this case; there is no general rename.
+- **Editor uploads go next to an existing page:** the target must be an existing `.md`, outside hidden folders, with a
+  name every clone can hold. Chat uploads go into a new `Sources/upload-…/` folder per message (`Sources/` matched
+  case-insensitively, its spelling kept).
+- **Obsidian's settings are not read:** uploads always go to the own folder and are embedded as `![[name]]`.
+- **Uploads, moves and rewritten links are the user's uncommitted changes**, never AI-touched; a moved page that was
+  AI-touched keeps the mark under its new path.
+- **A chat attachment is a path in the vault root,** checked with the raw-file rules (and uploadable, ≤ 20 MB) when
+  its turn starts; a missing or refused one ends the turn with an error before anything reaches opencode.
 - **Web access off means invisible:** the model sees neither web tool. The commit-message agent never has them.
 - **Only known URLs are fetched;** web content never counts as instructions from the user (a rule for us, not a
   promise about the model; the commit review stays the safety net).

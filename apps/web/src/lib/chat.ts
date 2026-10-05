@@ -144,6 +144,8 @@ export function turns(messages: ChatMessage[]): Turn[] {
 /** An optimistic prompt shown as a user bubble until the server has the message. */
 export interface PendingPrompt {
   text: string;
+  /** Vault paths of the files sent with it, shown in the bubble too. */
+  attachments?: string[];
   /** User messages in the chat when the prompt was sent. */
   userCount: number;
   /** The server accepted (queued) the prompt. */

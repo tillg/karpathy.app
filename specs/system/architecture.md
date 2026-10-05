@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-04
+edited: 2026-10-05
 ---
 
 # Architecture: karpathy.app
@@ -80,7 +80,10 @@ flowchart LR
   `StateField` (block decorations must come from state): per line with an embed, a block widget after the line end
   (`side: 1`) that calls `mountEmbed`; not in fenced code or frontmatter; recomputed on `docChanged` and on
   `refreshLinks`. `EditorHandle` has `topLine()` and `gotoLine(line, { focus: false, align: 'start' })` for mode
-  switches (no keyboard on a phone).
+  switches (no keyboard on a phone), `track(at?)` (a position mapped through later changes, whose `insert(embed)`
+  puts `![[name]]` on its own line as one isolated undo step and returns false once the editor is gone) and
+  `setDoc(text)` (the reload's minimal change, applied at once). A `domEventHandlers` drop handler takes file drops
+  (`posAtCoords`, outline class `cm-drop-target`) and leaves text drags to CodeMirror. See [Uploads](#uploads).
 - **Media** (`lib/media.ts`, `lib/embed.ts`, shared `MEDIA` table): see [Media embeds](#media-embeds).
 - **Mode preference** (`store.tsx`): `mode` is read from and written to localStorage `karpathy.mode`; `openNote` never
   changes it. An in-memory `places` map (`vault\0path` → scroll top, top line, mode) is filled when a note is left
@@ -125,7 +128,7 @@ on its own ([deployment.md › Website](deployment.md#website)).
 | `preflight.ts` | `preflight()`: the attach check ([Attach preflight](#attach-preflight)); `REQUIRED_FOLDERS`. |
 | `github-token.ts` | `GitHubToken`: the server-wide token (stored over secret), its source, `GET /user` identity check, redaction of every value seen. |
 | `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure, commit, push, conflict sides and resolution; hardened `runGit`. |
-| `files.ts`, `paths.ts` | Tree listing, versions (content hash), ripgrep search; path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules. |
+| `files.ts`, `paths.ts` | Tree listing, versions (content hash), ripgrep search (also `filesMentioning` for the move's link scan); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
 | `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`; exclusive: every git operation). |
 | `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events. |
 | `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. |
@@ -301,6 +304,82 @@ cache remembered from an earlier load when there is one, so Back lands without l
   tab's location becomes a blob re-typed `application/pdf`, so only the browser's PDF viewer can show it.
 - **Tap on an image** calls `onOpen(path)` → `store.openNote`, which pushes a history entry.
 
+## Uploads
+
+```mermaid
+flowchart LR
+    subgraph web["apps/web"]
+      AB[AttachButton<br/>Take photo · Choose file]
+      AT[lib/attach.ts<br/>prepare, uploadName]
+      ED[NotePane + Editor<br/>track/insert, drop, follow a move]
+      CP[ChatPane<br/>chips, send]
+    end
+    subgraph backend["apps/backend"]
+      R["POST /vaults/:id/raw?name=&note= | &source="]
+      U[Vaults.upload<br/>checkNote, sourceFolder, writeNew]
+      MV[moveIntoOwnFolder<br/>shared rewriteLinks]
+      P["POST …/prompt {text, attachments}"]
+      C[chat.ts: checkAttachment<br/>→ harness file parts]
+      S["GET /settings → modelInput"]
+    end
+    O[opencode]
+    AB --> AT --> ED & CP
+    ED & CP -->|"binary body, Bearer"| R --> U --> MV
+    CP --> P --> C -->|"promptAsync: text + file:// parts"| O
+    S --> CP
+```
+
+- **Route:** `POST /vaults/:id/raw?name=<file>` plus exactly one of `note=<page>` (editor) or `source=new&at=<local
+  YYYY-MM-DD-HHMMSS>` / `source=<upload-… folder>` (chat). The body is the file's bytes: `express.raw({ type: () =>
+  true, limit: MAX_UPLOAD_BYTES })` on this route only, so the JSON API is unchanged; `entity.too.large` → `413
+  too-large`. Response `UploadResult { path, version, size, moved?, rewritten? }`, `201`. Under the shared `save` lock;
+  `423` in conflict.
+- **Name** (`checkUploadName`): no folder, no leading dot, no `#^[]|`, the new-file-name rules, then uploadable (`415
+  not-uploadable`, extension only). **Note** (`checkNote`): an existing `.md`, no hidden segment, the new-file-name
+  rules. **Free name** (`writeNew`): taken if any vault file has that base name (case-insensitive), then `-2` … `-100`;
+  written with `flag: 'wx'`, so two uploads at once never overwrite each other. **Source folder** (`sourceFolder`):
+  `Sources` matched case-insensitively; `new` claims `upload-<at>[-n]` with a non-recursive `mkdir`; a given name must
+  exist directly in it and start with `upload-`.
+- **Own folder** (`attachmentFolder`, pure): `dir/stem.md` is in its own folder when `base(dir)` equals `stem`
+  (case-insensitive) or `stem` is `index`; otherwise it moves to `dir/stem/`.
+- **Move** (`moveIntoOwnFolder`), all checks before the first write: `409 ai-busy` while a turn holds the lock;
+  `409 folder-taken` when `dir/stem` is a file or `stem.md` exists in the folder; an existing folder in other case is
+  used with its spelling. One ripgrep call (`filesMentioning`: the stem, with `%20`, and `encodeURI`'d) finds candidate
+  pages; `rewriteLinks` (`packages/shared/src/relink.ts`, using the shared resolver moved from the web app) rewrites
+  path-form wikilinks and Markdown links that resolve to the page, and relative links inside the moved page, skipping
+  code blocks and spans; a percent-encoded link keeps its encoding. Then every touched page and the page itself are
+  version-checked (`409 stale`), the attachment is written into the folder, the pages are rewritten, the page is
+  renamed, its own text written, and its AI-touched mark renamed. `Vaults.afterRelinkScan` is a test seam between
+  the scan and the checks.
+- **Web, editor:** `NotePane.attach` filters non-uploadable files (one toast), `editor.track(at)` holds the cursor or
+  drop point, and `store.uploadToNote` runs the files one after another: flush, pause autosave for that note,
+  `prepare` (JPEG/HEIC: `createImageBitmap` with EXIF orientation → canvas ≤ 2048 px → JPEG 0.85, then APP1/APP13
+  segments stripped, because WebKit's encoder writes an Exif block; else unchanged; HEIC that can't decode → error),
+  50 MB refusal and 10 MB `confirm`, `api.upload` (a `Blob` body is sent as `application/octet-stream`), the path added
+  to the file list at once, then the embed. A `moved` response runs `retarget`: the note's path, version and draft key
+  follow, the route is replaced (no history entry), and the text becomes the server's (unedited) or the local draft
+  through the same `rewriteLinks` (edited), pushed into the editor with `setDoc` before the embed goes in. The editor
+  stays mounted (keyed by `openedAs`). If the editor is gone when an upload finishes, the embed is appended to the
+  note's draft and saved.
+- **Web, chat:** `ChatPane` keeps `{ chips: { path, version, mime, size }[], folder }` per chat in localStorage
+  `karpathy.chips:<vault>:<chat>` (`lib/chips.ts`); chips whose file isn't in the first loaded file list are dropped.
+  The first upload sends `source=new&at=`, later ones `source=<folder>`; ✕ is `DELETE /file` with the upload's version
+  (the server removes the emptied folder). Send posts `{ text, attachments: paths }`. Chips and sent files render
+  through `FileEmbed` → `mountEmbed` (an image through `/raw` and the object-URL cache, a PDF as a file card). The
+  composer re-reads `GET /settings` when a chat opens.
+- **Prompt:** `promptBody` = `{ text (≤ 100 000, may be empty with attachments), attachments? (≤ 5 paths) }`. The
+  queued `Turn` keeps the paths (persisted in `config.json` `queued`, never bytes); an attachment-only prompt titles the
+  chat with the first file name. At turn start `Vaults.checkAttachment` applies the raw-file rules, `isUploadable` and
+  `MAX_ATTACHMENT_BYTES` (20 MB); a failure is a stream `error` and the turn ends before opencode. `PromptInput.files`
+  become `FilePartInput { type: 'file', mime: uploadMime(path), filename: path, url: file:///vaults/<id>/<root>/<path> }`
+  after the text part (left out when empty). opencode reads the bytes, stores them as a `data:` URL, normalizes images
+  (≤ 2000 × 2000 px, 5 MB) and replaces what the model can't read with an "ERROR: Cannot read …" note.
+- **History:** `mapPart` maps a `file` part with a `filename` to `ChatPart { type: 'file', path, mime }`; the `data:`
+  URL never reaches the browser.
+- **Model input:** `Harness.models()` returns `{ id, input: { image, pdf } }` from opencode's
+  `capabilities.input`; `GET`/`PATCH /settings` add `modelInput` for the current model, `null` when opencode doesn't
+  answer within 3 s or doesn't list it.
+
 ## Attach preflight
 
 `POST /vaults` (`Vaults.add`) checks a repo before anything is stored:
@@ -363,7 +442,7 @@ sequenceDiagram
 
   | Route | Body | Reply |
   |---|---|---|
-  | `GET /settings`, `PATCH /settings` | | `SettingsView`: settings + `githubToken: { source, last4 \| null }` (last4 of the current token, stored or secret), never the plaintext |
+  | `GET /settings`, `PATCH /settings` | | `SettingsView`: settings + `githubToken: { source, last4 \| null }` (last4 of the current token, stored or secret), never the plaintext, + `modelInput` ([Uploads](#uploads)) |
   | `PUT /settings/github-token` | `{ token }` (trimmed, 20–255 chars, no whitespace; else 400) | `204` |
   | `DELETE /settings/github-token` | | `204`; falls back to the secret |
   | `POST /settings/github-token/test` | `{ token? }`, else the current token | `200 TokenTest` |
@@ -386,7 +465,8 @@ sequenceDiagram
 | Volume `vaults` → `/vaults/<id>` | Full git clone of each vault repo (no shallow or sparse clone). The notes themselves. | backend (git), opencode (file tools) |
 | Volume `config` → `/config/config.json` | `vaults` (config + `cloned` / `cloneError` / `pendingFolders`), `settings`, `githubToken` (plaintext, if set in the app), `aiTouched`, `conflicts`, `queued` turns. | backend only |
 | `/vaults/.preflight/` | Short-lived blobless clones of the attach preflight; emptied at startup. | backend |
-| Volume `opencode-data` | opencode sessions = chat history. | opencode |
+| Volume `opencode-data` | opencode sessions = chat history, including attached files (base64, after opencode's resize), until the chat is deleted. | opencode |
+| localStorage `karpathy.chips:<vault>:<chat>` | Unsent chat attachments (path, version, type, size) and their source folder. | web |
 | Volume `caddy-data` | TLS certificates and keys. | proxy |
 | Browser localStorage | Token, local drafts, tree expansion state, main pane, mode preference (`karpathy.mode`). | web |
 | Browser memory | Object URLs of media (≤ 200 MB), places of notes seen this session. Lost on reload. | web |
@@ -502,6 +582,22 @@ The ones that shape the whole system:
   phone home.
 - **The mode preference is per browser in localStorage**, not per vault, note or server: it's a device habit (read on
   the phone, write on the Mac).
+- **Uploads: a binary `POST /raw` body, the server picks folder and name.** Rejected: base64 JSON (the 10 MB limit, a
+  third more bytes), multipart (a parser dependency for one file), `PUT /raw?path=` (the server decides the final
+  path). The server owns the `-2` suffix and the `wx` write, so concurrent uploads can't race each other.
+- **A page with attachments gets its own folder; Obsidian's settings aren't read.** The vaults already keep pages
+  with images as `Wiki/<slug>/<slug>.md` and gitignore `.obsidian/`, so the clones never see `app.json`. A flat page
+  moves on its first upload, with path-form links rewritten (about 1 in 20 links in the vaults is path-form and
+  would break in Obsidian, whose resolver needs the path to end with the link). Bare links are left alone.
+- **Upload names are unique in the whole vault**, so the bare `![[name]]` resolves to the new file in every tool,
+  not only in those that prefer the note's folder.
+- **Photos are prepared in the browser** (2048 px, JPEG 0.85, metadata dropped): no native image library in the
+  backend, the full photo never crosses the phone's network, GPS never reaches git or the provider. HEIC is converted
+  by iOS (an explicit `accept` list without HEIC, JPEG first) or by Safari's decoder; the server refuses HEIC.
+- **Chat attachments are vault files first,** sent as `file:` parts: the queue survives a restart without bytes, the
+  AI can re-read and link the file, a PDF in `Sources/` stays ingestible. The backend checks the path, because
+  opencode reads a `file:` URL without its own directory check. A text-only model gets opencode's "cannot read" note
+  rather than us filtering the part.
 
 ## Testing
 
@@ -525,7 +621,17 @@ The ones that shape the whole system:
   text; a turn without any tool call fails as *inconclusive*, not as passed; at most one retry.
 - **Model in dev and CI:** Ollama `qwen2.5:3b` with `OLLAMA_CONTEXT_LENGTH=16384` and a matching context limit in the
   opencode provider config. Ollama otherwise truncates opencode's prompt to about 2k tokens silently, and the model
-  then ignores `AGENTS.md` and misuses tools.
+  then ignores `AGENTS.md` and misuses tools. The vision test uses `qwen3-vl:2b` (`LLM_VISION_MODEL`, declared with
+  `modalities.input: [text, image]`); Ollama's `qwen2.5vl` has no tool support, so opencode refuses every turn with
+  it. The test container declares image input on the not-pulled `DEAD_MODEL_2`, so `modelInput` is tested without
+  a model run.
+- **Upload tests:** default tier: the upload route, collisions, refusals, the move and its link rewrite, source
+  folders, prompts with attachments (a stored opencode user message with a file part is the
+  `opencode-user-file.json` fixture); `@llm`: a vision model reads `word.png` ("KIWI"). e2e `attach.spec.ts`: photo
+  preparation (dev stack only: it imports `/src/lib/attach.ts` from Vite), the editor button, a move the editor
+  follows, drop (Chromium only: a synthesized file drop isn't reliable in WebKit), visibility, growth warning, chat
+  chips, the phone layout. Uploads are held with `page.route` (not answered), which needs `serviceWorkers: 'block'`.
+  The chat test sends a real prompt to the dev stack's model.
 - **e2e:** Playwright against the running stack (dev, or the prod images via `E2E_BASE_URL`); every test fails on a
   CSP violation (so the media specs prove the prod `media-src` only when run with `just prodtest e2e`; the dev proxy
   sets no CSP). Media fixtures are tiny real files in `e2e/fixtures/media/`. Offline e2e in WebKit is skipped (Playwright's offline WebKit fails even service-worker-served

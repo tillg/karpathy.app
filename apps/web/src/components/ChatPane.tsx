@@ -310,9 +310,10 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
     if ((!t && !sending.chips.length) || busy || pending || uploading) return;
     setText('');
     setDraft({ chips: [], folder: null });
-    setPending({ text: t, userCount: userCount(chat), sent: false, ran: false });
+    const attachments = sending.chips.map((c) => c.path);
+    setPending({ text: t, attachments, userCount: userCount(chat), sent: false, ran: false });
     try {
-      await api.prompt(vaultId, chatId, t, sending.chips.map((c) => c.path));
+      await api.prompt(vaultId, chatId, t, attachments);
       setPending((p) => p && { ...p, sent: true });
       setChat((c) => c && { ...c, turn: 'queued' });
       void attach();
@@ -337,7 +338,12 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
           {error && <div className="form-error">{error}</div>}
           {chat && !chat.messages.length && !pending && <div className="day">New chat · ask about this vault</div>}
           {chat && turns(chat.messages).map((t) => <Message key={t.id} t={t} model={model} />)}
-          {pending && <div className="u pending" data-testid="chat-pending">{pending.text}</div>}
+          {pending && (
+            <div className="u pending" data-testid="chat-pending">
+              {!!pending.attachments?.length && <div className="u-files">{pending.attachments.map((f) => <FileEmbed key={f} path={f} present />)}</div>}
+              {pending.text}
+            </div>
+          )}
           {chat?.turn === 'queued' && <div className="turn-state" data-testid="chat-queued"><span className="spin" />{chat.waiting === 'sync' ? 'Waiting for sync…' : 'Waiting for other chat…'}</div>}
           {chat?.turn === 'running' && <div className="turn-state"><span className="spin" />Working…</div>}
           {chat?.error && <div className="form-error">{chat.error}</div>}

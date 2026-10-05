@@ -68,6 +68,21 @@ _Avoid_: Attachment, asset, resource
 Markdown that asks for a file to be shown inside a note: `![[target]]`, `![[target|300]]` or `![alt](path)`. Showing it never changes the note.
 _Avoid_: Attachment (that's the file), inline image, transclusion (embedding a note's text, which the app doesn't do)
 
+**Upload**:
+The user putting a file from the device into the vault: a photo or a PDF, with the **+** (Take photo, Choose file) or by dropping it on the note. It creates a new vault file and never overwrites one; the result is an uncommitted change.
+_Avoid_: Import, add file, attach (that's the button)
+
+**Own folder**:
+A folder that belongs to one page and holds its attachments: the folder carries the page's name (`Wiki/foo/foo.md`) or the page is its `index.md`. A page that isn't in one is flat; its first upload from the editor moves it into one.
+_Avoid_: Rename (there is no general rename)
+
+**Path-form link**:
+A link that names a folder on the way to its target (`[[serien/foo]]`, `[Foo](../serien/foo.md)`), as opposed to a bare link (`[[foo]]`). A move into the own folder rewrites the path-form links to the page; bare links keep resolving by name.
+
+**Chat attachment**:
+A vault file sent with a prompt, so the model receives its content (image or PDF), not only its path. It is uploaded first, into a new `Sources/upload-…/` folder per message.
+_Avoid_: Attachment for a file in general
+
 **File card**:
 What shows instead of a player: file name, size, Download, plus Open for a PDF and Load anyway for a media file over the preview limit (50 MB).
 _Avoid_: Placeholder
