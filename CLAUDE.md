@@ -82,6 +82,14 @@ Out of scope: graph view, plugins, canvas, multi-user/real-time collaboration, o
 Skill portability caveats (Python scripts, scraper credentials, the non-portable RTK hook and
 global `~/.claude/CLAUDE.md`) are listed in `specs/system/functional.md` (Skills).
 
+## Progress messages (ntfy)
+
+When the user asks to be informed via ntfy ("send me a ntfy", "notify me after each step"), post to the
+**dev topic** `karpathy-development-…`: `curl -d "<msg>" ntfy.sh/$(cat tmp/.ntfy_dev_topic)`. If the
+cache is missing: `security find-generic-password -s karpathy-ntfy-dev -w > tmp/.ntfy_dev_topic`.
+Never post progress to a target's alert topic (`vault_ntfy_topic`, `karpathy-hetzner-…` /
+`karpathy-local-…`): those are for monitoring alerts only. `just ntfy-topic dev` copies it to the clipboard for the phone.
+
 ## Agent skills
 
 ### Issue tracker

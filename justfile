@@ -116,9 +116,9 @@ deploy-e2e target *args:
 token target *flag:
     deploy/ansible/token.sh {{target}} {{flag}}
 
-# Copy a target's ntfy alert topic to the clipboard (subscribe to it in the ntfy app)
+# Copy an ntfy topic to the clipboard (subscribe to it in the ntfy app): a target's alert topic, or `dev` for dev progress (Keychain karpathy-ntfy-dev)
 ntfy-topic target:
-    deploy/ansible/vault-get.sh {{target}} vault_ntfy_topic | tr -d '\n' | pbcopy && echo "ntfy topic for {{target}} copied to the clipboard."
+    {{ if target == "dev" { "security find-generic-password -s karpathy-ntfy-dev -w" } else { "deploy/ansible/vault-get.sh " + target + " vault_ntfy_topic" } }} | tr -d '\n' | pbcopy && echo "ntfy topic for {{target}} copied to the clipboard."
 
 # Watch Hetzner for a cheaper server (CX23/CAX11), twice a day with an ntfy push: `just hetzner-watch install|uninstall|now`
 hetzner-watch action:
