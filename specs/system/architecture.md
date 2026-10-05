@@ -129,7 +129,7 @@ on its own ([deployment.md › Website](deployment.md#website)).
 | `github-token.ts` | `GitHubToken`: the server-wide token (stored over secret), its source, `GET /user` identity check, redaction of every value seen. |
 | `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure, commit, push, conflict sides and resolution; hardened `runGit`. |
 | `files.ts`, `paths.ts` | Tree listing, versions (content hash), ripgrep search (also `filesMentioning` for the move's link scan); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
-| `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`; exclusive: every git operation). |
+| `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`, and `fetch` through `tryShared`, which never queues; exclusive: every other git operation). |
 | `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events. |
 | `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. |
 | `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`. |
@@ -217,6 +217,56 @@ sequenceDiagram
 - **Request/response** JSON over `fetch`; **streams** as NDJSON over `fetch` (no WebSockets, no SSE to the browser):
   the vault event stream (`status`, `files-changed`; never ends) and the chat stream (ends when the turn is idle).
 - Turns outlive connections: a client reattaches to a running turn from any device.
+
+## Incoming changes and the user's pull
+
+```mermaid
+flowchart LR
+    subgraph Web
+      GP[GitPill + PullLink<br/>· N incoming]
+      CP[ChangesPanel<br/>N incoming changes · pull,<br/>incoming file list]
+      NB[open-note bar<br/>Changed on GitHub · Pull]
+      ST[store.tsx pull, pulling<br/>lib/incoming.ts incomingView]
+      EV[useVaultEvents<br/>reconnect on visible / online]
+    end
+    subgraph Backend
+      APP[app.ts<br/>GET /events, POST /pull]
+      V[vaults.ts<br/>fetch schedule, fetchRemote, pull, status]
+      LK[lock.ts tryShared 'fetch']
+      RP[repo.ts<br/>fetchUpstream, incomingPaths]
+    end
+    GH[(GitHub)]
+    EV -- "connect = subscribe" --> APP --> V
+    V --> LK
+    V --> RP -- "git fetch (token header)" --> GH
+    V -- "status {incomingCount, incomingPaths}" --> APP --> EV --> ST --> GP & CP & NB
+    GP & CP & NB -- tap --> ST -- "POST /vaults/:id/pull" --> APP
+```
+
+- **`VaultStatus`** gains `incomingCount` (files inside the root that `origin/<branch>` changed since the merge base
+  with HEAD) and `incomingPaths` (the first `INCOMING_PATHS_MAX` = 200); `0`/`[]` while not `ready`. `status()` adds
+  `repo.incomingPaths()` (`git diff --name-only -z HEAD...origin/<branch> -- <root>`, local refs only; without a
+  merge base, after a replaced remote, the plain `HEAD` ↔ `origin/<branch>` diff) to its `Promise.all`. They go out on
+  the existing `status` event and in the replies of `GET /status`, `POST /open` and `POST /pull`.
+- **Background fetch** (`Vaults.fetchRemote`): `subscribe()` (the event-stream route is the only subscriber; unknown
+  vault ids are refused) starts a per-vault `setInterval` (`fetchIntervalMs`, default 2 min) and one fetch per
+  connect; the last unsubscribe, `close()` and `remove()` clear it. A running fetch is joined, not repeated. It takes
+  `lock.tryShared('fetch')` (skipped when a git operation holds or waits), runs `repo.fetchUpstream()` (`git fetch -q
+  --no-auto-maintenance --end-of-options origin <branch>`, 30 s timeout, the token as for every git command), sets or
+  clears `pullError` (redacted), and emits a status only when `origin/<branch>` or `pullError` changed. It never
+  rejects (a rejected promise from a timer would end the process). It runs in conflict too; the UI hides the count.
+- **Git robustness:** on a timeout `runGit` sends SIGTERM and SIGKILL only after 2 s; `fetchUpstream` and the pull
+  drop a stale `refs/remotes/origin/<branch>.lock` before fetching. A repo change clears `pullError` (`startClone`).
+- **`POST /vaults/:id/pull`** → `Vaults.pull`: exclusive lock, `423` in conflict, then the same `pullUnlocked` as
+  open, commit, push and turn; a conflict it causes shows in the returned `VaultStatus`, not as an HTTP error.
+  `open()` first awaits a running background fetch, so its `tryExclusive` doesn't skip.
+- **Web:** `lib/incoming.ts` `incomingView(status, pulling)` decides every incoming control (`show`, `disabled` while
+  pulling or `busy !== 'none'`, label, title, `moreCount`), so the pill segment, the Changes banner, the open-note bar
+  and the phone tab badge can't drift apart. The pill segment is a sibling button (`incoming-badge`) joined to the pill
+  visually, so the pill's own click still opens Changes; pill and banners use `PullLink`. The store's `pull()` first
+  saves the open note's pending draft (`leave()`), pulls once for a double tap, sets the status and toasts "Pulled N
+  changes from GitHub" or "Couldn't reach GitHub". No new client timer: the event stream's reconnect on visibility and
+  online already triggers a fetch.
 
 ## Web access
 
@@ -546,7 +596,13 @@ The ones that shape the whole system:
   search and the AI. The unresolved paths are persisted in the config store, because after "keep theirs" on an
   untracked file git alone can't tell resolved from unresolved.
 - **One in-memory lock per vault** (single backend process): saves and AI turns share it, git operations take it
-  exclusively. A pull never runs during a turn, so a vault can't enter conflict mid-turn.
+  exclusively. A pull never runs during a turn, so a vault can't enter conflict mid-turn. The one exception is the
+  background fetch: a shared `fetch` holder that is granted only when no exclusive operation holds or waits
+  (`tryShared`). It touches only objects and `origin/<branch>`, so it may run next to saves and turns; exclusive would
+  flicker "Syncing…", stall during turns and block saves behind a queued timer; no lock would race the pull's own
+  fetch on the ref lock.
+- **Incoming changes are counted in files on GitHub's side** (`diff --name-only HEAD...origin/<branch> -- <root>`),
+  computed in `status()`, not stored; a timer fetches only vaults a browser has open; there is no automatic pull.
 - **opencode runs the stock image without git.** Without git it can't detect the worktree, which is what confines
   its tools to a subfolder vault root and keeps session IDs stable (with git discovery, sessions vanished from the
   list once the project ID changed). If git ever goes into the image (e.g. for skill scripts), the git dirs must
@@ -601,6 +657,11 @@ The ones that shape the whole system:
 
 ## Testing
 
+- **Incoming-changes tests:** `repo.test.ts` (count in files, GitHub's side only, root pathspec, no merge base),
+  `lock.test.ts` (`tryShared` never queues), `api.test.ts` (fetch schedule with a short `fetchIntervalMs`, joined
+  fetches, `pullError`, `POST /pull` incl. 423 and a conflict), `incoming.test.ts` (the AI-turn rule, which the e2e
+  stack can't hold without a real LLM), e2e `remote-changes.spec.ts` (an Obsidian push shows, one tap pulls, open-note
+  bar, phone badge).
 - **No mocks:** integration tests use real git (local bare repos as remotes, a second clone plays "Obsidian") and
   the real opencode container — built from `deploy/opencode/Dockerfile` (`kai-test-opencode`), so tests load the same
   config and tools as prod; CI builds it once before `npm test`. A scripted fake LLM provider would count as a mock.

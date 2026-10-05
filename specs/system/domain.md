@@ -74,7 +74,10 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Stale save** | A save rejected because the file changed (by the AI or a pull) since the editor loaded it. *Avoid:* conflict (reserved for git). | HTTP 409 `stale` |
 | **Conflict** | A git-level clash between the vault's uncommitted changes and changes pulled from GitHub. It blocks all writes to the vault until the user resolves each clashing file: keep **mine**, **theirs** or **both**. | `VaultState` `conflict`, `conflictPaths` |
 | **Busy** | What the vault is doing right now: `none`, `turn` (an AI turn holds it) or `sync` (a git operation holds it or waits for it). | `VaultStatus.busy` |
-| **Pull** | The backend's sync with GitHub (fetch, fast-forward, re-apply uncommitted changes). Runs on open, before every commit and push, and before every AI turn. There is no user-facing pull button. | `Repo.pull` |
+| **Pull** | The backend's sync with GitHub (fetch, fast-forward, re-apply uncommitted changes). Runs on open, before every commit and push, before every AI turn, and when the user taps the incoming count (pill segment, Changes banner, open-note bar). The same pull every time: a pull never commits. | `Repo.pull`, `POST /vaults/:id/pull` |
+| **Incoming change** | A vault file that GitHub's branch changed since the last commit the vault and GitHub share, and that the vault doesn't have yet. Counted in files, not commits; only files inside the vault root count. Known as of the last fetch (at most one fetch interval old). The mirror image of an uncommitted change. *Avoid:* incoming commit, behind, remote change, pending change. | `VaultStatus.incomingCount`, `incomingPaths` |
+| **Background fetch** | A `git fetch` of the vault's branch that the backend runs on its own while a browser has the vault open: every 2 minutes and on every connect to the vault's event stream. It only updates the clone's copy of GitHub's branch; files, uncommitted changes and unpushed commits stay as they are. Never shown as "Syncing…". *Avoid:* sync, poll, auto-pull. | `Vaults.fetchRemote` |
+| **pullError** | Set when the last contact with GitHub failed: a pull or a background fetch. Cleared by the next one that succeeds, and when the vault's repo changes. Shown as "· offline". | `VaultStatus.pullError` |
 | **Main column / side column** | On the wide layout (≥ 1024 px, chat open): the main column is the flexible one in the middle, the side column the fixed 380 px one on the right. | CSS `#app.wide` |
 | **Main pane** | Which of note and chat is in the main column: **note in main** (default) or **chat in main**; the other is in the side column. A per-browser preference, not part of a vault or a chat. *Avoid:* focus (taken by keyboard focus), mode, layout. | web `chatMain`; localStorage `karpathy.chatMain` |
 | **Swap button** | The round ⇄ button on the divider between main and side column, at the top; toggles the main pane. Icon only; its label says what a click does ("Move chat to main column" / "Move note to main column"). | `data-testid="main-swap"` |
@@ -378,6 +381,41 @@ flowchart TD
   RES -->|last file| OK
 ```
 
+**Counts on both sides.** The pill's three numbers are independent: "N uncommitted" (files, working tree vs HEAD),
+"N unpushed" (commits in HEAD, not on GitHub) and "N incoming" (files GitHub changed since the shared commit, as of
+the last fetch). Files, not commits, so Obsidian Git's frequent auto-commits to five notes read "5 incoming".
+
+| Situation | Pill | A tap on "incoming" |
+|---|---|---|
+| Clean, GitHub moved on | `● All committed · 2 incoming` | Fast-forward. |
+| Uncommitted changes, GitHub moved on | `● 3 uncommitted · 2 incoming` | Stash, fast-forward, re-apply; a clash → conflict. |
+| Unpushed commit, diverged | `● All committed · 1 unpushed · 2 incoming` | The unpushed commit becomes uncommitted changes, then as above. |
+| GitHub changed only files outside a subfolder vault root | no segment | Nothing; the next pull brings them in silently. |
+| Fetch failed | last count, `· offline` | The pull fails too and keeps `· offline`. |
+| Conflict | `● Conflict` | Segment hidden; resolve first. |
+| AI turn running | `● AI working… · 2 incoming` | Disabled; the turn's own pull takes them in. |
+
+**Background fetch.**
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle: a browser connects to the event stream
+    Idle --> Fetching: on connect, then every 2 min
+    Fetching --> Idle: done (count and pullError updated)
+    Idle --> Skipped: a git operation holds or waits for the lock
+    Skipped --> Idle: next tick
+    Idle --> [*]: last browser disconnects
+```
+
+- Only while someone looks: per vault, while at least one browser is connected to its event stream. The app connects
+  only to the active vault, and reconnects when it comes to the foreground or back online; each connect fetches once.
+- Never in the way: it runs next to saves and AI turns, skips while a git operation holds or waits for the vault, and
+  doesn't change `busy`. At most one per vault at a time; a connect during a fetch joins it.
+
+**The user's pull.** A tap on the incoming count first saves the open note's pending text, then runs the same pull as
+open, commit and turn (one pull for a double tap). It is refused during a conflict (423) and not offered during an AI
+turn. A success toasts "Pulled N changes from GitHub"; changed files reload through the usual file events.
+
 "Both" keeps the user's version at the path and writes GitHub's next to it as `<name>.conflict-YYYY-MM-DD.md`.
 
 ## Rules and constraints
@@ -386,8 +424,15 @@ flowchart TD
   commit does, and it records **all** uncommitted changes of the vault root (no partial staging).
 - **Everything is scoped to the vault root:** file access, search, git status/diff/add, and the AI's session
   directory. Changes outside the root are invisible.
-- **Conflict blocks writes:** saves, deletes, discards, commits, uploads and moves are refused (423); AI turns run read-only; repo,
-  branch or root changes and vault removal are refused.
+- **Conflict blocks writes:** saves, deletes, discards, commits, uploads, moves and the user's pull are refused (423);
+  AI turns run read-only; repo, branch or root changes and vault removal are refused.
+- **A fetch never changes the vault's files,** its uncommitted changes, its unpushed commits or its conflict state;
+  only a pull does. **No automatic pull,** not even on a clean tree: a background fetch only updates the incoming
+  count, and a file never changes under the reader's eyes without a tap (or open, commit, turn).
+- **The incoming count is GitHub's side only:** files inside the vault root that GitHub's branch changed since the last
+  commit it shares with HEAD; unpushed commits and uncommitted changes don't change it. Offline keeps the last count.
+- **The open note warns when it is incoming** ("Changed on GitHub · Pull" above the editor); editing stays allowed,
+  the pull's conflict flow protects the text.
 - **Optimistic concurrency everywhere:** saves, deletes and discards carry the file version they started from; a
   commit carries the paths the user reviewed.
 - **No data loss on pull:** unpushed commits are folded back into uncommitted changes; during a conflict the stash is

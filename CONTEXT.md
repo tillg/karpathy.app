@@ -31,6 +31,14 @@ One user prompt in a chat plus everything the AI reads and changes in response.
 A file in a vault that differs from its last commit, whether the user or the AI changed it. Both are pooled together until the next commit.
 _Avoid_: Draft, pending edit, dirty file
 
+**Incoming change**:
+A file in a vault that GitHub's branch changed and the vault doesn't have yet, as of the last background fetch. Counted in files, not commits; the mirror image of an uncommitted change.
+_Avoid_: Incoming commit, behind, remote change, pending change
+
+**Pull**:
+The sync with GitHub: fetch, fast-forward, re-apply uncommitted changes. Runs on open, before every commit and AI turn, and when the user taps the incoming count. A pull never commits.
+_Avoid_: Sync (reserved for the busy state "Syncing…"), auto-pull (there is none)
+
 **Unsaved change**:
 An edit held only in the editor that hasn't been written to the vault yet.
 

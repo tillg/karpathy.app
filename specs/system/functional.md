@@ -164,7 +164,15 @@ order (#99).
 - **Commit reminder** when changes pass the threshold: "Later" brings it back at 2× the threshold, a second "Later"
   silences it until the count drops again.
 - **Git status pill:** "Conflict" / "Syncing…" / "AI working…" / "N uncommitted" / "All committed", plus
-  "· N unpushed" and "· offline".
+  "· N unpushed", "· N incoming" and "· offline".
+- **Incoming changes and the one-tap pull:** while the app is open, the backend fetches GitHub every 2 minutes and on
+  every return to the app, so a push from Obsidian shows as "· N incoming" within 2 minutes, or right away after
+  switching back. Tapping it (its own tap target next to the pill; the rest of the pill still opens Changes) saves the
+  open note's pending text and pulls: "Pulled N changes from GitHub"; a clash goes into the conflict flow; unreachable
+  GitHub keeps "· offline" and toasts "Couldn't reach GitHub". The Changes panel shows "N incoming changes · pull"
+  and lists the incoming files by name (no diff, at most 200, then "…and N more"). The open note shows "Changed on
+  GitHub · Pull" above the editor when it is one of them. On the phone the Changes tab badge adds "↓" (`3 ↓`, or `↓`
+  alone). Disabled while an AI turn runs (its own pull takes the changes in); hidden during a conflict.
 
 ### Conflicts
 
@@ -248,6 +256,9 @@ sequenceDiagram
 
 ### Edit on the phone while Obsidian changes the same note
 
+Usually the incoming count prevents this: the phone shows "↓" on the Changes tab and "Changed on GitHub · Pull" on
+Ideas.md, and one tap takes the change in before editing. If the user edits anyway:
+
 ```mermaid
 sequenceDiagram
   actor U as User (phone)
@@ -325,7 +336,7 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
 - The token test shows an expiry only for tokens GitHub reports one for, and scopes only for classic tokens (the app
   doesn't display scopes today). A tested token is not saved.
 - **No rename or move** of notes or folders (except the move into its own folder on a page's first upload), no
-  explicit folder creation, no manual pull button, no per-chat model,
+  explicit folder creation, no automatic pull (only the count updates on its own), no per-chat model,
   no chat rename, no global keyboard shortcuts.
 - Native `prompt()` / `confirm()` dialogs for new note, delete, discard, remove vault and delete chat.
 - Chat is disabled in vaults that contain `.opencode/`, `opencode.json` or `opencode.jsonc`.
