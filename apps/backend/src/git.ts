@@ -49,6 +49,9 @@ export class Git {
   }
 }
 
+/** How long a timed-out git gets to clean up after SIGTERM before SIGKILL. */
+const KILL_GRACE_MS = 2_000;
+
 export function runGit(
   cwd: string,
   args: string[],
@@ -87,16 +90,23 @@ export function runGit(
       { cwd, env, maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' },
       (err, stdout, stderr) => {
         clearTimeout(timer);
+        clearTimeout(killTimer);
         const code = err ? (typeof (err as { code?: unknown }).code === 'number' ? ((err as { code: number }).code) : 1) : 0;
         resolve({ code, stdout: binary ? '' : stdout.toString('utf8'), stderr: stderr.toString('utf8'), buf: stdout });
       },
     );
-    // Helpers (remote-https, upload-pack) may hold the pipes open after git dies: close them too,
-    // so the call returns (the orphaned helpers die on the broken pipe).
+    // SIGTERM first: git removes its .lock files on it (not on SIGKILL), else a later fetch or pull
+    // fails on "cannot lock ref". Helpers (remote-https, upload-pack) may hold the pipes open after
+    // git dies: after a grace period kill and close them too, so the call returns (the orphaned
+    // helpers die on the broken pipe).
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = opts.timeoutMs ? setTimeout(() => {
-      child.kill('SIGKILL');
-      child.stdout?.destroy();
-      child.stderr?.destroy();
+      child.kill('SIGTERM');
+      killTimer = setTimeout(() => {
+        child.kill('SIGKILL');
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+      }, KILL_GRACE_MS);
     }, opts.timeoutMs) : undefined;
     if (input !== undefined) child.stdin?.end(input);
   });

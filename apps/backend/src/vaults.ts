@@ -295,6 +295,7 @@ export class Vaults {
 
   /** The only subscriber is the event stream, so "someone listens" = "a browser has the vault open": fetch on connect and every interval. */
   subscribe(id: string, fn: (e: VaultEvent) => void): () => void {
+    this.config(id);
     const r = this.runtime(id);
     r.listeners.add(fn);
     r.fetchTimer ??= setInterval(() => void this.fetchRemote(id), this.env.fetchIntervalMs ?? FETCH_INTERVAL_MS);
@@ -623,16 +624,15 @@ export class Vaults {
     if (!release) return 'skipped';
     try {
       const v = this.config(id);
-      const repo = new Repo(this.cloneDir(id), v.branch, v.root, { identity: this.env.identity, token: this.env.githubToken?.(), timeoutMs: FETCH_TIMEOUT_MS });
-      const ref = async () => (await repo.git.run(['rev-parse', '-q', '--verify', `origin/${v.branch}`], { allowFail: true })).stdout.trim();
-      const before = await ref();
+      const repo = this.repo(v, FETCH_TIMEOUT_MS);
+      const before = await repo.upstreamHead();
       const result = await repo.fetchUpstream();
       const pullError = result.ok ? undefined : this.redact(result.error);
       const errorChanged = pullError !== r.pullError;
       if (pullError && !r.pullError) console.warn(`background fetch of ${v.repo} failed:`, pullError);
       r.pullError = pullError;
       // Only on a change: every status event makes the web app reload the Changes list.
-      if (errorChanged || (await ref()) !== before) this.emitStatusSoon(id);
+      if (errorChanged || (await repo.upstreamHead()) !== before) this.emitStatusSoon(id);
       return result.ok ? 'fetched' : 'offline';
     } finally {
       release();
@@ -849,8 +849,8 @@ export class Vaults {
     return join(resolve(this.env.vaultsDir), id);
   }
 
-  private repo(v: StoredVault): Repo {
-    return new Repo(this.cloneDir(v.id), v.branch, v.root, { identity: this.env.identity, token: this.env.githubToken?.() });
+  private repo(v: StoredVault, timeoutMs?: number): Repo {
+    return new Repo(this.cloneDir(v.id), v.branch, v.root, { identity: this.env.identity, token: this.env.githubToken?.(), timeoutMs });
   }
 
   private refuseDuplicate(repo: string, branch: string, root: string, exceptId?: string) {
@@ -904,6 +904,7 @@ export class Vaults {
     const r = this.runtime(v.id);
     r.state = 'cloning';
     r.conflict = false;
+    r.pullError = undefined;
     this.emitStatusSoon(v.id);
     r.cloning = r.lock.withExclusive(async () => {
       try {

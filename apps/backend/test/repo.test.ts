@@ -315,4 +315,16 @@ describe('Repo incoming changes', () => {
     expect(!r.ok && r.error).toBeTruthy();
     expect(await repo.incomingPaths()).toEqual(['b.md']);
   });
+
+  it('a ref lock left by a killed fetch does not block later fetches and pulls', async () => {
+    const { remote, repo, dir } = await setup();
+    const lock = join(dir, '.git', 'refs', 'remotes', 'origin', 'main.lock');
+    await writeFile(lock, '');
+    await remote.obsidianPush({ 'b.md': 'remote\n' });
+    expect(await repo.fetchUpstream()).toEqual({ ok: true });
+    expect(await repo.incomingPaths()).toEqual(['b.md']);
+    await writeFile(lock, '');
+    expect((await repo.pull()).kind).toBe('ok');
+  });
 });
+

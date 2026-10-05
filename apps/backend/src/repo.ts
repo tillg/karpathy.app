@@ -93,8 +93,22 @@ export class Repo {
     return r.stdout.split('\0').filter(Boolean).map((p) => this.toVaultPath(p)).filter((p): p is string => p !== null);
   }
 
+  /** The commit origin/<branch> points to ('' if none). */
+  async upstreamHead(): Promise<string> {
+    return (await this.git.run(['rev-parse', '-q', '--verify', this.upstream], { allowFail: true })).stdout.trim();
+  }
+
+  /**
+   * A git killed mid-fetch can leave origin/<branch>'s lock file behind, and then every fetch fails
+   * on "cannot lock ref". Callers hold the vault lock, so no other git updates that ref right now.
+   */
+  private async dropStaleRefLock() {
+    await rm(join(this.dir, '.git', 'refs', 'remotes', 'origin', `${this.branch}.lock`), { force: true });
+  }
+
   /** Updates origin/<branch> only: no merge, no index, no working tree (background fetch). */
   async fetchUpstream(): Promise<{ ok: true } | { ok: false; error: string }> {
+    await this.dropStaleRefLock();
     // No auto maintenance: no `gc --auto` repack while a turn or status read runs next to it.
     const r = await this.git.run(['fetch', '-q', '--no-auto-maintenance', '--end-of-options', 'origin', this.branch], { allowFail: true });
     return r.code === 0 ? { ok: true } : { ok: false, error: r.stderr.trim() || `git fetch failed (exit ${r.code})` };
@@ -143,6 +157,7 @@ export class Repo {
 
   /** Pull procedure, mvp §2.4 steps 1–5 (no rebase, no --autostash). */
   async pull(): Promise<PullResult> {
+    await this.dropStaleRefLock();
     const fetch = await this.git.run(['fetch', '--end-of-options', 'origin', this.branch], { allowFail: true });
     if (fetch.code !== 0) return { kind: 'offline', error: fetch.stderr.trim() };
     // 1. Upstream has not moved beyond HEAD: only push what's unpushed.

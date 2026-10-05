@@ -12,6 +12,7 @@ import { AttachButton } from './AttachButton';
 import { Editor, type EditorHandle } from './Editor';
 import { GitPill } from './GitPill';
 import { Icon } from './Icon';
+import { PullLink } from './PullLink';
 
 /** A plain left click is handled in-app; modified clicks (new tab, window, download) go to the browser (#109). */
 const plainClick = (e: React.MouseEvent) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
@@ -165,7 +166,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
   // The same note while an upload moves it into its own folder: the editor and the scroll position stay.
   const noteKey = note && (note.openedAs ?? note.path);
   const inc = incomingView(s.status, s.pulling);
-  // Warns only; editing stays allowed (the pull's stash, re-apply and conflict flow protect the text).
+  // Warns only; editing stays allowed (the pull saves the draft first, then its stash, re-apply and conflict flow protect the text).
   const noteIncoming = inc.show && !!note && s.status!.incomingPaths.includes(note.path);
 
   // A fresh open lands at the top; Back to a seen note (`restore`) returns to where it was left. The
@@ -294,7 +295,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
         {online && conflict && <div className="banner warn" data-testid="conflict-banner">This vault is in conflict with GitHub — read-only until resolved in <button className="link" onClick={() => { s.setSection('changes'); s.setPhoneTab('changes'); s.setPhoneNote(false); s.setSidebarOpen(true); }}>Changes</button>.</div>}
         {noteIncoming && (
           <div className="banner" data-testid="incoming-note">
-            Changed on GitHub · <button className="link" disabled={inc.disabled} aria-label={inc.label} title={inc.title} onClick={() => void s.pull()}>{s.pulling ? 'Pulling…' : 'Pull'}</button>
+            Changed on GitHub · <PullLink idle="Pull" busy="Pulling…" />
           </div>
         )}
         {note?.binary ? (

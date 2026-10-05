@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile, symlink } fro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { INCOMING_PATHS_MAX, MAX_UPLOAD_BYTES, type VaultEvent } from '@karpathy/shared';
 import { makeApp, TOKEN } from './app-helpers.js';
 import { makeRemote, sh } from './helpers.js';
@@ -785,18 +785,45 @@ describe('incoming changes', () => {
   });
 
   it('offline background fetch keeps the last count and reports pullError', async () => {
+    // The GitHub token appears in git's error (as part of the remote path) and must be redacted.
+    const secret = 'ghs_backgroundFetchSecret123';
+    const remote = await makeRemote({ 'Home.md': '# Home\n', 'Other.md': 'other\n' });
+    await symlink(join(remote.base, 'remotes'), join(remote.base, secret));
+    const t = await makeApp(`file://${remote.base}/${secret}/`, {}, undefined, secret);
+    cleanups.push(() => t.vaults.close());
+    const id = await t.addVault(remote.repo);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    cleanups.push(() => warn.mockRestore());
+    await remote.obsidianPush({ 'Other.md': 'remote v2\n' });
+    expect(await t.vaults.fetchRemote(id)).toBe('fetched');
+    await rename(remote.bare, `${remote.bare}.away`);
+    expect(await t.vaults.fetchRemote(id)).toBe('offline');
+    const st = (await t.api.get(`/vaults/${id}/status`)).body;
+    expect(st.pullError).toContain('***');
+    expect(st.pullError).not.toContain(secret);
+    expect(warn.mock.calls.flat().join(' ')).not.toContain(secret);
+    expect(st.incomingCount).toBe(1);
+    await rename(`${remote.bare}.away`, remote.bare);
+    expect(await t.vaults.fetchRemote(id)).toBe('fetched');
+    expect((await t.api.get(`/vaults/${id}/status`)).body.pullError).toBeUndefined();
+  });
+
+  it('a repo change drops the old vault\'s pullError', async () => {
     const t = await vaultApp();
-    await t.remote.obsidianPush({ 'Other.md': 'remote v2\n' });
-    expect(await t.vaults.fetchRemote(t.id)).toBe('fetched');
     await rename(t.remote.bare, `${t.remote.bare}.away`);
     expect(await t.vaults.fetchRemote(t.id)).toBe('offline');
-    const st = (await t.api.get(`/vaults/${t.id}/status`)).body;
-    expect(st.pullError).toBeTruthy();
-    expect(st.pullError).not.toContain(TOKEN);
-    expect(st.incomingCount).toBe(1);
     await rename(`${t.remote.bare}.away`, t.remote.bare);
-    expect(await t.vaults.fetchRemote(t.id)).toBe('fetched');
+    const other = await makeRemote({ 'x.md': 'x' }, { name: 'second', structure: false });
+    await symlink(other.bare, join(t.remote.bare, '..', 'second.git'));
+    await t.api.patch(`/vaults/${t.id}`, { repo: 'o/second' });
+    await t.vaults.whenCloned(t.id);
     expect((await t.api.get(`/vaults/${t.id}/status`)).body.pullError).toBeUndefined();
+  });
+
+  it('subscribing to an unknown vault keeps no runtime for it', async () => {
+    const t = await vaultApp();
+    expect((await t.api.get('/vaults/nope/events')).status).toBe(404);
+    expect((t.vaults as unknown as { rt: Map<string, unknown> }).rt.has('nope')).toBe(false);
   });
 
   it('open pulls even while a background fetch runs', async () => {
@@ -842,21 +869,21 @@ describe('incoming changes', () => {
   });
 });
 
-describe('event stream', () => {
-  it('snapshot first; a file written behind the back → files-changed + status within 1 s', async () => {
-    const t = await vaultApp();
-    const server = http.createServer(t.app).listen(0);
-    cleanups.push(() => void server.close());
-    await new Promise((r) => server.once('listening', r));
-    const port = (server.address() as AddressInfo).port;
+/** Serves `app` on a free port and returns a connect() to a vault's event stream (NDJSON). */
+async function eventStreams(app: http.RequestListener) {
+  const server = http.createServer(app).listen(0);
+  cleanups.push(() => void server.close());
+  await new Promise((r) => server.once('listening', r));
+  const port = (server.address() as AddressInfo).port;
+  return async (id: string) => {
     const ctrl = new AbortController();
     cleanups.push(() => ctrl.abort());
-    const res = await fetch(`http://127.0.0.1:${port}/api/vaults/${t.id}/events`, { headers: { Authorization: `Bearer ${TOKEN}` }, signal: ctrl.signal });
+    const res = await fetch(`http://127.0.0.1:${port}/api/vaults/${id}/events`, { headers: { Authorization: `Bearer ${TOKEN}` }, signal: ctrl.signal });
     const reader = res.body!.getReader();
     const events: VaultEvent[] = [];
-    let buf = '';
     const pump = (async () => {
       const dec = new TextDecoder();
+      let buf = '';
       for (;;) {
         const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
         if (done) return;
@@ -869,25 +896,34 @@ describe('event stream', () => {
         }
       }
     })();
-    const waitFor = async (pred: () => boolean, ms: number) => {
+    /** Waits until some event matches `pred`. */
+    const waitFor = async (pred: (e: VaultEvent) => boolean, ms: number) => {
       const end = Date.now() + ms;
-      while (!pred()) {
+      while (!events.some(pred)) {
         if (Date.now() > end) throw new Error(`timeout; events: ${JSON.stringify(events)}`);
         await new Promise((r) => setTimeout(r, 20));
       }
     };
-    await waitFor(() => events.length > 0, 2000);
+    return { events, waitFor, close: async () => { ctrl.abort(); await pump; } };
+  };
+}
+
+describe('event stream', () => {
+  it('snapshot first; a file written behind the back → files-changed + status within 1 s', async () => {
+    const t = await vaultApp();
+    const connect = await eventStreams(t.app);
+    const { events, waitFor, close } = await connect(t.id);
+    await waitFor(() => true, 2000);
     expect(events[0]).toMatchObject({ type: 'status', status: { changedCount: 0 } });
     await new Promise((r) => setTimeout(r, 300)); // watcher ready
     const t0 = Date.now();
     await writeFile(join(t.vaults.vaultRootDir(t.id), 'Other.md'), 'written by the AI');
-    await waitFor(() => events.some((e) => e.type === 'files-changed'), 1500);
-    await waitFor(() => events.some((e) => e.type === 'status' && e.status.changedCount === 1), 1500);
+    await waitFor((e) => e.type === 'files-changed', 1500);
+    await waitFor((e) => e.type === 'status' && e.status.changedCount === 1, 1500);
     expect(Date.now() - t0).toBeLessThan(1500);
     const fc = events.find((e) => e.type === 'files-changed');
     expect(fc).toMatchObject({ type: 'files-changed', files: [{ path: 'Other.md', version: expect.any(String) }] });
-    ctrl.abort();
-    await pump;
+    await close();
   });
 
   it('connect fetches, the interval fetches while connected, nothing after disconnect', async () => {
@@ -895,45 +931,12 @@ describe('event stream', () => {
     const t = await makeApp(remote.remoteBase, {}, undefined, undefined, { fetchIntervalMs: 200 });
     cleanups.push(() => t.vaults.close());
     const id = await t.addVault(remote.repo);
-    const server = http.createServer(t.app).listen(0);
-    cleanups.push(() => void server.close());
-    await new Promise((r) => server.once('listening', r));
-    const port = (server.address() as AddressInfo).port;
-    const connect = async () => {
-      const ctrl = new AbortController();
-      cleanups.push(() => ctrl.abort());
-      const res = await fetch(`http://127.0.0.1:${port}/api/vaults/${id}/events`, { headers: { Authorization: `Bearer ${TOKEN}` }, signal: ctrl.signal });
-      const reader = res.body!.getReader();
-      const events: VaultEvent[] = [];
-      const pump = (async () => {
-        const dec = new TextDecoder();
-        let buf = '';
-        for (;;) {
-          const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
-          if (done) return;
-          buf += dec.decode(value, { stream: true });
-          let i;
-          while ((i = buf.indexOf('\n')) >= 0) {
-            const line = buf.slice(0, i).trim();
-            buf = buf.slice(i + 1);
-            if (line) events.push(JSON.parse(line));
-          }
-        }
-      })();
-      const waitFor = async (pred: (e: VaultEvent) => boolean, ms: number) => {
-        const end = Date.now() + ms;
-        while (!events.some(pred)) {
-          if (Date.now() > end) throw new Error(`timeout; events: ${JSON.stringify(events)}`);
-          await new Promise((r) => setTimeout(r, 20));
-        }
-      };
-      return { waitFor, close: async () => { ctrl.abort(); await pump; } };
-    };
+    const connect = await eventStreams(t.app);
     const incoming = (n: number) => (e: VaultEvent) => e.type === 'status' && e.status.incomingCount === n;
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
     await remote.obsidianPush({ 'Other.md': 'v2\n' });
-    const s1 = await connect();
+    const s1 = await connect(id);
     await s1.waitFor(incoming(1), 1000);
     await remote.obsidianPush({ 'Home.md': 'home v2\n' });
     await s1.waitFor(incoming(2), 1000);
@@ -943,12 +946,14 @@ describe('event stream', () => {
     await sleep(1000);
     expect((await t.api.get(`/vaults/${id}/status`)).body.incomingCount).toBe(2);
 
-    const s2 = await connect();
+    const s2 = await connect(id);
     await s2.waitFor(incoming(3), 1000);
     // Removing the vault while subscribed: no tick may run (and reject) for a vault that is gone.
     await t.api.post(`/vaults/${id}/open`);
     expect((await t.api.delete(`/vaults/${id}`)).status).toBe(204);
+    const fetches = vi.spyOn(t.vaults, 'fetchRemote');
     await sleep(1000);
+    expect(fetches).not.toHaveBeenCalled();
     await s2.close();
   });
 });

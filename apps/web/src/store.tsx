@@ -175,20 +175,6 @@ function useAppState() {
   const status = usable && statusOf?.vault === activeId ? statusOf.status : null;
   const setStatusFor = useCallback((vault: string, st: VaultStatus) => setStatusOf({ vault, status: st }), []);
   const setStatus = useCallback((st: VaultStatus) => { if (activeRef.current) setStatusFor(activeRef.current, st); }, [setStatusFor]);
-  // The user's pull (tap on the incoming count). Changed files arrive as files-changed events.
-  const [pulling, setPulling] = useState(false);
-  const pull = useCallback(async () => {
-    const id = activeRef.current;
-    if (!id) return;
-    const n = status?.incomingCount ?? 0;
-    setPulling(true);
-    try {
-      const st = await api.pull(id);
-      setStatusFor(id, st);
-      if (st.pullError) toast("Couldn't reach GitHub");
-      else if (st.state === 'ready') toast(`Pulled ${n} change${n === 1 ? '' : 's'} from GitHub`);
-    } catch (e) { toast(errorText(e)); } finally { setPulling(false); }
-  }, [status, toast, setStatusFor]);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [changesNonce, setChangesNonce] = useState(0);
   /** Bumped when cached media bytes were dropped (their file changed): shown embeds remount. */
@@ -284,6 +270,33 @@ function useAppState() {
     // Other failures (offline, server error): the draft is stored locally and restored on reopen.
     return failed.current !== 'stale' && failed.current !== 'deleted';
   }, [save, toast]);
+
+  // The user's pull (tap on the incoming count). Changed files arrive as files-changed events.
+  // Tagged with its vault: a pull running in another vault doesn't disable this one's controls.
+  const [pullingVault, setPullingVault] = useState<string | null>(null);
+  const pulling = pullingVault !== null && pullingVault === activeId;
+  const pullingRef = useRef<string | null>(null);
+  const statusRef = useRef(status);
+  statusRef.current = status;
+  const pull = useCallback(async () => {
+    const id = activeRef.current;
+    // A ref, not state: a second tap in the same frame sees it before React re-renders.
+    if (!id || pullingRef.current === id) return;
+    pullingRef.current = id;
+    setPullingVault(id);
+    try {
+      // The pending autosave must land first: the pull's stash protects saved text only.
+      if (!(await leave())) return;
+      const n = statusRef.current?.incomingCount ?? 0;
+      const st = await api.pull(id);
+      setStatusFor(id, st);
+      if (st.pullError) toast("Couldn't reach GitHub");
+      else if (st.state === 'ready' && activeRef.current === id) toast(`Pulled ${n} change${n === 1 ? '' : 's'} from GitHub`);
+    } catch (e) { toast(errorText(e)); } finally {
+      pullingRef.current = null;
+      setPullingVault(null);
+    }
+  }, [leave, toast, setStatusFor]);
 
   /** The open note's current text, including unsaved edits and saves since it was loaded (#101). */
   const currentText = useCallback(() => noteRef.current?.draft ?? '', []);

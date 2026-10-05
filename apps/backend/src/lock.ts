@@ -110,6 +110,7 @@ export class VaultLock {
   private grantShared(label: SharedLabel): Release {
     const id = this.nextId++;
     this.shared.set(id, label);
+    // A background fetch doesn't change `busy`: no status event per tick (each one reloads the web app's Changes list).
     const quiet = label === 'fetch';
     if (!quiet) this.emit();
     let done = false;

@@ -7,6 +7,7 @@ import { useApp } from '../store';
 import { Modal } from './Dialogs';
 import { Icon } from './Icon';
 import { PathLabel } from './PathLabel';
+import { PullLink } from './PullLink';
 
 const KIND: Record<Change['kind'], string> = { modified: 'M', added: 'A', deleted: 'D', renamed: 'R', untracked: 'U' };
 
@@ -134,7 +135,7 @@ function ConflictFile({ path }: { path: string }) {
 }
 
 export function ChangesPanel() {
-  const { activeId, status, changesNonce, setCommitOpen, readOnly, toast, setStatus, online, usable, note, active, setAdminOpen, pull, pulling } = useApp();
+  const { activeId, status, changesNonce, setCommitOpen, readOnly, toast, setStatus, online, usable, note, active, setAdminOpen, pulling } = useApp();
   // Tagged with its vault, so another vault's list is never shown (issue #22).
   const [loaded, setLoaded] = useState<{ vault: string; changes: Change[] } | null>(null);
   const [pushing, setPushing] = useState(false);
@@ -183,7 +184,7 @@ export function ChangesPanel() {
       {inc.show && (
         <>
           <div className="banner" data-testid="incoming">
-            {inc.count} incoming change{inc.count === 1 ? '' : 's'} · <button className="link" disabled={inc.disabled} aria-label={inc.label} title={inc.title} onClick={() => void pull()}>{pulling ? 'pulling…' : 'pull'}</button>
+            {inc.count} incoming change{inc.count === 1 ? '' : 's'} · <PullLink idle="pull" busy="pulling…" />
           </div>
           <div className="incoming-list" data-testid="incoming-list">
             <div className="incoming-head">Incoming from GitHub</div>

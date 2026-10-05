@@ -1,4 +1,4 @@
-import { breakRemote, expect, openApp, openNote, pushFromObsidian, test } from './helpers';
+import { breakRemote, expect, openApp, openNote, pushFromObsidian, test, waitSaved } from './helpers';
 import type { Page } from '@playwright/test';
 
 /**
@@ -47,10 +47,45 @@ test.describe('incoming changes from GitHub', () => {
     await bar.getByRole('button', { name: /pull/i }).click();
     await expect(bar).toBeHidden();
     await expect(page.locator('.cm-content')).toContainText('Ideas from Obsidian');
-    // A push to another file: counted, but no bar on this note.
+  });
+
+  test('a push to another file is counted but puts no bar on the open note', async ({ page, vault }) => {
+    await openApp(page, vault.id);
+    await openNote(page, 'Ideas.md');
     pushFromObsidian(vault.bare, 'Home.md', '# Home from Obsidian\n');
     await reconnectUntil(page, () => expect(page.getByTestId('incoming-badge')).toHaveText('· 1 incoming', { timeout: 2000 }));
-    await expect(bar).toBeHidden();
+    await expect(page.getByTestId('incoming-note')).toBeHidden();
+  });
+
+  test('Pull right after typing saves the draft first: no stale dialog, both edits kept', async ({ page, api, vault }) => {
+    await openApp(page, vault.id);
+    await openNote(page, 'Ideas.md');
+    pushFromObsidian(vault.bare, 'Ideas.md', '# Ideas from Obsidian\n\nBack to [[Home]].\n');
+    const bar = page.getByTestId('incoming-note');
+    await reconnectUntil(page, () => expect(bar).toBeVisible({ timeout: 2000 }));
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('ControlOrMeta+End');
+    await page.keyboard.type('\nTyped right before the pull.');
+    // Within the autosave debounce: the draft exists only in the browser.
+    await bar.getByRole('button', { name: /pull/i }).click();
+    await expect(page.getByTestId('toast')).toContainText('Pulled 1 change from GitHub');
+    await expect(page.getByTestId('stale-reload')).toBeHidden();
+    await expect(page.locator('.cm-content')).toContainText('Ideas from Obsidian');
+    await expect(page.locator('.cm-content')).toContainText('Typed right before the pull.');
+    await expect.poll(async () => (await api.file(vault.id, 'Ideas.md'))?.content).toMatch(/^# Ideas from Obsidian\n[\s\S]*Typed right before the pull\./);
+  });
+
+  test('a double tap pulls once', async ({ page, vault }) => {
+    await openApp(page, vault.id);
+    pushFromObsidian(vault.bare, 'Ideas.md', '# Ideas from Obsidian\n');
+    const badge = page.getByTestId('incoming-badge');
+    await reconnectUntil(page, () => expect(badge).toBeVisible({ timeout: 2000 }));
+    let pulls = 0;
+    page.on('request', (r) => { if (r.method() === 'POST' && r.url().endsWith('/pull')) pulls++; });
+    // Both clicks land before React re-renders the button as disabled.
+    await badge.evaluate((b: HTMLButtonElement) => { b.click(); b.click(); });
+    await expect(badge).toBeHidden();
+    expect(pulls).toBe(1);
   });
 
   test('Changes panel lists incoming files', async ({ page, vault }) => {
@@ -69,7 +104,13 @@ test.describe('incoming changes from GitHub', () => {
 
   test('tapping incoming with a clashing local edit ends in conflict', async ({ page, api, vault }) => {
     await openApp(page, vault.id);
-    await api.write(vault.id, 'Ideas.md', '# Ideas mine\n\nBack to [[Home]].\n');
+    await openNote(page, 'Ideas.md');
+    // Mine: the first line, edited and saved in the app.
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('ControlOrMeta+Home');
+    await page.keyboard.press('End');
+    await page.keyboard.type(' mine');
+    await waitSaved(page);
     pushFromObsidian(vault.bare, 'Ideas.md', '# Ideas theirs\n\nBack to [[Home]].\n');
     await reconnectUntil(page, () => expect(page.getByTestId('incoming-badge')).toBeVisible({ timeout: 2000 }));
     await page.getByTestId('incoming-badge').click();

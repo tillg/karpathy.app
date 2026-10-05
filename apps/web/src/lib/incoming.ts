@@ -5,16 +5,15 @@ import type { VaultStatus } from '@karpathy/shared';
  * badge), so they can't drift apart. No pull during an AI turn: the turn pulls first anyway.
  */
 export function incomingView(status: VaultStatus | null | undefined, pulling: boolean) {
-  const k = status?.incomingCount ?? 0;
-  const show = status?.state === 'ready' && k > 0;
-  const s = k === 1 ? '' : 's';
+  const count = status?.incomingCount ?? 0;
+  const show = status?.state === 'ready' && count > 0;
+  const plural = count === 1 ? '' : 's';
   return {
     show,
-    count: k,
+    count,
     disabled: pulling || (status?.busy ?? 'none') !== 'none',
-    label: `Pull ${k} incoming change${s} from GitHub`,
-    title: status?.busy === 'turn' ? 'The AI is working; its turn pulls first.' : `${k} file${s} changed on GitHub. Tap to pull.`,
-    tabMark: show,
-    moreCount: show ? k - status!.incomingPaths.length : 0,
+    label: `Pull ${count} incoming change${plural} from GitHub`,
+    title: status?.busy === 'turn' ? 'The AI is working; its turn pulls first.' : `${count} file${plural} changed on GitHub. Tap to pull.`,
+    moreCount: show ? count - status!.incomingPaths.length : 0,
   };
 }
