@@ -1,0 +1,27 @@
+sequenceDiagram
+  actor U as User
+  participant W as PWA (WebRTC)
+  participant A as voice-agent
+  participant S as STT / TTS
+  participant L as talker LLM
+  participant B as backend + opencode
+  U->>W: speaks: what did I note about micrograd
+  W->>A: audio frames (20 ms)
+  A->>S: stream audio
+  S-->>A: partial + final transcript
+  A->>A: end of turn (VAD + turn model)
+  A->>L: transcript + chat context
+  L-->>A: tool call ask_vault(question)
+  A->>S: TTS "Let me look in your notes."
+  S-->>W: speech (~1 s after you stopped)
+  A->>B: POST /chats/:id/prompt, GET stream
+  B-->>A: part: read entities/micrograd.md
+  A->>S: TTS "Reading the micrograd page."
+  B-->>A: text deltas, turn idle
+  A->>L: tool result (answer text)
+  L-->>A: short spoken summary
+  A->>S: TTS summary
+  S-->>W: speech
+  W-->>U: hears answer, chat pane shows the full turn
+  U->>W: interrupts: stop, just the date
+  W->>A: audio → barge-in cancels TTS

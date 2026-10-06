@@ -2,7 +2,8 @@
   "sources": [
     "specs/research/browser-only/browser-only-report.md",
     "specs/changes/v1/v1-plan.md",
-    "specs/research/prod-env/prod-env-report.md"
+    "specs/research/prod-env/prod-env-report.md",
+    "specs/changes/voice_interaction/voice-interaction-report.md"
   ],
   "reports": [
     {
@@ -20,6 +21,10 @@
     {
       "path": "specs/research/prod-env/prod-env-report.md",
       "label": "Prod environment"
+    },
+    {
+      "path": "specs/changes/voice_interaction/voice-interaction-report.md",
+      "label": "Voice"
     }
   ],
   "brand": {

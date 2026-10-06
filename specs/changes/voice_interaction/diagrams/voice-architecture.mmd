@@ -1,0 +1,24 @@
+flowchart LR
+  subgraph Device["iPad / iPhone (PWA)"]
+    PWA["Chat pane<br/>+ talk button<br/>livekit-client"]
+  end
+  subgraph VPS["Hetzner VPS (docker compose)"]
+    P["proxy (Caddy)"]
+    B["backend<br/>chat API, token minting"]
+    O["opencode serve<br/>agent loop + vault tools"]
+    LK["livekit-server<br/>WebRTC SFU"]
+    VA["voice-agent<br/>LiveKit Agents worker<br/>VAD + turn detection"]
+  end
+  subgraph Ext["Speech + LLM providers (swappable)"]
+    STT["streaming STT"]
+    TTS["streaming TTS"]
+    LLM["fast talker LLM"]
+  end
+  PWA -- "HTTPS: POST /voice/token" --> P --> B
+  PWA <-- "WebRTC audio (UDP)" --> LK
+  VA <-- "joins room as participant" --> LK
+  VA -- "transcript / text" --> STT
+  VA --> TTS
+  VA --> LLM
+  VA -- "tool: ask_vault → chat prompt + NDJSON stream" --> B
+  B -- "@opencode-ai/sdk" --> O

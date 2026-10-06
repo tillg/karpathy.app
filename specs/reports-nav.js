@@ -7,6 +7,7 @@ const REPORTS = [
   ['research/browser-only/browser-only-report.html', 'Browser-only'],
   ['changes/v1/v1-plan.html', 'V1 plan'],
   ['research/prod-env/prod-env-report.html', 'Prod environment'],
+  ['changes/voice_interaction/voice-interaction-report.html', 'Voice'],
 ];
 
 const base = document.currentScript.src;
