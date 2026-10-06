@@ -17,8 +17,8 @@ flowchart LR
   PWA -- "HTTPS: POST /voice/token" --> P --> B
   PWA <-- "WebRTC audio (UDP)" --> LK
   VA <-- "joins room as participant" --> LK
-  VA -- "transcript / text" --> STT
-  VA --> TTS
+  VA -- "audio → text" --> STT
+  VA -- "text → audio" --> TTS
   VA --> LLM
   VA -- "tool: ask_vault → chat prompt + NDJSON stream" --> B
   B -- "@opencode-ai/sdk" --> O
