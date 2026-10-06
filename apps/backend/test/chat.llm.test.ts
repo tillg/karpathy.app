@@ -153,6 +153,20 @@ describe('@llm AI reads and writes', () => {
     expect(t.vaults.aiTouched(t.id)).toEqual([]);
   });
 
+  it('a turn that writes a file stamps ai in the file list (#122)', async () => {
+    const t = await setup();
+    const before = Date.now();
+    await withRetry(async () => {
+      const { tools } = await turn(t, 'Use the write tool to create the file notes/ai-note.md with the content "stamped". Do nothing else.');
+      if (tools.length === 0) throw new Inconclusive('model made no tool call');
+      if (!tools.some((x) => x.writes && x.status === 'completed')) throw new Inconclusive(`no completed write: ${JSON.stringify(tools)}`);
+    });
+    const written = (await t.vaults.changes(t.id))[0]!.path;
+    const entry = (await t.vaults.listFiles(t.id)).find((e) => e.path === written);
+    expect(entry?.ai).toBeGreaterThanOrEqual(before);
+    expect(entry).not.toHaveProperty('human');
+  });
+
   it('in Conflict the edit is denied (read-only agent), file unchanged', async () => {
     const t = await setup();
     await writeFile(join(t.vaults.vaultRootDir(t.id), 'Home.md'), 'mine\n');

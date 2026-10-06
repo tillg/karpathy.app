@@ -133,6 +133,11 @@ mark { background: rgba(245,158,11,.35); color: var(--label); border-radius: 3px
 /* file tree */
 .tree { padding: 0 10px 20px; }
 .tree .gh { margin: 4px 10px 4px; }
+.gh-tools { display: flex; align-items: center; gap: 2px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.tmenu { position: relative; }
+.tree-menu { left: auto; right: 0; width: max-content; min-width: 200px; }
+.tree-chip { display: flex; align-items: center; gap: 6px; margin: 0 10px 6px; padding: 0 2px 0 10px; border-radius: 15px; background: var(--tint-soft); color: var(--tint); font-size: 13px; font-weight: 600; }
+.tree-chip span { flex: 1; }
 .trow { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 36px; padding-right: 10px; border-radius: 9px; text-align: left; font-size: 15px; }
 .trow:hover:not(.sel) { background: var(--fill2); }
 .trow.sel { background: var(--sel); color: var(--sel-ink); }

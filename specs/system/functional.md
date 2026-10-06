@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-05
+edited: 2026-10-06
 ---
 
 # Functional: karpathy.app
@@ -116,8 +116,32 @@ applies to the next git operation. The deployment's `GITHUB_TOKEN` secret stays 
 
 ### Notes
 
-- **File tree:** folders first, alphabetical, collapsed by default, expansion remembered per vault; `.md` hidden in
-  names; dot-files never shown. The open note's folders open and its row scrolls into view.
+- **File tree:** folders first, collapsed by default, expansion remembered per vault; `.md` hidden in names;
+  dot-files never shown. The open note's folders open and its row scrolls into view, unless a filter hides the note.
+- **Sort and filter the tree** (#122): two buttons in the *Notes* header, both remembered per browser for all vaults.
+  - **Sort** (⇅): by **Name** (A → Z / Z → A) or by **Last changed** (Newest first / Oldest first). Picking a
+    criterion sets its natural direction (A → Z, newest first). The menu stays open, so criterion and direction
+    can be set in one visit. Under *Last changed*, folders are ranked by the newest change inside them; ties go by
+    name; files without a date go last in both directions.
+  - **Filter** (funnel): **Anyone** / **AI** / **Human**. Only files with that author's date show, plus the folders
+    on their way; empty folders vanish. The menu closes on choice. A chip under the header ("Changed by AI" ✦ /
+    "Changed by human" 👤) has a ✕ that resets to Anyone. Nothing matches: "No notes changed by the AI yet." / "…by
+    a human yet."
+  - The filter also picks the date *Last changed* uses: anyone → **last modified**, AI → **last modified by AI**,
+    human → **last modified by human**. Under *Name* the filter only hides.
+  - A button not at its default is tinted. The open note stays open when the filter hides it.
+  - While dates are in use the tree updates live (debounced refetch on file changes, once more when an AI turn
+    ends); offline it sorts and filters the cached listing.
+
+```mermaid
+flowchart LR
+    F{Filter} -->|Anyone| A[all entries]
+    F -->|AI / Human| M[files with that date<br/>+ folders on their way]
+    A --> S{Sort}
+    M --> S
+    S -->|Name| N[A → Z or Z → A]
+    S -->|Last changed| D[by the filter's date,<br/>folders by newest inside,<br/>undated last]
+```
 - **Create a note** (path prompt, `.md` added if missing, starts as `# <title>`). Refused for existing names, names
   that differ only by case, and invalid names.
 - **Delete a note** (recoverable until the next commit). On a media or binary file the button says "Delete file".

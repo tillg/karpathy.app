@@ -1,11 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ancestors, buildTree, loadExpanded, saveExpanded, type TreeNode } from '../lib/tree';
+import { ancestors, buildTree, dateOf, DEFAULT_SORT, loadExpanded, saveExpanded, type TreeFilter, type TreeNode, type TreeSort } from '../lib/tree';
 import { useApp } from '../store';
 import { Icon } from './Icon';
+import { TreeMenu } from './TreeMenu';
+
+/** How each tree filter reads in the menu, the chip and the empty tree (#122). */
+const FILTERS: Record<TreeFilter, { menu: string; chip: string; icon: string; empty: string }> = {
+  any: { menu: 'Anyone', chip: '', icon: '', empty: '' },
+  ai: { menu: 'AI', chip: 'Changed by AI', icon: 'sparkles', empty: 'No notes changed by the AI yet.' },
+  human: { menu: 'Human', chip: 'Changed by human', icon: 'person', empty: 'No notes changed by a human yet.' },
+};
 
 export function FileTree() {
-  const { files, note, openNote, newNote, readOnly, usable, online, activeId } = useApp();
-  const tree = useMemo(() => buildTree(files), [files]);
+  const { files, note, openNote, newNote, readOnly, usable, online, activeId, sortFilter, setSortFilter } = useApp();
+  const { sort, filter } = sortFilter;
+  const tree = useMemo(() => buildTree(files, sort, filter), [files, sort, filter]);
+  const setSort = (s: TreeSort) => setSortFilter({ sort: s, filter });
+  const setFilter = (f: TreeFilter) => setSortFilter({ sort, filter: f });
+  const byName = sort.by === 'name';
+  // Direction labels follow the criterion: A → Z / Z → A, or Newest first / Oldest first.
+  const [up, down] = byName ? ['A → Z', 'Z → A'] : ['Oldest first', 'Newest first'];
   // Folders start collapsed; what the user opens is kept per vault (#53).
   const [exp, setExp] = useState(() => ({ vault: activeId, set: activeId ? loadExpanded(localStorage, activeId) : new Set<string>() }));
   if (exp.vault !== activeId) setExp({ vault: activeId, set: activeId ? loadExpanded(localStorage, activeId) : new Set() });
@@ -17,12 +31,13 @@ export function FileTree() {
     return { vault: e.vault, set };
   });
   const toggle = (p: string) => update((s) => { if (s.has(p)) s.delete(p); else s.add(p); });
-  // The open note's folders open with it.
+  // The open note's folders open with it, unless the filter hides the note.
   const notePath = note?.path;
+  const noteShown = !notePath || filter === 'any' || files.some((f) => f.path === notePath && dateOf(f, filter) !== undefined);
   useEffect(() => {
-    if (notePath && ancestors(notePath).some((a) => !exp.set.has(a))) update((s) => ancestors(notePath).forEach((a) => s.add(a)));
+    if (notePath && noteShown && ancestors(notePath).some((a) => !exp.set.has(a))) update((s) => ancestors(notePath).forEach((a) => s.add(a)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notePath, exp.vault]);
+  }, [notePath, exp.vault, noteShown]);
   // ...and its row scrolls into view when the open note changes (#100), after the folders rendered open.
   const selRef = useRef<HTMLButtonElement | null>(null);
   const scrolledTo = useRef<string | undefined>(undefined);
@@ -64,9 +79,46 @@ export function FileTree() {
   return (
     <div className="tree">
       <div className="gh">Notes
-        <button className="ib sm" title="New note" data-testid="new-note" onClick={create} disabled={readOnly || !usable}><Icon n="square_pencil" size={19} /></button>
+        <span className="gh-tools">
+          <TreeMenu icon="arrow_up_arrow_down" title="Sort" testId="tree-sort" closeOnSelect={false}
+            on={sort.by !== DEFAULT_SORT.by || sort.dir !== DEFAULT_SORT.dir}
+            groups={[
+              {
+                label: 'Sort by',
+                items: [
+                  // Picking a criterion sets its natural direction: A → Z, newest first.
+                  { label: 'Name', checked: byName, select: () => setSort({ by: 'name', dir: 'asc' }) },
+                  { label: 'Last changed', checked: !byName, select: () => setSort({ by: 'changed', dir: 'desc' }) },
+                ],
+              },
+              {
+                label: 'Order',
+                // Each criterion lists its natural direction first.
+                items: (byName ? (['asc', 'desc'] as const) : (['desc', 'asc'] as const)).map((dir) => ({
+                  label: dir === 'asc' ? up : down,
+                  checked: sort.dir === dir,
+                  select: () => setSort({ by: sort.by, dir }),
+                })),
+              },
+            ]} />
+          <TreeMenu icon="funnel" title="Filter" testId="tree-filter" closeOnSelect on={filter !== 'any'}
+            groups={[{
+              label: 'Changed by',
+              items: (['any', 'ai', 'human'] as const).map((f) => ({ label: FILTERS[f].menu, checked: filter === f, select: () => setFilter(f) })),
+            }]} />
+          <button className="ib sm" title="New note" data-testid="new-note" onClick={create} disabled={readOnly || !usable}><Icon n="square_pencil" size={19} /></button>
+        </span>
       </div>
-      {tree.length ? render(tree, 0) : <div className="empty">{!usable ? '' : online ? 'This vault is empty.' : 'Offline — the file list is not cached yet.'}</div>}
+      {filter !== 'any' && (
+        <div className="tree-chip" data-testid="tree-filter-chip">
+          <Icon n={FILTERS[filter].icon} size={15} />
+          <span>{FILTERS[filter].chip}</span>
+          <button className="ib sm" aria-label="Clear filter" title="Clear filter" onClick={() => setFilter('any')}><Icon n="xmark" size={14} /></button>
+        </div>
+      )}
+      {tree.length
+        ? render(tree, 0)
+        : <div className="empty">{!usable ? '' : filter !== 'any' && files.length ? FILTERS[filter].empty : online ? 'This vault is empty.' : 'Offline — the file list is not cached yet.'}</div>}
     </div>
   );
 }

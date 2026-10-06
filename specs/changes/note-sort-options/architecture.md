@@ -1,7 +1,7 @@
 ---
 feature: note-sort-options
 title: "Architecture: sort and filter the file tree"
-status: proposed
+status: applied
 order: 3
 created: 2026-10-05
 edited: 2026-10-05
@@ -19,10 +19,10 @@ flowchart LR
     subgraph Backend
       R["/files route"] --> LF[Vaults.listFiles]
       LF --> LT[listTree<br/>unchanged]
-      LF --> HD[FileDates.forHead<br/>git log pass, cached per HEAD]
+      LF --> HD[Repo.fileHistory<br/>git log pass, cached per HEAD]
       LF --> CH[Repo.changes + stat<br/>uncommitted files only]
       LF --> ES[(config.editStamps)]
-      CHAT[chat.ts file-edited] -->|stampAi| ES
+      CHAT[chat.ts file-edited] -->|markAiTouched| ES
       PUT[save / create / upload] -->|stampHuman| ES
     end
     subgraph Web
@@ -81,7 +81,7 @@ sequenceDiagram
     V-->>W: entries with modified / ai / human
 ```
 
-### Git history pass (`file-dates.ts`, new)
+### Git history pass (`Repo.fileHistory`)
 
 One `git log` over the vault root, newest first:
 
@@ -89,11 +89,16 @@ One `git log` over the vault root, newest first:
 git log -z --format=%x1e%ct%x1f%(trailers:key=Co-authored-by,valueonly) --name-only -- <pathspec>
 ```
 
+- "Commit time" here and in the domain means the **committer date** (`%ct`). git log walks in that
+  order, so "first seen" is the newest. The author date would be wrong after a rebase or squash merge,
+  which keeps the original, older author date.
 - Walks the output once; for each path keeps the **first** commit time seen (`last`) and the first
   commit time of a commit whose trailers don't contain the app agent (`lastHuman`). Paths outside the
   vault root are dropped through `Repo.toVaultPath`.
-- The result is cached per vault, keyed by the HEAD hash. A commit or pull moves HEAD, so the next
-  listing recomputes; every other listing reuses it. The cache lives in the vault runtime (memory only).
+- The result is cached per vault, keyed by HEAD hash + vault root. A commit or pull moves HEAD and a root
+  change re-maps the paths, so the next listing recomputes; every other listing reuses it. Concurrent
+  listings share one run. A failed run is logged and not cached. The cache lives in the vault runtime
+  (memory only).
 - No `--follow`: a renamed file's last commit is the rename commit, which is right for "last modified".
 - Cost: linear in history size. Typical vaults (a few thousand commits) take well under a second, once
   per HEAD. Revisit if a vault's history makes the first listing slow.
@@ -113,18 +118,19 @@ editStamps: Record<string /* vaultId */, Record<string /* path */, { ai?: number
 ```
 
 Next to `aiTouched`, loaded with `raw.editStamps ?? {}` so existing config files keep working.
-`Vaults` gets `stampAi(id, paths)` and `stampHuman(id, paths)`, and folds the lifecycle from the domain
-table into the existing code paths:
+`Vaults.markAiTouched` also sets the AI stamp, and a private `Vaults.stampHuman(id, path)` sets the human
+one. The lifecycle from the domain table is folded into the existing code paths:
 
 | Code path | Change |
 |---|---|
-| `chat.ts` `file-edited` → `markAiTouched` | also `stampAi` (same event, same path rules: absolute paths are ignored) |
+| `chat.ts` `file-edited` → `markAiTouched` | sets the AI stamp too (same event, same path rules: absolute paths are ignored) |
 | `PUT /vaults/:id/file` (save, create) | `stampHuman` after the write |
 | upload (`Vaults.upload`) | `stampHuman` for each written file |
 | move into own folder (`vaults.ts` relink) | rename the stamp keys, like `aiTouched` |
 | discard | delete the path's stamps newer than its last commit time (from the history cache); untracked → delete all |
 | vault removed / replaced | delete `editStamps[id]`, like `aiTouched` |
-| `listFiles` | drop stamps of paths not in the tree; write back only if something was dropped |
+| `listFiles` | drop stamps of paths not in the tree and still missing on disk; skipped while a sync runs or the vault is in Conflict (files can be missing for a while then) |
+| move into own folder | also `stampHuman` the notes whose links were rewritten (the user's upload changed them) |
 
 `aiTouched` and the commit trailer logic stay untouched. They could later be derived from the stamps
 (touched = AI stamp newer than the last commit), but that is a separate refactor.
@@ -158,9 +164,9 @@ function buildTree(entries: FileEntry[], sort = DEFAULT_SORT, filter: TreeFilter
   under a filter, so empty folders don't appear.
 - `TreeNode` gains `date?: number`: the file's `dateOf`, or for a folder the max over its children. It is
   computed bottom-up in the same pass as the sort, which then follows the domain's rule.
-- `loadView(storage)` / `saveView(storage, {sort, filter})` with keys `karpathy.treeSort` and
-  `karpathy.treeFilter`, in the same try/catch style as `loadExpanded`. Unknown or broken stored values
-  read as the defaults.
+- `loadSortFilter(storage)` / `saveSortFilter(storage, {sort, filter})` (type `TreeSortFilter`) with keys
+  `karpathy.treeSort` and `karpathy.treeFilter`, in the same try/catch style as `loadExpanded`. Unknown or
+  broken stored values read as the defaults. `usesDates(v)` says whether the tree depends on the dates.
 
 ### Controls (`FileTree.tsx`)
 
@@ -193,7 +199,7 @@ reaches the listing's dates. Change: when the dates matter (sort by `changed`, o
 defaults nothing changes.
 
 The race: the watcher's `files-changed` (chokidar, 300 ms debounce) and opencode's `file.edited` →
-`stampAi` arrive independently. A refetch can see the new mtime before the AI stamp. To converge, the
+AI stamp arrive independently. A refetch can see the new mtime before the AI stamp. To converge, the
 store also refetches once when the vault status's `busy` leaves `turn`. After that the listing is final
 for the turn.
 
@@ -204,7 +210,7 @@ sequenceDiagram
     participant W as Web (dates matter)
     O->>B: writes entities/x.md
     B-->>W: files-changed (watcher)
-    O->>B: file.edited → stampAi
+    O->>B: file.edited → AI stamp
     W->>B: GET /files (debounced)
     Note over W: may miss the AI stamp
     B-->>W: status busy: turn → none
@@ -212,8 +218,10 @@ sequenceDiagram
     Note over W: final order and filter
 ```
 
-The sort and filter preferences live in `store.tsx` (state + setters), so `onEvent` can read them
-through a ref, as it does for `paths`.
+The sort and filter preferences live in `store.tsx` (`sortFilter` + `setSortFilter`), so `onEvent` can
+read them through a ref, as it does for `paths`. Switching into a view that uses dates refetches too,
+because the listing's dates go stale while nothing depends on them. Overlapping listings are numbered;
+only the newest request may set the tree.
 
 ## Decisions and tradeoffs
 
@@ -235,6 +243,8 @@ through a ref, as it does for `paths`.
   fall back to git history.
 - A file the AI and the user both changed before one commit keeps both stamps; the trailer commit itself
   adds neither.
+- Commit times are whole seconds, so discard keeps a stamp unless it is at least 1 s newer than the
+  last commit: a human edit made in the same second as the commit survives its discard.
 - A gitignored file is in the tree but in neither history nor `git status`: it has no `modified` and
   sorts into the undated tail.
 - `modified` of an uncommitted file is the server's mtime; a pull that re-applies uncommitted changes

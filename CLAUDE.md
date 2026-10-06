@@ -82,6 +82,14 @@ Out of scope: graph view, plugins, canvas, multi-user/real-time collaboration, o
 Skill portability caveats (Python scripts, scraper credentials, the non-portable RTK hook and
 global `~/.claude/CLAUDE.md`) are listed in `specs/system/functional.md` (Skills).
 
+## Demo run book
+
+Every user-visible feature also updates the demo run book: `Karpathy Demo.md` in the demo vault
+`tillg/karpathy_demo_wiki` (local clone `~/git/karpathy_demo_wiki`). Add or extend the matching chapter: what the
+feature does, a page in the vault that shows it, and a *Try it* step. Bump its `updated`. Do it in the same piece
+of work as the feature. Push the demo vault only once the feature is released, so the guide never describes
+something prod doesn't have yet.
+
 ## Progress messages (ntfy)
 
 When the user asks to be informed via ntfy ("send me a ntfy", "notify me after each step"), post to the

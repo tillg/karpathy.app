@@ -128,6 +128,31 @@ test.describe('accessibility (axe)', () => {
     await scan(page, 'settings with token test result');
   });
 
+  test('tree sort and filter menus, filter chip (#122)', async ({ page, vault }) => {
+    await openApp(page, vault.id);
+    const sort = page.getByTestId('tree-sort');
+    await expect(sort).toHaveAttribute('aria-haspopup', 'menu');
+    await sort.click();
+    await expect(sort).toHaveAttribute('aria-expanded', 'true');
+    const radios = page.getByRole('menu', { name: 'Sort' }).getByRole('menuitemradio');
+    await expect(radios).toHaveCount(4);
+    await expect(page.getByRole('menuitemradio', { name: 'Name' })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByRole('menuitemradio', { name: 'Name' })).toBeFocused(); // focus lands on the checked item
+    await scan(page, 'sort menu');
+    await page.keyboard.press('Escape');
+    await expect(sort).toBeFocused();
+    await expect(sort).toHaveAttribute('aria-expanded', 'false');
+
+    const filter = page.getByTestId('tree-filter');
+    await filter.click();
+    await expect(page.getByRole('menu', { name: 'Filter' }).getByRole('menuitemradio')).toHaveCount(3);
+    await scan(page, 'filter menu');
+    await page.getByRole('menuitemradio', { name: 'Human' }).click();
+    await expect(filter).toBeFocused();
+    await expect(page.getByTestId('tree-filter-chip')).toBeVisible();
+    await scan(page, 'filter chip');
+  });
+
   test('conflict view and the larger compare dialog', async ({ page, api, vault }) => {
     await makeConflict(api, vault);
     await openApp(page, vault.id);

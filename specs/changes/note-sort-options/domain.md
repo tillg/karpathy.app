@@ -1,7 +1,7 @@
 ---
 feature: note-sort-options
 title: "Domain: sort and filter the file tree"
-status: proposed
+status: applied
 order: 2
 created: 2026-10-05
 edited: 2026-10-05
@@ -16,12 +16,12 @@ edited: 2026-10-05
 | **Tree sort** | How the file tree orders the entries of each folder: a **criterion** (`name` or `changed`) and a **direction** (`asc` or `desc`). Name A → Z = `asc`; Last changed newest first = `desc`. Picking a criterion sets its natural direction (name → `asc`, changed → `desc`). *Avoid:* order by, view. | web `TreeSort`; localStorage `karpathy.treeSort` |
 | **Tree filter** | Whose changes the tree shows: `any` (default), `ai`, `human`. A file matches when it has a date for that author. A folder is shown when a matching file is somewhere inside it. The filter also chooses which date **Last changed** uses. *Avoid:* view, scope. | web `TreeFilter`; localStorage `karpathy.treeFilter` |
 | **Last changed** | The user-facing name for the date a file is sorted by. Which date that is depends on the filter: `any` → **last modified**, `ai` → **last modified by AI**, `human` → **last modified by human**. | web `dateOf(entry, filter)` |
-| **Last modified (of a vault file)** | For a file with an uncommitted change: its server-side write time (mtime). Otherwise: the commit time of the last commit that changed it. Never the clone's mtime of a committed file. | `FileEntry.modified` |
+| **Last modified (of a vault file)** | For a file with an uncommitted change: its server-side write time (mtime). Otherwise: the commit time (committer date, which a rebase or squash merge updates) of the last commit that changed it. Never the clone's mtime of a committed file. | `FileEntry.modified` |
 | **Edit stamp** | The time the app last saw the AI (**AI stamp**) or a person (**human stamp**) write a file. Persisted per vault and path in the backend config; survives commits and restarts. | `config.editStamps` |
 | **Last modified by AI** | The file's AI stamp. No stamp → no date. | `FileEntry.ai` |
 | **Last modified by human** | The newer of the file's human stamp and the commit time of the last commit that changed it **without** the AI trailer. No either → no date. | `FileEntry.human` |
 | **Folder rank** | Under **Last changed**: the newest Last-changed date of any matching file inside the folder, at any depth. It is the same in both directions; only the comparison flips. A folder with no dated file has no rank. | web `buildTree` |
-| **AI-touched** *(unchanged)* | Still the set of paths the AI changed since the last commit, used only for the commit trailer. It and the edit stamps are fed by the same event but live independently: a commit empties the set and keeps the stamps. | `config.aiTouched` |
+| **AI-touched** *(fixed)* | Still the set of paths the AI changed since the last commit, used only for the commit trailer. It and the edit stamps are fed by the same event but live independently: a commit empties the set and keeps the stamps. New: when a pull turns unpushed commits back into uncommitted changes, the files of those carrying the AI trailer join the set again, so the next commit keeps the trailer (before, the AI's work then counted as human). | `config.aiTouched`; `PullResult.aiPaths` |
 
 ## Where the dates come from
 
@@ -48,7 +48,7 @@ flowchart LR
 |---|---|---|
 | The AI writes the file in a turn | set to now | — |
 | The user saves, creates or uploads the file in the app | — | set to now |
-| The app moves a page into its own folder (with its uploads) | moves with the path | moves with the path |
+| The app moves a page into its own folder (with its uploads) | moves with the path | moves with the path; the notes whose links it rewrote get a human stamp |
 | The user discards the file's uncommitted change | removed if newer than the file's last commit | removed if newer than the file's last commit |
 | The file is deleted (by anyone) | removed when the file is gone at listing time | removed when the file is gone at listing time |
 | Commit (with or without trailer) | kept | kept |
@@ -62,7 +62,8 @@ Rules:
   stay: an AI-written page that was committed, then edited and discarded, keeps its AI date. An
   untracked file disappears on discard and loses all stamps.
 - Stamps for paths that no longer exist are dropped lazily, the next time the file list is built. A path
-  that comes back later starts without stamps.
+  that comes back later starts without stamps. Not while a sync runs or the vault is in Conflict: a
+  pull's stash or an unresolved Conflict can hide untracked files for a while, and they come back.
 - A commit with the AI trailer is mixed by definition (the trailer covers the whole commit). It never
   counts as a human edit; the stamps recorded while the edits happened say who wrote which file.
 - History before the change ships: commits without the trailer count as human edits (they were made in

@@ -76,6 +76,12 @@ export interface FileEntry {
   /** Vault-root-relative, `/`-separated. */
   path: string;
   type: 'file' | 'dir';
+  /** Files only, epoch ms. Last modified: mtime when uncommitted, else the last commit time. */
+  modified?: number;
+  /** Files only, epoch ms. Last change the AI made (its edit stamp). */
+  ai?: number;
+  /** Files only, epoch ms. Newer of the human edit stamp and the last commit without the AI trailer. */
+  human?: number;
 }
 
 export interface FileContent {

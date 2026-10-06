@@ -1,7 +1,7 @@
 ---
 feature: note-sort-options
 title: "Proposal: sort and filter the file tree"
-status: proposed
+status: applied
 order: 1
 created: 2026-10-05
 edited: 2026-10-05
@@ -76,8 +76,9 @@ Notes                        [⇅] [⏷] [✎]
 ```
 
 Three icon buttons, right-aligned as **New note** is today: **Sort** (⇅), **Filter** (funnel ⏷), **New
-note** (✎). At the default (Name, A → Z, Anyone) both new buttons are plain grey. A button that is not at
-its default is tinted in the accent color, so a changed tree is never a surprise.
+note** (✎). They look like the header's other icon buttons. A button that is not at its default (Name, A → Z,
+Anyone) gets the soft accent background the app uses for active buttons (`.ib.on`), so a changed tree is
+never a surprise.
 
 ### Sort menu
 
