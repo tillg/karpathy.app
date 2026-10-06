@@ -1,18 +1,23 @@
+import { execFileSync } from 'node:child_process';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile, symlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile, symlink, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { INCOMING_PATHS_MAX, MAX_UPLOAD_BYTES, type VaultEvent } from '@karpathy/shared';
 import { makeApp, TOKEN } from './app-helpers.js';
+import { AI_TRAILER } from '../src/repo.js';
 import { makeRemote, sh } from './helpers.js';
 
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {
   for (const c of cleanups.splice(0)) await c();
 });
+
+/** Paths and types of a `/files` listing, without its dates. */
+const pathTypes = (body: { path: string; type: string }[]) => body.map(({ path, type }) => ({ path, type }));
 
 async function vaultApp(files: Record<string, string> = { 'Home.md': '# Home\nSee [[Other]]\n', 'Other.md': 'other\n', 'notes/n1.md': 'alpha beta\n' }) {
   const remote = await makeRemote(files);
@@ -101,7 +106,7 @@ describe('vault admin', () => {
     const changes = (await t.api.get(`/vaults/${id}/changes`)).body.map((c: { path: string; kind: string }) => [c.path, c.kind]);
     expect(changes).toEqual([['Sources/.gitkeep', 'untracked'], ['Wiki/.gitkeep', 'untracked']]);
     expect(t.store.get().vaults[0]).not.toHaveProperty('pendingFolders');
-    expect((await t.api.get(`/vaults/${id}/files`)).body).toEqual([
+    expect(pathTypes((await t.api.get(`/vaults/${id}/files`)).body)).toEqual([
       { path: 'a.md', type: 'file' },
       { path: 'Sources', type: 'dir' },
       { path: 'Wiki', type: 'dir' },
@@ -163,7 +168,7 @@ describe('vault admin', () => {
     const t = await makeApp(remote.remoteBase);
     cleanups.push(() => t.vaults.close());
     const id = await t.addVault(remote.repo, { root: 'wiki' });
-    expect((await t.api.get(`/vaults/${id}/files`)).body).toEqual([
+    expect(pathTypes((await t.api.get(`/vaults/${id}/files`)).body)).toEqual([
       { path: 'a.md', type: 'file' },
       { path: 'Sources', type: 'dir' },
       { path: 'Wiki', type: 'dir' },
@@ -193,7 +198,7 @@ describe('vault admin', () => {
     expect(r.status).toBe(200);
     expect((await t.api.get(`/vaults/${t.id}/files`)).body.map((f: { path: string }) => f.path)).toContain('branch-only.md');
     expect((await t.api.patch(`/vaults/${t.id}`, { root: 'notes' })).status).toBe(200);
-    expect((await t.api.get(`/vaults/${t.id}/files`)).body).toEqual([{ path: 'n1.md', type: 'file' }]);
+    expect(pathTypes((await t.api.get(`/vaults/${t.id}/files`)).body)).toEqual([{ path: 'n1.md', type: 'file' }]);
   });
 
   it('PATCH branch + missing root together → 400 and nothing changed', async () => {
@@ -322,7 +327,7 @@ describe('vault admin', () => {
     const r = await t.api.patch(`/vaults/${t.id}`, { repo: 'o/second' });
     expect(r.body.state).toBe('cloning');
     await t.vaults.whenCloned(t.id);
-    expect((await t.api.get(`/vaults/${t.id}/files`)).body).toEqual([{ path: 'x.md', type: 'file' }]);
+    expect(pathTypes((await t.api.get(`/vaults/${t.id}/files`)).body)).toEqual([{ path: 'x.md', type: 'file' }]);
   });
 
   it('DELETE is blocked while unpushed commits exist (decision 11)', async () => {
@@ -337,6 +342,22 @@ describe('vault admin', () => {
     await rename(`${t.remote.bare}.away`, t.remote.bare);
   });
 
+  it('an unpushed AI commit folded back by a pull stays AI-touched, so the next commit keeps the trailer', async () => {
+    const t = await vaultApp();
+    await writeFile(join(t.vaults.vaultRootDir(t.id), 'ai.md'), 'by the AI\n');
+    await t.vaults.markAiTouched(t.id, ['ai.md']);
+    await rename(t.remote.bare, `${t.remote.bare}.away`);
+    const failed = (await t.api.post(`/vaults/${t.id}/commit`, { message: 'ai page' })).body;
+    expect(failed.pushed).toBe(false);
+    expect(t.vaults.aiTouched(t.id)).toEqual([]);
+    await rename(`${t.remote.bare}.away`, t.remote.bare);
+    await t.remote.obsidianPush({ 'Other.md': 'moved on\n' }); // GitHub moved on: the pull folds the commit back
+    expect((await t.api.post(`/vaults/${t.id}/pull`)).status).toBe(200);
+    expect(t.vaults.aiTouched(t.id)).toEqual(['ai.md']);
+    await t.api.post(`/vaults/${t.id}/commit`, { message: 'ai page again' });
+    expect(sh(t.remote.bare, 'log', '-1', '--format=%B')).toContain(AI_TRAILER);
+  });
+
   it('DELETE is blocked while uncommitted changes exist, never touches the remote', async () => {
     const t = await vaultApp();
     const f = (await t.api.get(`/vaults/${t.id}/file?path=Home.md`)).body;
@@ -349,10 +370,184 @@ describe('vault admin', () => {
   });
 });
 
+describe('file dates (#122)', () => {
+  const D1 = Date.parse('2020-01-02T03:04:05Z');
+  const D2 = Date.parse('2021-05-06T07:08:09Z');
+  const D3 = Date.parse('2022-09-10T11:12:13Z');
+  type Entry = { path: string; modified?: number; ai?: number; human?: number };
+  const listing = async (t: { api: { get: (p: string) => request.Test } }, id: string) =>
+    new Map(((await t.api.get(`/vaults/${id}/files`)).body as Entry[]).map((e) => [e.path, e]));
+  /** Commit + push from the "Obsidian" clone with a fixed committer date (the author date stays 2000, as after a rebase). */
+  const datedPush = async (remote: Awaited<ReturnType<typeof makeRemote>>, files: Record<string, string>, date: number, msg = 'dated') => {
+    sh(remote.obsidian, 'pull', '-q', '--ff-only');
+    for (const [p, c] of Object.entries(files)) {
+      await mkdir(join(remote.obsidian, p, '..'), { recursive: true });
+      await writeFile(join(remote.obsidian, p), c);
+    }
+    sh(remote.obsidian, 'add', '-A');
+    execFileSync('git', ['commit', '-q', '--date=2000-01-01T00:00:00Z', '-m', msg], {
+      cwd: remote.obsidian,
+      env: { ...process.env, GIT_AUTHOR_NAME: 'Obsidian', GIT_AUTHOR_EMAIL: 'o@example.com', GIT_COMMITTER_NAME: 'Obsidian', GIT_COMMITTER_EMAIL: 'o@example.com', GIT_COMMITTER_DATE: new Date(date).toISOString() },
+    });
+    sh(remote.obsidian, 'push', '-q');
+  };
+  async function datedApp(files: Record<string, string> = { 'Home.md': 'home\n' }, opts: { root?: string; structure?: boolean } = {}) {
+    const remote = await makeRemote(files, { structure: opts.structure ?? true });
+    await datedPush(remote, { [`${opts.root ? `${opts.root}/` : ''}old.md`]: 'old\n' }, D1);
+    const t = await makeApp(remote.remoteBase);
+    cleanups.push(() => t.vaults.close());
+    const id = await t.addVault(remote.repo, opts.root ? { root: opts.root } : {});
+    return { ...t, remote, id };
+  }
+
+  it("modified is the last commit time, not the clone's mtime", async () => {
+    const t = await datedApp();
+    const files = await listing(t, t.id);
+    expect(files.get('old.md')?.modified).toBe(D1);
+    expect(files.get('Home.md')?.modified).toBeGreaterThan(D2);
+    expect(files.get('Wiki')).not.toHaveProperty('modified');
+  });
+
+  it("an uncommitted file's modified is its mtime", async () => {
+    const t = await datedApp();
+    await t.api.put(`/vaults/${t.id}/file?path=old.md`, { content: 'changed\n', version: (await t.api.get(`/vaults/${t.id}/file?path=old.md`)).body.version });
+    await utimes(join(t.vaults.vaultRootDir(t.id), 'old.md'), D2 / 1000, D2 / 1000);
+    expect((await listing(t, t.id)).get('old.md')?.modified).toBe(D2);
+  });
+
+  it('human comes from commits without the AI trailer only', async () => {
+    const t = await datedApp();
+    await datedPush(t.remote, { 'h.md': 'h\n' }, D2);
+    await datedPush(t.remote, { 'm.md': 'm\n' }, D3, `mixed\n\n${AI_TRAILER}\n`);
+    expect((await t.api.post(`/vaults/${t.id}/pull`)).status).toBe(200);
+    const files = await listing(t, t.id);
+    expect(files.get('h.md')?.human).toBe(D2);
+    expect(files.get('m.md')?.modified).toBe(D3);
+    expect(files.get('m.md')).not.toHaveProperty('human');
+    expect(files.get('old.md')?.human).toBe(D1);
+  });
+
+  it('dates follow a new commit', async () => {
+    const t = await datedApp();
+    expect((await listing(t, t.id)).get('old.md')?.modified).toBe(D1);
+    await datedPush(t.remote, { 'old.md': 'newer\n' }, D3);
+    await t.api.post(`/vaults/${t.id}/pull`);
+    expect((await listing(t, t.id)).get('old.md')?.modified).toBe(D3);
+  });
+
+  it('dates follow a root change (same HEAD)', async () => {
+    const t = await datedApp({ 'Home.md': 'home\n', 'wiki/Sources/.gitkeep': '', 'wiki/Wiki/.gitkeep': '' });
+    await datedPush(t.remote, { 'wiki/deep.md': 'inner\n' }, D2);
+    await datedPush(t.remote, { 'deep.md': 'outer\n' }, D3);
+    await t.api.post(`/vaults/${t.id}/pull`);
+    expect((await listing(t, t.id)).get('deep.md')?.modified).toBe(D3);
+    expect((await t.api.patch(`/vaults/${t.id}`, { root: 'wiki' })).status).toBe(200);
+    expect((await listing(t, t.id)).get('deep.md')?.modified).toBe(D2);
+  });
+
+  it('dates with a vault root: paths are vault-relative, outside paths are ignored', async () => {
+    const t = await datedApp({ 'wiki/a.md': 'a\n', 'wiki/Sources/.gitkeep': '', 'wiki/Wiki/.gitkeep': '', 'other/b.md': 'b\n' }, { root: 'wiki', structure: false });
+    const files = await listing(t, t.id);
+    expect(files.get('old.md')?.modified).toBe(D1);
+    expect(files.get('a.md')?.modified).toBeGreaterThan(D2);
+    expect([...files.keys()].some((p) => p.includes('b.md'))).toBe(false);
+  });
+});
+
+describe('edit stamps (#122)', () => {
+  type Entry = { path: string; ai?: number; human?: number };
+  const entry = async (t: { api: { get: (p: string) => request.Test } }, id: string, path: string) =>
+    ((await t.api.get(`/vaults/${id}/files`)).body as Entry[]).find((e) => e.path === path);
+  const upload = (t: { app: Parameters<typeof request>[0]; id: string }, query: string) =>
+    request(t.app).post(`/api/vaults/${t.id}/raw?${query}`).set('Authorization', `Bearer ${TOKEN}`).set('Content-Type', 'application/octet-stream').send(Buffer.from([1, 2, 3]));
+  const recent = (ms?: number) => ms !== undefined && Date.now() - ms < 60_000;
+
+  it('survive a restart and a commit', async () => {
+    const t = await vaultApp();
+    await writeFile(join(t.vaults.vaultRootDir(t.id), 'x.md'), 'ai');
+    await t.vaults.markAiTouched(t.id, ['x.md']);
+    const t2 = await makeApp(t.remote.remoteBase, { dirs: t.dirs });
+    cleanups.push(() => t2.vaults.close());
+    expect((await t2.api.post(`/vaults/${t.id}/commit`, { message: 'with ai' })).status).toBe(200);
+    expect(recent((await entry(t2, t.id, 'x.md'))?.ai)).toBe(true);
+  });
+
+  it('an AI edit stamps ai, not human', async () => {
+    const t = await vaultApp();
+    await writeFile(join(t.vaults.vaultRootDir(t.id), 'new.md'), 'ai');
+    await t.vaults.markAiTouched(t.id, ['new.md', '/outside/root.md']);
+    const e = await entry(t, t.id, 'new.md');
+    expect(recent(e?.ai)).toBe(true);
+    expect(e).not.toHaveProperty('human');
+    expect(Object.keys(t.store.get().editStamps[t.id] ?? {})).toEqual(['new.md']);
+  });
+
+  it('save, create and upload stamp human, not ai', async () => {
+    const t = await vaultApp({ 'Wiki/foo/foo.md': '# Foo\n' });
+    await t.api.put(`/vaults/${t.id}/file?path=n.md`, { content: 'n', version: null });
+    expect((await upload(t, 'name=a.png&note=Wiki/foo/foo.md')).status).toBe(201);
+    for (const p of ['n.md', 'Wiki/foo/a.png']) {
+      const e = await entry(t, t.id, p);
+      expect(recent(e?.human), p).toBe(true);
+      expect(e, p).not.toHaveProperty('ai');
+    }
+  });
+
+  it('discard drops only stamps newer than the last commit; a move carries them; removal deletes them', async () => {
+    const t = await vaultApp({ 'Wiki/serien/foo.md': '# Foo\n' });
+    const root = t.vaults.vaultRootDir(t.id);
+    // Untracked: discard deletes the file and its stamps.
+    await writeFile(join(root, 'u.md'), 'ai');
+    await t.vaults.markAiTouched(t.id, ['u.md']);
+    await t.api.post(`/vaults/${t.id}/discard?path=u.md`);
+    expect(t.store.get().editStamps[t.id]?.['u.md']).toBeUndefined();
+    // Committed AI page, then a human edit that is discarded: the AI stamp describes HEAD and stays.
+    await writeFile(join(root, 'c.md'), 'ai');
+    await t.vaults.markAiTouched(t.id, ['c.md']);
+    await t.api.post(`/vaults/${t.id}/commit`, { message: 'ai page' });
+    await new Promise((r) => setTimeout(r, 1100)); // commit times have 1 s resolution
+    const v = (await t.api.get(`/vaults/${t.id}/file?path=c.md`)).body.version;
+    await t.api.put(`/vaults/${t.id}/file?path=c.md`, { content: 'human', version: v });
+    const humanBefore = t.store.get().editStamps[t.id]?.['c.md']?.human;
+    expect(humanBefore).toBeDefined();
+    await t.api.post(`/vaults/${t.id}/discard?path=c.md`);
+    expect(t.store.get().editStamps[t.id]?.['c.md']?.ai).toBeDefined();
+    expect(t.store.get().editStamps[t.id]?.['c.md']?.human).toBeUndefined();
+    // Move into own folder carries the stamps.
+    await t.vaults.markAiTouched(t.id, ['Wiki/serien/foo.md']);
+    expect((await upload(t, 'name=a.png&note=Wiki/serien/foo.md')).status).toBe(201);
+    expect(recent((await entry(t, t.id, 'Wiki/serien/foo/foo.md'))?.ai)).toBe(true);
+    expect(t.store.get().editStamps[t.id]?.['Wiki/serien/foo.md']).toBeUndefined();
+    // Removal deletes them (removal needs a clean vault).
+    await t.api.post(`/vaults/${t.id}/commit`, { message: 'move' });
+    expect((await t.api.delete(`/vaults/${t.id}`)).status).toBe(204);
+    expect(t.store.get().editStamps[t.id]).toBeUndefined();
+  });
+
+  it('notes rewritten by a move into its own folder are stamped human', async () => {
+    const t = await vaultApp({ 'Wiki/serien/foo.md': '# Foo\n', 'Wiki/index.md': 'See [[serien/foo]]\n' });
+    const before = Date.now(); // after the seed commit, whose time also counts as human
+    const r = await upload(t, 'name=a.png&note=Wiki/serien/foo.md');
+    expect(r.body.rewritten).toEqual(['Wiki/index.md']);
+    expect((await entry(t, t.id, 'Wiki/index.md'))?.human).toBeGreaterThanOrEqual(before);
+  });
+
+  it('stamps of deleted files are dropped', async () => {
+    const t = await vaultApp();
+    const abs = join(t.vaults.vaultRootDir(t.id), 'gone.md');
+    await writeFile(abs, 'ai');
+    await t.vaults.markAiTouched(t.id, ['gone.md']);
+    await rm(abs);
+    await t.api.get(`/vaults/${t.id}/files`);
+    await writeFile(abs, 'back');
+    expect(await entry(t, t.id, 'gone.md')).not.toHaveProperty('ai');
+  });
+});
+
 describe('files', () => {
   it('lists, reads with a version, PUT with stale version → 409, new file with null version', async () => {
     const t = await vaultApp();
-    const files = (await t.api.get(`/vaults/${t.id}/files`)).body;
+    const files = pathTypes((await t.api.get(`/vaults/${t.id}/files`)).body);
     expect(files).toEqual([
       { path: 'Home.md', type: 'file' },
       { path: 'notes', type: 'dir' },

@@ -5,6 +5,7 @@ import { prepare } from './lib/attach';
 import { draftAction, dropDraft, dropVaultDrafts, getDraft, putDraft } from './lib/drafts';
 import { invalidate } from './lib/media';
 import { readNdjson } from './lib/ndjson';
+import { loadSortFilter, saveSortFilter, usesDates, type TreeSortFilter } from './lib/tree';
 import { formatRoute, parseRoute } from './lib/route';
 import { parseWikilink, resolveWikilink } from './lib/wikilink';
 
@@ -205,11 +206,14 @@ function useAppState() {
   const paths = useMemo(() => files.filter((f) => f.type === 'file').map((f) => f.path), [files]);
   const pathsRef = useRef(paths);
   pathsRef.current = paths;
+  // Listings can overlap (live refetches while the AI writes): only the newest request may set the tree.
+  const filesReq = useRef(0);
   const refreshFiles = useCallback(async () => {
     if (!activeId) return;
+    const req = ++filesReq.current;
     try {
       const f = await api.files(activeId);
-      if (activeRef.current === activeId) setFiles(f);
+      if (activeRef.current === activeId && req === filesReq.current) setFiles(f);
     } catch (e) { toast(errorText(e)); }
   }, [activeId, toast]);
 
@@ -494,6 +498,16 @@ function useAppState() {
     setModeState(m);
     try { localStorage.setItem(MODE_KEY, m); } catch { /* not remembered */ }
   }, []);
+  // Tree sort and filter (#122): per-browser preference for all vaults.
+  const [sortFilter, setSortFilterState] = useState(() => loadSortFilter(localStorage));
+  const sortFilterRef = useRef(sortFilter);
+  sortFilterRef.current = sortFilter;
+  const setSortFilter = useCallback((v: TreeSortFilter) => {
+    setSortFilterState(v);
+    saveSortFilter(localStorage, v);
+    // Without dates in use, modifications don't refetch the listing: its dates may be stale.
+    if (usesDates(v)) void refreshFiles();
+  }, [refreshFiles]);
   /** Open admin modal: the vaults dialog (`vault` opens that vault's details instead of the list) or the settings dialog. */
   const [adminOpen, setAdminOpenState] = useState<false | { view: 'vaults'; vault?: string } | { view: 'settings' }>(false);
   const setAdminOpen = useCallback((open: false | 'vaults' | 'settings', vault?: string) =>
@@ -710,9 +724,20 @@ function useAppState() {
   }, [setActiveId, openNote, closeNote, syncRoute, phone, phoneTab]);
 
   // ---- event stream ----
+  // While the tree sorts or filters by date (#122), a modification changes the order: refetch the
+  // listing, once per burst. The AI's stamp can land after its write event, so a turn's end refetches too.
+  const datesTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const lastBusy = useRef<string | undefined>(undefined);
+  const refreshDatesSoon = useCallback(() => {
+    if (!usesDates(sortFilterRef.current)) return;
+    clearTimeout(datesTimer.current);
+    datesTimer.current = setTimeout(() => void refreshFiles(), 500);
+  }, [refreshFiles]);
   const onEvent = useCallback((vault: string, e: VaultEvent) => {
     if (vault !== activeRef.current) return;
     if (e.type === 'status') {
+      if (lastBusy.current === 'turn' && e.status.busy !== 'turn') refreshDatesSoon();
+      lastBusy.current = e.status.busy;
       setStatusFor(vault, e.status);
       setChangesNonce((x) => x + 1);
       return;
@@ -731,6 +756,7 @@ function useAppState() {
     }
     setChangesNonce((x) => x + 1);
     if (e.files.some((f) => f.version === null || !pathsRef.current.includes(f.path))) void refreshFiles();
+    else refreshDatesSoon();
     // Cached media bytes of a changed file are stale: drop them and let the shown embeds fetch again.
     if (invalidate(vault, e.files.map((f) => f.path)) > 0) setMediaEpoch((n) => n + 1);
     const n = noteRef.current;
@@ -752,7 +778,7 @@ function useAppState() {
     if (n.draft === n.saved && !inflight.current) {
       void load(n.path).then((r) => r === 'ok' && toast('Updated by AI or another device'));
     }
-  }, [refreshFiles, load, toast, setStatusFor]);
+  }, [refreshFiles, refreshDatesSoon, load, toast, setStatusFor]);
   useVaultEvents(usable ? activeId : null, online, onEvent);
 
   const conflict = status?.state === 'conflict';
@@ -767,7 +793,7 @@ function useAppState() {
     keepDeletedNote, closeDeletedNote,
     followLink, exists, readOnly, conflict,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain,
-    sidebarOpen, setSidebarOpen, mode, setMode, scrollRef, placeNow, adminOpen, setAdminOpen, commitOpen, setCommitOpen, chatId, setChatId,
+    sidebarOpen, setSidebarOpen, mode, setMode, sortFilter, setSortFilter, scrollRef, placeNow, adminOpen, setAdminOpen, commitOpen, setCommitOpen, chatId, setChatId,
   };
 }
 

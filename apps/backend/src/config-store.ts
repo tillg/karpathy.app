@@ -10,11 +10,18 @@ export interface StoredVault extends VaultConfig {
   pendingFolders?: string[];
 }
 
+export interface EditStamp {
+  ai?: number;
+  human?: number;
+}
+
 export interface ConfigData {
   vaults: StoredVault[];
   settings: Settings;
   /** Per-vault AI-touched set (vault-relative paths), mvp §2.4. */
   aiTouched: Record<string, string[]>;
+  /** Per-vault, per-path time (epoch ms) the AI / a person last wrote the file through the app (#122); kept across commits. */
+  editStamps: Record<string, Record<string, EditStamp>>;
   /** Per-vault unresolved Conflict paths (repo-relative), kept while the pull stash exists. */
   conflicts: Record<string, string[]>;
   /** Per-vault queued chat prompts, so a backend restart doesn't drop them (#37). */
@@ -51,6 +58,7 @@ export class ConfigStore {
       vaults: raw.vaults ?? [],
       settings: { ...DEFAULT_SETTINGS, ...defaults, ...raw.settings },
       aiTouched: raw.aiTouched ?? {},
+      editStamps: raw.editStamps ?? {},
       conflicts: raw.conflicts ?? {},
       queued: raw.queued ?? {},
       ...(raw.githubToken ? { githubToken: raw.githubToken } : {}),

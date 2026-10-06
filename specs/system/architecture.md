@@ -87,6 +87,10 @@ flowchart LR
 - **Commands** (`lib/commands.ts`, `ChatPane`, `Dialogs.tsx` `MoveNotice`): the command palette, command chips and the
   agents-move notice; see [Commands](#commands) and [The agents move](#the-agents-move).
 - **Media** (`lib/media.ts`, `lib/embed.ts`, shared `MEDIA` table): see [Media embeds](#media-embeds).
+- **File tree sort and filter** (`lib/tree.ts`, `FileTree.tsx`, `TreeMenu.tsx`): see [File dates](#file-dates).
+  `buildTree(entries, sort, filter)` sorts and filters client-side (no request on a switch, works on the cached
+  listing). The choice is `sortFilter` in the store (localStorage `karpathy.treeSort` / `karpathy.treeFilter`).
+  `TreeMenu` is the header's icon button with a menu of `menuitemradio` groups.
 - **Mode preference** (`store.tsx`): `mode` is read from and written to localStorage `karpathy.mode`; `openNote` never
   changes it. An in-memory `places` map (`vault\0path` → scroll top, top line, mode) is filled when a note is left
   and restored on Back/Forward; `lib/place.ts` maps between source lines and Read-mode blocks.
@@ -692,17 +696,58 @@ sequenceDiagram
 - **Redaction:** `GitHubToken` remembers every value seen since startup (secret, stored, every set and every tested
   token) and `redact()` masks each as `***`; `Vaults` redacts clone, preflight and access-check messages with it.
 
+## File dates
+
+`GET /vaults/:id/files` gives every file three optional dates (epoch ms), so the tree can sort by Last changed and
+filter by author (#122):
+
+| Field | Value |
+|---|---|
+| `modified` | uncommitted file: its mtime; else the committer time of its last commit |
+| `ai` | the AI edit stamp |
+| `human` | the newer of the human edit stamp and the last commit without the AI trailer |
+
+```mermaid
+flowchart LR
+    subgraph Backend
+      R["/files"] --> LF[Vaults.listFiles]
+      LF --> LT[listTree]
+      LF --> HD["Repo.fileHistory<br/>git log %ct + trailers,<br/>cached per HEAD + root"]
+      LF --> CH[Repo.changes + stat]
+      LF --> ES[(config.editStamps)]
+      CHAT[file.edited → markAiTouched] -->|AI stamp| ES
+      SAVE[save / new note / upload / link rewrite] -->|human stamp| ES
+    end
+    R --> W[web buildTree]
+```
+
+- **History pass:** one `git log -z --format=%x1e%ct%x1f%(trailers:key=Co-authored-by,valueonly) --name-only` over
+  the vault root; the first commit seen per path is `last`, the first without the app agent's trailer `lastHuman`.
+  Committer time, not author time: git log walks in that order, and a rebase keeps old author times. Cached in the
+  vault runtime keyed by HEAD + root; concurrent listings share one run; a failed run is logged and not cached. Only
+  `listFiles` adds dates: `listTree` stays date-free for search, uploads and relinking.
+- **Stamps** follow the rules in [domain.md](domain.md) (Edit stamps). Human stamping is best-effort (a failed config
+  write is logged, the save still succeeds). The cleanup of stamps of deleted files re-checks the disk and is skipped
+  while the lock is `sync` or the vault is in Conflict.
+- **Live updates:** while dates are in use (`usesDates`), the web refetches the listing 500 ms after a
+  `files-changed` burst, once when `busy` leaves `turn` (the AI stamp can land after the watcher event), and when the
+  user switches into such a view. Overlapping listings are numbered; only the newest sets the tree.
+- **Known limits:** every new HEAD reruns the full history pass, also when sorting by name (fine for typical vault
+  sizes; incremental `old..new` would fix it). Merge commits list no files, so a merge dates nothing. Stamps grow with
+  every file the app ever wrote. Commit times are whole seconds, so a discard keeps a stamp less than 1 s newer than
+  the last commit. A re-cloned vault starts without stamps.
+
 ## Data
 
 | Store | Content | Owner |
 |---|---|---|
 | Volume `vaults` → `/vaults/<id>` | Full git clone of each vault repo (no shallow or sparse clone). The notes themselves. | backend (git), opencode (file tools) |
-| Volume `config` → `/config/config.json` | `vaults` (config + `cloned` / `cloneError` / `pendingFolders`), `settings`, `githubToken` (plaintext, if set in the app), `aiTouched`, `conflicts`, `queued` turns. | backend only |
+| Volume `config` → `/config/config.json` | `vaults` (config + `cloned` / `cloneError` / `pendingFolders`), `settings`, `githubToken` (plaintext, if set in the app), `aiTouched`, `editStamps` (per vault and path: last AI / human write, epoch ms), `conflicts`, `queued` turns. | backend only |
 | `/vaults/.preflight/` | Short-lived blobless clones of the attach preflight; emptied at startup. | backend |
 | Volume `opencode-data` | opencode sessions = chat history, including attached files (base64, after opencode's resize), until the chat is deleted. | opencode |
 | localStorage `karpathy.chips:<vault>:<chat>` | Unsent chat attachments (path, version, type, size) and their source folder. | web |
 | Volume `caddy-data` | TLS certificates and keys. | proxy |
-| Browser localStorage | Token, local drafts, tree expansion state, main pane, mode preference (`karpathy.mode`). | web |
+| Browser localStorage | Token, local drafts, tree expansion state, tree sort and filter (`karpathy.treeSort`, `karpathy.treeFilter`), main pane, mode preference (`karpathy.mode`). | web |
 | localStorage `karpathy.recentCommands.<vault>`, `karpathy.shownMoves` | The last 10 commands started in a vault (chip order); the agents moves already announced (last 50). | web |
 | Backend memory | Per vault: the skill stamp of the last opencode refresh, the last agents move, the skill-link scan after it, running commit-message proposals. Lost on restart (the first check then refreshes). | backend |
 | opencode image `/opt/opencode-config/opencode/` | Tools `open_note` and `open_url`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
@@ -868,6 +913,11 @@ The ones that shape the whole system:
   fetches, `pullError`, `POST /pull` incl. 423 and a conflict), `incoming.test.ts` (the AI-turn rule, which the e2e
   stack can't hold without a real LLM), e2e `remote-changes.spec.ts` (an Obsidian push shows, one tap pulls, open-note
   bar, phone badge).
+- **File date tests:** `api.test.ts` "file dates" (commit vs mtime, committer not author time, human vs AI trailer,
+  HEAD and root changes, vault roots) and "edit stamps" (restart, commit, AI vs human, discard/move/removal, deleted
+  files, rewritten links); the unpushed-AI-commit fold in "git API"; `tree.test.ts` (sort both ways, folder rank,
+  undated last, filter, the filter's date, preferences); e2e `tree-sort.spec.ts` (menus, live re-sort, hidden open
+  note, `@llm` AI filter) and the menus in `a11y.spec.ts`; `@llm` `chat.llm.test.ts` (a real turn stamps `ai`).
 - **No mocks:** integration tests use real git (local bare repos as remotes, a second clone plays "Obsidian") and
   the real opencode container — built from `deploy/opencode/Dockerfile` (`kai-test-opencode`), so tests load the same
   config and tools as prod; CI builds it once before `npm test`. A scripted fake LLM provider would count as a mock.

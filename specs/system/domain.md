@@ -66,7 +66,10 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Consulted file / changed file / opened note** | The three tool-chip kinds of a turn: files the AI read (read tools), wrote (edit/write/patch tools), or asked the app to show (`open_note`). An opened note is neither consulted nor changed: opening reads and writes nothing. | `ToolCall.writes`, `ToolCall.opens` |
 | **Open request** | One call of the AI's `open_note` tool. It succeeds only for a file the file tree lists inside the chat's vault root; otherwise it fails as a tool error the AI sees, and nothing opens. Only `open_note`: a link offer is not an open request, because it never opens anything by itself. | `open_note` tool |
 | **Live event vs. history** | Live events arrive on the chat stream while a turn runs; history is the stored chat loaded on reload or when a chat is opened. Only a live open request moves the UI; history shows the chip and moves nothing. | `ChatEvent` vs. `api.chat` |
-| **AI-touched** | The set of paths the AI changed since the last commit. A commit that includes one of them gets the `Co-authored-by: karpathy.app agent` trailer. | `config.aiTouched` |
+| **AI-touched** | The set of paths the AI changed since the last commit. A commit that includes one of them gets the `Co-authored-by: karpathy.app agent` trailer. When a pull turns unpushed commits back into uncommitted changes, the files of those carrying the trailer join the set again. | `config.aiTouched`; `PullResult.aiPaths` |
+| **Edit stamp** | The time the app last saw the AI (**AI stamp**) or a person (**human stamp**) write a file. Per vault and path in the backend config; survives commits and restarts, unlike the AI-touched set. | `config.editStamps` |
+| **Last modified (of a vault file)** | Uncommitted: its server-side write time (mtime). Otherwise: the commit time (committer date) of the last commit that changed it. Never the clone's mtime of a committed file. | `FileEntry.modified` |
+| **Last modified by AI / by human** | AI: the file's AI stamp. Human: the newer of its human stamp and the last commit that changed it **without** the AI trailer (Obsidian and GitHub edits count as human). No value → no date. | `FileEntry.ai`, `FileEntry.human` |
 | **Uncommitted change** | A file that differs from its last commit, whether the user or the AI changed it; both are pooled. *Avoid:* draft, pending edit, dirty file. | `Change` |
 | **Unsaved change** | An edit held only in the editor (and in a local draft) that hasn't been written to the vault yet. | web `drafts.ts` |
 | **Draft** | The local browser copy of an unsaved change (`{base, text}`), kept until the server has the text. Internal term; to the user it's still an unsaved change. | localStorage `karpathy.draft:*` |
@@ -84,6 +87,9 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Main pane** | Which of note and chat is in the main column: **note in main** (default) or **chat in main**; the other is in the side column. A per-browser preference, not part of a vault or a chat. *Avoid:* focus (taken by keyboard focus), mode, layout. | web `chatMain`; localStorage `karpathy.chatMain` |
 | **Swap button** | The round ⇄ button on the divider between main and side column, at the top; toggles the main pane. Icon only; its label says what a click does ("Move chat to main column" / "Move note to main column"). | `data-testid="main-swap"` |
 | **Write mode / Read mode** | Write mode: raw Markdown with live preview, editable; the mode of a new browser. Read mode: the rendered, non-editable view. Media and binary files have no mode. *Avoid:* edit mode, source mode, preview. | web `NotePane` |
+| **Tree sort** | How the file tree orders each folder: criterion `name` or `changed` (**Last changed**) and direction `asc`/`desc`. Picking a criterion sets its natural direction (A → Z, newest first). *Avoid:* order by, view. | web `TreeSort`; localStorage `karpathy.treeSort` |
+| **Tree filter** | Whose changes the tree shows: `any`, `ai`, `human`. A file matches when it has a date for that author; folders show when a match is inside. The filter also chooses which date **Last changed** means (last modified / by AI / by human). *Avoid:* view, scope. | web `TreeFilter`; localStorage `karpathy.treeFilter` |
+| **Folder rank** | Under Last changed: the newest Last-changed date of any matching file inside the folder, at any depth; a folder without one goes last. | web `buildTree` |
 | **Mode preference** | The Write/Read mode the user last chose. It applies to every note opened afterwards (tree, search, links, chat chips, AI opens) and survives a reload. One per browser, not per vault or note. *Avoid:* default mode. | web store `mode`; localStorage `karpathy.mode` |
 | **Hit position** | Where an opened note should land: a line (search hit) or a heading (`[[note#heading]]`). Write mode puts the cursor on the line; Read mode scrolls to the rendered top-level block that contains the line and briefly highlights it. | store `note.goto`; Read-mode blocks carry `data-line` |
 | **Place** | Where the user left a note: scroll position and mode. Back to a note seen in this session restores it; switching Write ↔ Read keeps the same source line. In memory only. | store `places`; web `lib/place.ts` |
@@ -356,7 +362,7 @@ No navigation changes the mode; only the Write/Read toggle does.
 2. Before the turn starts the backend **pulls** under an exclusive lock, then downgrades to a shared lock without
    letting any other git operation in between.
 3. opencode runs the turn with the `vault` agent (or `vault-readonly` while in conflict). Reads and writes stream to
-   the UI as tool chips; written paths join the AI-touched set. An **open request** (`open_note`) that completes
+   the UI as tool chips; written paths join the AI-touched set and get an AI stamp. An **open request** (`open_note`) that completes
    opens the note in the editor: on the wide layout right away, on a phone or in the tablet overlay when the turn
    ends (only the last one of the turn); while the user is editing, a notice and the "opened" chip show it instead.
 4. With **Web access** on, the turn may also web search and web fetch known URLs through the egress proxy; each
@@ -472,7 +478,9 @@ sequenceDiagram
    agent, 15 s timeout, fallback "Update N files").
 2. The backend takes the exclusive lock, **pulls**, checks that the set of changed paths is still the one the user
    reviewed (else 409 `changes-moved`), commits everything in the vault root (with the AI trailer if needed) and pushes.
-3. A failed push leaves an **unpushed commit**, retried on the next pull or by the user.
+3. A failed push leaves an **unpushed commit**, retried on the next pull or by the user. If GitHub moved on
+   meanwhile, that pull turns it back into uncommitted changes; files of unpushed commits with the AI trailer
+   rejoin the AI-touched set, so the next commit carries the trailer again.
 
 ### Pull and conflict
 
@@ -596,7 +604,16 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
   case-insensitively, its spelling kept).
 - **Obsidian's settings are not read:** uploads always go to the own folder and are embedded as `![[name]]`.
 - **Uploads, moves and rewritten links are the user's uncommitted changes**, never AI-touched; a moved page that was
-  AI-touched keeps the mark under its new path.
+  AI-touched keeps the mark under its new path. Uploads and rewritten notes get a human stamp; a moved page keeps
+  its stamps under the new path.
+- **Edit stamps:** the AI stamp is set when the AI writes a file in a turn; the human stamp on every save, new note,
+  upload and link rewrite in the app. Commits keep both. A discard drops the stamps newer than the file's last
+  commit (those describe the undone write) and keeps the older ones. Stamps of files that are gone are dropped the
+  next time the file list is built, but not while a sync runs or the vault is in Conflict (files can be missing for
+  a while then). Removing or replacing a vault drops all its stamps. A pull stamps nothing: pulled commits count
+  through git history.
+- **A commit with the AI trailer counts for neither author** in git history: it mixes both, and the stamps say who
+  wrote which file. History from before edit stamps existed has no AI dates.
 - **A chat attachment is a path in the vault root,** checked with the raw-file rules (and uploadable, ≤ 20 MB) when
   its turn starts; a missing or refused one ends the turn with an error before anything reaches opencode.
 - **Web access off means invisible:** the model sees neither web tool. The commit-message agent never has them.

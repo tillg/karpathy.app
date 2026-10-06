@@ -20,13 +20,13 @@ import {
 } from '@karpathy/shared';
 import { isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
-import type { ConfigStore, StoredVault } from './config-store.js';
+import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
 import { filesMentioning, listTree, search, versionOf, versionOfFile } from './files.js';
 import { Git, GitError, type GitIdentity } from './git.js';
 import { VaultLock } from './lock.js';
 import { normalizeRel, resolveInVault } from './paths.js';
 import { preflight } from './preflight.js';
-import { Repo } from './repo.js';
+import { Repo, type FileHistory } from './repo.js';
 import { VaultWatcher } from './watcher.js';
 
 /** A repo check that takes longer than this has hung (a stalled remote); the add is refused. */
@@ -79,6 +79,8 @@ interface Runtime {
   legacySeen?: string;
   /** The last agents move, for a client that connects later. */
   lastMove?: AgentsMove & { at: number };
+  /** `Repo.fileHistory` for this HEAD and root (#122); concurrent listings share one run. */
+  history?: { key: string; map: Promise<Map<string, FileHistory>> };
 }
 
 type FetchOutcome = 'fetched' | 'offline' | 'skipped';
@@ -230,6 +232,7 @@ export class Vaults {
       await this.store.update((c) => {
         c.vaults = c.vaults.map((x) => (x.id === id ? next : x));
         delete c.aiTouched[id];
+        delete c.editStamps[id];
       });
       if (repoChange || (branchChange && r.state !== 'ready')) {
         await r.watcher?.close();
@@ -264,6 +267,7 @@ export class Vaults {
       await this.store.update((c) => {
         c.vaults = c.vaults.filter((x) => x.id !== id);
         delete c.aiTouched[id];
+        delete c.editStamps[id];
         delete c.conflicts[id];
       });
     });
@@ -341,9 +345,61 @@ export class Vaults {
 
   // ---- files ----
 
+  /** The file tree with each file's dates (#122): last modified, by AI, by human. */
   async listFiles(id: string): Promise<FileEntry[]> {
     this.requireReady(id);
-    return listTree(this.vaultRootDir(id));
+    const root = this.vaultRootDir(id);
+    const repo = this.repo(this.config(id));
+    const [entries, history, changes] = await Promise.all([listTree(root), this.fileHistory(id, repo), repo.changes()]);
+    const uncommitted = new Set(changes.map((c) => c.path));
+    const stamps = this.store.get().editStamps[id] ?? {};
+    await this.dropStampsOfDeleted(id, new Set(entries.filter((e) => e.type === 'file').map((e) => e.path)));
+    return Promise.all(entries.map(async (e): Promise<FileEntry> => {
+      if (e.type === 'dir') return e;
+      const h = history.get(e.path);
+      const s = stamps[e.path];
+      const modified = uncommitted.has(e.path) ? await stat(join(root, e.path)).then((st) => Math.floor(st.mtimeMs), () => undefined) : h?.last;
+      const human = Math.max(s?.human ?? -1, h?.lastHuman ?? -1);
+      return {
+        ...e,
+        ...(modified !== undefined ? { modified } : {}),
+        ...(s?.ai !== undefined ? { ai: s.ai } : {}),
+        ...(human >= 0 ? { human } : {}),
+      };
+    }));
+  }
+
+  /**
+   * Stamps of files that are gone (#122). Files can be missing for a moment while a sync runs (the pull's
+   * stash) or for the length of a Conflict, and one can appear after `listed` was taken: so only when the
+   * vault is idle, and only paths that are still missing on disk.
+   */
+  private async dropStampsOfDeleted(id: string, listed: Set<string>): Promise<void> {
+    const r = this.runtime(id);
+    if (r.conflict || r.lock.busy === 'sync') return;
+    const root = this.vaultRootDir(id);
+    const gone = Object.keys(this.store.get().editStamps[id] ?? {}).filter((p) => !listed.has(p) && !existsSync(join(root, p)));
+    if (gone.length) await this.store.update((c) => { for (const p of gone) if (!existsSync(join(root, p))) delete c.editStamps[id]?.[p]; });
+  }
+
+  /**
+   * `Repo.fileHistory`, cached per HEAD and root: a commit or pull moves HEAD, a root change re-maps the
+   * paths. A failed run is logged and not cached; the listing goes without git dates this time.
+   */
+  private async fileHistory(id: string, repo: Repo): Promise<Map<string, FileHistory>> {
+    const r = this.runtime(id);
+    const head = await repo.head();
+    if (head === null) return new Map();
+    const key = `${head}:${repo.root}`;
+    if (r.history?.key !== key) {
+      const map = repo.fileHistory();
+      r.history = { key, map };
+      map.catch((e: Error) => {
+        console.warn(`file history of ${id} failed:`, e.message);
+        if (r.history?.map === map) r.history = undefined;
+      });
+    }
+    return r.history.map.catch(() => new Map());
   }
 
   async readFile(id: string, path: string): Promise<FileContent> {
@@ -411,6 +467,7 @@ export class Vaults {
         throw new HttpError(409, 'file changed since it was loaded', 'stale', { currentVersion: current });
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, content);
+      await this.stampHuman(id, normalizeRel(path));
       this.emitStatusSoon(id);
       return { version: versionOf(content) };
     });
@@ -425,6 +482,7 @@ export class Vaults {
       if (r.conflict) throw new HttpError(423, 'vault is in conflict; resolve it first', 'conflict');
       if ('source' in target) {
         const path = await this.writeNew(id, await this.sourceFolder(id, target.source, target.at), name, bytes);
+        await this.stampHuman(id, path);
         this.emitStatusSoon(id);
         return { path, version: versionOf(bytes), size: bytes.length };
       }
@@ -433,6 +491,7 @@ export class Vaults {
       const write = (into: string) => this.writeNew(id, into, name, bytes);
       const moved = move ? await this.moveIntoOwnFolder(id, note, folder, write) : undefined;
       const path = moved?.path ?? (await write(folder));
+      await this.stampHuman(id, path);
       this.emitStatusSoon(id);
       return { path, version: versionOf(bytes), size: bytes.length, ...(moved ? { moved: { from: note, to: moved.to }, rewritten: moved.rewritten } : {}) };
     });
@@ -488,10 +547,14 @@ export class Vaults {
     // The attachment first: if it can't be written, nothing has moved.
     const path = await write(own);
     for (const e of edits) await writeFile(e.abs, e.text);
+    // Read before the rename: a listing in between would drop the stamps of the vanished path.
+    const stamp = this.store.get().editStamps[id]?.[note];
     await rename(from, dest);
     if (ownText !== ownBuf.toString('utf8')) await writeFile(dest, ownText);
     if (this.aiTouched(id).includes(note))
       await this.store.update((c) => { c.aiTouched[id] = c.aiTouched[id]!.map((p) => (p === note ? to : p)); });
+    if (stamp) await this.store.update((c) => { (c.editStamps[id] ??= {})[to] = stamp; delete c.editStamps[id][note]; });
+    await this.stampHuman(id, ...edits.map((e) => e.path));
     return { to, rewritten: edits.map((e) => e.path), path };
   }
 
@@ -687,6 +750,9 @@ export class Vaults {
     if (r.state !== 'ready' || r.conflict) return null;
     const result = await this.repo(this.config(id)).pull();
     r.pullError = result.kind === 'offline' ? this.redact(result.error) : undefined;
+    // Unpushed AI commits folded back into uncommitted changes: their files are AI-touched again.
+    const aiPaths = result.kind !== 'offline' ? result.aiPaths ?? [] : [];
+    if (aiPaths.length) await this.store.update((c) => { c.aiTouched[id] = [...new Set([...(c.aiTouched[id] ?? []), ...aiPaths])]; });
     if (result.kind === 'conflict') {
       await this.store.update((c) => {
         c.conflicts[id] = result.paths;
@@ -791,11 +857,18 @@ export class Vaults {
         const current = await versionOfFile(await resolveInVault(this.vaultRootDir(id), rel));
         if (current !== version) throw new HttpError(409, `${rel} changed since you looked at it; review it again`, 'stale', { currentVersion: current });
       }
-      await this.repo(this.config(id)).discard(rel);
+      const repo = this.repo(this.config(id));
+      await repo.discard(rel);
       await this.removeEmptiedFolders(id, join(this.vaultRootDir(id), rel));
+      const last = (await this.fileHistory(id, repo)).get(rel)?.last;
       await this.store.update((c) => {
         const set = c.aiTouched[id];
         if (set) c.aiTouched[id] = set.filter((p) => p !== rel);
+        // Stamps of the discarded write go; those that describe the committed content stay (commit times are whole seconds).
+        const s = c.editStamps[id]?.[rel];
+        if (!s) return;
+        for (const k of ['ai', 'human'] as const) if (last === undefined || (s[k] ?? 0) >= last + 1000) delete s[k];
+        if (s.ai === undefined && s.human === undefined) delete c.editStamps[id]![rel];
       });
     });
     this.emitStatusSoon(id);
@@ -854,11 +927,20 @@ export class Vaults {
   /** Records vault-relative paths the AI changed (mvp §2.4 AI-touched set). */
   async markAiTouched(id: string, paths: string[]): Promise<void> {
     if (!this.store.get().vaults.some((v) => v.id === id)) return;
-    const cur = new Set(this.store.get().aiTouched[id] ?? []);
-    const before = cur.size;
     // Absolute = outside the vault root; it can never be committed from here.
-    for (const p of paths) if (!p.startsWith('/')) cur.add(p);
-    if (cur.size !== before) await this.store.update((c) => { c.aiTouched[id] = [...cur]; });
+    const rel = paths.filter((p) => !p.startsWith('/'));
+    if (!rel.length) return;
+    await this.store.update((c) => {
+      c.aiTouched[id] = [...new Set([...(c.aiTouched[id] ?? []), ...rel])];
+      setStamps(c, id, rel, 'ai');
+    });
+  }
+
+  /** A person wrote these paths through the app (#122). Best effort: the write itself already succeeded. */
+  private async stampHuman(id: string, ...paths: string[]): Promise<void> {
+    if (!paths.length) return;
+    await this.store.update((c) => setStamps(c, id, paths, 'human'))
+      .catch((e: Error) => console.warn(`edit stamp for ${id} failed:`, e.message));
   }
 
   aiTouched(id: string): string[] {
@@ -1076,4 +1158,11 @@ function cloneErrorText(e: Error, v: Pick<StoredVault, 'repo' | 'branch'>): stri
 
 function redactToken(msg: string, token?: string) {
   return token ? msg.replaceAll(token, '***') : msg;
+}
+
+/** Sets the AI or human edit stamp of `paths` to now. */
+function setStamps(c: ConfigData, id: string, paths: string[], kind: keyof EditStamp) {
+  const s = (c.editStamps[id] ??= {});
+  const now = Date.now();
+  for (const p of paths) s[p] = { ...s[p], [kind]: now };
 }

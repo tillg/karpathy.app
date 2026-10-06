@@ -4,14 +4,21 @@ import type { Change, ChangeKind, ConflictChoice } from '@karpathy/shared';
 import { Git, type GitOptions } from './git.js';
 
 export const PULL_STASH = 'karpathy-app-pull';
-export const AI_TRAILER = 'Co-authored-by: karpathy.app agent <agent@karpathy.app>';
+const AI_COAUTHOR = 'karpathy.app agent <agent@karpathy.app>';
+export const AI_TRAILER = `Co-authored-by: ${AI_COAUTHOR}`;
+
+export interface FileHistory {
+  last: number;
+  lastHuman?: number;
+}
 
 export type PullResult =
-  | { kind: 'ok'; pushed: boolean; pushError?: string }
+  /** `aiPaths`: vault paths of unpushed AI commits the pull turned back into uncommitted changes. */
+  | { kind: 'ok'; pushed: boolean; pushError?: string; aiPaths?: string[] }
   /** Fetch failed (e.g. remote unreachable); nothing changed locally. */
   | { kind: 'offline'; error: string }
   /** Stash pop failed: the vault is now in Conflict on these repo-relative paths. */
-  | { kind: 'conflict'; paths: string[] };
+  | { kind: 'conflict'; paths: string[]; aiPaths?: string[] };
 
 export interface PushResult {
   pushed: boolean;
@@ -61,6 +68,37 @@ export class Repo {
 
   private get pathspec() {
     return ['--', this.root || '.'];
+  }
+
+  async head(): Promise<string | null> {
+    const r = await this.git.run(['rev-parse', 'HEAD'], { allowFail: true });
+    return r.code === 0 ? r.stdout.trim() : null;
+  }
+
+  /**
+   * Per vault path: committer time (ms) of the last commit that changed it, and of the last one
+   * without the AI trailer (#122). One pass over the history of the vault root. Committer time, not
+   * author time: git log walks in that order, and a rebased commit keeps its old author time.
+   */
+  async fileHistory(): Promise<Map<string, FileHistory>> {
+    const out = new Map<string, FileHistory>();
+    const r = await this.git.run(['log', '-z', '--format=%x1e%ct%x1f%(trailers:key=Co-authored-by,valueonly)', '--name-only', ...this.pathspec], { allowFail: true });
+    if (r.code !== 0) throw new Error(`git log failed: ${r.stderr.trim()}`);
+    for (const commit of r.stdout.split('\x1e')) {
+      const nul = commit.indexOf('\0');
+      if (nul < 0) continue;
+      const [at, trailers = ''] = commit.slice(0, nul).split('\x1f');
+      const time = Number(at) * 1000;
+      const human = !trailers.includes(AI_COAUTHOR);
+      for (const name of commit.slice(nul + 1).replace(/^\n/, '').split('\0')) {
+        const path = name && this.toVaultPath(name);
+        if (!path) continue;
+        const h = out.get(path);
+        if (!h) out.set(path, human ? { last: time, lastHuman: time } : { last: time });
+        else if (human && h.lastHuman === undefined) h.lastHuman = time;
+      }
+    }
+    return out;
   }
 
   async changes(): Promise<Change[]> {
@@ -184,8 +222,11 @@ export class Repo {
       const p = await this.push();
       return { kind: 'ok', pushed: p.pushed, pushError: p.error };
     }
-    // 2. Fold unpushed commits back into uncommitted changes.
+    // 2. Fold unpushed commits back into uncommitted changes. Their AI trailer goes with them: say which
+    // files the AI wrote, so the next commit carries it again.
+    let aiPaths: string[] | undefined;
     if ((await this.unpushedCount()) > 0) {
+      aiPaths = await this.aiPathsSince(this.upstream);
       const mb = await this.git.run(['merge-base', 'HEAD', this.upstream], { allowFail: true });
       if (mb.code !== 0) {
         // No common history (the remote was replaced, e.g. an orphan force-push, #36): keep the
@@ -195,7 +236,7 @@ export class Repo {
         // Files that only exist upstream: check them out (the working tree never had them).
         const missing = (await this.git.out(['ls-files', '-z', '--deleted'])).split('\0').filter(Boolean);
         if (missing.length) await this.git.run(['checkout', '-q', '--', ...missing]);
-        return { kind: 'ok', pushed: false };
+        return { kind: 'ok', pushed: false, aiPaths };
       }
       await this.git.run(['reset', '-q', '--mixed', mb.stdout.trim()]);
     }
@@ -205,12 +246,27 @@ export class Repo {
     // 4. Always a fast-forward now.
     await this.git.run(['merge', '-q', '--ff-only', this.upstream]);
     // 5. Re-apply.
-    if (!dirty) return { kind: 'ok', pushed: false };
+    if (!dirty) return { kind: 'ok', pushed: false, aiPaths };
     const pop = await this.git.run(['stash', 'pop', '-q'], { allowFail: true });
-    if (pop.code === 0) return { kind: 'ok', pushed: false };
+    if (pop.code === 0) return { kind: 'ok', pushed: false, aiPaths };
     const paths = await this.computeConflictPaths();
     await this.showMineWhileConflicted();
-    return { kind: 'conflict', paths };
+    return { kind: 'conflict', paths, aiPaths };
+  }
+
+  /** Vault paths changed by the commits in `base..HEAD` that carry the AI trailer. */
+  private async aiPathsSince(base: string): Promise<string[]> {
+    const out = await this.git.out(['log', '-z', '--format=%x1e%(trailers:key=Co-authored-by,valueonly)', '--name-only', `${base}..HEAD`, ...this.pathspec]);
+    const paths = new Set<string>();
+    for (const commit of out.split('\x1e')) {
+      const nul = commit.indexOf('\0');
+      if (nul < 0 || !commit.slice(0, nul).includes(AI_COAUTHOR)) continue;
+      for (const name of commit.slice(nul + 1).replace(/^\n/, '').split('\0')) {
+        const path = name && this.toVaultPath(name);
+        if (path) paths.add(path);
+      }
+    }
+    return [...paths];
   }
 
   /** Paths the failed stash pop could not apply: unmerged ones + untracked ones not restored. */

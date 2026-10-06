@@ -113,7 +113,11 @@ to it are rewritten) and embeds it as `![[name]]`. Photos are scaled to 2048 px 
 50 MB cap, a warning above 10 MB. The **+** in the chat composer uploads up to 5 files into a new
 `Sources/upload-…/` folder and sends them to the AI with the prompt (a model without image/PDF input only gets
 the path; the chip says so). Uploads are uncommitted changes like any edit. The **Write/Read mode is sticky**:
-it stays as you chose it for every note you open and survives a reload (Write is the default). **Incoming
+it stays as you chose it for every note you open and survives a reload (Write is the default). **Sort and
+filter the file tree**: the ⇅ button in the Notes header sorts by name or by last change (either direction;
+folders rise with recent changes inside them), the funnel shows only notes changed by the AI or by a human
+(a chip with ✕ says a filter is on). The AI/human dates come from the app's own records and from git history
+(a commit without the app's AI trailer counts as human); the browser remembers both choices. **Incoming
 changes**: while the app is open, the backend fetches the vault from GitHub every 2 minutes and whenever you
 switch back to the app; files pushed from elsewhere (e.g. Obsidian) show as "· N incoming" next to the git
 status pill (on a phone, a "↓" on the Changes tab), are listed in Changes, and the open note says "Changed on
