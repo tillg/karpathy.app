@@ -199,19 +199,20 @@ export function toolLabel(call: ToolCall): string {
   if (call.status === 'denied' || call.status === 'error')
     return `${call.status === 'denied' ? 'denied · ' : ''}${call.tool} ${call.path ?? call.url ?? call.title ?? ''}`;
   if (call.tool === 'websearch' && call.query) return `searched the web: "${call.query}"`;
-  if (call.tool === 'webfetch' && call.url) {
+  if ((call.tool === 'webfetch' || call.tool === 'open_url') && call.url) {
+    const verb = call.tool === 'webfetch' ? 'fetched' : 'open';
     try {
       const u = new URL(call.url);
-      return `fetched ${u.host}${(u.pathname + u.search).slice(0, 60)}`;
+      return `${verb} ${u.host}${(u.pathname + u.search).slice(0, 60)}`;
     } catch {
-      return `fetched ${call.url}`;
+      return `${verb} ${call.url}`;
     }
   }
   return `${call.writes ? 'changing' : call.tool} ${call.path ?? call.title ?? ''}`;
 }
 
-/** Where a fetch chip links to: the URL of a completed http(s) fetch, else null. */
+/** Where a fetch or Open chip links to: the URL of a completed http(s) fetch or link offer, else null. */
 export function toolHref(call: ToolCall): string | null {
-  if (call.tool !== 'webfetch' || call.status !== 'completed' || !call.url) return null;
+  if ((call.tool !== 'webfetch' && call.tool !== 'open_url') || call.status !== 'completed' || !call.url) return null;
   return /^https?:\/\//i.test(call.url) ? call.url : null;
 }

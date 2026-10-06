@@ -134,12 +134,38 @@ export interface CommitResult {
   pushError?: string;
 }
 
+/** What the automatic move to the `.agents` standard did in a vault (uncommitted changes). */
+export interface AgentsMove {
+  /** Skill folders moved from `.claude/skills/` to `.agents/skills/`. */
+  moved: string[];
+  /** `.claude/commands/<name>.md` turned into skills. */
+  converted: string[];
+  /** AGENTS.md written from CLAUDE.md (or the CLAUDE.md pointer written). */
+  instructions: boolean;
+  /** Files pasted into AGENTS.md; they stay where they are. */
+  inlined: string[];
+  /** Names not moved because they exist already (`AGENTS.md` for the instructions). */
+  skipped: string[];
+}
+
 /** Live vault event stream (`GET /vaults/:id/events`), one JSON object per line. */
 export type VaultEvent =
   | { type: 'status'; status: VaultStatus }
-  | { type: 'files-changed'; files: { path: string; version: string | null }[] };
+  | { type: 'files-changed'; files: { path: string; version: string | null }[] }
+  /** `at`: when the move ran (ms), so a client shows each move once. */
+  | ({ type: 'agents-move'; at: number } & AgentsMove);
 
 // ---- Chat (ACP-shaped: session / prompt / update / tool_call / permission) ----
+
+/** A skill the chat can start by name (`/name`): a vault skill or an app skill. */
+export interface Command {
+  name: string;
+  description: string;
+  /** `vault`: from the vault's skill folder `.agents/skills/`; `app`: ships with karpathy.app (every vault). */
+  source: 'vault' | 'app';
+  /** On a vault skill: it replaces karpathy.app's skill of the same name, which doesn't run in this vault. */
+  replaces?: true;
+}
 
 export interface ChatSummary {
   id: string;

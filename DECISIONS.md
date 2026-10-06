@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-05
+edited: 2026-10-06
 ---
 
 **Contents**
@@ -992,7 +992,7 @@ edited: 2026-10-05
 
 ## 15:44 — chat-commands-research: commands go through the normal prompt path, never opencode's command endpoint {#run-2026-10-04-1514-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** proposal written by a background agent (#64, #86, #119). It verified opencode 1.18.25 in source and in
   the dev container (facts F1–F11 in its `architecture.md`). Finding: `POST /session/:id/command` runs `` !`…` ``
   snippets from skill files in a shell **without any permission check**; a probe skill printed uid 1000 and the
@@ -1012,7 +1012,9 @@ edited: 2026-10-05
   inside existing mechanisms (prompts, skills, chips, known-URL guard).
 - **Alternatives:** opencode's command endpoint (shell); a Start button for research; a token meter.
 - **Consequences:** the shell-in-skills behaviour is a constraint for any future use of `/command`; worth a
-  `security.md` note at archive.
+  `security.md` note at archive. The grilling of 2026-10-05 (commit 6caf942) refined (3) vault skills live in
+  `.agents/skills/`, (4) a chip fills the composer and sends nothing, (9) the plan turn may scout the web a little.
+  Promoted to [docs/adr/0004-commands-as-prompts-not-command-endpoint.md](docs/adr/0004-commands-as-prompts-not-command-endpoint.md).
 
 ## 15:44 — note-outline-properties: outline first, then a CST-preserving YAML form that refuses lossy edits {#run-2026-10-04-1514-10}
 

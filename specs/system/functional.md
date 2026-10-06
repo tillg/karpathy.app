@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-05
+edited: 2026-10-06
 ---
 
 # Functional: karpathy.app
@@ -14,7 +14,8 @@ What the user can do, as built on 2026-10-02. What the operator can do (releases
 Built up to the MVP milestone **M4**: a chat that reads and writes configured vaults, on mobile, synced through git
 (M0 scaffold, M1 vaults and reading, M2 editing and git, M3 AI reads, M4 AI writes). Next is **M5**: the existing
 wiki skills usable in the chat ([Skills](#skills)), at least `query` and `lint` on mobile, and at least one
-non-Claude model tried.
+non-Claude model tried. The chat part of it is built: skills in `.agents/skills/` start with `/name` (palette and chips); the
+skills that need shell or credentials are not.
 
 Next to the app there is a public **website** at https://karpathy.app: one static start page that says what the
 app is, that the project ships code and not a running service (self-hosting needs a server, Tailscale and a set of
@@ -221,6 +222,37 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   (the user's messages, notes it read, earlier results); any other URL fails with "URL not in this chat: paste it into
   the chat first", and the turn goes on. At most 20 searches and 20 fetches per turn. Fetched pages stay in the chat;
   they reach the vault only if the AI writes about them. With Web access off, the AI has neither tool.
+- **Commands:** typing `/` in the composer opens the **command palette**: the vault's skills (`query`, `lint`, `ingest`, …)
+  with their descriptions, filtered as you type. Two groups, "This vault" (tag `vault`: the vault's own skills, in
+  `.agents/skills/`) and "karpathy.app" (tag `app`: skills that ship with the app, today `research`). A vault skill with the
+  name of an app skill wins and says "Replaces karpathy.app's /name; rename it in .agents/skills/ to get both." ↑/↓ move,
+  Enter or Tab pick, Escape closes, a tap picks. Picking puts `/name ` in the composer and sends nothing.
+  - An **empty chat** shows up to four **command chips** (`/query`, …): the commands last used in this vault in this browser
+    first, then A–Z; the tooltip says what it does and where it comes from ("from this vault" / "built into karpathy.app"),
+    app chips carry the app icon. A tap puts `/name ` in front of whatever the composer holds and focuses it; add arguments
+    and send.
+  - Sending `/query what is X` runs the `query` skill: the chat shows what you typed, the skill's text goes to the AI as a
+    hidden part of the same message (`$1`…`$N` and `$ARGUMENTS` in the skill take your words). A `/word` that is no command
+    of this vault (`/etc/hosts is…`) is sent as plain text.
+  - The list is per vault and follows pulls: a skill that came in with a pull or was edited shows up the next time the palette
+    opens (not during a running turn). If the list can't be loaded the composer works as before.
+- **Deep research** (`/research <topic>`, app skill): the first turn reads the wiki, scouts the web a little (at most 3
+  searches and 2 fetches), writes a **plan note** `Research/<YYYY-MM-DD>-<slug>.md` (3–6 sub-questions as a checklist) and
+  stops with "Edit the note if you like, then reply **go**." Edit the note in the editor if you want, then reply. The run turn
+  searches, saves the useful pages to `Sources/` (one file per page: `url`, `title`, `fetched`, a summary with short quotes,
+  never the full page; at most 8 per turn), writes or updates wiki pages that cite them (`sources:` and `[[Sources/…]]`) and
+  ticks off the plan note. If questions remain, it says so and waits for "continue". `/research <plan note>` resumes in any chat,
+  also days later. Needs Web access (with it off the plan turn says so and still writes the plan); in conflict the plan goes
+  into the reply and nothing is saved. The vault's own rules for sources decide folder, name and frontmatter. Everything is
+  uncommitted until you commit.
+- **Open a web page:** "open the Wikipedia page on X" gives an **Open chip** (`open <host/path>`); tapping it opens the page in
+  a new browser tab with your own browser session. Nothing opens by itself, nothing is downloaded, and it works with Web access
+  off. The AI may offer only a URL that already appears in the chat; any other fails with "URL not in this chat: paste it into
+  the chat first".
+- **The vault moves to the `.agents` standard** when it is cloned, pulled or opened and still has `CLAUDE.md`,
+  `.claude/skills/*` or `.claude/commands/*.md`: a notice "Moved to the .agents standard" lists what moved, what stayed
+  because the name exists ("not moved, name exists: …") and files now pasted into `AGENTS.md` (each with **Delete**), with
+  **Review** opening the Changes view. See [Skills](#skills).
 - **Chat attachments:** the **+** in the composer (online, not in conflict) uploads up to 5 files per message, each at
   most 20 MB, into a new `Sources/upload-YYYY-MM-DD-HHMMSS/` folder (the device's local time). Each shows as a chip
   (thumbnail, or PDF name and size); ✕ deletes its file, and the folder once it is empty. Unsent chips survive a
@@ -228,14 +260,31 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   its attachments (thumbnail through the vault, or a file card; a deleted file shows the missing card), right away
   while it is pending and also after a reload. If the chat's model can't read images or PDFs, the chip says "`<model>` can't see images: the AI only gets
   the file's path"; the file can still be sent. The settings are read again when a chat opens.
-- **Read-only while in conflict** ("the AI can only read, not change notes"); web search and fetch still work.
+- **Read-only while in conflict** ("the AI can only read, not change notes"); web search and fetch, Open chips and commands still work (a command that writes can't save anything then).
 - The AI can read and edit notes in the vault root only; its changes are uncommitted until the user commits.
 
 ### Skills
 
-opencode loads the vault's own `AGENTS.md` (or `CLAUDE.md`, walking up from the vault root) and `.claude/skills`, so
-wiki skills (`query`, `lint`, `ingest`, …) written for Claude Code are offered in the chat. Whether one works depends
-on what it needs:
+A vault follows the open **`.agents` standard**: instructions in `AGENTS.md`, skills in `.agents/skills/<name>/SKILL.md`
+(the layout opencode, Codex, Cursor and Gemini CLI share). opencode reads the vault's `AGENTS.md` (else `CLAUDE.md`, walking
+up from the vault root) and the skills in `.agents/skills/` only; `.claude/skills/` is not read, neither by the palette nor by
+the AI. Wiki skills (`query`, `lint`, `ingest`, …) are the chat's [commands](#chat-with-the-ai).
+
+- **Automatic move.** After every clone, pull and open (never while the vault is in conflict) the app moves a vault in
+  Anthropic's layout: `CLAUDE.md` becomes `AGENTS.md` with its `@path` imports pasted in (whole-line imports of files inside
+  the vault, one level, not gitignored), `CLAUDE.md` is rewritten to `@AGENTS.md`, `.claude/skills/*` go to `.agents/skills/`,
+  `.claude/commands/*.md` become skills (`foo.md` → `foo/SKILL.md`, body unchanged), and `.claude/skills` becomes a symlink to
+  `../.agents/skills`. A vault with `AGENTS.md` but no `CLAUDE.md` gets `CLAUDE.md` = `@AGENTS.md`. So Claude Code on the Mac
+  reads the same rules and finds the same skills. It never overwrites: a name that exists stays and is listed in the notice.
+  The result is ordinary uncommitted changes (nothing is committed for you); discarding them undoes the move until the next pull.
+  Only `.claude/` is migrated, not `.cursor/` or `.codex/`.
+- **Vault skills and app skills.** Vault skills are yours (in the vault, synced by git, also in Claude Code on the Mac); app
+  skills ship with karpathy.app (every vault, change with app releases, not on the Mac). opencode's own built-ins `init`,
+  `review` and `customize-opencode` never show. Skills have no argument hints: the description says what to type after the name.
+- **Claude Code plugin skills** aren't in the vault and don't show; copy them into the vault (`.claude/skills/` is fine, the
+  move picks them up).
+
+Whether a skill works depends on what it needs:
 
 - **Only file tools** (read, search, write notes): works, within the vault root.
 - **Web** (search, reading a URL from a note or the prompt): works with Web access on, within the known-URL rule
@@ -248,6 +297,8 @@ on what it needs:
 - **Steps that commit or push:** never run (the AI can't commit); such steps must be dropped from the skill.
 - **Global instructions:** `~/.claude/CLAUDE.md` and hooks such as RTK don't travel; anything a skill relies on must
   be in the vault repo, and every file it reads must lie inside the vault root.
+- **Shell snippets** (`` !`cmd` ``) and `@file` references inside a skill are not run or resolved; they stay plain text in
+  the instructions the AI reads.
 - Skills written for Claude Code may name Claude Code tools or frontmatter fields, and tool calling varies a lot by
   model; each skill needs a check under opencode with the configured model.
 
@@ -272,6 +323,32 @@ sequenceDiagram
   App->>GH: pull, commit (Co-authored-by agent), push
   App-->>U: "Committed and pushed to GitHub"
 ```
+
+### Research a topic with `/research`
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant App
+  participant AI
+  U->>App: taps the /research chip, types "nanoGPT vs. llm.c", sends
+  App->>AI: "/research nanoGPT vs. llm.c" + hidden skill text
+  AI-->>App: reads the wiki, ≤ 3 searches, ≤ 2 fetches, writes Research/2026-10-04-nanogpt-vs-llm-c.md
+  App-->>U: "Edit the note if you like, then reply go"
+  U->>App: edits the plan note (optional), replies "go"
+  App->>AI: run turn
+  AI-->>App: searches, saves Sources/…, writes cited Wiki/… pages, ticks off the plan
+  App-->>U: "saved 6 sources, changed 3 pages"; pill "10 uncommitted"
+  U->>App: reviews the diffs, Commit & Push
+```
+
+If the AI stops at the caps or after 8 sources, it lists the open questions; "continue" starts the next block.
+
+### Open a vault that still uses `CLAUDE.md` and `.claude/`
+
+The user opens the vault; the app pulls and moves it to `AGENTS.md` and `.agents/skills/`. The notice "Moved to the .agents
+standard" appears, the palette lists the vault's skills, and the Changes list holds the move. **Review**, then **Commit &
+Push** (or **Discard** to undo until the next pull). On the Mac, Claude Code reads `@AGENTS.md` and follows the skill link.
 
 ### Edit on the phone while Obsidian changes the same note
 
@@ -305,7 +382,11 @@ sequenceDiagram
 | Media and other files in the vault (never edited) | Images, video and audio players; file cards with Open (PDF) / Download |
 | Photos and PDFs from the device (Attach button, drop, chat composer) | A new file in the page's own folder or a `Sources/upload-…/` folder; an embed, or a chip sent with the prompt |
 | Search query | Grouped hits with line snippets |
-| Chat prompt | Streamed reply, tool chips, changed notes |
+| Chat prompt (`/name args` for a command) | Streamed reply, tool chips, changed notes |
+| `/` in the composer; a command chip | The command palette; `/name ` in the composer |
+| `/research <topic>`, then "go" | A plan note, then source files, cited wiki pages and a ticked-off plan (uncommitted) |
+| Tap on an Open chip | The page in a new browser tab |
+| Clone, pull or open of a vault in Anthropic's layout | `AGENTS.md`, `.agents/skills/`, the skill link, a notice (uncommitted changes) |
 | Commit message | Commit on GitHub (or an unpushed commit), toast |
 | Conflict choice per file | Resolved file(s), possibly a `.conflict-<date>` copy |
 | Settings: reminder threshold, model, Web access | — |
@@ -373,6 +454,21 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
 - **Web access:** a URL the AI builds itself (e.g. adds a query) can't be fetched: the user pastes it. A link deep in a
   long, truncated page isn't known either. Without `EXA_API_KEY`, search uses Exa's rate-limited anonymous endpoint.
   Changing the web caps needs an opencode restart or redeploy.
+- **Commands and the move:**
+  - Only skills are commands: no variables like `{activeNote}`, no argument hints, no command files (opencode reads them only
+    from `.opencode/`, which disables chat); a user prompt becomes a small skill instead.
+  - A skill added on the Mac shows after the vault pulled it; a skill the AI or the user edits shows the next time the list
+    loads while no turn runs.
+  - `@imports` of `CLAUDE.md` that point outside the repo (e.g. a symlink `Schema/methodology.md` → `../../llm_wiki/…`), at
+    a missing file or at a gitignored file can't be pasted into `AGENTS.md`, so opencode doesn't see that text; the line
+    stays as it was.
+  - A moved skill folder counts as one deleted plus one added file per file in the uncommitted-changes count. Claude Code
+    plugin skills aren't in the vault and don't show.
+  - The move is automatic and has no off switch; it is skipped in conflict and runs again after the next pull or open.
+- **Research:** the plan step and its scouting budget are instructions to the AI, not enforced; the hard bounds are 20
+  searches and 20 fetches per turn and your reply before each block. No cost cap in money. Fetched web content that lands in
+  `Sources/` is unreviewed until you review the diff.
+- **Links:** the AI's own reply text can still contain links of any URL (not checked); only the Open chip is guarded.
 - **Uploads:**
   - Chat attachments are useful only with a model that reads images (and PDFs); the production model is text-only
     today, so the AI gets only an "ERROR: Cannot read …" note and says so.

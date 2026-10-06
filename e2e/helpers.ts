@@ -34,7 +34,7 @@ function chmodAll(p: string) {
   if (statSync(p).isDirectory()) for (const e of readdirSync(p)) chmodAll(join(p, e));
 }
 
-/** Bare repo tmp/dev/remotes/e2e/<name>.git seeded by make-vault.py (Home.md, Ideas.md, AGENTS.md, n notes). */
+/** Bare repo tmp/dev/remotes/e2e/<name>.git seeded by make-vault.py (Home.md, Ideas.md, AGENTS.md, CLAUDE.md, a `hello` skill, n notes). */
 export function makeRemote(name: string, notes = 6): string {
   const bare = join(REMOTES, `${name}.git`);
   execFileSync('python3', [join(ROOT, 'e2e/fixtures/make-vault.py'), bare, String(notes)], { cwd: ROOT });

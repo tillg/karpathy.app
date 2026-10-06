@@ -1,5 +1,5 @@
 import type {
-  ChatDetail, ChatSummary, Change, CommitResult, ConflictChoice, Diff, FileContent, FileEntry,
+  ChatDetail, ChatSummary, Change, Command, CommitResult, ConflictChoice, Diff, FileContent, FileEntry,
   SearchHit, Settings, SettingsView, TokenTest, UploadResult, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
@@ -109,6 +109,7 @@ export const api = {
   conflictSides: (id: string, path: string) => json<{ mine: string | null; theirs: string | null }>('GET', `${v(id)}/conflicts/sides?${q(path)}`),
   resolve: (id: string, path: string, choice: ConflictChoice) => json<VaultStatus>('POST', `${v(id)}/conflicts/resolve`, { path, choice }),
 
+  commands: (id: string) => json<Command[]>('GET', `${v(id)}/commands`),
   chats: (id: string) => json<ChatSummary[]>('GET', `${v(id)}/chats`),
   newChat: (id: string) => json<{ chatId: string }>('POST', `${v(id)}/chats`),
   chat: (id: string, chatId: string) => json<ChatDetail>('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}`),

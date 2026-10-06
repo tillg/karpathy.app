@@ -95,6 +95,13 @@ describe('mapping edge cases', () => {
     expect(call).not.toHaveProperty('query');
   });
 
+  it('open_url part → url set, opens false, writes false', () => {
+    const part = { id: 'o1', tool: 'open_url', state: { status: 'completed', input: { url: 'https://example.com/a' }, output: 'offered https://example.com/a' } };
+    const call = mapToolPart(part, '/vaults/a');
+    expect(call).toMatchObject({ tool: 'open_url', url: 'https://example.com/a', status: 'completed', writes: false, opens: false });
+    expect(call).not.toHaveProperty('path');
+  });
+
   it('writtenPaths ignores web tools', () => {
     expect(writtenPaths({ id: 'w1', tool: 'websearch', state: { status: 'completed', input: { query: 'x' }, output: 'y' } }, '/vaults/a')).toEqual([]);
     expect(writtenPaths({ id: 'w2', tool: 'webfetch', state: { status: 'completed', input: { url: 'https://example.com/x.md' }, output: 'y' } }, '/vaults/a')).toEqual([]);

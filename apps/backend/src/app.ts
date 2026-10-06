@@ -188,6 +188,8 @@ export function createApp(d: AppDeps) {
     const status = await d.vaults.status(id);
     const out = ndjson(res);
     out.send({ type: 'status', status });
+    const move = d.vaults.lastAgentsMove(id);
+    if (move && !early.some((e) => e.type === 'agents-move')) out.send({ type: 'agents-move', ...move });
     for (const e of early) out.send(e);
     live = (e) => out.send(e);
   });
@@ -277,6 +279,9 @@ export function createApp(d: AppDeps) {
     if (!d.chat) throw new HttpError(503, 'chat is not available');
     return d.chat;
   };
+  api.get('/vaults/:id/commands', async (req, res) => {
+    res.json(await chat().commands(req.params.id!));
+  });
   api.get('/vaults/:id/chats', async (req, res) => {
     res.json(await chat().list(req.params.id!));
   });

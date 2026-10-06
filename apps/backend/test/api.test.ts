@@ -1166,3 +1166,92 @@ describe('upload', () => {
     expect(await readdir(l.vaults.vaultRootDir(l.id))).not.toContain('Sources');
   });
 });
+
+describe('open waits for a command-list refresh', () => {
+  it('a refresh holding the lock delays the open pull instead of skipping it', async () => {
+    const t = await vaultApp({ 'Home.md': '# Home\n', 'CLAUDE.md': '# Rules\n' });
+    await t.remote.obsidianPush({ 'Other.md': 'pushed\n' });
+    const release = t.vaults.lock(t.id).tryShared('refresh')!;
+    setTimeout(release, 500);
+    const st = await t.vaults.open(t.id);
+    expect(st.incomingCount).toBe(0);
+    expect(await readFile(join(t.vaults.vaultRootDir(t.id), 'Other.md'), 'utf8')).toBe('pushed\n');
+  });
+});
+
+describe('agents move', () => {
+  const legacy = { 'Home.md': '# Home\n', 'CLAUDE.md': '# Rules\n', '.claude/skills/x/SKILL.md': '---\nname: x\ndescription: X\n---\nDo x.\n' };
+  const isMove = (e: VaultEvent) => e.type === 'agents-move';
+
+  it('on open', async () => {
+    const t = await vaultApp(legacy);
+    const connect = await eventStreams(t.app);
+    const s = await connect(t.id);
+    await t.api.post(`/vaults/${t.id}/open`);
+    await s.waitFor(isMove, 3000);
+    expect(s.events.find(isMove)).toMatchObject({ type: 'agents-move', moved: ['x'], instructions: true });
+    const paths = (await t.api.get(`/vaults/${t.id}/changes`)).body.map((c: { path: string }) => c.path);
+    expect(paths).toEqual(expect.arrayContaining(['AGENTS.md', 'CLAUDE.md', '.agents/skills/x/SKILL.md', '.claude/skills']));
+    await s.close();
+  });
+
+  it('after a pull', async () => {
+    const t = await vaultApp(legacy);
+    const connect = await eventStreams(t.app);
+    const s = await connect(t.id);
+    await t.api.post(`/vaults/${t.id}/open`);
+    await s.waitFor(isMove, 3000);
+    await t.remote.obsidianPush({ '.claude/commands/y.md': 'Do y.\n' });
+    await t.api.post(`/vaults/${t.id}/pull`);
+    await s.waitFor(() => s.events.filter(isMove).length === 2, 3000);
+    expect(s.events.filter(isMove)[1]).toMatchObject({ converted: ['y'] });
+    expect(await readFile(join(t.vaults.vaultRootDir(t.id), '.agents/skills/y/SKILL.md'), 'utf8')).toContain('name: y');
+    // The pull's stash dropped the staged link; it is staged again.
+    expect(sh(t.vaults.vaultRootDir(t.id), 'ls-files', '-s', '.claude/skills')).toMatch(/^120000 /);
+    await s.close();
+  });
+
+  it('not in conflict', async () => {
+    const t = await vaultApp({ 'Home.md': '# Home\n', 'Other.md': 'other\n' });
+    await writeFile(join(t.vaults.vaultRootDir(t.id), 'Other.md'), 'mine\n');
+    await t.remote.obsidianPush({ 'Other.md': 'theirs\n', 'CLAUDE.md': '# Rules\n' });
+    expect((await t.api.post(`/vaults/${t.id}/pull`)).body.state).toBe('conflict');
+    const connect = await eventStreams(t.app);
+    const s = await connect(t.id);
+    await t.api.post(`/vaults/${t.id}/open`);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(s.events.filter(isMove)).toEqual([]);
+    expect(await readFile(join(t.vaults.vaultRootDir(t.id), 'AGENTS.md'), 'utf8').catch(() => null)).toBeNull();
+    await s.close();
+  });
+
+  it('a clash is reported once', async () => {
+    const t = await vaultApp({ ...legacy, '.agents/skills/x/SKILL.md': 'NEW\n' });
+    const connect = await eventStreams(t.app);
+    const s = await connect(t.id);
+    await t.api.post(`/vaults/${t.id}/open`);
+    await s.waitFor(isMove, 3000);
+    expect(s.events.find(isMove)).toMatchObject({ skipped: ['x'] });
+    await t.api.post(`/vaults/${t.id}/pull`);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(s.events.filter(isMove)).toHaveLength(1);
+    await s.close();
+  });
+
+  for (const order of ['listed', 'reverse'] as const) {
+    it(`discard undoes the move (${order} order)`, async () => {
+      const t = await vaultApp(legacy);
+      await t.api.post(`/vaults/${t.id}/open`);
+      const changes = (await t.api.get(`/vaults/${t.id}/changes`)).body as { path: string; version: string | null }[];
+      // Reverse: the deleted skill file comes back while the link stub is still there.
+      if (order === 'reverse') changes.reverse();
+      for (const c of changes) expect((await t.api.post(`/vaults/${t.id}/discard?path=${encodeURIComponent(c.path)}`)).status).toBe(204);
+      const root = t.vaults.vaultRootDir(t.id);
+      expect(await readFile(join(root, '.claude/skills/x/SKILL.md'), 'utf8')).toContain('name: x');
+      expect(await readFile(join(root, 'CLAUDE.md'), 'utf8')).toBe('# Rules\n');
+      expect(await readFile(join(root, 'AGENTS.md'), 'utf8').catch(() => null)).toBeNull();
+      expect(sh(root, 'ls-files', '-s', '.claude/skills')).not.toMatch(/^120000/m);
+      expect((await t.api.get(`/vaults/${t.id}/changes`)).body).toEqual([]);
+    });
+  }
+});

@@ -13,7 +13,8 @@ export async function versionOfFile(abs: string): Promise<string | null> {
   try {
     return versionOf(await readFile(abs));
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT' || (e as NodeJS.ErrnoException).code === 'EISDIR') return null;
+    // ENOTDIR: a deleted file whose folder is now a file (the skill link stub replaced .claude/skills/).
+    if (['ENOENT', 'EISDIR', 'ENOTDIR'].includes((e as NodeJS.ErrnoException).code ?? '')) return null;
     throw e;
   }
 }

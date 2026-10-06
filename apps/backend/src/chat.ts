@@ -1,8 +1,11 @@
-import { posix } from 'node:path';
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { uploadMime, type ChatDetail, type ChatEvent, type ChatSummary, type TurnState } from '@karpathy/shared';
+import { uploadMime, type ChatDetail, type Command, type ChatEvent, type ChatSummary, type TurnState } from '@karpathy/shared';
 import type { ConfigStore } from './config-store.js';
-import type { Harness } from './harness/opencode.js';
+import { readFrontmatter } from './agents-standard.js';
+import { commandInstructions, expandCommand, parseCommand, withoutBaseDir } from './harness/command.js';
+import type { Harness, HarnessCommand } from './harness/opencode.js';
 import type { HarnessEvent } from './harness/map.js';
 import type { Release } from './lock.js';
 import { HttpError, type Vaults } from './vaults.js';
@@ -43,6 +46,8 @@ interface VaultChats {
 
 /** Idle safety net for a missed event: poll opencode's busy list while a turn runs. */
 const POLL_MS = 3000;
+/** How long a command listing waits for a pull or commit to end before it skips the skill refresh. */
+const SYNC_WAIT_MS = 10_000;
 
 /**
  * Chats = opencode sessions, one vault each (mvp §3.2 Chat API). One running turn per vault;
@@ -51,6 +56,8 @@ const POLL_MS = 3000;
  */
 export class ChatService {
   private v = new Map<string, VaultChats>();
+  /** Per vault: the skill stamp opencode's skill list was last refreshed for. */
+  private stamps = new Map<string, string>();
 
   constructor(
     private readonly vaults: Vaults,
@@ -305,6 +312,10 @@ export class ChatService {
     try {
       running.release = await this.vaults.lock(vaultId).exclusiveThenShared('turn', async () => {
         await this.vaults.pullUnlocked(vaultId);
+        // After the pull and the agents move, before the prompt: no turn runs in this vault now.
+        // A running commit-message proposal would be cut off: the next listing refreshes instead.
+        if (!this.vaults.isProposing(vaultId))
+          await this.refreshSkills(vaultId).catch((e) => console.warn(`skill refresh ${vaultId}:`, (e as Error).message));
       });
     } catch (e) {
       c.queue.shift();
@@ -336,6 +347,14 @@ export class ChatService {
       this.emit(vaultId, turn.chatId, { type: 'error', message: (e as Error).message });
       return this.endTurn(vaultId);
     }
+    // A command turn: `/name` of one of the vault's commands; any other text is a plain turn.
+    let instructions: string | undefined;
+    try {
+      instructions = await this.instructionsFor(vaultId, turn.text);
+    } catch (e) {
+      this.emit(vaultId, turn.chatId, { type: 'error', message: (e as Error).message });
+      return this.endTurn(vaultId);
+    }
     running.readonly = this.vaults.isConflict(vaultId);
     running.startedAt = Date.now();
     this.emit(vaultId, turn.chatId, { type: 'turn', state: 'running', ...(running.readonly ? { readonly: true } : {}) });
@@ -347,6 +366,7 @@ export class ChatService {
         model: settings.model,
         // Sent with every turn, `false` included: opencode keeps the rule on the session.
         tools: { websearch: settings.webAccess, webfetch: settings.webAccess },
+        ...(instructions ? { instructions } : {}),
         ...(turn.attachments?.length ? { files: turn.attachments.map((path) => ({ path, mime: uploadMime(path), url: pathToFileURL(posix.join(this.dir(vaultId), path)).href })) } : {}),
       });
       running.started = true;
@@ -355,6 +375,110 @@ export class ChatService {
       this.emit(vaultId, turn.chatId, { type: 'error', message: (e as Error).message });
       this.endTurn(vaultId);
     }
+  }
+
+  /** The vault's command list: vault skills first, then app skills, each A–Z. */
+  async commands(vaultId: string): Promise<Command[]> {
+    await this.chats(vaultId);
+    // Disposing must never hit a turn: refresh only while no turn runs or is about to start, holding the
+    // lock shared so none can start meanwhile (saves and the background fetch may go on). A pull or commit
+    // (e.g. the pull on vault open) is short and may bring skills: wait for it, without queueing for the lock.
+    const lock = this.vaults.lock(vaultId);
+    for (const end = Date.now() + SYNC_WAIT_MS; lock.busy === 'sync' && Date.now() < end; ) await new Promise((r) => setTimeout(r, 100));
+    const c = this.v.get(vaultId);
+    const release = lock.busy === 'none' && !c?.running && !c?.adopted && !this.vaults.isProposing(vaultId) ? lock.tryShared('refresh') : null;
+    if (release) {
+      try {
+        await this.refreshSkills(vaultId);
+      } catch {
+        // opencode down: the listing below reports it
+      } finally {
+        release();
+      }
+    }
+    let list;
+    try {
+      list = await this.vaultCommands(vaultId);
+    } catch (e) {
+      if (!(await this.harness.health().catch(() => false))) throw aiUnavailable();
+      throw e;
+    }
+    const rank = (c: Command) => (c.source === 'vault' ? 0 : 1);
+    return list
+      .map(({ name, description, source, replaces }): Command => ({ name, description, source, ...(replaces ? { replaces } : {}) }))
+      .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  }
+
+  /**
+   * opencode's command list for the vault, with the rule on a name clash applied: the vault skill wins.
+   * opencode's own pick between a vault skill and an app skill of the same name isn't stable, so the
+   * vault's skill is read from its skill folder here and replaces the app's entry.
+   */
+  private async vaultCommands(vaultId: string): Promise<(HarnessCommand & { replaces?: true })[]> {
+    const list = await this.harness.commands(this.dir(vaultId));
+    // App skills' names: the vaults dir itself never holds vault skills (security.md).
+    const app = new Set((await this.harness.commands(this.harnessVaultsDir).catch(() => [])).filter((c) => c.source === 'app').map((c) => c.name));
+    const own = await this.vaultSkills(vaultId);
+    return list.map((c) => {
+      if (!app.has(c.name)) return c;
+      const mine = own.get(c.name);
+      if (c.source === 'app' && !mine) return c;
+      return { ...(mine ?? c), source: 'vault' as const, replaces: true as const };
+    });
+  }
+
+  /** Skills in the vault root's skill folder, read the way opencode reads them (frontmatter `name`, `description`; the body). */
+  private async vaultSkills(vaultId: string): Promise<Map<string, HarnessCommand>> {
+    const base = join(this.vaults.vaultRootDir(vaultId), '.agents/skills');
+    const out = new Map<string, HarnessCommand>();
+    for (const folder of await readdir(base).catch(() => [] as string[])) {
+      const text = await readFile(join(base, folder, 'SKILL.md'), 'utf8').catch(() => null);
+      if (text === null) continue;
+      const { field, body } = readFrontmatter(text);
+      const name = field('name') || folder;
+      out.set(name, { name, description: field('description') ?? '', source: 'vault', template: `${body}\n\nBase directory for this skill: ${posix.join(this.dir(vaultId), '.agents/skills', folder)}` });
+    }
+    return out;
+  }
+
+  /**
+   * Refreshes opencode's skill list when a SKILL.md changed since the last refresh (pull, edit, agents
+   * move). The caller holds the vault lock, so no turn starts meanwhile. The first check after a start counts as changed.
+   */
+  private async refreshSkills(vaultId: string) {
+    const files = await this.skillFiles(vaultId);
+    const stamp = (await Promise.all(files.map(async (f) => {
+      const st = await stat(f).catch(() => null);
+      return `${f}:${st?.mtimeMs}:${st?.size}`;
+    }))).sort().join('\n');
+    if (this.stamps.get(vaultId) === stamp) return;
+    await this.harness.refresh(this.dir(vaultId));
+    this.stamps.set(vaultId, stamp);
+  }
+
+  /** `SKILL.md` files under `.agents/skills/` in the vault root and each folder up to the clone root (where opencode looks). */
+  private async skillFiles(vaultId: string): Promise<string[]> {
+    const root = this.vaults.vaultRootDir(vaultId);
+    const segs = this.vaults.getVault(vaultId).root.split('/').filter(Boolean);
+    const dirs = segs.map((_, i) => join(root, ...segs.slice(i).map(() => '..'))).concat(root);
+    const out: string[] = [];
+    for (const d of dirs) {
+      const base = join(d, '.agents/skills');
+      const entries = await readdir(base, { recursive: true }).catch(() => [] as string[]);
+      for (const e of entries) if (e === 'SKILL.md' || e.endsWith('/SKILL.md')) out.push(join(base, e));
+    }
+    return out;
+  }
+
+  /** The hidden instructions of a command turn, or undefined for a plain turn. */
+  private async instructionsFor(vaultId: string, text: string): Promise<string | undefined> {
+    const parsed = parseCommand(text);
+    if (!parsed) return undefined;
+    const cmd = (await this.vaultCommands(vaultId)).find((c) => c.name === parsed.name);
+    if (!cmd) return undefined;
+    // An app skill is self-contained; its base directory is outside the vault.
+    const template = cmd.source === 'app' ? withoutBaseDir(cmd.template) : cmd.template;
+    return commandInstructions(cmd.name, expandCommand(template, parsed.args));
   }
 
   private endTurn(vaultId: string) {

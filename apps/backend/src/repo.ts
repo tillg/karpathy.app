@@ -155,6 +155,23 @@ export class Repo {
     }
   }
 
+  /**
+   * Stages `path` as a symlink to `target` (mode 120000) without committing. The clone has
+   * core.symlinks=false, so the work tree holds a plain stub file with the target, which a commit's
+   * `add -A` keeps as a link.
+   */
+  async stageSymlink(path: string, target: string): Promise<void> {
+    const rp = this.toRepoPath(path);
+    await this.git.run(['rm', '-r', '--cached', '-q', '--ignore-unmatch', '--', rp]);
+    const blob = (await this.git.run(['hash-object', '-w', '--stdin'], { input: target })).stdout.trim();
+    await this.git.run(['update-index', '--add', '--cacheinfo', `120000,${blob},${rp}`]);
+  }
+
+  /** Whether the index holds `path` as a symlink. */
+  async stagedAsSymlink(path: string): Promise<boolean> {
+    return (await this.git.out(['ls-files', '-s', '--', this.toRepoPath(path)])).startsWith('120000 ');
+  }
+
   /** Pull procedure, mvp §2.4 steps 1–5 (no rebase, no --autostash). */
   async pull(): Promise<PullResult> {
     await this.dropStaleRefLock();

@@ -1,4 +1,4 @@
-import { MAX_UPLOAD_BYTES, rewriteLinks, WARN_UPLOAD_BYTES, type FileEntry, type SettingsView, type Vault, type VaultEvent, type VaultStatus } from '@karpathy/shared';
+import { MAX_UPLOAD_BYTES, rewriteLinks, WARN_UPLOAD_BYTES, type AgentsMove, type FileEntry, type SettingsView, type Vault, type VaultEvent, type VaultStatus } from '@karpathy/shared';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError, api, errorText } from './lib/api';
 import { prepare } from './lib/attach';
@@ -7,6 +7,24 @@ import { invalidate } from './lib/media';
 import { readNdjson } from './lib/ndjson';
 import { formatRoute, parseRoute } from './lib/route';
 import { parseWikilink, resolveWikilink } from './lib/wikilink';
+
+
+const SHOWN_MOVES_KEY = 'karpathy.shownMoves';
+const loadShownMoves = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(SHOWN_MOVES_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+const saveShownMoves = (keys: string[]) => {
+  try {
+    localStorage.setItem(SHOWN_MOVES_KEY, JSON.stringify(keys.slice(-50)));
+  } catch {
+    // no storage: the notice may show again after a reload
+  }
+};
 
 export type Section = 'files' | 'search' | 'changes';
 export type PhoneTab = Section | 'chat';
@@ -177,6 +195,11 @@ function useAppState() {
   const setStatus = useCallback((st: VaultStatus) => { if (activeRef.current) setStatusFor(activeRef.current, st); }, [setStatusFor]);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [changesNonce, setChangesNonce] = useState(0);
+  /** The last agents move of the active vault, until dismissed; `commandsNonce` makes the chat reload its command list. */
+  const [agentsMove, setAgentsMove] = useState<(AgentsMove & { at: number }) | null>(null);
+  const [commandsNonce, setCommandsNonce] = useState(0);
+  /** Moves already shown (`vault:at`), kept in this browser: the event stream replays the last one on every connect. */
+  const shownMoves = useRef(new Set<string>(loadShownMoves()));
   /** Bumped when cached media bytes were dropped (their file changed): shown embeds remount. */
   const [mediaEpoch, setMediaEpoch] = useState(0);
   const paths = useMemo(() => files.filter((f) => f.type === 'file').map((f) => f.path), [files]);
@@ -637,6 +660,7 @@ function useAppState() {
     if (!(await leave())) return;
     dropNote();
     setChatId(null);
+    setAgentsMove(null);
     if (activeRef.current) invalidate(activeRef.current);
     pendingRoute.current = path ? { vault: id, path } : null;
     setActiveIdState(id);
@@ -693,6 +717,18 @@ function useAppState() {
       setChangesNonce((x) => x + 1);
       return;
     }
+    if (e.type === 'agents-move') {
+      const key = `${vault}:${e.at}`;
+      if (shownMoves.current.has(key)) return;
+      shownMoves.current.add(key);
+      saveShownMoves([...shownMoves.current]);
+      const { type: _t, ...move } = e;
+      setAgentsMove(move);
+      setCommandsNonce((n) => n + 1);
+      setChangesNonce((x) => x + 1);
+      void refreshFiles();
+      return;
+    }
     setChangesNonce((x) => x + 1);
     if (e.files.some((f) => f.version === null || !pathsRef.current.includes(f.path))) void refreshFiles();
     // Cached media bytes of a changed file are stale: drop them and let the shown embeds fetch again.
@@ -726,6 +762,7 @@ function useAppState() {
     online, phone, wide, toast, toastMsg,
     vaults, reloadVaults, settings, setSettings, active, activeId, setActiveId, usable,
     status, setStatus, pull, pulling, files, paths, refreshFiles, changesNonce, mediaEpoch,
+    agentsMove, dismissAgentsMove: () => setAgentsMove(null), commandsNonce,
     note, currentText, openNote, isEditing, closeNote, forgetVault, editDraft, flush, uploadToNote, reloadNote, overwriteNote, deleteNote, newNote, stale, setStale,
     keepDeletedNote, closeDeletedNote,
     followLink, exists, readOnly, conflict,

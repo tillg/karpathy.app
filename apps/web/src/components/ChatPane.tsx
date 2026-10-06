@@ -1,8 +1,9 @@
-import { isPdf, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, WARN_UPLOAD_BYTES, type ChatEvent, type ChatPart, type ChatSummary, type ToolCall } from '@karpathy/shared';
+import { isPdf, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, WARN_UPLOAD_BYTES, type ChatEvent, type ChatPart, type ChatSummary, type Command, type ToolCall } from '@karpathy/shared';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, api, errorText } from '../lib/api';
 import { prepare } from '../lib/attach';
 import { loadChips, localStamp, saveChips, type Chip, type ChipDraft } from '../lib/chips';
+import { chipCommands, filterCommands, paletteQuery, recentCommands, recordCommand } from '../lib/commands';
 import { mountEmbed } from '../lib/embed';
 import { mediaKind } from '../lib/media';
 import { adoptQueued, applyChatEvent, changedPaths, newOpens, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
@@ -99,6 +100,9 @@ function ToolChip({ call, open, onToggle }: { call: ToolCall; open: boolean; onT
     return <button className="tc ed" data-testid="tool-chip" data-status="completed" data-writes="false" data-opens="true" data-path={call.path} title={`opened ${call.path}`} onClick={() => void openNote(call.path!)}><Icon n="arrow_up_right_square" size={14} /><span className="tc-t">opened {call.path}</span></button>;
   if (call.writes && call.status === 'completed' && call.path)
     return <button className="tc ed" data-testid="tool-chip" data-status="completed" data-writes="true" data-path={call.path} title={`changed ${call.path}`} onClick={() => void openNote(call.path!)}><Icon n="pencil" size={14} /><span className="tc-t">changed {call.path}</span></button>;
+  // A link offer (open_url): an action chip; the page opens only on the user's tap (a page can't open a tab by itself).
+  if (href && call.tool === 'open_url')
+    return <a className="tc ed" href={href} target="_blank" rel="noopener noreferrer" data-testid="tool-chip" data-status="completed" data-writes="false" data-opens-url="true" title={call.url}><Icon n="arrow_up_right_square" size={14} /><span className="tc-t">{label}</span></a>;
   if (href)
     return <a className="tc" href={href} target="_blank" rel="noopener noreferrer" data-testid="tool-chip" data-status="completed" data-writes="false" title={call.url}><span className="ok"><Icon n="checkmark" size={14} /></span><span className="tc-t">{label}</span></a>;
   const icon = call.status === 'completed' ? <span className="ok"><Icon n="checkmark" size={14} /></span> : <span className="spin" />;
@@ -200,9 +204,57 @@ function ChipView({ chip, model, onRemove }: { chip: Chip; model: string; onRemo
   );
 }
 
+const sourceText = (c: Command) => (c.source === 'vault' ? 'from this vault' : 'built into karpathy.app');
+
+/** The command palette over the composer: vault skills, then app skills; the composer keeps focus. */
+function Palette({ items, active, onPick }: { items: Command[]; active: number; onPick(c: Command): void }) {
+  const groups = [['vault', 'This vault'], ['app', 'karpathy.app']] as const;
+  return (
+    <div className="palette" id="command-palette" role="listbox" aria-label="Commands" data-testid="command-palette">
+      {groups.map(([source, title]) => {
+        const rows = items.filter((c) => c.source === source);
+        if (!rows.length) return null;
+        return (
+          <div key={source} role="group" aria-label={title} data-testid={`command-group-${source}`}>
+            <div className="pal-h" aria-hidden>{title}</div>
+            {rows.map((c) => {
+              const i = items.indexOf(c);
+              return (
+                // Picked on pointer down: a click would first blur the composer.
+                <div key={c.name} id={`cmd-${c.name}`} role="option" aria-selected={i === active} className={`pal-row${i === active ? ' on' : ''}`}
+                  data-command={c.name} onPointerDown={(e) => { e.preventDefault(); onPick(c); }}>
+                  <div className="pal-t"><span className="pal-n">/{c.name}</span><span className="cmd-tag">{c.source}</span></div>
+                  {c.description && <div className="pal-d">{c.description}</div>}
+                  {c.replaces && <div className="pal-w">Replaces karpathy.app's /{c.name}; rename it in .agents/skills/ to get both.</div>}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** A command name at the start of a message that the vault knows: `/query what is X` → `query`. */
+const sentCommand = (text: string, list: Command[] | null) => {
+  const name = /^\/([A-Za-z0-9][\w.:-]*)(?:\s|$)/.exec(text)?.[1];
+  return name && list?.some((c) => c.name === name) ? name : null;
+};
+
 function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) {
-  const { settings, setSettings, conflict, online, toast, paths, refreshFiles } = useApp();
+  const { settings, setSettings, conflict, online, toast, paths, refreshFiles, commandsNonce } = useApp();
   const { chat, setChat, error, attach } = useChat(vaultId, chatId);
+  // The vault's commands, for the palette and the chips. Optional: without it the composer works as before.
+  const [commands, setCommands] = useState<Command[] | null>(null);
+  const loadCommands = useCallback(() => {
+    // A failed load counts as no commands, so the chip row's reserved space goes away.
+    api.commands(vaultId).then(setCommands).catch(() => setCommands((c) => c ?? []));
+  }, [vaultId]);
+  useEffect(() => { if (online) loadCommands(); }, [loadCommands, online, commandsNonce]);
+  const composer = useRef<HTMLTextAreaElement>(null);
+  const [paletteActive, setPaletteActive] = useState(0);
+  const [paletteClosed, setPaletteClosed] = useState<string | null>(null);
   // What the model reads (for the chips' warning) may have changed since the app loaded.
   useEffect(() => { api.settings().then(setSettings).catch(() => undefined); }, [setSettings]);
   const [text, setText] = useState('');
@@ -304,12 +356,54 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
     else if (r !== pending) setPending(r);
   }, [chat, pending]);
 
+  const query = paletteQuery(text);
+  const paletteItems = query !== null && commands && paletteClosed !== text ? filterCommands(commands, query) : [];
+  const paletteOpen = paletteItems.length > 0;
+  // A pulled skill shows without a reload: the list is reloaded each time the palette opens.
+  const paletteWanted = query !== null;
+  useEffect(() => { if (paletteWanted) loadCommands(); }, [paletteWanted, loadCommands]);
+  useEffect(() => setPaletteActive(0), [query]);
+  /** Puts `/name ` in front of the composer's text, focused, cursor at the end; sends nothing. */
+  const putCommand = (c: Command, rest: string) => {
+    const next = `/${c.name} ${rest}`;
+    setText(next);
+    requestAnimationFrame(() => {
+      const el = composer.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(next.length, next.length);
+    });
+  };
+  const onComposerKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (paletteOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const n = paletteItems.length;
+        setPaletteActive((i) => (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        putCommand(paletteItems[Math.min(paletteActive, paletteItems.length - 1)]!, '');
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setPaletteClosed(text);
+        return;
+      }
+    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
+  };
+
   const send = async () => {
     const t = text.trim();
     const sending = draftRef.current;
     if ((!t && !sending.chips.length) || busy || pending || uploading) return;
     setText('');
     setDraft({ chips: [], folder: null });
+    const cmd = sentCommand(t, commands);
+    if (cmd) recordCommand(vaultId, cmd);
     const attachments = sending.chips.map((c) => c.path);
     setPending({ text: t, attachments, userCount: userCount(chat), sent: false, ran: false });
     try {
@@ -337,6 +431,23 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
           {!chat && !error && <div className="day">Loading…</div>}
           {error && <div className="form-error">{error}</div>}
           {chat && !chat.messages.length && !pending && <div className="day">New chat · ask about this vault</div>}
+          {chat && !chat.messages.length && !pending && !!commands?.length && (
+            <div className="cmd-chips" data-testid="command-chips">
+              {chipCommands(commands, recentCommands(vaultId)).map((c) => (
+                <button key={c.name} className="cmd-chip" data-testid="command-chip" title={`${c.description ? `${c.description} — ` : ''}${sourceText(c)}`}
+                  onClick={() => putCommand(c, text)}>
+                  {c.source === 'app' && <img src="/icon-192.png" alt="" />}/{c.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* While the list loads (a fresh vault's first listing can take seconds), keep the chip row's space:
+              chips arriving late would otherwise grow the list and move it. */}
+          {chat && !chat.messages.length && !pending && commands === null && online && (
+            <div className="cmd-chips" aria-hidden="true" data-testid="command-chips-loading">
+              <span className="cmd-chip" style={{ visibility: 'hidden' }}>/</span>
+            </div>
+          )}
           {chat && turns(chat.messages).map((t) => <Message key={t.id} t={t} model={model} />)}
           {pending && (
             <div className="u pending" data-testid="chat-pending">
@@ -350,6 +461,7 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
         </div>
       </div>
       <div className="comp">
+        {paletteOpen && <Palette items={paletteItems} active={paletteActive} onPick={(c) => putCommand(c, '')} />}
         {(draft.chips.length > 0 || uploading > 0) && (
           <div className="achips" data-testid="attach-chips">
             {draft.chips.map((c) => <ChipView key={c.path} chip={c} model={model} onRemove={() => void removeChip(c)} />)}
@@ -358,10 +470,12 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
         )}
         <div className="inrow">
           {online && !conflict && <AttachButton testid="chat-attach" multiple up onFiles={(f, cam) => void addFiles(f, cam)} />}
-          <textarea data-testid="chat-composer" rows={1} placeholder={online ? 'Ask about your vault…' : 'Chat needs a connection'}
-            value={text} disabled={!online}
+          <textarea ref={composer} data-testid="chat-composer" rows={1} placeholder={online ? 'Ask about your vault…' : 'Chat needs a connection'}
+            value={text} disabled={!online} aria-label="Message"
+            aria-autocomplete="list" aria-controls={paletteOpen ? 'command-palette' : undefined}
+            aria-activedescendant={paletteOpen ? `cmd-${paletteItems[Math.min(paletteActive, paletteItems.length - 1)]!.name}` : undefined}
             onChange={(e) => { setText(e.target.value); e.target.style.height = ''; e.target.style.height = `${Math.min(120, e.target.scrollHeight)}px`; }}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} />
+            onKeyDown={onComposerKey} />
           {busy
             ? <button className="send stop" data-testid="chat-stop" aria-label="Stop" onClick={() => void stop()}><Icon n="stop_fill" size={16} /></button>
             : <button className="send" data-testid="chat-send" aria-label="Send" disabled={(!text.trim() && !draft.chips.length) || uploading > 0 || !online} onClick={() => void send()}><Icon n="arrow_up" size={20} /></button>}

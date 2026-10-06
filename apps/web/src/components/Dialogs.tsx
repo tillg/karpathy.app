@@ -1,7 +1,9 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { api, errorText } from '../lib/api';
 import { dismissReminder, reminderDue, type Dismissed } from '../lib/reminder';
 import { useApp } from '../store';
+import { Icon } from './Icon';
 
 const TABBABLE = 'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])';
 const tabbables = (root: HTMLElement) =>
@@ -86,6 +88,47 @@ export function Toast() {
   }, [toastMsg]);
   // Outside #root, which is inert while a dialog is open: toasts must still be announced.
   return createPortal(<div id="toast" className={on ? 'on' : ''} role="status" data-testid="toast">{toastMsg?.text}</div>, document.body);
+}
+
+/**
+ * After the automatic move to the `.agents` standard: what moved, what clashed, which files are now
+ * pasted into AGENTS.md (offered for deletion), and Review = the Changes view. Stays until dismissed.
+ */
+export function MoveNotice() {
+  const { agentsMove: m, dismissAgentsMove, activeId, setSection, setSidebarOpen, phone, setPhoneTab, setPhoneNote, refreshFiles, toast } = useApp();
+  const [deleted, setDeleted] = useState<string[]>([]);
+  useEffect(() => setDeleted([]), [m]);
+  if (!m || !activeId) return null;
+  const moved = [...m.moved, ...m.converted];
+  const review = () => {
+    setSection('changes');
+    setSidebarOpen(true);
+    if (phone) { setPhoneTab('changes'); setPhoneNote(false); }
+    dismissAgentsMove();
+  };
+  const remove = async (path: string) => {
+    try {
+      const f = await api.file(activeId, path);
+      await api.deleteFile(activeId, path, f.version);
+      setDeleted((d) => [...d, path]);
+      void refreshFiles();
+    } catch (e) { toast(errorText(e)); }
+  };
+  // Inside #app (not a portal): its position follows the layout (phone, tablet, wide).
+  return (
+    <div className="move-notice" role="status" data-testid="agents-move">
+      <div className="mn-head"><b>Moved to the .agents standard</b>
+        <button className="ib sm" aria-label="Dismiss" onClick={dismissAgentsMove}><Icon n="xmark" size={14} /></button>
+      </div>
+      {moved.length > 0 && <div>Skills now in <code>.agents/skills/</code>: {moved.join(', ')}</div>}
+      {m.instructions && <div>Rules now in <code>AGENTS.md</code>; <code>CLAUDE.md</code> points to it.</div>}
+      {m.skipped.length > 0 && <div className="mn-warn">not moved, name exists: {m.skipped.join(', ')}</div>}
+      {m.inlined.filter((p) => !deleted.includes(p)).map((p) => (
+        <div key={p}>now inside <code>AGENTS.md</code>: <code>{p}</code> <button className="link" onClick={() => void remove(p)}>Delete</button></div>
+      ))}
+      <div className="mn-acts"><span>Uncommitted until you commit.</span><button className="btn g" onClick={review}>Review</button></div>
+    </div>
+  );
 }
 
 export function StaleDialog() {

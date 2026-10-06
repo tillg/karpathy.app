@@ -5,7 +5,7 @@ import { useApp } from '../store';
 import { Admin } from './Admin';
 import { ChatPane } from './ChatPane';
 import { CommitDialog } from './CommitDialog';
-import { ReminderDialog, StaleDialog, Toast } from './Dialogs';
+import { MoveNotice, ReminderDialog, StaleDialog, Toast } from './Dialogs';
 import { Icon } from './Icon';
 import { NotePane } from './NotePane';
 import { Sidebar } from './Sidebar';
@@ -99,6 +99,7 @@ export function Shell() {
             ))}
           </nav>
         )}
+        <MoveNotice />
         <div id="scrim" className={!phone && !wide && (s.sidebarOpen || s.chatOpen) ? 'on' : ''}
           onClick={() => { s.setSidebarOpen(false); s.setChatOpen(false); }} />
       </div>

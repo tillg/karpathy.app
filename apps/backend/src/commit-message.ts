@@ -25,7 +25,12 @@ export class OpencodeCommitMessages implements CommitMessages {
     private readonly timeoutMs = TIMEOUT_MS,
   ) {}
 
-  async propose(vaultId: string) {
+  /** Marked as running, so a skill-list refresh (which ends every opencode session of the vault) waits. */
+  propose(vaultId: string) {
+    return this.vaults.proposing(vaultId, () => this.run(vaultId));
+  }
+
+  private async run(vaultId: string) {
     const { files, stat, diff } = await this.vaults.fullDiff(vaultId);
     const fallback = { message: fallbackMessage(files.length), fallback: true };
     if (files.length === 0 || this.vaults.harnessConfigIn(vaultId)) return fallback;

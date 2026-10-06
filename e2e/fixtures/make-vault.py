@@ -24,6 +24,10 @@ open(os.path.join(work, "Ideas.md"), "w").write("# Ideas\n\nBack to [[Home]].\n"
 # Required vault structure: wiki/ already counts as Wiki (case-insensitive); Sources/ needs a placeholder.
 os.makedirs(os.path.join(work, "Sources")); open(os.path.join(work, "Sources", ".gitkeep"), "w").close()
 open(os.path.join(work, "AGENTS.md"), "w").write("# Test vault\n\nThis is a throwaway test vault. Keep answers short.\n")
+# Already in the .agents standard, so opening the vault doesn't move anything (the agents move).
+open(os.path.join(work, "CLAUDE.md"), "w").write("@AGENTS.md\n")
+os.makedirs(os.path.join(work, ".agents", "skills", "hello"))
+open(os.path.join(work, ".agents", "skills", "hello", "SKILL.md"), "w").write("---\nname: hello\ndescription: Says hello to the user\n---\n\nGreet the user in one short sentence.\n")
 g = lambda *a: subprocess.run(["git", *a], cwd=work, check=True, capture_output=True)
 g("init", "-q", "-b", "main"); g("add", "-A"); g("-c", "user.name=seed", "-c", "user.email=s@s", "commit", "-qm", f"Seed {n} notes")
 subprocess.run(["git", "clone", "-q", "--bare", work, out], check=True)

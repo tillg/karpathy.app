@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -23,8 +24,8 @@ beforeAll(async () => {
 }, 90_000);
 afterAll(() => oc?.stop());
 
-async function setup() {
-  const remote = await makeRemote({ 'Home.md': '# Home\n', 'Other.md': 'other\n' }, { name: `v${Math.random().toString(36).slice(2, 7)}` });
+async function setup(files: Record<string, string> = {}) {
+  const remote = await makeRemote({ 'Home.md': '# Home\n', 'Other.md': 'other\n', ...files }, { name: `v${Math.random().toString(36).slice(2, 7)}` });
   const t = await makeApp(remote.remoteBase, { dirs: { config: join(base, `config-${Math.random()}`), vaults: vaultsDir } });
   await t.store.update((c) => { c.settings.model = DEAD_MODEL; });
   const harness = new OpencodeHarness(oc.url, oc.password);
@@ -456,5 +457,170 @@ describe('chat API against a real opencode container', () => {
     const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
     expect((await t.api.delete(`/vaults/${t.id}/chats/${chatId}`)).status).toBe(204);
     expect((await t.api.get(`/vaults/${t.id}/chats`)).body.map((c: { id: string }) => c.id)).not.toContain(chatId);
+  });
+});
+
+const helloSkill = { '.agents/skills/hello/SKILL.md': '---\nname: hello\ndescription: Says hello\n---\n\nHELLO-BODY for $ARGUMENTS. Run !`id -u` first.\n' };
+
+/** Text parts of the chat's first user message, as opencode stored them. */
+async function userParts(t: Awaited<ReturnType<typeof setup>>, chatId: string) {
+  const msgs = (await t.raw.session.messages({ directory: t.dir, sessionID: chatId })).data ?? [];
+  return (msgs.find((m) => m.info.role === 'user')?.parts ?? []).filter((p) => p.type === 'text') as { text: string; synthetic?: boolean }[];
+}
+
+describe('command turns', () => {
+  it('a /command turn stores the user text plus a synthetic part with the skill text', async () => {
+    const t = await setup(helloSkill);
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    expect((await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: '/hello world' })).status).toBe(202);
+    await waitIdle(t.chat, t.id, chatId);
+    const parts = await userParts(t, chatId);
+    expect(parts.filter((p) => !p.synthetic).map((p) => p.text)).toEqual(['/hello world']);
+    const hidden = parts.filter((p) => p.synthetic);
+    expect(hidden).toHaveLength(1);
+    expect(hidden[0]!.text).toContain('HELLO-BODY for world');
+    expect(hidden[0]!.text).toContain('!`id -u`');
+    expect(hidden[0]!.text).not.toMatch(/\b1000\b/);
+    const shown = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body.messages.find((m: { role: string }) => m.role === 'user');
+    expect(shown.parts.map((p: { text?: string }) => p.text)).toEqual(['/hello world']);
+  });
+
+  it('unknown /word is a plain turn', async () => {
+    const t = await setup(helloSkill);
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: '/etc/hosts is what?' });
+    await waitIdle(t.chat, t.id, chatId);
+    expect(await userParts(t, chatId)).toEqual([expect.objectContaining({ text: '/etc/hosts is what?' })]);
+    expect((await userParts(t, chatId))[0]!.synthetic).toBeFalsy();
+  });
+
+  it('a skill pulled from GitHub runs in the next turn', async () => {
+    const t = await setup(helloSkill);
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    // A first command turn lists the vault's commands (opencode caches the list, F7).
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: '/hello' });
+    await waitIdle(t.chat, t.id, chatId);
+    await t.remote.obsidianPush({
+      '.agents/skills/pulled/SKILL.md': '---\nname: pulled\ndescription: Pulled\n---\n\nPULLED-BODY\n',
+      '.claude/skills/moved/SKILL.md': '---\nname: moved\ndescription: Moved\n---\n\nMOVED-BODY\n',
+    });
+    for (const [cmd, body] of [['/pulled', 'PULLED-BODY'], ['/moved', 'MOVED-BODY']] as const) {
+      const c = (await t.api.post(`/vaults/${t.id}/chats`)).body.chatId;
+      await t.api.post(`/vaults/${t.id}/chats/${c}/prompt`, { text: cmd });
+      await waitIdle(t.chat, t.id, c);
+      expect((await userParts(t, c)).find((p) => p.synthetic)?.text).toContain(body);
+    }
+  });
+
+  it('a /research turn follows Web access like any turn', async () => {
+    const t = await setup();
+    await t.store.update((c) => { c.settings.webAccess = true; });
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: '/research the history of Testland' });
+    await waitIdle(t.chat, t.id, chatId);
+    expect((await userParts(t, chatId)).some((p) => p.synthetic)).toBe(true);
+    const rules = ((await t.raw.session.get({ directory: t.dir, sessionID: chatId })).data as { permission?: { permission: string; action: string }[] }).permission ?? [];
+    const last = (n: string) => rules.filter((r) => r.permission === n).at(-1)?.action;
+    expect({ websearch: last('websearch'), webfetch: last('webfetch') }).toEqual({ websearch: 'allow', webfetch: 'allow' });
+    expect((await userAgents(t.raw, t.dir, chatId)).at(-1)).toBe('vault');
+  });
+
+  it('a listing during a pull waits for it and shows the pulled skill', async () => {
+    const t = await setup(helloSkill);
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.map((c: { name: string }) => c.name)).not.toContain('pulled');
+    await t.remote.obsidianPush({ '.agents/skills/pulled/SKILL.md': '---\nname: pulled\ndescription: Pulled\n---\n\nP.\n' });
+    const release = await t.vaults.lock(t.id).acquireExclusive();
+    const listing = t.api.get(`/vaults/${t.id}/commands`).then((r) => r.body);
+    await new Promise((r) => setTimeout(r, 300));
+    await t.vaults.pullUnlocked(t.id);
+    release();
+    expect((await listing).map((c: { name: string }) => c.name)).toContain('pulled');
+  });
+
+  it('a background fetch does not block the refresh', async () => {
+    const t = await setup(helloSkill);
+    await t.api.get(`/vaults/${t.id}/commands`);
+    const release = t.vaults.lock(t.id).tryShared('fetch')!;
+    await mkdir(join(t.vaults.vaultRootDir(t.id), '.agents/skills/fetched'), { recursive: true });
+    await writeFile(join(t.vaults.vaultRootDir(t.id), '.agents/skills/fetched/SKILL.md'), '---\nname: fetched\ndescription: F\n---\n\nF.\n');
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.map((c: { name: string }) => c.name)).toContain('fetched');
+    release();
+  });
+
+  it('no refresh while a commit message is being proposed', async () => {
+    const t = await setup(helloSkill);
+    await t.api.get(`/vaults/${t.id}/commands`);
+    let finish!: () => void;
+    const proposing = t.vaults.proposing(t.id, () => new Promise<void>((r) => { finish = r; }));
+    await mkdir(join(t.vaults.vaultRootDir(t.id), '.agents/skills/during'), { recursive: true });
+    await writeFile(join(t.vaults.vaultRootDir(t.id), '.agents/skills/during/SKILL.md'), '---\nname: during\ndescription: D\n---\n\nD.\n');
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.map((c: { name: string }) => c.name)).not.toContain('during');
+    finish();
+    await proposing;
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.map((c: { name: string }) => c.name)).toContain('during');
+  });
+
+  it('no refresh while a turn holds the lock', async () => {
+    const t = await setup(helloSkill);
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.map((c: { name: string }) => c.name)).toContain('hello');
+    const release = await t.vaults.lock(t.id).acquireShared('turn');
+    await mkdir(join(t.vaults.vaultRootDir(t.id), '.agents/skills/later'), { recursive: true });
+    await writeFile(join(t.vaults.vaultRootDir(t.id), '.agents/skills/later/SKILL.md'), '---\nname: later\ndescription: Later\n---\n\nLater.\n');
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.map((c: { name: string }) => c.name)).not.toContain('later');
+    release();
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.map((c: { name: string }) => c.name)).toContain('later');
+  });
+});
+
+describe('GET /vaults/:id/commands', () => {
+  it('lists the commands sorted, without templates; 409 unsafe-config; 401 without the token', async () => {
+    const t = await setup({ ...helloSkill, '.agents/skills/ask/SKILL.md': '---\nname: ask\ndescription: Asks\n---\n\nAsk.\n' });
+    const r = await t.api.get(`/vaults/${t.id}/commands`);
+    expect(r.status).toBe(200);
+    const vault = r.body.filter((c: { source: string }) => c.source === 'vault');
+    expect(vault).toEqual([
+      { name: 'ask', description: 'Asks', source: 'vault' },
+      { name: 'hello', description: 'Says hello', source: 'vault' },
+    ]);
+    expect(r.body.every((c: object) => !('template' in c))).toBe(true);
+    const request = (await import('supertest')).default;
+    expect((await request(t.app).get(`/api/vaults/${t.id}/commands`)).status).toBe(401);
+    const u = await setup({ '.opencode/x.txt': 'x' });
+    const bad = await u.api.get(`/vaults/${u.id}/commands`);
+    expect(bad.status).toBe(409);
+    expect(bad.body.code).toBe('unsafe-config');
+  });
+
+  it('a vault skill that replaces an app skill says so', async () => {
+    const t = await setup({ '.agents/skills/research/SKILL.md': '---\nname: research\ndescription: VAULT\n---\n\nMine.\n' });
+    const research = (await t.api.get(`/vaults/${t.id}/commands`)).body.filter((c: { name: string }) => c.name === 'research');
+    expect(research).toEqual([{ name: 'research', description: 'VAULT', source: 'vault', replaces: true }]);
+    const u = await setup();
+    const plain = (await u.api.get(`/vaults/${u.id}/commands`)).body.find((c: { name: string }) => c.name === 'research');
+    expect(plain).toMatchObject({ source: 'app' });
+    expect(plain.replaces).toBeUndefined();
+  });
+
+  it('a /research turn in a vault with its own research skill sends the vault\'s text', async () => {
+    // opencode's pick on a name clash isn't stable (seen: a skill pulled in after the first listing loses);
+    // the backend always takes the vault's.
+    const t = await setup();
+    await t.api.get(`/vaults/${t.id}/commands`);
+    await t.remote.obsidianPush({ '.agents/skills/research/SKILL.md': '---\nname: research\ndescription: VAULT\n---\n\nVAULT-RESEARCH-BODY\n' });
+    await t.api.post(`/vaults/${t.id}/pull`);
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.filter((c: { name: string }) => c.name === 'research'))
+      .toEqual([{ name: 'research', description: 'VAULT', source: 'vault', replaces: true }]);
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: '/research x' });
+    await waitIdle(t.chat, t.id, chatId);
+    const hidden = (await userParts(t, chatId)).find((p) => p.synthetic)?.text ?? '';
+    expect(hidden).toContain('VAULT-RESEARCH-BODY');
+    expect(hidden).not.toContain('Research a topic on the web');
+  });
+
+  it('moved skills show', async () => {
+    const t = await setup({ '.claude/skills/x/SKILL.md': '---\nname: x\ndescription: X\n---\n\nX.\n' });
+    await t.api.post(`/vaults/${t.id}/open`);
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.map((c: { name: string }) => c.name)).toContain('x');
   });
 });

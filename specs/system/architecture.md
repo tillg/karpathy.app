@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-05
+edited: 2026-10-06
 ---
 
 # Architecture: karpathy.app
@@ -84,6 +84,8 @@ flowchart LR
   puts `![[name]]` on its own line as one isolated undo step and returns false once the editor is gone) and
   `setDoc(text)` (the reload's minimal change, applied at once). A `domEventHandlers` drop handler takes file drops
   (`posAtCoords`, outline class `cm-drop-target`) and leaves text drags to CodeMirror. See [Uploads](#uploads).
+- **Commands** (`lib/commands.ts`, `ChatPane`, `Dialogs.tsx` `MoveNotice`): the command palette, command chips and the
+  agents-move notice; see [Commands](#commands) and [The agents move](#the-agents-move).
 - **Media** (`lib/media.ts`, `lib/embed.ts`, shared `MEDIA` table): see [Media embeds](#media-embeds).
 - **Mode preference** (`store.tsx`): `mode` is read from and written to localStorage `karpathy.mode`; `openNote` never
   changes it. An in-memory `places` map (`vault\0path` → scroll top, top line, mode) is filled when a note is left
@@ -128,16 +130,18 @@ on its own ([deployment.md › Website](deployment.md#website)).
 | `main.ts` | Reads env and `*_FILE` secrets, wires the services, graceful shutdown. |
 | `app.ts` | Express routes under `/api`, error mapping, NDJSON writer (15 s keepalive). `/healthz` outside auth; `/api/health` also reports the release version (`APP_VERSION`, `dev` for local builds), which the settings dialog shows next to the PWA's own. |
 | `auth.ts` | Bearer token check (hashed, constant-time compare). |
-| `vaults.ts` | Vault lifecycle (add with preflight, clone, patch, remove), file API, search, status, events, commit/push/discard, conflict resolution; per-vault runtime state; per-vault token access check (`checkAccess`). Reads the GitHub token through a getter per git operation. |
+| `vaults.ts` | Vault lifecycle (add with preflight, clone, patch, remove), file API, search, status, events, commit/push/discard, conflict resolution; per-vault runtime state; per-vault token access check (`checkAccess`). Reads the GitHub token through a getter per git operation. Runs the agents move after clone, pull and open (`agentsMove`), keeps the last result (`lastAgentsMove`) and counts running commit-message proposals (`proposing`, `isProposing`). |
+| `agents-standard.ts` | The agents move: `scanLegacy`, `migrateToAgents`, `restageSkillLink` ([The agents move](#the-agents-move)); also `readFrontmatter`. |
 | `preflight.ts` | `preflight()`: the attach check ([Attach preflight](#attach-preflight)); `REQUIRED_FOLDERS`. |
 | `github-token.ts` | `GitHubToken`: the server-wide token (stored over secret), its source, `GET /user` identity check, redaction of every value seen. |
-| `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure, commit, push, conflict sides and resolution; hardened `runGit`. |
+| `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure, commit, push, conflict sides and resolution; hardened `runGit`. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
 | `files.ts`, `paths.ts` | Tree listing, versions (content hash), ripgrep search (also `filesMentioning` for the move's link scan); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
-| `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`, and `fetch` through `tryShared`, which never queues; exclusive: every other git operation). |
+| `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`, and `fetch` and `refresh` through `tryShared`, which never queues; exclusive: every other git operation). `fetch` and `refresh` are quiet: they don't change `busy`. `holds(label)` tells whether a shared holder with that label exists. |
 | `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events. |
-| `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. |
-| `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`. |
-| `commit-message.ts` | Proposes commit messages with a throwaway, tool-less session. |
+| `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. Also the command list (`commands()`, name-clash rule, skill stamp and refresh) and command turns (`instructionsFor`) ([Commands](#commands)). |
+| `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface (`commands(dir)`, `refresh(dir)` next to prompt, models and events) and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`; `ToolCall.url` is set for `webfetch` and `open_url`. |
+| `harness/command.ts` | Pure: `parseCommand`, `expandCommand`, `withoutBaseDir`, `commandInstructions`. |
+| `commit-message.ts` | Proposes commit messages with a throwaway, tool-less session; marked as a running proposal so a skill refresh doesn't cut it off. |
 | `config-store.ts` | Atomic, serialized writes to `/config/config.json`; also holds the GitHub token set in the app. |
 
 ### opencode (`deploy/opencode`)
@@ -148,8 +152,14 @@ agents `vault` (edits allowed except `.git` and harness config), `vault-readonly
 (`websearch` and `webfetch` are switched on per turn by the backend, see [Web access](#web-access));
 reading `*.env` denied; snapshots, sharing and auto-update off. The image sets `OPENCODE_ENABLE_EXA=true` and
 `OPENCODE_WEBSEARCH_PROVIDER=exa`; its entrypoint exports the `opencode_password` secret as
-`OPENCODE_SERVER_PASSWORD` (HTTP Basic on every route, health included). The image has no git binary, so opencode can't detect
+`OPENCODE_SERVER_PASSWORD` (HTTP Basic on every route, health included). The image sets `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`:
+opencode then reads a vault's skills from `.agents/skills/` only, and still loads `CLAUDE.md` and `AGENTS.md` (`AGENTS.md`
+first). The image has no git binary, so opencode can't detect
 a worktree and stays confined to the session directory (the vault root).
+
+The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `open_url`),
+`plugins/` (`known-url`), `lib/` (helpers) and `skills/` (the **app skills**, today `research`). The bake step waits for
+both tools in the tool ids and for the plugin before it makes the dir read-only.
 
 **Custom tool `open_note`** (`deploy/opencode/tools/open_note.ts`, path check in `deploy/opencode/lib/resolve-note.ts`):
 checks that `path` resolves inside `context.directory`, exists, is a file and has no dot segment, then returns
@@ -175,12 +185,21 @@ sequenceDiagram
   S->>A: wide: now · phone / tablet: on idle · editing: toast instead
 ```
 
-**Plugin `known-url`** (`deploy/opencode/plugins/known-url.ts`, pure check in `deploy/opencode/lib/known-url.ts`,
-baked into the same global config dir): a `tool.execute.before` hook. For `webfetch` it loads the session's messages
-through opencode's plugin client, collects user text and completed tool outputs, and throws "URL not in this chat:
-paste it into the chat first" unless the URL is known (`extractUrls`, `isKnownUrl`). For `webfetch` and `websearch`
-it counts the calls after the last user message and throws once the per-turn cap is reached (`capFromEnv`:
-`WEB_FETCH_CAP` / `WEB_SEARCH_CAP`, default 20). Stateless, so it survives an opencode restart.
+**Custom tool `open_url`** (`deploy/opencode/tools/open_url.ts`, check in `deploy/opencode/lib/offer-url.ts`): args `{ url }`;
+refuses anything but `http:`/`https:` ("Only http(s) pages can be opened"), then returns `offered <url>`. It fetches
+nothing and needs no Web access (the server makes no request). Baked like `open_note`, allowed for `vault` and
+`vault-readonly` (`commit-message` keeps `"*": "deny"`). The web app turns the completed call into an Open chip ([Link
+offers](#link-offers)).
+
+**Plugin `known-url`** (`deploy/opencode/plugins/known-url.ts`, pure decision in `deploy/opencode/lib/known-url.ts`,
+baked into the same global config dir): a `tool.execute.before` hook for `webfetch`, `websearch` and `open_url`
+(`GUARDED_TOOLS`). It loads the session's messages through opencode's plugin client (failing closed without them) and
+throws what `guardWebCall(tool, args, messages, caps)` returns, or lets the call run on `null`. `guardWebCall`: for `webfetch`
+and `open_url` it collects user text and completed tool outputs and refuses "URL not in this chat: paste it into the
+chat first" unless the URL is known (`extractUrls`, `isKnownUrl`); for `webfetch` and `websearch` it counts the calls
+after the last user message and refuses once the per-turn cap is reached (`capFromEnv`: `WEB_FETCH_CAP` /
+`WEB_SEARCH_CAP`, default 20). `open_url` has no cap: the user taps each chip. Stateless, so it survives an opencode
+restart.
 
 ### Egress proxy (`deploy/egress`)
 
@@ -308,6 +327,167 @@ sequenceDiagram
 - **Chips:** `toolLabel(call)` (`lib/chat.ts`) → `searched the web: "<query>"` and `fetched <host><path>` (path cut at
   60 characters, full URL as tooltip). A completed fetch chip with an `http(s)` URL is a link (new tab, `noopener
   noreferrer`); a search chip is a label; a refused fetch shows the guard's message.
+
+## Commands
+
+A **command** is a skill the chat starts by name (`/name args`). The backend asks opencode for the vault's skills,
+the web app offers them in a palette and as chips, and a command turn is an ordinary prompt with the skill's text added
+as a hidden part.
+
+```mermaid
+sequenceDiagram
+  participant W as web ChatPane
+  participant B as backend chat.ts
+  participant O as opencode
+  W->>B: GET /vaults/:id/commands
+  B->>O: GET /command + GET /skill (directory=/vaults/<id>)
+  O-->>B: built-ins + skills (with template, location)
+  B-->>W: [{name, description, source, replaces?}] (skills only)
+  W->>B: POST /chats/:chatId/prompt {text: "/query what is RAG?"}
+  B->>B: queue, pull, agents move, refresh opencode if a skill file changed
+  B->>O: GET /command (find "query")
+  B->>O: promptAsync(parts: [text "/query what is RAG?",<br/>text synthetic "…query instructions…"], tools)
+  O-->>B: events (reads, reply)
+  B-->>W: NDJSON as for any turn (synthetic part dropped by map.ts)
+```
+
+- **Route `GET /vaults/:id/commands`** → `ChatService.commands`: same checks as the chat routes (`409 not-ready`,
+  `409 unsafe-config`, `503` when opencode is down). Returns `Command[]` (`@karpathy/shared`: `name`, `description`,
+  `source: 'vault' | 'app'`, `replaces?: true`), vault skills first, each group A–Z; the template stays on the server.
+- **`Harness.commands(dir)`** (`OpencodeHarness`): `command.list` plus `app.skills` for the same directory; keeps entries
+  with `source === 'skill'` that aren't in `HIDDEN_COMMANDS` (`customize-opencode`; the built-ins `init` and `review` aren't
+  skills). A skill is an **app skill** when its `location` lies under `/opt/opencode-config/`, else a **vault skill**.
+- **Name clash.** opencode's pick between a vault skill and an image skill of the same name isn't stable, so
+  `ChatService.vaultCommands` decides: the app skills' names come from the list for `/vaults` itself (which never holds vault
+  skills), and for such a name the vault skill is read from `.agents/skills/<folder>/SKILL.md` (frontmatter `name`,
+  `description`, body plus a base-directory line) and listed with `replaces: true`; command turns use that text too. The AI's
+  own `skill` tool may still load either.
+- **Skill refresh.** opencode caches a directory's skill list until the instance is disposed, so a skill that arrived with
+  a pull would never show. `Harness.refresh(dir)` calls `instance.dispose` and returns once the directory's event
+  subscriptions have reconnected (at most 5 s; the subscription treats the disposal as no outage). The **skill stamp** per
+  vault is the sorted `path:mtime:size` of every `SKILL.md` under `.agents/skills/` in the vault root and each folder up to
+  the clone root (in memory; the first check after a start counts as changed). When it differs from the last one seen,
+  the backend refreshes, but never while a turn runs, because disposing ends the directory's sessions:
+  - in `kick()`, inside the exclusive-lock section right after the pull and the agents move, unless a commit-message
+    proposal runs for the vault (`Vaults.isProposing`; proposals take no lock);
+  - in `GET /commands`, only while the vault is idle (`busy === 'none'`, no running or adopted turn, no proposal), holding the
+    lock shared under the label `refresh` (`tryShared`, quiet) so no turn can start meanwhile. A pull or commit that is
+    running is waited for first (at most 10 s, without queueing for the lock). Otherwise the cached list is returned.
+  - `Vaults.open` waits up to 5 s for a `refresh` holder before its `tryExclusive` pull, so the pull of the same app load
+    doesn't skip.
+- **Command turns.** `harness/command.ts`: `parseCommand(text)` needs `/` and a name `[A-Za-z0-9][\w.:-]*` at the start, then
+  whitespace or the end. `expandCommand(template, args)` follows opencode's rules (`$1…$N`, the highest taking the rest;
+  `$ARGUMENTS`), but appends nothing when there is no placeholder, because the user's message already carries the arguments;
+  `` !`…` `` and `@file` stay literal. `commandInstructions` prefixes a short header ("The user started the command
+  `/<name>`…; paths to notes are relative to the vault root") and, for an app skill, `withoutBaseDir` drops the base-directory
+  line, since that directory lies outside the vault. `PromptInput.instructions` becomes a second text part with
+  `synthetic: true` (it reaches the model; `map.ts` drops synthetic parts from what the app shows, so the bubble is what the
+  user typed). In `kick()`, only a name in the vault's list makes a command turn; anything else, `/etc/hosts is…`
+  included, is a plain turn. A failing `commands()` fails the turn like a failing prompt. The queue still stores only
+  `{ chatId, text }`, so a queued command survives a restart.
+- **Never opencode's command endpoint** (`POST /session/:id/command`): it replaces `` !`cmd` `` in a skill with the output of
+  `cmd`, run through a shell with no permission check, resolves `@file` references, and takes no per-turn `tools` map
+  ([security.md](security.md#confining-the-ai), [ADR 0004](../../docs/adr/0004-commands-as-prompts-not-command-endpoint.md)).
+- **Web: `lib/commands.ts`** (pure): `paletteQuery(text)` (the partial name while the text is `/` plus name characters, else
+  `null`), `filterCommands` (case-insensitive; vault skills before app skills, prefix matches before other matches, each
+  A–Z), `chipCommands(list, recent, 4)` (recent names still in the list first, then A–Z), `recentCommands` /
+  `recordCommand` (localStorage `karpathy.recentCommands.<vaultId>`, at most 10 names, every access in `try/catch`).
+  `ChatPane` › `Conversation` loads the list on mount, when the app reports an agents move (`commandsNonce`) and each time
+  the palette opens; the list is optional: if the GET fails, palette and chips don't render and sending never waits for it.
+  - **Palette:** a `listbox` above the composer while `paletteQuery(text) !== null`, grouped "This vault" and "karpathy.app",
+    each row `/name`, a `vault`/`app` tag and the description; a `replaces` row adds "Replaces karpathy.app's /name; rename
+    it in .agents/skills/ to get both." The textarea keeps focus (`aria-activedescendant`); ↑/↓, Enter or Tab pick, Escape
+    closes, a row is picked on pointer-down. Picking sets the text to `/name ` and sends nothing.
+  - **Chips:** up to four `/name` buttons in an empty chat (no messages, nothing pending); tooltip = description plus "from
+    this vault" / "built into karpathy.app"; an app skill's chip has the app icon. A tap puts `/name ` in front of the
+    composer's text and focuses it. `recordCommand` runs on every send that starts with a listed command.
+
+### The `research` skill
+
+`deploy/opencode/skills/research/SKILL.md`, copied to `/opt/opencode-config/opencode/skills/` by the `Dockerfile`: an app
+skill listed in every vault unless the vault has a `research` skill of its own. It is self-contained (its base directory is
+outside the vault, where `external_directory: deny` blocks reads) and the backend treats it like any command: no special
+tools map, no special rule. What it tells the AI:
+
+| Part | Instructions |
+|---|---|
+| Conventions | The vault's own instructions (`AGENTS.md`, `CLAUDE.md`, an ingest skill) decide folder, name and frontmatter of sources and pages; a source file is always a summary with short quotes. |
+| Plan turn | Read the wiki index and topic pages; with web tools, scout at most 3 searches and 2 fetches and save nothing; without them, say Web access must be turned on. Write `Research/<YYYY-MM-DD>-<slug>.md` (topic, 3–6 sub-questions as `- [ ]`, what the wiki covers, budget of 8 sources per run turn) and end with "Edit the note if you like, then reply **go**." In conflict, put the plan in the reply. |
+| Run turn | Re-read the plan note; per open sub-question at most 2 searches; skip URLs already in `Sources/`; fetch, save `Sources/<date>-<slug>.md` (`type: source`, `url`, `title`, `fetched`); at most 8 new sources; write or update cited wiki pages (`sources:` and `[[Sources/…]]`), update index and log, tick off the note. |
+| Stop and ask | At a "limit reached" error or after 8 sources: list the open questions and ask for "continue". |
+| Resume | `/research <plan note or matching topic>` skips the plan and runs on the note's open questions, in any chat. |
+
+The plan step, the scouting budget and the stop are instructions to the model. The hard bounds are the per-turn web caps
+and the user's reply before each block; no money or token cap exists.
+
+## Link offers
+
+```mermaid
+sequenceDiagram
+  participant AI
+  participant G as plugin known-url
+  participant T as tool open_url
+  participant W as web ChatPane
+  actor U as User
+  AI->>G: open_url {url}
+  G->>G: guardWebCall: known URL?
+  alt unknown
+    G-->>AI: error "URL not in this chat: paste it into the chat first"
+  else known
+    G->>T: run
+    T-->>AI: "offered https://…"
+    T-->>W: tool part (url) → Open chip
+    U->>W: tap
+    W->>U: new tab (user's browser, not the egress proxy)
+  end
+```
+
+- **Mapping:** `map.ts` sets `ToolCall.url` for `open_url` as for `webfetch`; `opens` stays `false`, because `opens` drives the
+  automatic note opening and a link offer never opens by itself (browsers block `window.open` without a tap, and the tap is the
+  user's check of the host on the chip).
+- **Web:** `toolLabel` → `open <host><path…>`; `toolHref` returns the URL of a completed `open_url` too. `ToolChip` renders it as
+  an `<a target="_blank" rel="noopener noreferrer">` action chip (arrow icon, full URL as tooltip). A refused one is the usual error
+  chip; tapping it shows "URL not in this chat: …".
+
+## The agents move
+
+The app moves a vault to the `.agents` standard (`AGENTS.md`, `.agents/skills/`) by itself; see
+[domain.md](domain.md#agents-move) for the rules and the user-facing result.
+
+- **When:** after every successful clone or pull (the pull before each turn included) and on `POST /vaults/:id/open`
+  (`Vaults.agentsMove`), under the exclusive lock the caller holds, so no turn runs. Skipped in conflict (it would only add to
+  it); it runs on the next pull or open after the conflict is resolved. It never throws into the caller (failures are logged).
+- **`scanLegacy(vaultRoot)`:** names in `.claude/skills/*/` (directories only; a plain file `.claude/skills` is the link stub and
+  means "already moved"), `.claude/commands/*.md`, and whether `CLAUDE.md` is anything but `@AGENTS.md` (or `AGENTS.md` exists
+  without a `CLAUDE.md`). Vault root only. The scan left after a move is remembered per vault (`legacySeen`), so clashes that
+  haven't changed don't repeat the move or the notice on every pull.
+- **`migrateToAgents(repo)`** never overwrites and commits nothing:
+  - `CLAUDE.md` → `AGENTS.md`, unless `AGENTS.md` exists or `CLAUDE.md` mixes `@AGENTS.md` with other lines (clash: both stay,
+    `AGENTS.md` goes into `skipped`). Each line that is only `@<path>` is replaced by that file's content, one level deep,
+    relative to the vault root, only for an existing file inside it that is not gitignored (`AGENTS.md` gets committed; a
+    path outside, a missing or an ignored file stays as text). Then `CLAUDE.md` becomes `@AGENTS.md`. The pasted files stay
+    and are returned as `inlined`. `AGENTS.md` without `CLAUDE.md` gets `CLAUDE.md` = `@AGENTS.md`;
+  - each `.claude/skills/<n>/` → `.agents/skills/<n>/` (whole folder), unless that exists (`skipped`);
+  - each `.claude/commands/<n>.md` → `.agents/skills/<n>/SKILL.md` with `name` and `description` (its own, else its first line,
+    at most 200 characters), other frontmatter dropped, body unchanged; `.claude/commands/` is removed only when empty;
+  - when anything went into `.agents/skills/` and `.claude/skills` has no content left, the **skill link** replaces it. The
+    clones run with `core.symlinks=false`, so the backend writes the stub file `.claude/skills` (content `../.agents/skills`,
+    **no trailing newline**) and stages it as a link with `Repo.stageSymlink`: `git rm -r --cached`, then `git update-index
+    --add --cacheinfo 120000,<blob>,.claude/skills`. The commit's `git add -A` keeps the index mode for the stub, so the
+    commit carries a real symlink. Staging it is the only index write outside a commit. A pull resets the index and stashes the
+    work tree, so `restageSkillLink` stages the link again whenever the stub is there but the index lost it;
+  - returns `AgentsMove { moved, converted, instructions, inlined, skipped }` (`@karpathy/shared`).
+- **Event:** a non-empty result is emitted as the vault event `{ type: 'agents-move', at, …AgentsMove }` on
+  `GET /vaults/:id/events` and kept as the vault's last move (in memory), which a client that connects later receives before
+  the live events. `at` identifies the move.
+- **Web:** the store shows each move once (`karpathy.shownMoves` in localStorage, keyed `<vault>:<at>`, last 50), sets
+  `agentsMove`, bumps `commandsNonce` and refreshes files and changes. `MoveNotice` (`Dialogs.tsx`, inside `#app`) shows
+  "Moved to the .agents standard": skills now in `.agents/skills/`, rules now in `AGENTS.md`, "not moved, name exists: …", each
+  pasted file with a **Delete** link (`DELETE /file`), and **Review** (the Changes view). It stays until dismissed or the
+  vault changes.
+- **Effects:** the move changes `SKILL.md` stamps, so the next command list refreshes opencode. The file writes reach the
+  editor through the watcher's `files-changed` events like any change on disk. A moved skill folder shows as one delete plus
+  one add per file in the uncommitted changes.
 
 ## Media embeds
 
@@ -523,6 +703,9 @@ sequenceDiagram
 | localStorage `karpathy.chips:<vault>:<chat>` | Unsent chat attachments (path, version, type, size) and their source folder. | web |
 | Volume `caddy-data` | TLS certificates and keys. | proxy |
 | Browser localStorage | Token, local drafts, tree expansion state, main pane, mode preference (`karpathy.mode`). | web |
+| localStorage `karpathy.recentCommands.<vault>`, `karpathy.shownMoves` | The last 10 commands started in a vault (chip order); the agents moves already announced (last 50). | web |
+| Backend memory | Per vault: the skill stamp of the last opencode refresh, the last agents move, the skill-link scan after it, running commit-message proposals. Lost on restart (the first check then refreshes). | backend |
+| opencode image `/opt/opencode-config/opencode/` | Tools `open_note` and `open_url`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
 | Browser memory | Object URLs of media (≤ 200 MB), places of notes seen this session. Lost on reload. | web |
 | Service worker cache `vault-api` | Vault list, file trees, opened notes (for offline reading); cleared on 401. | web |
 
@@ -622,6 +805,25 @@ The ones that shape the whole system:
   tool part (`ToolCall.opens`), not a new event type, so replay and reattach follow the same rules as every chip. The
   tool is baked into the image; a backend MCP endpoint was rejected because it would need an auth exemption or the
   bearer token inside opencode.
+- **Commands are skills, sent as prompts** ([ADR 0004](../../docs/adr/0004-commands-as-prompts-not-command-endpoint.md)):
+  opencode's command endpoint runs shell snippets from skill files with no permission check and can't carry the per-turn
+  tools map, so the skill text goes as a hidden (`synthetic`) part of the normal `promptAsync` call and keeps every guard. A
+  hidden part with "call the skill tool" was rejected (small models often don't), and so was scanning `.claude/skills` in the
+  backend (re-implements opencode's discovery).
+- **Vault skill beats app skill, decided by the backend:** opencode's pick on a clash isn't stable, so the backend reads the
+  vault's `SKILL.md` itself for the list and for command turns.
+- **The vault follows the `.agents` standard,** enforced with the narrow `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`, not the broad
+  flag, which would also drop `CLAUDE.md` for vaults not yet moved. Palette and the AI's `skill` tool then see the same
+  folder. The app moves vaults there automatically (uncommitted, never overwriting, notice + review) and keeps Claude Code on
+  the Mac working with `CLAUDE.md` = `@AGENTS.md` and a staged symlink `.claude/skills → ../.agents/skills`. Imports are pasted
+  into `AGENTS.md` because opencode doesn't expand `@path`. Only `.claude/` is migrated.
+- **A chip fills the composer and sends nothing:** a bare `/research` would get its topic in a later plain turn, outside the
+  command.
+- **Research is a skill in the image, not backend code,** and its plan step is an instruction, not a rule: the plan is better
+  after a little scouting, and the web caps stay the hard bound. Rejected: a backend rule for a tool-less plan turn, an
+  approval dialog (needs `ask`), a background job, GPT Researcher as an MCP server (a new service and outbound path).
+- **`open_url` is a check-only server tool; the tab opens on the user's tap** (browsers block `window.open` without one).
+  It works with Web access off, since the server makes no request.
 - **Swapping main and side column is CSS only** (`order`/`flex`): a keyed reorder in JSX keeps component state but
   moves DOM nodes, which drops keyboard focus and resets scroll positions. Cost: Tab order doesn't follow the visual
   order when the chat is in main.
@@ -691,6 +893,11 @@ The ones that shape the whole system:
   it. Both models must be in the Ollama volume (CI pulls both into `ollama-models`); a missing model fails the test
   fast as *inconclusive: no tool call*. The test container declares image input on the not-pulled `DEAD_MODEL_2`, so `modelInput` is tested without
   a model run.
+- **Command and move tests:** default tier: `command.test.ts` (parse, expand; a `` !`id -u` `` stays literal),
+  `agents-standard.test.ts` (scan, move, convert, clashes, inlined imports, the staged link), `api.test.ts` (the move on open and pull, the commit carrying a real symlink, the
+  `agents-move` event), `harness-map.test.ts`, `chat.test.ts` (command turns, skill refresh), `known-url.test.ts` (`guardWebCall`),
+  `opencode-tools.test.ts` (`open_url` against the real container), web `commands.test.ts`; `@llm`: `/query`, the research
+  plan and run turns, resume, a link offer; e2e `commands.spec.ts` (palette, chips, move notice) and `ai-open-url.spec.ts`.
 - **Upload tests:** default tier: the upload route, collisions, refusals, the move and its link rewrite, source
   folders, prompts with attachments (a stored opencode user message with a file part is the
   `opencode-user-file.json` fixture); `@llm`: a vision model reads `word.png` ("KIWI"). e2e `attach.spec.ts`: photo

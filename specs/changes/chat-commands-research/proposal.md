@@ -1,7 +1,7 @@
 ---
 feature: chat-commands-research
 title: "Proposal: chat commands, deep research and web links"
-status: proposed
+status: applying
 order: 1
 created: 2026-10-04
 edited: 2026-10-05
@@ -108,8 +108,8 @@ flowchart LR
   also seen by Claude Code on the Mac); app skills ship with karpathy.app (every vault, app releases only,
   not on the Mac). The palette groups them under "This vault" and "karpathy.app" with a tag per row; chips
   say it in their tooltip and app chips carry an app icon.
-- **Same name: the app skill wins, and says so.** A vault skill named like an app skill (`research`) never
-  runs; the palette warns "Hides this vault's `/research`: rename it".
+- **Same name: the vault skill wins, and says so.** A vault skill named like an app skill (`research`)
+  replaces it in that vault; the palette notes "Replaces karpathy.app's `/research`".
 - **opencode's own built-ins are hidden.** `init` (writes an `AGENTS.md` for code repos), `review`
   (needs git and subagents, both unavailable) and `customize-opencode` (edits harness config, which is
   denied) never show.

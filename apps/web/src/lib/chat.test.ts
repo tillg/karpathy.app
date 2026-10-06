@@ -223,6 +223,17 @@ describe('toolLabel / toolHref', () => {
     expect(toolLabel(call({ tool: 'grep', status: 'error', title: 'x' }))).toBe('grep x');
   });
 
+  it('open_url label is `open <host/path>`, href only when completed and http(s)', () => {
+    const offer = (o: Partial<ToolCall>) => call({ tool: 'open_url', url: 'https://example.com/', ...o });
+    expect(toolLabel(offer({}))).toBe('open example.com/');
+    expect(toolLabel(offer({ url: 'https://en.wikipedia.org/wiki/Foo?x=1' }))).toBe('open en.wikipedia.org/wiki/Foo?x=1');
+    expect(toolLabel(offer({ status: 'error', error: 'URL not in this chat' }))).toBe('open_url https://example.com/');
+    expect(toolHref(offer({}))).toBe('https://example.com/');
+    expect(toolHref(offer({ status: 'running' }))).toBeNull();
+    expect(toolHref(offer({ status: 'error' }))).toBeNull();
+    expect(toolHref(offer({ url: 'javascript:alert(1)' }))).toBeNull();
+  });
+
   it('toolHref: the URL for a completed http(s) fetch, else null', () => {
     expect(toolHref(call({ url: 'https://example.com/a' }))).toBe('https://example.com/a');
     expect(toolHref(call({ url: 'http://example.com/a' }))).toBe('http://example.com/a');

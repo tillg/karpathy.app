@@ -1,7 +1,7 @@
 ---
 feature: chat-commands-research
 title: "Architecture: chat commands, deep research and web links"
-status: proposed
+status: applying
 order: 3
 created: 2026-10-04
 edited: 2026-10-05
@@ -46,7 +46,7 @@ From the source at tag `v1.18.25` (`anomalyco/opencode`, commit `cb7d8b2`, paths
 | # | Fact | Evidence |
 |---|---|---|
 | F1 | **Skills appear in `GET /command`.** The list holds the built-ins `init` and `review` (`source: "command"`, `review` with `subtask: true`), then config commands and MCP prompts, then one entry per skill with `source: "skill"`, `hints: []` and a `template`. A command of the same name wins over a skill. `GET /skill` lists the same skills separately (with `location`, `content`); we don't need it. | `command/index.ts` (`for (const item of yield* skill.all())`); container: `my-life-wiki` → `init, review, customize-opencode, archify`; `mein-llm-wiki` → `…, query`; `small` → only the three built-ins |
-| F2 | **The list is per directory.** `?directory=/vaults/<id>` returns that vault's skills: `.claude/skills/**/SKILL.md` and `.agents/skills/**/SKILL.md` walking up from the directory, the same in `$HOME` (empty for us), then `{skill,skills}/**/SKILL.md` in every config dir, the global one (`/opt/opencode-config/opencode`) included. A later skill of the same name replaces an earlier one, so **a skill in the image wins over a vault skill** of that name. | `skill/index.ts` lines 180–230 (scan order), 125–134 (`state.skills[name] =` after a duplicate warning) |
+| F2 | **The list is per directory.** `?directory=/vaults/<id>` returns that vault's skills: `.claude/skills/**/SKILL.md` and `.agents/skills/**/SKILL.md` walking up from the directory, the same in `$HOME` (empty for us), then `{skill,skills}/**/SKILL.md` in every config dir, the global one (`/opt/opencode-config/opencode`) included. **On a name clash between a vault skill and a skill in the image, opencode's pick is not stable**: `GET /skill` and `GET /command` sometimes return the vault's, sometimes the image's. *Corrected 2026-10-05 during apply: the source reading "a later skill replaces an earlier one, so the image wins" was wrong.* | probes 2026-10-05: a fresh container listed the vault's `research`; the dev stack listed the image's for a vault whose `research` skill arrived by pull |
 | F3 | **Command files (`.md`) come only from config dirs**: `{command,commands}/**/*.md` in the global config dir and in `.opencode/` dirs up the tree. `.claude/commands/` is not read. A vault `.opencode/` disables chat (security.md), so a vault can't add command files. | `config/command.ts` (`Glob.scan("{command,commands}/**/*.md")`), `config/paths.ts` (`directories`) |
 | F4 | **`POST /session/:id/command` runs shell.** It replaces every `` !`cmd` `` in the template with the output of `cmd`, run through a shell with no permission check (`bash: deny` doesn't apply), and resolves `@file` references into file parts. The prompt path (`promptAsync`) does neither. | `session/prompt.ts` lines 1397–1407 (`ConfigMarkdown.shell`, `Process.text`), 1432 (`resolvePromptParts`), only inside `command()`; container probe: a skill with `` !`id -u; echo $OPENCODE_MODEL` `` sent through the endpoint stored the user message `1000\nopenrouter/z-ai/glm-5.3` |
 | F5 | **The command endpoint can't carry the per-turn tools map.** `CommandInput` has `messageID, sessionID, agent, model, arguments, command, variant, parts` and no `tools`. A command turn would run with whatever permission the session's last prompt set. | `session/prompt.ts` line 1536 |
@@ -72,8 +72,9 @@ From the source at tag `v1.18.25` (`anomalyco/opencode`, commit `cb7d8b2`, paths
   system rule "no `OPENCODE_DISABLE_*` flags" (security.md) to "only `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS`".
   `CLAUDE.md` and `AGENTS.md` keep loading (F12). An opencode upgrade has to re-check this, like the other
   confinement rules; the phase 0 tests pin it.
-- **F2:** the app's `research` skill can't be shadowed by a vault. A vault that wants its own research
-  flow names its skill differently.
+- **F2:** the backend decides a name clash itself: the vault skill wins. It reads the vault's
+  `SKILL.md` from the skill folder and lists and sends that one, whatever opencode picked. The AI's own
+  `skill` tool may still load either.
 - **F7:** without a refresh, a skill pulled from GitHub never shows until opencode restarts. The skill
   tool reads the same cache, so the AI couldn't load it either.
 
@@ -142,12 +143,14 @@ From the source at tag `v1.18.25` (`anomalyco/opencode`, commit `cb7d8b2`, paths
 - **`harness/opencode.ts`:**
   - `commands(dir): Promise<HarnessCommand[]>` calls `command.list({ directory: dir })` and keeps entries
     with `source === 'skill'` whose name isn't in `HIDDEN = ['customize-opencode']`. Each entry is
-    `{ name, description, template, source, hides }`; a lazy MCP template can't occur (no MCP servers).
+    `{ name, description, template, source }`; a lazy MCP template can't occur (no MCP servers).
     - `source`: `'app'` when the skill's `location` (from `GET /skill` for the same directory) lies under
       the image's config dir `/opt/opencode-config/`, else `'vault'`.
-    - `hides`: for an app skill, `true` when the vault's skill folder also has `<name>/SKILL.md` (the
-      skill stamp's file list already holds those names). opencode keeps only the app's (F2), so the
-      vault's skill is otherwise invisible.
+  - `replaces` (set by `ChatService`, not the harness): on a vault skill, `true` when an app skill has
+    its name. The app skills' names come from the list for the vaults dir itself (`/vaults`), which never
+    holds vault skills. On such a clash `ChatService` takes the vault's skill from
+    `.agents/skills/<folder>/SKILL.md` (frontmatter `name`, `description`, body plus the base-directory
+    line) in place of whatever opencode returned (F2), for the list and for command turns.
   - `refresh(dir): Promise<void>` calls `instance.dispose({ directory: dir })`.
   - Both join the `Harness` interface, so the boundary stays small and harness-neutral.
 - **Refresh rule (`chat.ts`).** A **skill stamp** per vault: the sorted list of `path:mtime:size` of every
@@ -165,7 +168,7 @@ From the source at tag `v1.18.25` (`anomalyco/opencode`, commit `cb7d8b2`, paths
   - A user's or the AI's edit of a `SKILL.md` changes the stamp too, so it is picked up the same way.
 - **Route `GET /vaults/:id/commands`** (`app.ts`) → `ChatService.commands(vaultId)`:
   - same checks as the chat routes: `409 not-ready`, `409 unsafe-config`, `503` when opencode is down;
-  - returns `Command[] = { name, description, source: 'vault' | 'app', hides?: true }[]`, vault skills
+  - returns `Command[] = { name, description, source: 'vault' | 'app', replaces?: true }[]`, vault skills
     first, each group A–Z; the template stays on the server.
   - `Command` goes into `@karpathy/shared`.
 
@@ -215,14 +218,14 @@ flowchart TD
     storage the chips fall back to A–Z.
 - **`api.commands(vaultId)`** in `lib/api.ts`.
 - **`ChatPane` › `Conversation`:**
-  - loads the command list when it mounts and again when the palette opens and the list is older than
-    60 s, so a pulled skill shows without a reload;
+  - loads the command list when it mounts and again each time the palette opens, so a pulled skill
+    shows without a reload (one cheap GET; opencode is refreshed only when a skill file changed);
   - **palette:** a `listbox` above the composer while `paletteQuery(text) !== null` and the list isn't
     empty. Each row shows `/name`, a source tag and the description (two lines at most, cut with "…").
     - **Two groups** with headers "This vault" (vault skills) and "karpathy.app" (app skills); filtering
       keeps the groups. Each row's tag (`vault` / `app`) repeats it for screen readers and single rows.
-    - An app skill with `hides` shows a warning line: "Hides this vault's `/<name>`: rename it in
-      `.agents/skills/`."
+    - A vault skill with `replaces` shows a note line: "Replaces karpathy.app's `/<name>`; rename it in
+      `.agents/skills/` to get both."
     - The textarea keeps focus and points at the active row with `aria-activedescendant`.
     - ↑/↓ move, Enter or Tab picks, Escape closes; tapping a row picks it.
     - Picking sets the text to `/name ` and puts the cursor at the end.
@@ -238,8 +241,8 @@ flowchart TD
 ### 4. Research skill (opencode image)
 
 - **`deploy/opencode/skills/research/SKILL.md` (new)**, copied by the `Dockerfile` to
-  `/opt/opencode-config/opencode/skills/`, like `tools/` and `plugins/`. It is listed in every vault (F2)
-  and can't be shadowed by one.
+  `/opt/opencode-config/opencode/skills/`, like `tools/` and `plugins/`. It is listed in every vault,
+  unless the vault has a `research` skill of its own, which replaces it (F2).
 - **It must be self-contained:** its base directory lies outside the vault, where `external_directory:
   deny` blocks reads.
 - **Frontmatter:** `name: research`, and a `description` that says what to type: "Research a topic on the
@@ -372,7 +375,7 @@ sequenceDiagram
 | The vault follows the open `.agents` standard: the move also turns `CLAUDE.md` into `AGENTS.md` and leaves `CLAUDE.md` = `@AGENTS.md` for Claude Code | Skills only; instructions later | `AGENTS.md` + `.agents/skills/` is the cross-harness standard, `CLAUDE.md`/`.claude/` is Anthropic's. The `@AGENTS.md` import keeps the Mac on the same text without a symlink; opencode prefers `AGENTS.md` anyway (F13). (Grilling 2026-10-05) |
 | A vault with `AGENTS.md` and no `CLAUDE.md` gets `CLAUDE.md` = `@AGENTS.md` | Leave compliant vaults alone | Every vault then behaves the same in Claude Code on the Mac; one line, never overwrites. (Grilling 2026-10-05) |
 | Vault skills and app skills are distinct terms and always distinguished in the UI (palette groups + tags, chip tooltip and icon) | One undifferentiated list | They differ in who owns them, where they apply and whether Claude Code on the Mac has them; the user must see which one runs. (Grilling 2026-10-05) |
-| On a name clash the app skill wins, and the palette says the vault skill is hidden | Vault skill wins (needs a workaround against opencode's scan order); app wins silently | Matches opencode (F2) with no workaround, and the user is never left wondering why their skill doesn't run. (Grilling 2026-10-05) |
+| On a name clash the vault skill wins, decided by the backend, and the palette says it replaces the app skill | App skill wins (decided first, on a wrong reading of F2); follow opencode's pick (not stable, F2); show opencode's pick and ask to rename; rename the app skill | Deterministic for the palette and command turns; the user's own skill is the one they expect. The AI's `skill` tool may still load either (opencode's pick). (Decided during apply, 2026-10-05) |
 | Narrow flag `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`, not the broad `OPENCODE_DISABLE_CLAUDE_CODE` | Broad flag (ignore `CLAUDE.md` too) | A vault not yet moved keeps its `CLAUDE.md` rules; a moved vault gets `AGENTS.md` anyway (F13). Silently losing the rules is worse than a missing command. (Grilling 2026-10-05) |
 | The move pastes `@path` imports of `CLAUDE.md` into `AGENTS.md` (one level; a missing file stays as text) and lists the pasted files as "now inside `AGENTS.md`: delete?" | Rename only; expand imports at runtime | opencode doesn't expand imports (F13), so a pointer-only `CLAUDE.md` (`frechen_wiki`) gives the app's AI no rules today. One file with the full text fixes that. (Grilling 2026-10-05) |
 | Only `.claude/` is migrated | Also `.cursor/`, `.codex/`, `.gemini/` | That's what the vaults have. (Grilling 2026-10-04) |
@@ -398,7 +401,7 @@ sequenceDiagram
 
 ## Integration points
 
-- **Shared types:** `Command { name; description; source: 'vault' | 'app'; hides?: true }` in
+- **Shared types:** `Command { name; description; source: 'vault' | 'app'; replaces?: true }` in
   `@karpathy/shared`. `ToolCall` is unchanged (the
   `url` field gets a second producer).
 - **Shared types:** the `agents-move` vault event and its result in `@karpathy/shared`.

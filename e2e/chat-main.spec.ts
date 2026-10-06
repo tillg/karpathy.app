@@ -94,6 +94,8 @@ test('swap keeps the editor and the chat composer alive', async ({ page, vault, 
   await openNote(page, 'Long.md');
   await typeAtEnd(page, ' typed-in-editor');
   await page.getByTestId('new-chat').click();
+  // A chat that loads after the scroll below would put the list at its end.
+  await expect(page.getByTestId('chat-messages')).toContainText('New chat');
   const composer = page.getByTestId('chat-composer');
   await composer.fill('typed in the composer');
   // Give the message list something to scroll (a new chat has no messages; a model turn would be slow).

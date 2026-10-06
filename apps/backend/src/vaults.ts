@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import {
   INCOMING_PATHS_MAX,
+  type AgentsMove,
   type Change,
   type CommitResult,
   type ConflictChoice,
@@ -18,6 +19,7 @@ import {
   type VaultStatus,
 } from '@karpathy/shared';
 import { isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
+import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigStore, StoredVault } from './config-store.js';
 import { filesMentioning, listTree, search, versionOf, versionOfFile } from './files.js';
 import { Git, GitError, type GitIdentity } from './git.js';
@@ -31,6 +33,8 @@ import { VaultWatcher } from './watcher.js';
 const PREFLIGHT_TIMEOUT_MS = 60_000;
 /** How often a vault that a browser has open is fetched in the background. */
 const FETCH_INTERVAL_MS = 120_000;
+/** How long the pull on vault open waits for a skill-list refresh to let go of the lock. */
+const REFRESH_WAIT_MS = 5_000;
 /** A background fetch holds the vault lock (shared) at most this long; a commit or turn waits for it. */
 const FETCH_TIMEOUT_MS = 30_000;
 
@@ -71,6 +75,10 @@ interface Runtime {
   fetching?: Promise<FetchOutcome>;
   /** Background fetch timer while the vault has event-stream subscribers. */
   fetchTimer?: NodeJS.Timeout;
+  /** What the last agents move left behind (clashes), so it isn't moved and announced again. */
+  legacySeen?: string;
+  /** The last agents move, for a client that connects later. */
+  lastMove?: AgentsMove & { at: number };
 }
 
 type FetchOutcome = 'fetched' | 'offline' | 'skipped';
@@ -80,6 +88,8 @@ const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 /** The vaults the app manages: admin, files, git, status events (mvp §2.3, §2.4, §3.2). */
 export class Vaults {
   private rt = new Map<string, Runtime>();
+  /** Running commit-message proposals per vault (they take no lock; a skill refresh must not cut them off). */
+  private proposals = new Map<string, number>();
   /** repo|branch|root of adds whose preflight is still running. */
   private adding = new Set<string>();
   /** Called when a vault's clone becomes ready (the chat service opens its subscription). */
@@ -643,8 +653,10 @@ export class Vaults {
   async open(id: string): Promise<VaultStatus> {
     const r = this.runtime(id);
     this.config(id);
-    // A background fetch started by the same app load would make tryExclusive skip the pull.
+    // A background fetch started by the same app load would make tryExclusive skip the pull; so would the
+    // chat's skill-list refresh, which the same app load starts (short: wait for it, a few seconds at most).
     await r.fetching;
+    for (const end = Date.now() + REFRESH_WAIT_MS; r.lock.holds('refresh') && Date.now() < end; ) await new Promise((res) => setTimeout(res, 50));
     if (r.state === 'ready' && !r.conflict) {
       const release = r.lock.tryExclusive();
       if (release) {
@@ -680,9 +692,52 @@ export class Vaults {
         c.conflicts[id] = result.paths;
       });
       r.conflict = true;
-    }
+    } else await this.agentsMove(id);
     this.emitStatusSoon(id);
     return result;
+  }
+
+  /** Runs `fn` as a commit-message proposal of the vault: `isProposing` is true meanwhile. */
+  async proposing<T>(id: string, fn: () => Promise<T>): Promise<T> {
+    this.proposals.set(id, (this.proposals.get(id) ?? 0) + 1);
+    try {
+      return await fn();
+    } finally {
+      const n = (this.proposals.get(id) ?? 1) - 1;
+      if (n > 0) this.proposals.set(id, n);
+      else this.proposals.delete(id);
+    }
+  }
+
+  isProposing(id: string): boolean {
+    return this.proposals.has(id);
+  }
+
+  /** The last agents move of this vault, if any (replayed to a client that connects later). */
+  lastAgentsMove(id: string): (AgentsMove & { at: number }) | undefined {
+    return this.rt.get(id)?.lastMove;
+  }
+
+  /**
+   * Moves the vault to the `.agents` standard (after clone, pull, open), under the exclusive lock the
+   * caller holds; never in conflict. Leaves uncommitted changes and announces them.
+   */
+  private async agentsMove(id: string) {
+    const r = this.runtime(id);
+    if (r.state !== 'ready' || r.conflict) return;
+    const repo = this.repo(this.config(id));
+    try {
+      await restageSkillLink(repo);
+      const scan = await scanLegacy(repo.rootDir);
+      if (!hasLegacy(scan) || JSON.stringify(scan) === r.legacySeen) return;
+      const move = await migrateToAgents(repo);
+      r.legacySeen = JSON.stringify(await scanLegacy(repo.rootDir));
+      if (isEmptyMove(move)) return;
+      r.lastMove = { ...move, at: Date.now() };
+      this.emit(id, { type: 'agents-move', ...r.lastMove });
+    } catch (e) {
+      console.warn(`agents move of ${id} failed:`, (e as Error).message);
+    }
   }
 
   /** `paths`: the changed files the user reviewed; if others arrived while waiting → 409 (#33). */
@@ -923,6 +978,7 @@ export class Vaults {
           }
         });
         r.state = 'ready';
+        await this.agentsMove(v.id);
         this.startWatcher(v);
         this.onReady?.(v.id);
       } catch (e) {

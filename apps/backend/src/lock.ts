@@ -5,7 +5,8 @@
  * preference), so a commit is never starved by a stream of saves.
  */
 export type Release = () => void;
-export type SharedLabel = 'save' | 'turn' | 'fetch';
+/** `refresh`: the chat's skill-list refresh (opencode instance dispose), short; vault open waits for it. */
+export type SharedLabel = 'save' | 'turn' | 'fetch' | 'refresh';
 
 interface Waiter {
   kind: 'shared' | 'exclusive';
@@ -26,6 +27,11 @@ export class VaultLock {
     if ([...this.shared.values()].includes('turn')) return 'turn';
     if (this.queue.some((w) => w.kind === 'exclusive')) return 'sync';
     return 'none';
+  }
+
+  /** Whether a shared holder with this label holds the lock. */
+  holds(label: SharedLabel): boolean {
+    return [...this.shared.values()].includes(label);
   }
 
   get isFree(): boolean {
@@ -110,8 +116,8 @@ export class VaultLock {
   private grantShared(label: SharedLabel): Release {
     const id = this.nextId++;
     this.shared.set(id, label);
-    // A background fetch doesn't change `busy`: no status event per tick (each one reloads the web app's Changes list).
-    const quiet = label === 'fetch';
+    // A background fetch or skill refresh doesn't change `busy`: no status event (each one reloads the web app's Changes list).
+    const quiet = label === 'fetch' || label === 'refresh';
     if (!quiet) this.emit();
     let done = false;
     return () => {

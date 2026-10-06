@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
@@ -7,9 +7,13 @@ import { basicAuth } from '../src/harness/opencode.js';
 
 // Real opencode container for integration tests (no mocks). The vaults dir must be under the
 // repo (Rancher Desktop shares /Users) and is mounted at /vaults, as in compose.
-/** The image built from deploy/opencode/Dockerfile, so tests load the same config and tools as prod. */
-export const IMAGE = 'kai-test-opencode';
 const REPO = resolve(import.meta.dirname, '../../..');
+/**
+ * The image built from deploy/opencode/Dockerfile, so tests load the same config and tools as prod. Tagged
+ * per checkout: parallel runs in two worktrees must not overwrite each other's image (a CI prebuild under
+ * another tag is still a layer-cache hit).
+ */
+export const IMAGE = `kai-test-opencode-${createHash('sha1').update(REPO).digest('hex').slice(0, 8)}`;
 const NET = 'kai-test-net';
 const OLLAMA = 'kai-test-ollama';
 /** Volume that holds the Ollama models (qwen2.5:3b pulled once). */
@@ -42,7 +46,12 @@ let built = false;
 /** Builds the opencode image once per test process (layer-cached, so a no-op when nothing changed). */
 function ensureImage() {
   if (built) return;
-  docker('build', '-q', '-t', IMAGE, '-f', join(REPO, 'deploy/opencode/Dockerfile'), REPO);
+  try {
+    docker('build', '-q', '-t', IMAGE, '-f', join(REPO, 'deploy/opencode/Dockerfile'), REPO);
+  } catch (e) {
+    // Parallel test files build the same image; the one that tags it second fails with "already exists".
+    if (!String((e as { stderr?: string }).stderr).includes('already exists')) throw e;
+  }
   built = true;
 }
 
@@ -69,7 +78,14 @@ export function ensureEgress(): number {
   const start = (name: string, ...args: string[]) => {
     // Only a dead container is replaced: any other state means another parallel worker owns it right now.
     if (!['missing', 'exited', 'dead'].includes(status(name))) return;
-    if (status(name) !== 'missing') docker('rm', '-f', name);
+    if (status(name) !== 'missing') {
+      try {
+        docker('rm', '-f', name);
+      } catch (e) {
+        // Another parallel worker is removing the same dead container (first run after a Docker restart).
+        if (!String((e as { stderr?: string }).stderr).includes('already in progress')) throw e;
+      }
+    }
     try {
       docker('run', '-d', '--name', name, '--network', NET, ...args);
     } catch (e) {
@@ -127,12 +143,7 @@ export async function startOpencode(vaultsDir: string, env: Record<string, strin
   const authedFetch = (input: string, init: RequestInit = {}) => fetch(input, { ...init, headers: { ...authHeader, ...(init.headers as Record<string, string> | undefined) } });
   const name = `kai-test-oc-${process.pid}-${Math.random().toString(36).slice(2, 7)}`;
   // A fixed host port, so a stop/start (restart tests) keeps the URL.
-  const hostPort = await new Promise<number>((resolve) => {
-    const srv = createServer().listen(0, '127.0.0.1', () => {
-      const p = (srv.address() as { port: number }).port;
-      srv.close(() => resolve(p));
-    });
-  });
+  const hostPort = await freeHostPort();
   const models: Record<string, Record<string, unknown>> = Object.fromEntries(
     [LLM_MODEL, DEAD_MODEL, DEAD_MODEL_2].map((m) => m.split('/').slice(1).join('/')).map((id) => [id, { name: id, tool_call: true, limit: { context: 16384, output: 4096 } }]),
   );
@@ -149,6 +160,9 @@ export async function startOpencode(vaultsDir: string, env: Record<string, strin
     // All outbound HTTP goes through the egress proxy, as in compose; loopback and Ollama (a private IP) go direct.
     '-e', `HTTP_PROXY=http://${EGRESS}:3128`, '-e', `HTTPS_PROXY=http://${EGRESS}:3128`,
     '-e', `NO_PROXY=localhost,127.0.0.1,0.0.0.0,${OLLAMA}`,
+    // A hosted model for the @llm tier (LLM_TEST_MODEL=openrouter/…): its key is passed by name only, so it
+    // never shows in a command line.
+    ...(process.env.OPENROUTER_API_KEY ? ['-e', 'OPENROUTER_API_KEY'] : []),
     ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
     '-e', `OPENCODE_CONFIG_CONTENT=${JSON.stringify(providerCfg)}`,
     '--tmpfs', `/home/app:uid=${process.getuid?.() ?? 1000},gid=${process.getgid?.() ?? 1000},mode=0700`,
@@ -183,6 +197,24 @@ export async function startOpencode(vaultsDir: string, env: Record<string, strin
     pause: () => void docker('stop', name),
     resume: () => void docker('start', name),
   };
+}
+
+/**
+ * A free host port outside the OS's ephemeral range (49152+ on macOS). Ephemeral ports go to the tests'
+ * own servers (supertest); a container port forwarded on one of them answered their requests with
+ * opencode's 401/404 (flaky api tests).
+ */
+async function freeHostPort(): Promise<number> {
+  const base = 42000;
+  const start = Math.floor(Math.random() * 1000);
+  for (let i = 0; i < 1000; i++) {
+    const port = base + ((start + i) % 1000);
+    const free = await new Promise<boolean>((resolve) => {
+      const srv = createServer().once('error', () => resolve(false)).listen(port, '127.0.0.1', () => srv.close(() => resolve(true)));
+    });
+    if (free) return port;
+  }
+  throw new Error('no free host port in 42000–42999');
 }
 
 export function testDir(label: string) {

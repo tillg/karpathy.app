@@ -13,11 +13,28 @@ export interface PromptInput {
   tools?: Record<string, boolean>;
   /** Files sent with the prompt: vault path (the part's file name), `file:` URL as the harness sees it, type. */
   files?: { path: string; url: string; mime: string }[];
+  /** A command turn's skill instructions: sent as a hidden (synthetic) text part of the same message. */
+  instructions?: string;
 }
 
-/** The prompt as opencode parts: the text (left out when empty), then one file part per attachment. */
+/** A skill the chat can start by name (`/name`). `template` = the skill's instructions; it stays on the server. */
+export interface HarnessCommand {
+  name: string;
+  description: string;
+  template: string;
+  /** `app`: ships in the harness image (every vault); `vault`: from the vault's skill folder. */
+  source: 'vault' | 'app';
+}
+
+/** opencode's own skills: they edit harness config, which is denied. */
+const HIDDEN_COMMANDS = ['customize-opencode'];
+/** Where the image's skills live (the global config dir). */
+const APP_SKILLS_DIR = '/opt/opencode-config/';
+
+/** The prompt as opencode parts: the text (left out when empty), the hidden instructions, then one file part per attachment. */
 const promptParts = (input: PromptInput) => [
   ...(input.text ? [{ type: 'text' as const, text: input.text }] : []),
+  ...(input.instructions ? [{ type: 'text' as const, text: input.instructions, synthetic: true }] : []),
   ...(input.files ?? []).map((f) => ({ type: 'file' as const, mime: f.mime, filename: f.path, url: f.url })),
 ];
 
@@ -37,6 +54,10 @@ export interface Harness {
   busySessions(dir: string): Promise<string[]>;
   /** The models the harness can run (providers with credentials): `provider/model` and what they read. */
   models(): Promise<{ id: string; input: ModelInput }[]>;
+  /** The commands (skills) of a directory, without the harness's built-ins. */
+  commands(dir: string): Promise<HarnessCommand[]>;
+  /** Drops the harness's cached state of a directory (its skill list); never while a turn runs there. */
+  refresh(dir: string): Promise<void>;
   /** One event subscription per directory; reconnects until stopped, only while `mayConnect()`. */
   subscribe(dir: string, onEvent: (e: HarnessEvent) => void, mayConnect?: () => boolean): () => void;
 }
@@ -59,6 +80,8 @@ function unwrap<T>(r: { data?: T; error?: unknown; response?: Response }, what: 
 
 export class OpencodeHarness implements Harness {
   private c: OpencodeClient;
+  /** Per directory: callbacks of a `refresh` waiting for every subscription to connect again. */
+  private reconnectWaiters = new Map<string, Set<{ waiters: (() => void)[] }>>();
 
   /** `password` = the opencode server password (HTTP Basic, user `opencode`); none = no auth. */
   constructor(baseUrl: string, password?: string) {
@@ -113,7 +136,7 @@ export class OpencodeHarness implements Harness {
   async promptSync(dir: string, id: string, input: PromptInput, signal?: AbortSignal) {
     const data = unwrap(
       await this.c.session.prompt(
-        { directory: dir, sessionID: id, agent: input.agent, model: splitModel(input.model), parts: [{ type: 'text', text: input.text }], ...(input.tools ? { tools: input.tools } : {}) },
+        { directory: dir, sessionID: id, agent: input.agent, model: splitModel(input.model), parts: promptParts(input), ...(input.tools ? { tools: input.tools } : {}) },
         signal ? ({ signal } as never) : undefined,
       ),
       'session.prompt',
@@ -142,17 +165,50 @@ export class OpencodeHarness implements Harness {
     })));
   }
 
+  async commands(dir: string): Promise<HarnessCommand[]> {
+    const [list, skills] = await Promise.all([
+      this.c.command.list({ directory: dir }).then((r) => unwrap(r, 'command.list')),
+      this.c.app.skills({ directory: dir }).then((r) => unwrap(r, 'app.skills')),
+    ]);
+    const location = new Map(skills.map((s) => [s.name, s.location]));
+    return list
+      .filter((c) => c.source === 'skill' && !HIDDEN_COMMANDS.includes(c.name))
+      .map((c) => ({
+        name: c.name,
+        description: c.description ?? '',
+        template: c.template,
+        source: location.get(c.name)?.startsWith(APP_SKILLS_DIR) ? ('app' as const) : ('vault' as const),
+      }));
+  }
+
+  /** Disposing ends the directory's event streams; returns once they are connected again (at most 5 s). */
+  async refresh(dir: string) {
+    const subs = [...(this.reconnectWaiters.get(dir) ?? [])];
+    const connected = Promise.all(subs.map((s) => new Promise<void>((r) => s.waiters.push(r))));
+    unwrap(await this.c.instance.dispose({ directory: dir }), 'instance.dispose');
+    await Promise.race([connected, new Promise((r) => setTimeout(r, 5000))]);
+  }
+
   subscribe(dir: string, onEvent: (e: HarnessEvent) => void, mayConnect: () => boolean = () => true): () => void {
     const ctrl = new AbortController();
+    const me = { waiters: [] as (() => void)[] };
+    let set = this.reconnectWaiters.get(dir);
+    if (!set) this.reconnectWaiters.set(dir, (set = new Set()));
+    set.add(me);
     const loop = async () => {
       while (!ctrl.signal.aborted) {
         if (!mayConnect()) {
           await new Promise((r) => setTimeout(r, 5000));
           continue;
         }
+        let disposed = false;
         try {
           const sub = await this.c.event.subscribe({ directory: dir }, { signal: ctrl.signal, sseMaxRetryAttempts: 1 } as never);
           for await (const raw of sub.stream) {
+            const type = (raw as { type?: string }).type;
+            if (type === 'server.connected') for (const w of me.waiters.splice(0)) w();
+            // A refresh (instance dispose) ends the stream on purpose: reconnect at once, it is no outage.
+            if (type === 'server.instance.disposed') disposed = true;
             const e = mapEvent(raw, dir);
             if (e) onEvent(e);
             // Cross-check for the AI-touched set: completed write tools carry their paths too.
@@ -163,13 +219,17 @@ export class OpencodeHarness implements Harness {
         } catch {
           // reconnect below
         }
-        if (!ctrl.signal.aborted) {
+        if (!ctrl.signal.aborted && !disposed) {
           onEvent({ type: 'status', sessionId: '', state: 'retry', message: 'event stream reconnect' });
           await new Promise((r) => setTimeout(r, 1000));
         }
       }
     };
     void loop();
-    return () => ctrl.abort();
+    return () => {
+      ctrl.abort();
+      set.delete(me);
+      for (const w of me.waiters.splice(0)) w();
+    };
   }
 }

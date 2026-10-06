@@ -95,3 +95,21 @@ export function knownTexts(messages: Message[]): string[] {
 export function capFromEnv(value: string | undefined): number {
   return value !== undefined && /^[1-9]\d*$/.test(value.trim()) ? Number(value) : 20;
 }
+
+/** The tools the plugin guards: the web tools and the link offer. */
+export const GUARDED_TOOLS = ['webfetch', 'websearch', 'open_url'];
+
+/**
+ * The plugin's decision for one tool call: the error to fail it with, or null to let it run. `webfetch` and
+ * `websearch` are capped per turn; `webfetch` and `open_url` need a known URL. `open_url` has no cap: the
+ * user taps every link offer. `messages` must not hold the call itself.
+ */
+export function guardWebCall(tool: string, args: Record<string, unknown> | undefined, messages: Message[], caps: { fetch: number; search: number }): string | null {
+  if (tool === 'webfetch' || tool === 'websearch') {
+    const cap = tool === 'webfetch' ? caps.fetch : caps.search;
+    if (callsThisTurn(messages, tool) >= cap) return `${tool === 'webfetch' ? 'Fetch' : 'Search'} limit reached (${cap} per turn)`;
+  }
+  if ((tool === 'webfetch' || tool === 'open_url') && !isKnownUrl(String(args?.url ?? ''), knownTexts(messages)))
+    return 'URL not in this chat: paste it into the chat first';
+  return null;
+}

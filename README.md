@@ -59,7 +59,41 @@ paste them, or a note or search result contains them), at most 20 fetches and 20
 (`WEB_FETCH_CAP` / `WEB_SEARCH_CAP` in `opencode.env`, applied on restart). The opencode container
 has no direct internet access: it goes through an `egress` proxy that refuses private, loopback and
 link-local addresses, and opencode's API needs a generated password. Note that `localhost`/`127.0.0.1`/`0.0.0.0` are in opencode's `NO_PROXY`, so loopback requests (needed by its plugin client) bypass the proxy: only that password protects opencode's own API from the AI's web fetches (`opencode_password` secret; dev
-and prodtest create it, deploys generate it once on the target).
+and prodtest create it, deploys generate it once on the target). Ask the AI to open a web page ("open the
+Wikipedia page on X") and it offers it as an **Open chip** (`open en.wikipedia.org/…`); the page opens in a
+new browser tab only when you tap the chip. It works with Web access off (your browser loads the page, not
+the server), and only for URLs that already appear in the chat, like fetches.
+
+**Commands.** Typing `/` in the chat composer opens the **command palette**: the vault's skills with their
+descriptions, filtered as you type; picking one fills in `/name ` for the arguments (slash commands). A new,
+empty chat shows up to four **command chips** (the ones you used last in this vault first); a tap puts `/name `
+in front of what you typed and sends nothing. Sending `/query what is X` runs the `query` skill: the chat
+shows what you typed, and the skill's text goes to the AI as a hidden part of the same message (never through
+opencode's command endpoint, which would run shell snippets from the skill file). A `/word` that is no command
+of the vault is sent as plain text. The palette shows two kinds: **vault skills** ("This vault", tag `vault`),
+which live in the vault's `.agents/skills/`, sync through git and also work in Claude Code on the Mac; and
+**app skills** ("karpathy.app", tag `app`), which ship with the app and exist in every vault. If a vault skill
+has the same name as an app skill, the vault skill wins and the palette says it replaces karpathy.app's.
+
+**`/research <topic>`** is the app skill for deep research. The first turn reads the wiki, scouts the web a
+little (at most 3 searches and 2 fetches) and writes a **plan note** `Research/<date>-<slug>.md` with 3–6
+sub-questions, then stops. Edit the note if you like and reply **go**: the run turn searches the web, saves
+useful pages as source files in `Sources/` (with `url`, `title`, `fetched` and a summary, never the full page),
+writes or updates wiki pages that cite them, and ticks off the plan note (at most 8 sources per turn; reply
+**continue** for more). `/research Research/<date>-<slug>.md` resumes a plan in any chat. Everything stays
+uncommitted until you review and commit.
+
+**Vault layout: the `.agents` standard.** Vaults follow the open `.agents` standard that opencode, Codex,
+Cursor, Gemini CLI and others share: instructions in `AGENTS.md`, skills in `.agents/skills/<name>/SKILL.md`,
+rather than Anthropic's `CLAUDE.md` / `.claude/`. opencode runs with `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`,
+so `.claude/skills/` is ignored (a vault's `CLAUDE.md` is still read until the vault is moved). The app moves
+a vault to the standard by itself after every clone, pull and open (never while it is in conflict):
+`CLAUDE.md` becomes `AGENTS.md` with its `@path` imports pasted in (opencode doesn't expand them),
+`.claude/skills/*` move to `.agents/skills/`, and `.claude/commands/*.md` become skills. It leaves
+`CLAUDE.md` = `@AGENTS.md` and a symlink `.claude/skills → ../.agents/skills`, so Claude Code on the Mac keeps
+working. It never overwrites an existing name (the clash is listed), shows a notice with **Review**, and leaves
+ordinary uncommitted changes (discarding them undoes the move until the next pull). Skills that come from a
+Claude Code plugin aren't in the vault and don't show; copy them into the vault.
 
 ## Status
 
@@ -142,6 +176,7 @@ configured by hand: releases go there with `just deploy hetzner`, see [Deploying
 npm test               # unit + integration: real git against local bare repos, real opencode container (Docker)
 npm run test:github    # @github: clone/push against the throwaway repo tillg/karpathy-app-test-vault
 npm run test:llm       # @llm: real model turns (default: local Ollama qwen2.5:3b, see apps/backend/test/opencode-container.ts)
+                       # the /research tests need a capable model: LLM_TEST_MODEL=openrouter/z-ai/glm-5.3 with OPENROUTER_API_KEY set (costs money)
 npm run test:e2e       # Playwright against the running dev stack
 npm run typecheck
 ```

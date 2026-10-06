@@ -1,7 +1,7 @@
 ---
 feature: chat-commands-research
 title: "Domain: chat commands, deep research and web links"
-status: proposed
+status: applying
 order: 2
 created: 2026-10-04
 edited: 2026-10-05
@@ -17,10 +17,10 @@ says `command` for the palette entry and `skill` only where it means opencode's 
 
 | Term | Meaning | In code |
 |---|---|---|
-| **Command** *(new)* | A skill the chat can start by name with `/name`: a **vault skill** (from `.agents/skills/` only; `.claude/skills/` and Claude Code plugin skills are not commands) or an **app skill** (`research`). The UI always shows which of the two it is. opencode's built-ins `init`, `review` and `customize-opencode` are never commands. | `Command { name, description, source, hides? }` |
+| **Command** *(new)* | A skill the chat can start by name with `/name`: a **vault skill** (from `.agents/skills/` only; `.claude/skills/` and Claude Code plugin skills are not commands) or an **app skill** (`research`). The UI always shows which of the two it is. opencode's built-ins `init`, `review` and `customize-opencode` are never commands. | `Command { name, description, source, replaces? }` |
 | **Vault skill** *(new)* | A skill that lives in the vault's skill folder (`.agents/skills/<name>/`). Written by the vault author, synced by git, only in that vault; Claude Code on the Mac sees it too. Examples: `query`, `lint`, `ingest`. | `Command.source = 'vault'` |
 | **App skill** *(new)* | A skill that ships with karpathy.app (in the opencode image), so every vault has it; changes only with an app release; Claude Code on the Mac doesn't see it. Today only `research`. | `Command.source = 'app'` |
-| **Hidden vault skill** *(new)* | A vault skill with the same name as an app skill. The app skill wins; the vault skill never runs, and the app says so and asks to rename it. | `Command.hides = true` on the app skill |
+| **Replacing vault skill** *(new)* | A vault skill with the same name as an app skill. The vault skill wins (the backend decides; opencode's own pick isn't stable); the app skill doesn't run as a command in that vault, and the palette says so. | `Command.replaces = true` on the vault skill |
 | **Skill folder** *(new)* | `.agents/skills/` in the vault root: the only place a vault's skills are read from, by the palette and by the AI. Shared with other harnesses (Codex, Cursor, Gemini CLI). | `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1` |
 | **`.agents` standard** *(new)* | The open, cross-harness layout a vault follows in this app: instructions in `AGENTS.md`, skills in the skill folder. Anthropic's `CLAUDE.md` / `.claude/` remain only as pointers for Claude Code on the Mac. | |
 | **Agents move** *(new)* | What the app does by itself after every clone, pull and open of a vault that isn't in the `.agents` standard yet: moves `.claude/skills/*` into the skill folder, turns `.claude/commands/*.md` into skills, turns `CLAUDE.md` into `AGENTS.md` with its `@` imports pasted in, rewrites `CLAUDE.md` to `@AGENTS.md` (or writes it when only `AGENTS.md` exists), and leaves the **skill link** `.claude/skills → ../.agents/skills`. Never overwrites (clashes stay and are listed), skipped in conflict. Its result is uncommitted changes, announced by a notice and reviewed like any edit. | `agents-standard.ts`, event `agents-move` |
@@ -139,9 +139,8 @@ sequenceDiagram
 
 ## Rules
 
-- **App skill beats vault skill, visibly.** On a name clash the app skill runs; the palette says that the
-  vault's skill of that name is hidden and should be renamed. Vault and app skills are always marked as
-  such in the UI.
+- **Vault skill beats app skill, visibly.** On a name clash the vault skill runs; the palette says that it
+  replaces karpathy.app's skill of that name. Vault and app skills are always marked as such in the UI.
 - **One skill folder.** A vault's commands come from `.agents/skills/` only. The app moves skills there
   automatically, never over an existing name, and always as uncommitted changes the user reviews.
 - **A command is instructions, not code.** The app sends a skill's text to the AI as written. Shell

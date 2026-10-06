@@ -3,6 +3,7 @@ import {
   callsThisTurn,
   capFromEnv,
   extractUrls,
+  guardWebCall,
   isKnownUrl,
   knownTexts,
 } from '../../../deploy/opencode/lib/known-url.js';
@@ -144,5 +145,33 @@ describe('capFromEnv', () => {
   });
   it('falls back to 20', () => {
     for (const v of [undefined, '', 'abc', '0', '-3', '2.5']) expect(capFromEnv(v)).toBe(20);
+  });
+});
+
+describe('guardWebCall', () => {
+  const caps = { fetch: 20, search: 20 };
+  const user = (text: string) => ({ info: { role: 'user' }, parts: [{ type: 'text', text }] });
+  const fetches = (n: number) => ({ info: { role: 'assistant' }, parts: Array.from({ length: n }, () => ({ type: 'tool', tool: 'webfetch', state: { status: 'completed', output: '' } })) });
+
+  it('open_url with a known URL → null', () => {
+    expect(guardWebCall('open_url', { url: 'https://a.com/p' }, [user('open https://a.com/p')], caps)).toBeNull();
+  });
+
+  it('open_url with a URL the model built → URL not in this chat', () => {
+    expect(guardWebCall('open_url', { url: 'https://a.com/p?d=secret' }, [user('open https://a.com/p')], caps)).toMatch(/^URL not in this chat/);
+  });
+
+  it("open_url isn't counted against the fetch cap", () => {
+    expect(guardWebCall('open_url', { url: 'https://a.com/p' }, [user('open https://a.com/p'), fetches(20)], caps)).toBeNull();
+  });
+
+  it('webfetch and websearch keep their cap and provenance checks', () => {
+    const msgs = [user('see https://a.com/p'), fetches(20)];
+    expect(guardWebCall('webfetch', { url: 'https://a.com/p' }, msgs, caps)).toBe('Fetch limit reached (20 per turn)');
+    expect(guardWebCall('webfetch', { url: 'https://a.com/p' }, [user('see https://a.com/p')], caps)).toBeNull();
+    expect(guardWebCall('webfetch', { url: 'https://b.com/' }, [user('see https://a.com/p')], caps)).toMatch(/^URL not in this chat/);
+    expect(guardWebCall('websearch', { query: 'x' }, [user('hi')], { fetch: 20, search: 0 })).toBe('Search limit reached (0 per turn)');
+    expect(guardWebCall('websearch', { query: 'x' }, [user('hi')], caps)).toBeNull();
+    expect(guardWebCall('read', { filePath: 'x' }, [], caps)).toBeNull();
   });
 });

@@ -53,7 +53,7 @@ export function mapToolPart(part: Json, root: string): ToolCall {
     opens: OPEN_TOOLS.has(tool),
     ...(path ? { path } : {}),
     ...(tool === 'websearch' && str(input.query) ? { query: str(input.query) } : {}),
-    ...(tool === 'webfetch' && str(input.url) ? { url: str(input.url) } : {}),
+    ...((tool === 'webfetch' || tool === 'open_url') && str(input.url) ? { url: str(input.url) } : {}),
     ...(str(state.title) ? { title: str(state.title) } : {}),
     ...(error && status === 'error' ? { error } : {}),
   };

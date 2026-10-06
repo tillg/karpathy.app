@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { HarnessEvent } from '../src/harness/map.js';
+import { offerUrl } from '../../../deploy/opencode/lib/offer-url.js';
 import { OpencodeHarness } from '../src/harness/opencode.js';
 import { DEAD_MODEL, LLM_MODEL, startOpencode, testDir } from './opencode-container.js';
 
@@ -29,12 +31,101 @@ describe('opencode custom tools', () => {
     expect(await r.json()).toContain('open_note');
   });
 
+  it('opencode lists open_url as a tool', async () => {
+    const r = await oc.fetch(`${oc.url}/experimental/tool/ids?directory=/vaults`);
+    expect(await r.json()).toContain('open_url');
+  });
+
+  it('open_url is allowed for vault and vault-readonly, hidden for commit-message', async () => {
+    const cfg = JSON.parse(await readFile(join(import.meta.dirname, '../../../deploy/opencode/opencode.json'), 'utf8'));
+    expect(cfg.agent.vault.permission.open_url).toBe('allow');
+    expect(cfg.agent['vault-readonly'].permission.open_url).toBe('allow');
+    expect(cfg.agent['commit-message'].permission).toEqual({ '*': 'deny' });
+  });
+
+  it('open_url refuses ftp: and javascript: URLs', () => {
+    expect(offerUrl('https://example.com/a?b=1')).toBe('offered https://example.com/a?b=1');
+    for (const bad of ['ftp://example.com/x', 'javascript:alert(1)', 'not a url', 'file:///etc/passwd'])
+      expect(() => offerUrl(bad)).toThrow(/Only http\(s\) pages can be opened/);
+  });
+
   it('open_note is allowed for vault and vault-readonly, hidden for commit-message', async () => {
     const cfg = JSON.parse(await readFile(join(import.meta.dirname, '../../../deploy/opencode/opencode.json'), 'utf8'));
     expect(cfg.agent.vault.permission.open_note).toBe('allow');
     expect(cfg.agent['vault-readonly'].permission.open_note).toBe('allow');
     expect(cfg.agent['commit-message'].permission).toEqual({ '*': 'deny' });
   });
+});
+
+describe('skill folder', () => {
+  it('only .agents/skills are skills', async () => {
+    // Written before the first request for this directory: opencode caches the list per directory (F7).
+    const skill = (name: string) => `---\nname: ${name}\ndescription: ${name} skill\n---\n\nBody of ${name}.\n`;
+    await mkdir(join(vaultsDir, 'flag/.claude/skills/old'), { recursive: true });
+    await writeFile(join(vaultsDir, 'flag/.claude/skills/old/SKILL.md'), skill('old'));
+    await mkdir(join(vaultsDir, 'flag/.agents/skills/new'), { recursive: true });
+    await writeFile(join(vaultsDir, 'flag/.agents/skills/new/SKILL.md'), skill('new'));
+    const r = await oc.fetch(`${oc.url}/skill?directory=/vaults/flag`);
+    expect(r.status).toBe(200);
+    const names = ((await r.json()) as { name: string }[]).map((s) => s.name);
+    expect(names).toContain('new');
+    expect(names).not.toContain('old');
+    // The image's skills stay (the flag drops only .claude/skills).
+    expect(names).toContain('research');
+  });
+});
+
+const skillMd = (name: string, description: string, body = `Body of ${name}.`) => `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`;
+async function addSkill(vault: string, name: string, description: string) {
+  await mkdir(join(vaultsDir, vault, '.agents/skills', name), { recursive: true });
+  await writeFile(join(vaultsDir, vault, '.agents/skills', name, 'SKILL.md'), skillMd(name, description));
+}
+
+describe('command list', () => {
+  it('command list: a vault skill appears, built-ins are hidden', async () => {
+    await addSkill('cmds', 'hello', 'Says hello');
+    const harness = new OpencodeHarness(oc.url, oc.password);
+    const list = await harness.commands('/vaults/cmds');
+    expect(list).toContainEqual(expect.objectContaining({ name: 'hello', description: 'Says hello', source: 'vault', template: expect.stringContaining('Body of hello.') }));
+    const names = list.map((c) => c.name);
+    for (const builtin of ['init', 'review', 'customize-opencode']) expect(names).not.toContain(builtin);
+    expect((await harness.commands('/vaults')).map((c) => c.name)).not.toContain('hello');
+  });
+
+  it('research skill is in the command list', async () => {
+    const harness = new OpencodeHarness(oc.url, oc.password);
+    expect(await harness.commands('/vaults')).toContainEqual(expect.objectContaining({ name: 'research', source: 'app' }));
+    // On a name clash opencode's own pick isn't stable (F2); the backend's rule is tested in chat.test.ts.
+  });
+
+  it('a skill added after the first listing shows after refresh', async () => {
+    const harness = new OpencodeHarness(oc.url, oc.password);
+    await harness.commands('/vaults/cmds');
+    await addSkill('cmds', 'late', 'Comes late');
+    expect((await harness.commands('/vaults/cmds')).map((c) => c.name)).not.toContain('late'); // F7
+    await harness.refresh('/vaults/cmds');
+    expect((await harness.commands('/vaults/cmds')).map((c) => c.name)).toContain('late');
+  });
+
+  it('events arrive after refresh', async () => {
+    const harness = new OpencodeHarness(oc.url, oc.password);
+    const dir = '/vaults/cmds';
+    const events: HarnessEvent[] = [];
+    const stop = harness.subscribe(dir, (e) => events.push(e));
+    try {
+      await new Promise((r) => setTimeout(r, 1000)); // connected
+      await harness.refresh(dir);
+      const id = await harness.createSession(dir);
+      await harness.prompt(dir, id, { text: 'hi', agent: 'vault-readonly', model: DEAD_MODEL });
+      const end = Date.now() + 15_000;
+      while (!events.some((e) => e.type === 'message' && e.sessionId === id)) {
+        if (Date.now() > end) throw new Error(`no message event after refresh: ${JSON.stringify(events.map((e) => e.type))}`);
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    } finally {
+      stop();
+    }
+  }, 30_000);
 });
 
 describe('opencode web tools', () => {

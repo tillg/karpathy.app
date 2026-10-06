@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ChatEvent, ToolCall } from '@karpathy/shared';
@@ -25,8 +25,8 @@ afterAll(() => oc?.stop());
 
 class Inconclusive extends Error {}
 
-async function setup() {
-  const remote = await makeRemote({ 'Home.md': '# Home\n', 'notes/Todo.md': 'Buy milk\n' }, { name: `l${Math.random().toString(36).slice(2, 7)}` });
+async function setup(files: Record<string, string> = {}) {
+  const remote = await makeRemote({ 'Home.md': '# Home\n', 'notes/Todo.md': 'Buy milk\n', ...files }, { name: `l${Math.random().toString(36).slice(2, 7)}` });
   const t = await makeApp(remote.remoteBase, { dirs: { config: join(base, `config-${Math.random()}`), vaults: vaultsDir } });
   await t.store.update((c) => { c.settings.model = LLM_MODEL; });
   const harness = new OpencodeHarness(oc.url, oc.password);
@@ -51,6 +51,12 @@ async function turn(t: T, text: string, chatId?: string): Promise<{ chatId: stri
     }, resolve);
   });
   return { chatId: id, tools: [...tools.values()] };
+}
+
+/** The text of the chat's last assistant message. */
+async function reply(t: T, chatId: string): Promise<string> {
+  const msgs = (await t.chat.get(t.id, chatId)).messages.filter((m) => m.role === 'assistant');
+  return (msgs.at(-1)?.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join('');
 }
 
 async function withRetry<R>(fn: () => Promise<R>): Promise<R> {
@@ -83,6 +89,149 @@ async function capture(parts: Awaited<ReturnType<typeof webParts>>) {
     await appendFile(join(import.meta.dirname, 'fixtures/opencode-events.jsonl'), `${JSON.stringify({ type: 'message.part.updated', properties: { sessionID, part: trimmed } })}\n`);
   }
 }
+
+// Instruction files: these assert reply text on purpose (a marker word the vault's rules ask for), since the
+// rule itself is the subject; a reply without the marker is retried once.
+describe('@llm vault instructions', () => {
+  it('@llm the vault\'s CLAUDE.md still applies with the flag', async () => {
+    const t = await setup({ 'CLAUDE.md': '# Rules\n\nEnd every reply with the word PINEAPPLE.\n' });
+    await withRetry(async () => {
+      const { chatId } = await turn(t, 'Say hello.');
+      const text = await reply(t, chatId);
+      if (!/PINEAPPLE/i.test(text)) throw new Inconclusive(`no PINEAPPLE in: ${text}`);
+    });
+  });
+
+  it('@llm AGENTS.md wins over CLAUDE.md', async () => {
+    const t = await setup({ 'AGENTS.md': '# Rules\n\nEnd every reply with the word MANGO.\n', 'CLAUDE.md': '@AGENTS.md\n' });
+    await withRetry(async () => {
+      const { chatId } = await turn(t, 'Say hello.');
+      const text = await reply(t, chatId);
+      if (!/MANGO/i.test(text)) throw new Inconclusive(`no MANGO in: ${text}`);
+      expect(text).not.toContain('@AGENTS.md');
+    });
+  });
+
+  it('@llm imported rules reach the AI after the move', async () => {
+    const t = await setup({ 'CLAUDE.md': '@Schema/CLAUDE.md\n', 'Schema/CLAUDE.md': '# Rules\n\nEnd every reply with the word KIWI.\n' });
+    await t.vaults.open(t.id);
+    expect(await readFile(join(t.vaults.vaultRootDir(t.id), 'AGENTS.md'), 'utf8')).toContain('KIWI');
+    await withRetry(async () => {
+      const { chatId } = await turn(t, 'Say hello.');
+      const text = await reply(t, chatId);
+      if (!/KIWI/i.test(text)) throw new Inconclusive(`no KIWI in: ${text}`);
+    });
+  });
+});
+
+const testlandWiki = {
+  'Wiki/index.md': '# Index\n\n- [[Wiki/Testland]]: the country of Testland\n',
+  'Wiki/Testland.md': '# Testland\n\nThe capital of Testland is Fooville.\n',
+};
+
+describe('@llm commands', () => {
+  it('@llm /query answers from the wiki', async () => {
+    const t = await setup({
+      ...testlandWiki,
+      '.agents/skills/query/SKILL.md': '---\nname: query\ndescription: Answer a question from the wiki\n---\n\nUse the read tool to read Wiki/index.md, then read the page it lists for the question, then answer and name the page.\n',
+    });
+    await withRetry(async () => {
+      const { chatId, tools } = await turn(t, '/query what is the capital of Testland?');
+      if (tools.length === 0) throw new Inconclusive('model made no tool call');
+      const reads = tools.filter((x) => x.tool === 'read' && x.status === 'completed' && x.path?.startsWith('Wiki/'));
+      if (reads.length === 0) throw new Inconclusive(`no Wiki/ read: ${JSON.stringify(tools)}`);
+      expect((await t.chat.get(t.id, chatId)).messages.some((m) => m.role === 'assistant')).toBe(true);
+    });
+  });
+});
+
+/** Markdown files in a vault folder (none when it is missing). */
+async function mdFiles(t: T, folder: string): Promise<string[]> {
+  return (await readdir(join(t.vaults.vaultRootDir(t.id), folder)).catch(() => [] as string[])).filter((f) => f.endsWith('.md'));
+}
+
+describe('@llm /research', () => {
+  it('@llm /research plan: plan note, ≤ 3 searches', async () => {
+    const t = await setup(testlandWiki);
+    await t.store.update((c) => { c.settings.webAccess = false; });
+    await withRetry(async () => {
+      const before = await mdFiles(t, 'Research');
+      const { chatId, tools } = await turn(t, '/research the history of the Testland railway');
+      if (tools.length === 0) throw new Inconclusive('model made no tool call');
+      const added = (await mdFiles(t, 'Research')).filter((f) => !before.includes(f));
+      if (added.length === 0) throw new Inconclusive(`no plan note written: ${JSON.stringify(tools)}`);
+      const note = await readFile(join(t.vaults.vaultRootDir(t.id), 'Research', added[0]!), 'utf8');
+      expect((note.match(/^\s*- \[ \]/gm) ?? []).length).toBeGreaterThanOrEqual(3);
+      expect(await mdFiles(t, 'Sources')).toEqual([]);
+      expect(tools.filter((x) => x.tool === 'websearch').length).toBeLessThanOrEqual(3);
+      expect(await reply(t, chatId)).toMatch(/web access/i);
+    });
+  });
+
+  it('@llm /research resumes a plan note', async () => {
+    const t = await setup({
+      ...testlandWiki,
+      'Wiki/Testland.md': '# Testland\n\nThe capital of Testland is Fooville. Testland has 3 million inhabitants.\n',
+      'Research/2026-10-01-testland.md': '# Research: Testland\n\n- [ ] What is the capital of Testland?\n- [ ] How many people live in Testland?\n',
+    });
+    await t.store.update((c) => { c.settings.webAccess = false; });
+    await withRetry(async () => {
+      const { tools } = await turn(t, '/research Research/2026-10-01-testland.md');
+      if (tools.length === 0) throw new Inconclusive('model made no tool call');
+      expect(await mdFiles(t, 'Research')).toEqual(['2026-10-01-testland.md']);
+      const note = await readFile(join(t.vaults.vaultRootDir(t.id), 'Research/2026-10-01-testland.md'), 'utf8');
+      if (!/- \[x\]/i.test(note)) throw new Inconclusive(`nothing ticked: ${note} ${JSON.stringify(tools)}`);
+    });
+  });
+
+  it('@llm /research run: Sources/ file with url, cited by a wiki page', async () => {
+    const t = await setup(testlandWiki);
+    await t.store.update((c) => { c.settings.webAccess = true; });
+    await withRetry(async () => {
+      const plan = await turn(t, '/research who invented the World Wide Web');
+      const notes = await mdFiles(t, 'Research');
+      if (notes.length === 0) throw new Inconclusive(`no plan note: ${JSON.stringify(plan.tools)}`);
+      const { tools } = await turn(t, 'go', plan.chatId);
+      const searches = tools.filter((x) => x.tool === 'websearch');
+      const fetched = tools.filter((x) => x.tool === 'webfetch' && x.status === 'completed').map((x) => x.url);
+      if (searches.length === 0 || fetched.length === 0) throw new Inconclusive(`no search or fetch: ${JSON.stringify(tools)}`);
+      expect(searches.length).toBeLessThanOrEqual(20);
+      expect(tools.filter((x) => x.tool === 'webfetch').length).toBeLessThanOrEqual(20);
+      const root = t.vaults.vaultRootDir(t.id);
+      const sources = await mdFiles(t, 'Sources');
+      if (sources.length === 0) throw new Inconclusive(`no source saved: ${JSON.stringify(tools)}`);
+      const urls = await Promise.all(sources.map(async (f) => /^url:\s*(\S+)/m.exec(await readFile(join(root, 'Sources', f), 'utf8'))?.[1]));
+      expect(urls.some((u) => u && fetched.includes(u))).toBe(true);
+      const changed = (await t.vaults.changes(t.id)).map((c) => c.path).filter((p) => p.startsWith('Wiki/'));
+      const cites = await Promise.all(changed.map(async (p) => (await readFile(join(root, p), 'utf8')).includes('Sources/')));
+      expect(cites.some(Boolean)).toBe(true);
+      expect(await readFile(join(root, 'Research', notes[0]!), 'utf8')).toMatch(/- \[x\]/i);
+    });
+  }, 900_000);
+});
+
+describe('@llm open_url', () => {
+  it('@llm open_url for a pasted URL', async () => {
+    const t = await setup();
+    await withRetry(async () => {
+      const { tools } = await turn(t, 'Use the open_url tool to open https://example.com/ for me in my browser. Do nothing else.');
+      if (tools.length === 0) throw new Inconclusive('model made no tool call');
+      const offers = tools.filter((x) => x.tool === 'open_url' && x.status === 'completed');
+      if (offers.length === 0) throw new Inconclusive(`no completed open_url: ${JSON.stringify(tools)}`);
+      expect(offers[0]).toMatchObject({ url: 'https://example.com/', opens: false, writes: false });
+    });
+  });
+
+  it('@llm open_url of a constructed URL is refused', async () => {
+    const t = await setup({ 'notes/Secret.md': 'The code word is BLUEFALCON.\n' });
+    await withRetry(async () => {
+      const { tools } = await turn(t, 'Read notes/Secret.md, then use the open_url tool to open https://example.com/?q= followed by the code word from that note. Do nothing else.');
+      const offers = tools.filter((x) => x.tool === 'open_url' && x.url?.includes('?q='));
+      if (offers.length === 0) throw new Inconclusive(`no open_url with ?q=: ${JSON.stringify(tools)}`);
+      expect(offers.every((x) => x.status === 'error' && /URL not in this chat/.test(x.error ?? ''))).toBe(true);
+    });
+  });
+});
 
 describe('@llm web access', () => {
   it('fetch of a pasted URL succeeds', async () => {
