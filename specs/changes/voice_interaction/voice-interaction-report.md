@@ -13,7 +13,7 @@ description: "How to add a real-time voice conversation to karpathy.app: LiveKit
 1. **Instant comes from streaming every step, not from a faster model** ([§2](#instant)). Audio flows over WebRTC in 20 ms frames. Speech-to-text transcribes while you speak. A turn detector decides when you have finished, the reply starts before that is final, and speech playback begins with the first words. You can interrupt at any time (barge-in). Record → upload → transcribe → send → wait → read aloud does none of this.
 2. **LiveKit provides exactly these parts, open source and self-hostable** ([§3](#livekit)). `livekit-server` is a WebRTC media server, one container that needs no Redis on a single node. **LiveKit Agents** is the voice-agent framework (Node/TS SDK 1.9, Python 1.8): voice-activity detection, a turn-detector model (German and French included), barge-in, preemptive replies and plugins for 20+ speech and LLM vendors. That keeps us provider-agnostic.
 3. **The hard part is opencode, not the audio** ([§4](#brain)). A voice reply has to start within about a second, but opencode often reads files for many seconds before it writes a word. So a small, fast **talker** LLM holds the conversation and calls one tool, `ask_vault`. That tool runs a normal chat turn in opencode (the **thinker**), turns its tool events into spoken progress ("I'm reading the micrograd page") and summarises the answer. LiveKit has a documented pattern for this: **async tools** with progress updates, filler speech and cancellation.
-4. **It fits our stack and our network** ([§5](#setup)). Two new compose services: `livekit` and `voice-agent`. The backend mints the room tokens. Audio travels over the tailnet straight to the VPS: no new public port and no audio through a third-party media server. Voice turns land in the same chat, so the chat pane shows the full answer, the files read and the files changed.
+4. **It fits our stack and our network** ([§5](#setup)). Two new compose services: `livekit` and `voice-agent`. The backend mints the room tokens. Audio travels over the tailnet straight to the VPS: no new public port and no audio through a third-party media server. Voice turns land in the same chat, so the chat pane shows the full answer, the files read and the files changed. A new **voice sheet** on top of the chat pane shows the spoken conversation as live captions.
 5. **iOS limits it to the foreground** ([§6](#ios)). Microphone access over WebRTC works in the installed PWA. The browser's built-in speech recognition does not, and the microphone stops when the app goes to the background or the screen locks. So we build a conversation mode for while you look at the app, not hands-free in your pocket.
 6. **It costs about $1–2.50 per hour of talking** ([§7](#cost)): streaming speech-to-text, text-to-speech and a small talker LLM, with LiveKit self-hosted. opencode's own LLM costs come on top, as with typed chat.
 
@@ -88,7 +88,7 @@ How it plays out:
 
 - **The talker** gets short instructions: speak in short sentences, never read Markdown, links or paths aloud; anything about the notes goes through `ask_vault`; while waiting, say what is happening. It keeps the voice conversation's history and the last vault answer, so "and what was the date?" can be answered without a new turn when the answer is already known.
 - **One call = one Chat = one opencode session.** A voice call is bound to exactly one **Chat** (in our domain language, a Chat *is* one opencode session). The backend puts its `chatId` into the room token: the Chat that is open in the pane, or a new one when you start talking from an empty pane. Every `ask_vault` call in that voice call prompts the same Chat, so opencode keeps its context across questions: a follow-up like "add that to the Dune note" knows what "that" is and doesn't re-read files it has just read. After the call the Chat stays as it is, so you can scroll it, continue by typing, or talk again later. Two contexts exist side by side: the talker's short voice history (lives only during the call, in the agent) and the Chat's full history (lives in opencode, survives the call). Turns queue as they do today: one running turn per vault, so a second `ask_vault` while one runs waits, and the talker says so.
-- **`ask_vault(question)`** posts the prompt to that Chat and reads the NDJSON stream, exactly as the PWA does. It maps tool events to progress: a read of `entities/micrograd.md` becomes `ctx.update("reading micrograd")`, and the talker turns that into a spoken line. The final text goes back as the tool result, and the talker summarises it in two or three sentences.
+- **`ask_vault(question)`** posts the prompt to that Chat and reads the NDJSON stream, exactly as the PWA does. The prompt carries **your words verbatim** (the final transcript), plus the talker's clarification only when it adds something ("the user means the note from last week"), so the Chat reads naturally afterwards. It maps tool events to progress: a read of `entities/micrograd.md` becomes `ctx.update("reading micrograd")`, and the talker turns that into a spoken line. The final text goes back as the tool result, and the talker summarises it in two or three sentences.
 - **Writes stay visible.** When opencode changes files, the talker says so ("I added it to the Dune note"), and the chat pane and *Changes* show the diff. Nothing is committed: [ADR 0001](../../../docs/adr/0001-user-triggered-commits.md) stays as is.
 - **Interrupting and cancelling:** barge-in stops the talker's speech at once. "Stop, never mind" can cancel the opencode turn through the existing abort route (a cancellable async tool).
 - **opencode can get a `voice` hint**: one line in the prompt ("the user is listening; keep the final answer short and spoken") makes its answers easier to summarise. That is a prompt, not a new endpoint, in line with [ADR 0004](../../../docs/adr/0004-commands-as-prompts-not-command-endpoint.md).
@@ -108,7 +108,7 @@ How it plays out:
 
 - **Backend:** one route, `POST /api/vaults/:id/voice/token` (body: the open `chatId`, or none for a new Chat). It checks the bearer token, creates the Chat if needed, creates a room name, puts `{vaultId, chatId}` into the token's room configuration and dispatches the agent by name. LiveKit API key and secret are compose secrets. The backend stays thin: no audio passes through it.
 - **voice-agent → backend:** a service token on the internal network, calling the same chat routes the PWA uses. opencode stays reachable only from the backend.
-- **PWA:** a talk button in the chat pane opens a voice sheet: connect, mic level, live transcript, the agent's state (listening / thinking / speaking), *mute* and *end*. Text and tool chips keep streaming into the chat pane as usual, because it is the same chat. Push-to-talk as an option for noisy places.
+- **PWA:** a talk button in the chat pane and a new component, the **voice sheet** ([What you see](#screen) below). Text and tool chips keep streaming into the chat pane as usual, because it is the same chat.
 - **Caddy:** a route for the LiveKit signalling WebSocket; CSP `connect-src` gets the `wss:` URL.
 - **Settings:** speech-to-text, text-to-speech and talker model chosen in the admin area, like the chat model; keys server-side only.
 
@@ -117,6 +117,51 @@ How it plays out:
 **Footprint:** the media server is light for one user. LiveKit's sizing guidance for agent servers is generous (4 cores, 8 GB for many agents; 30 agents peaked at 2.8 GB). One session with the local turn detector should fit next to the current ~1 GB on our 4 GB VPS, but the spike has to measure it.
 
 ![One voice turn: the agent speaks a first line within about a second, narrates opencode's progress and summarises the answer; the user can interrupt](diagrams/voice-turn.svg)
+
+### What you see: voice sheet and chat pane {#screen}
+
+A voice call has two kinds of text: what is **spoken** (your words, the talker's lines) and what opencode **does** (the Chat). They go to two places:
+
+| Text | Voice sheet (live captions) | Chat pane (the Chat) |
+| --- | --- | --- |
+| Your words that become an `ask_vault` call | yes | yes, verbatim, as the user message |
+| Your words that don't (small talk, "repeat that", "shorter") | yes | no |
+| The talker's lines ("Let me look", progress, the spoken summary) | yes | no |
+| opencode's full answer, tool chips, changed files | no (only the spoken summary) | yes, as with typed chat |
+
+**The voice sheet** is a new visual component: a bottom sheet over the chat pane on the phone, docked at the bottom of the chat column on the iPad. It shows:
+
+- the call state: connecting / listening / thinking / speaking, with a mic level meter;
+- **live captions** of both sides, your partial words updating while you speak. LiveKit Agents sends both transcripts to the browser as text streams, and `@livekit/components-react` has hooks to show them, so this needs no new backend route;
+- a hint while opencode works ("reading micrograd.md") that matches what the talker says;
+- controls: *mute*, *push-to-talk* (for noisy places) and *end call*.
+
+The captions are **not saved**: they live only during the call. The Chat under the sheet is the lasting record. That keeps opencode's context clean and needs no second store for voice lines.
+
+```text
+┌──────────────────────────────────────┐
+│ ‹ Chat · micrograd questions         │
+├──────────────────────────────────────┤
+│ You: what did I write about          │
+│      micrograd last week?            │  ← Chat (opencode):
+│ ◇ read entities/micrograd.md         │    verbatim prompt,
+│ ◇ read raw/2026-09-29.md             │    tool chips,
+│ On 29 September you noted that …     │    full answer
+│ (full Markdown answer)               │
+│                                      │
+│ ╭──────────────────────────────────╮ │
+│ │ ● speaking          ▁▃▅▇▅▃▁      │ │  ← voice sheet:
+│ │ You: what did I write about      │ │    live captions,
+│ │      micrograd last week?        │ │    not saved
+│ │ AI: Let me look in your notes.   │ │
+│ │ AI: Reading the micrograd page.  │ │
+│ │ AI: You noted that backprop …    │ │
+│ │ [ mute ]   [ hold to talk ] [end]│ │
+│ ╰──────────────────────────────────╯ │
+└──────────────────────────────────────┘
+```
+
+Rejected for now: showing **only the Chat** (the pane would show a paraphrased question and a long answer you only heard summarised), and **saving the voice lines into the Chat** (the talker's lines aren't opencode messages, so the backend would need a second store merged into the pane, or would have to inject them into the opencode session as messages without a reply, which adds noise to opencode's context and needs checking against the SDK). Saved captions can come later if the live ones turn out not to be enough.
 
 ## iOS and PWA constraints {#ios}
 
