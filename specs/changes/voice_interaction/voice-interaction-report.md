@@ -1,7 +1,7 @@
 ---
 title: "Voice interaction: talking to karpathy.app"
 created: 2026-10-06
-edited: 2026-10-06
+edited: 2026-10-07
 status: research
 subtitle: "Research for the change `voice_interaction`. Research only; nothing gets built yet. Question: can we talk to the app instead of typing, with an instant, conversational feel, and does LiveKit give us the infrastructure for it? Evidence: primary-source desk research (LiveKit, OpenAI, Google, Pipecat, ElevenLabs, WebKit docs and package registries), checked on 2026-10-06. No spike yet."
 description: "How to add a real-time voice conversation to karpathy.app: LiveKit architecture, the talker/thinker split around opencode, self-hosting on the VPS behind Tailscale, iOS PWA limits, costs and alternatives (2026-10-06)."
@@ -87,7 +87,8 @@ opencode is the brain we want: it knows the vault, the skills, `AGENTS.md` and t
 How it plays out:
 
 - **The talker** gets short instructions: speak in short sentences, never read Markdown, links or paths aloud; anything about the notes goes through `ask_vault`; while waiting, say what is happening. It keeps the voice conversation's history and the last vault answer, so "and what was the date?" can be answered without a new turn when the answer is already known.
-- **`ask_vault(question)`** creates or reuses the chat, posts the prompt and reads the NDJSON stream, exactly as the PWA does. It maps tool events to progress: a read of `entities/micrograd.md` becomes `ctx.update("reading micrograd")`, and the talker turns that into a spoken line. The final text goes back as the tool result, and the talker summarises it in two or three sentences.
+- **One call = one Chat = one opencode session.** A voice call is bound to exactly one **Chat** (in our domain language, a Chat *is* one opencode session). The backend puts its `chatId` into the room token: the Chat that is open in the pane, or a new one when you start talking from an empty pane. Every `ask_vault` call in that voice call prompts the same Chat, so opencode keeps its context across questions: a follow-up like "add that to the Dune note" knows what "that" is and doesn't re-read files it has just read. After the call the Chat stays as it is, so you can scroll it, continue by typing, or talk again later. Two contexts exist side by side: the talker's short voice history (lives only during the call, in the agent) and the Chat's full history (lives in opencode, survives the call). Turns queue as they do today: one running turn per vault, so a second `ask_vault` while one runs waits, and the talker says so.
+- **`ask_vault(question)`** posts the prompt to that Chat and reads the NDJSON stream, exactly as the PWA does. It maps tool events to progress: a read of `entities/micrograd.md` becomes `ctx.update("reading micrograd")`, and the talker turns that into a spoken line. The final text goes back as the tool result, and the talker summarises it in two or three sentences.
 - **Writes stay visible.** When opencode changes files, the talker says so ("I added it to the Dune note"), and the chat pane and *Changes* show the diff. Nothing is committed: [ADR 0001](../../../docs/adr/0001-user-triggered-commits.md) stays as is.
 - **Interrupting and cancelling:** barge-in stops the talker's speech at once. "Stop, never mind" can cancel the opencode turn through the existing abort route (a cancellable async tool).
 - **opencode can get a `voice` hint**: one line in the prompt ("the user is listening; keep the final answer short and spoken") makes its answers easier to summarise. That is a prompt, not a new endpoint, in line with [ADR 0004](../../../docs/adr/0004-commands-as-prompts-not-command-endpoint.md).
@@ -105,7 +106,7 @@ How it plays out:
 
 **Changes to existing parts**
 
-- **Backend:** one route, `POST /api/vaults/:id/voice/token`. It checks the bearer token, creates a room name, puts `{vaultId, chatId}` into the token's room configuration and dispatches the agent by name. LiveKit API key and secret are compose secrets. The backend stays thin: no audio passes through it.
+- **Backend:** one route, `POST /api/vaults/:id/voice/token` (body: the open `chatId`, or none for a new Chat). It checks the bearer token, creates the Chat if needed, creates a room name, puts `{vaultId, chatId}` into the token's room configuration and dispatches the agent by name. LiveKit API key and secret are compose secrets. The backend stays thin: no audio passes through it.
 - **voice-agent → backend:** a service token on the internal network, calling the same chat routes the PWA uses. opencode stays reachable only from the backend.
 - **PWA:** a talk button in the chat pane opens a voice sheet: connect, mic level, live transcript, the agent's state (listening / thinking / speaking), *mute* and *end*. Text and tool chips keep streaming into the chat pane as usual, because it is the same chat. Push-to-talk as an option for noisy places.
 - **Caddy:** a route for the LiveKit signalling WebSocket; CSP `connect-src` gets the `wss:` URL.
