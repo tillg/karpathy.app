@@ -8,7 +8,7 @@
 # Differences from prod: https://localhost:80N5 with Caddy's internal CA (TLS_MODE=internal selects
 # the tls-internal snippet in the prod Caddyfile instead of DNS-01), local bare repos from
 # tmp/dev/remotes instead of GitHub, throwaway secrets, and the native Ollama on the Mac as the
-# model (`just ollama install`, reached through a socat relay).
+# model (`just ollama install`, reached through the /v1-only relay proxy/Caddyfile.ollama-relay).
 services:
   proxy:
     ports: !override ["${PRODTEST_PORT:?start prodtest with just prodtest}:443"]

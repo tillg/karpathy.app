@@ -1,7 +1,7 @@
 ---
 title: "Deployment: releases, targets and operations"
 created: 2026-10-02
-edited: 2026-10-04
+edited: 2026-10-08
 ---
 
 # Deployment: releases, targets and operations
@@ -71,8 +71,9 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
 
 `deploy/compose.yml` is the one stack definition for dev, prodtest and every target:
 
-- `image: ghcr.io/…:${APP_VERSION:-dev}` per service (dev uses its own local image names, so dev and
-  prodtest builds never share a tag).
+- `image: ghcr.io/…:${APP_VERSION:-dev}` per service. Dev stacks reset it, so compose names their images
+  per project (`karpathy-app-N-backend`, …) and neither parallel dev stacks nor prodtest share a tag; prodtest
+  builds keep `ghcr…:dev`.
 - The proxy publishes only `${BIND_IP}:${HTTPS_PORT}:443` (no port 80: DNS-01), and has a healthcheck
   answered by Caddy itself on `127.0.0.1:8081`.
 - All services: `cap_drop: [ALL]` (the proxy keeps `NET_BIND_SERVICE`), `no-new-privileges`, json-file
@@ -96,6 +97,11 @@ of `/srv/vaults`; on `local` also the e2e bare repos at `/remotes` with `safe.di
 
 Each target is one inventory (`deploy/ansible/inventories/<target>`) with its settings in
 `group_vars/all/main.yml` and its secrets in an encrypted `vault.yml`.
+
+Not targets, and not deployed by the playbook: the **dev stacks** on the Mac (stack N, project `karpathy-app-N`,
+on https://localhost:80N0, started with `just dev up [N]`) and their **paired prodtest** (the prod images built
+locally as `karpathy-app-N-prodtest` on https://localhost:80N5, `just prodtest`). Both use the native Ollama on the
+Mac as the model. Details: [architecture.md](architecture.md#dev-stacks).
 
 ## The playbook
 
