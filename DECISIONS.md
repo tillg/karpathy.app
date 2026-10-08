@@ -103,6 +103,8 @@ edited: 2026-10-08
   - [18:58 — Deploy prod with no ingest profiles; leave the cutover to the user](#run-2026-10-08-1858-7)
   - [19:20 — Extend the compose topology tests for the new ingest service](#run-2026-10-08-1858-8)
   - [19:20 — Instagram status read from the vaults, not from ingest_email](#run-2026-10-08-1858-9)
+  - [19:55 — Tick step 15 without the manual real-Instagram connect](#run-2026-10-08-1858-10)
+  - [19:55 — e2e: skill via push + pull, @llm and Instagram cases in one project](#run-2026-10-08-1858-11)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1236,6 +1238,9 @@ edited: 2026-10-08
 - **Why:** the documented release path (`specs/system/deployment.md`): tag → release workflow → `just deploy`.
 - **Alternatives:** a feature branch and PR (the user asked for a push and a prod deploy, not a review gate).
 - **Consequences:** rollback: `just deploy hetzner 0.0.15 --only app`.
+  19:25: the checkout turned out to be on the user's branch `rework-ingestion-pipeline` (created 14:50, before this
+  session); the commits are there, pushed as `origin/rework-ingestion-pipeline`. It is merged into `main` (`--no-ff`, the
+  repo's `Merge branch '…'` convention) before the final release tag.
 
 ## 18:58 — Commit this session's uncommitted work for the change {#run-2026-10-08-1858-2}
 
@@ -1342,3 +1347,33 @@ edited: 2026-10-08
 - **Alternatives:** a status file written by ingest_email (needs its prerequisite work).
 - **Consequences:** with the pinned ingest_email a `no-session` link is still given up after 5 attempts (prerequisite
   open); the count then drops although nothing was fetched.
+
+## 19:55 — Tick step 15 without the manual real-Instagram connect {#run-2026-10-08-1858-10}
+
+- **Status:** open
+- **Overrides:** `/spec:apply` — tick a step only when its Verify passes (step 15's Verify includes "on the `local` VM a
+  real connect with your account ends in Connected as @…").
+- **Context:** `rework-ingestion-pipeline` step 15; the manual part needs the user's Instagram password and phone (2FA).
+- **Question:** leave step 15 open, or tick it on the automated part?
+- **Decision:** tick it: the component tests and the e2e flow against the ingest service (fake login) pass; the real
+  connect is listed as open for the user.
+- **Why:** nothing automated is red; the manual check can't be done by anyone but the user.
+- **Alternatives:** leave the step open (blocks the archive and the release for a check only the user can do).
+- **Consequences:** first real connect happens in prod (Admin › Instagram); if instascraper's login fails there, it shows
+  as "Instagram login failed: <type>" and nothing else is affected.
+
+## 19:55 — e2e: skill via push + pull, @llm and Instagram cases in one project {#run-2026-10-08-1858-11}
+
+- **Status:** open
+- **Context:** `rework-ingestion-pipeline` step 16. (1) A skill written into the clone behind the backend's back isn't in
+  opencode's command list until the next pull (opencode caches skills per directory). (2) Two `@llm` turns at once on the
+  shared dev Ollama made the 3B model miss the 4-min window; with "list Input/, then move" it also wandered. (3) The
+  stack has one Instagram session.
+- **Question:** how to make the new e2e cases deterministic?
+- **Decision:** the stub skill is pushed to the vault's remote and pulled (the real way a skill arrives); the stub skill
+  names the item to move; the `@llm` and Instagram cases run in the `desktop` project only. Dev stack 1's model setting
+  was switched from `openrouter/z-ai/glm-5.3` (no key on the Mac) to `ollama/qwen2.5:3b`.
+- **Why:** the tests check the wiring (tool, permission, badge, routes), not the model's planning or the browser engine.
+- **Alternatives:** run them in every project (flaky on one local model); write the skill via `docker exec` (stale list).
+- **Consequences:** (1) is a product gap too: a skill created in the app (or by the AI) doesn't show as a command until
+  a pull; filed as an issue.

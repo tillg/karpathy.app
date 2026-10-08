@@ -149,7 +149,7 @@ before `/spec:apply` writes them. The real login is checked once by hand on the 
     `ingest_token` to a real local HTTP server standing in for the ingest service; `503` "Ingest service not running"
     when it is down; the password never appears in the backend log. Fails today: routes don't exist.
   - Verify: `npm test -w apps/backend` → all green
-- [ ] Admin › Instagram section (status, connect form, code step, disconnect) and the "Instagram disconnected — N links
+- [x] Admin › Instagram section (status, connect form, code step, disconnect) and the "Instagram disconnected — N links
       waiting" notice
   - Depends on: 14
   - Test first: `apps/web/src/components/InstagramSettings.test.tsx` › form → code field when the API answers `code`
