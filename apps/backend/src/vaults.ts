@@ -22,7 +22,7 @@ import {
 import { isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
-import { filesMentioning, graph, listTree, search, versionOf, versionOfFile } from './files.js';
+import { DEFAULT_VISIBLE_DOT_DIRS, filesMentioning, graph, listTree, search, versionOf, versionOfFile } from './files.js';
 import { Git, GitError, type GitIdentity } from './git.js';
 import { VaultLock } from './lock.js';
 import { normalizeRel, resolveInVault } from './paths.js';
@@ -351,7 +351,7 @@ export class Vaults {
     this.requireReady(id);
     const root = this.vaultRootDir(id);
     const repo = this.repo(this.config(id));
-    const [entries, history, changes] = await Promise.all([listTree(root), this.fileHistory(id, repo), repo.changes()]);
+    const [entries, history, changes] = await Promise.all([listTree(root, DEFAULT_VISIBLE_DOT_DIRS), this.fileHistory(id, repo), repo.changes()]);
     const uncommitted = new Set(changes.map((c) => c.path));
     const stamps = this.store.get().editStamps[id] ?? {};
     await this.dropStampsOfDeleted(id, new Set(entries.filter((e) => e.type === 'file').map((e) => e.path)));

@@ -118,7 +118,8 @@ applies to the next git operation. The deployment's `GITHUB_TOKEN` secret stays 
 ### Notes
 
 - **File tree:** folders first, collapsed by default, expansion remembered per vault; `.md` hidden in names;
-  dot-files never shown. The open note's folders open and its row scrolls into view, unless a filter hides the note.
+  dot-entries never shown, except the `.agents/` folder (the vault's skills; dot-files and other dot-folders inside it stay
+  hidden). The whitelist is a constant in the backend for now; central-settings-yaml moves it to `files.visible_dot_dirs`. The open note's folders open and its row scrolls into view, unless a filter hides the note.
 - **Sort and filter the tree** (#122): two buttons in the *Notes* header, both remembered per browser for all vaults.
   - **Sort** (⇅): by **Name** (A → Z / Z → A) or by **Last changed** (Newest first / Oldest first). Picking a
     criterion sets its natural direction (A → Z, newest first). The menu stays open, so criterion and direction

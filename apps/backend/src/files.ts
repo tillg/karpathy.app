@@ -19,14 +19,20 @@ export async function versionOfFile(abs: string): Promise<string | null> {
   }
 }
 
-/** Recursive listing of the vault root; dot-entries (.git, .obsidian, .claude, …) are hidden. */
-export async function listTree(root: string): Promise<FileEntry[]> {
+/** Dot-folders the file tree shows (central-settings-yaml will move this to `files.visible_dot_dirs`). */
+export const DEFAULT_VISIBLE_DOT_DIRS = ['.agents'];
+
+/**
+ * Recursive listing of the vault root; dot-entries (.git, .obsidian, .claude, …) are hidden, except folders
+ * named in `visibleDotDirs` (e.g. `.agents`).
+ */
+export async function listTree(root: string, visibleDotDirs: readonly string[] = []): Promise<FileEntry[]> {
   const out: FileEntry[] = [];
   async function walk(dir: string, rel: string) {
     const entries = await readdir(dir, { withFileTypes: true });
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const e of entries) {
-      if (e.name.startsWith('.')) continue;
+      if (e.name.startsWith('.') && !(e.isDirectory() && visibleDotDirs.includes(e.name))) continue;
       const p = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         out.push({ path: p, type: 'dir' });

@@ -573,6 +573,19 @@ describe('files', () => {
     expect((await t.api.get(`/vaults/${t.id}/file?path=missing.md`)).status).toBe(404);
   });
 
+  it('lists .agents (the vault skills) but no other dot-folder; its files open', async () => {
+    const t = await vaultApp();
+    const root = t.vaults.vaultRootDir(t.id);
+    await mkdir(join(root, '.agents/skills/ingest'), { recursive: true });
+    await writeFile(join(root, '.agents/skills/ingest/SKILL.md'), 'skill');
+    await mkdir(join(root, '.obsidian'), { recursive: true });
+    await writeFile(join(root, '.obsidian/app.json'), '{}');
+    const paths = pathTypes((await t.api.get(`/vaults/${t.id}/files`)).body).map((e) => e.path);
+    expect(paths).toEqual(expect.arrayContaining(['.agents', '.agents/skills', '.agents/skills/ingest', '.agents/skills/ingest/SKILL.md']));
+    expect(paths.filter((p) => p.startsWith('.') && !p.startsWith('.agents'))).toEqual([]);
+    expect((await t.api.get(`/vaults/${t.id}/file?path=.agents/skills/ingest/SKILL.md`)).body.content).toBe('skill');
+  });
+
   it('binary files are flagged, not decoded (#20)', async () => {
     const t = await vaultApp();
     await writeFile(join(t.vaults.vaultRootDir(t.id), 'pic.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe]));
