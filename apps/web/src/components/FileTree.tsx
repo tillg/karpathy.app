@@ -1,5 +1,7 @@
+import { INPUT_DIR, type Command } from '@karpathy/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ancestors, buildTree, dateOf, DEFAULT_SORT, loadExpanded, saveExpanded, type TreeFilter, type TreeNode, type TreeSort } from '../lib/tree';
+import { api } from '../lib/api';
+import { ancestors, buildTree, dateOf, DEFAULT_SORT, inputCount, loadExpanded, saveExpanded, type TreeFilter, type TreeNode, type TreeSort } from '../lib/tree';
 import { useApp } from '../store';
 import { Icon } from './Icon';
 import { TreeMenu } from './TreeMenu';
@@ -12,9 +14,27 @@ const FILTERS: Record<TreeFilter, { menu: string; chip: string; icon: string; em
 };
 
 export function FileTree() {
-  const { files, note, openNote, newNote, readOnly, usable, online, activeId, sortFilter, setSortFilter } = useApp();
+  const { files, note, openNote, newNote, readOnly, usable, online, activeId, sortFilter, setSortFilter, status, conflict, ingestNow, commandsNonce } = useApp();
   const { sort, filter } = sortFilter;
-  const tree = useMemo(() => buildTree(files, sort, filter), [files, sort, filter]);
+  // The queue length counts every item, whatever the filter shows; the Input row stays visible under a filter.
+  const waiting = useMemo(() => inputCount(buildTree(files)), [files]);
+  // The Ingest button needs the vault's `ingest` skill (#131).
+  const [commands, setCommands] = useState<{ vault: string; list: Command[] } | null>(null);
+  useEffect(() => {
+    if (!activeId || !usable || !waiting) return;
+    api.commands(activeId).then((list) => setCommands({ vault: activeId, list })).catch(() => undefined);
+  }, [activeId, usable, waiting > 0, commandsNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  const canIngest = commands?.vault === activeId && commands.list.some((c) => c.name === 'ingest');
+  const [ingesting, setIngesting] = useState(false);
+  const ingestBlocked = !online ? 'Offline' : conflict ? 'The vault is in conflict' : status?.busy === 'turn' ? 'The AI is working in this vault' : ingesting ? 'Starting…' : null;
+  const ingest = () => {
+    setIngesting(true);
+    void ingestNow().finally(() => setIngesting(false));
+  };
+  const tree = useMemo(() => {
+    const t = buildTree(files, sort, filter);
+    return waiting && !t.some((n) => n.dir && n.name === INPUT_DIR) ? [{ name: INPUT_DIR, path: INPUT_DIR, dir: true, children: [] }, ...t] : t;
+  }, [files, sort, filter, waiting]);
   const setSort = (s: TreeSort) => setSortFilter({ sort: s, filter });
   const setFilter = (f: TreeFilter) => setSortFilter({ sort, filter: f });
   const byName = sort.by === 'name';
@@ -56,8 +76,8 @@ export function FileTree() {
     void newNote(/\.[a-z0-9]+$/i.test(path) || path.endsWith('/') ? path : `${path}.md`);
   };
 
-  const render = (nodes: TreeNode[], depth: number) => nodes.map((n) => (
-    <div key={n.path}>
+  const render = (nodes: TreeNode[], depth: number) => nodes.map((n) => {
+    const row = (
       <button
         ref={note?.path === n.path ? selRef : undefined}
         className={`trow${n.dir ? ' dir' : ''}${note?.path === n.path ? ' sel' : ''}`}
@@ -71,10 +91,27 @@ export function FileTree() {
           : <span className="tw" />}
         <span className="ic"><Icon n={n.dir ? 'folder' : /\.md$/i.test(n.name) ? 'doc_text' : 'doc'} size={18} /></span>
         <span className="nm">{n.dir ? n.name : n.name.replace(/\.md$/i, '')}</span>
+        {n.path === INPUT_DIR && waiting > 0 && (
+          <span className="input-badge" data-testid="input-badge" aria-label={`${waiting} sources waiting to be ingested`}
+            title={canIngest ? undefined : 'Add an `ingest` skill to `.agents/skills/` to ingest from here'}>{waiting}</span>
+        )}
       </button>
-      {n.dir && expanded.has(n.path) && render(n.children, depth + 1)}
-    </div>
-  ));
+    );
+    return (
+      <div key={n.path}>
+        {n.path === INPUT_DIR && waiting > 0 && canIngest
+          ? (
+            <div className="trow-act">
+              {row}
+              <button className="btn sm g" data-testid="ingest-now" disabled={!!ingestBlocked} title={ingestBlocked ?? 'Ingest the waiting sources in a new chat'}
+                onClick={ingest}>Ingest</button>
+            </div>
+          )
+          : row}
+        {n.dir && expanded.has(n.path) && render(n.children, depth + 1)}
+      </div>
+    );
+  });
 
   return (
     <div className="tree">

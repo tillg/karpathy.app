@@ -69,5 +69,5 @@ export default defineConfig(({ command }) => ({
     // http-proxy pipes chunked responses through, so NDJSON streams aren't buffered.
     proxy: { '/api': { target: process.env.API_URL ?? 'http://localhost:8788', changeOrigin: true } },
   },
-  test: { include: ['src/**/*.test.ts'] },
+  test: { include: ['src/**/*.test.{ts,tsx}'] },
 }));

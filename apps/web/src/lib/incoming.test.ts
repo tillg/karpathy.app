@@ -3,7 +3,7 @@ import type { VaultStatus } from '@karpathy/shared';
 import { incomingView } from './incoming';
 
 const st = (over: Partial<VaultStatus> = {}): VaultStatus => ({
-  state: 'ready', changedCount: 0, unpushedCount: 0, incomingCount: 2, incomingPaths: ['a.md', 'b.md'], busy: 'none', conflictPaths: [], ...over,
+  state: 'ready', changedCount: 0, inputChangedCount: 0, unpushedCount: 0, incomingCount: 2, incomingPaths: ['a.md', 'b.md'], busy: 'none', conflictPaths: [], ...over,
 });
 
 describe('incomingView', () => {

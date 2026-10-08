@@ -54,9 +54,14 @@ export interface TokenTest {
 
 export type Busy = 'none' | 'turn' | 'sync';
 
+/** The ingest queue: `Input/` in the vault root, one sub-folder per source not yet ingested. */
+export const INPUT_DIR = 'Input';
+
 export interface VaultStatus {
   state: VaultState;
   changedCount: number;
+  /** The part of `changedCount` under `Input/` (the ingest queue): left out of the commit reminder. */
+  inputChangedCount: number;
   unpushedCount: number;
   /** Files inside the vault root that GitHub's branch changed since its last commit shared with HEAD (as of the last fetch). */
   incomingCount: number;

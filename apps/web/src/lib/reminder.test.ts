@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dismissReminder, reminderDue } from './reminder';
+import { dismissReminder, reminderCount, reminderDue } from './reminder';
 
 describe('commit reminder', () => {
   it('stays hidden up to the threshold', () => {
@@ -28,5 +28,11 @@ describe('commit reminder', () => {
   it('resets when the count drops to the threshold (e.g. after a commit)', () => {
     expect(reminderDue(0, 4, 2)).toEqual({ show: false, dismissed: 0 });
     expect(reminderDue(5, 4, 0).show).toBe(true);
+  });
+
+  it('3 changes under Input/ + 2 elsewhere with threshold 4 → no reminder', () => {
+    expect(reminderCount({ changedCount: 5, inputChangedCount: 3 })).toBe(2);
+    expect(reminderDue(reminderCount({ changedCount: 5, inputChangedCount: 3 }), 4, 0).show).toBe(false);
+    expect(reminderCount(null)).toBe(0);
   });
 });
