@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-06
+edited: 2026-10-08
 ---
 
 **Contents**
@@ -933,7 +933,7 @@ edited: 2026-10-06
 
 ## 15:35 — Four changes from the seven priority:high issues {#run-2026-10-04-1514-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** open `priority:high` issues: #119, #117, #87, #86, #82, #79, #64. The task: "group them by what makes
   sense for building them, make change descriptions for reasonable batches".
 - **Question:** Which batches?
@@ -1018,7 +1018,7 @@ edited: 2026-10-06
 
 ## 15:44 — note-outline-properties: outline first, then a CST-preserving YAML form that refuses lossy edits {#run-2026-10-04-1514-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** proposal written by a background agent (#79, #82). It tried the `yaml` library (2.9.1) in the
   scratchpad: `Document.toString()` is documented as not stable for comments, `CST.setScalarValue` + `CST.stringify`
   was byte-identical.
@@ -1034,7 +1034,8 @@ edited: 2026-10-06
   dependencies.
 - **Why:** #79 ships alone and is low risk; #82's only hard rule is ADR 0003, so refusing beats a "close" rewrite.
 - **Alternatives:** two separate changes; `Document.toString()`; js-yaml; auto-bumping `updated`.
-- **Consequences:** v1-plan lists #82 as OUT/V2; the change can stop after phase 1.
+- **Consequences:** v1-plan lists #82 as OUT/V2; the change can stop after phase 1. Both phases shipped.
+  Promoted to docs/adr/0005-frontmatter-edits-through-the-yaml-cst.md.
 
 ## 15:44 — remote-changes: a shared-lock background fetch every 2 minutes while a vault is open {#run-2026-10-04-1514-11}
 

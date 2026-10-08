@@ -146,8 +146,42 @@ flowchart LR
 - **Create a note** (path prompt, `.md` added if missing, starts as `# <title>`). Refused for existing names, names
   that differ only by case, and invalid names.
 - **Delete a note** (recoverable until the next commit). On a media or binary file the button says "Delete file".
-- **Write mode** (default for a new browser): Markdown with live preview, frontmatter shown as a block,
-  find-in-note; embeds show as a block below their line, the `![[…]]` text stays editable.
+- **Write mode** (default for a new browser): Markdown with live preview, find-in-note; embeds show as a block below
+  their line, the `![[…]]` text stays editable. The frontmatter shows as the properties form (below), or as a block
+  of raw lines in the YAML view.
+- **Outline and note info** (#79): the list button in the note header (notes only, left of Write/Read) shows the
+  note's headings, indented by level, the same in both modes; headings in code, the frontmatter and `%%comments%%`
+  aren't listed. A tap jumps there: Write mode scrolls the heading's line to the top without moving the cursor or
+  opening the phone keyboard; Read mode scrolls its block to the top and highlights it (a heading inside a callout or
+  quote lands on that block). No history entry, so Back still leaves the note. The section at the top of the pane is
+  marked while scrolling. Phone: a bottom sheet (closes on a jump, the dimmed note, the grabber or Escape); tablet: a
+  panel at the top right of the note pane (closes on a jump, a tap outside or Escape); wide: the same panel, which
+  stays open, also across notes, until the button or Escape closes it. Its footer: `2,418 words · 14,902 characters
+  · ~11 min read` for the body without the frontmatter (220 words a minute, the browser's word rules), or
+  `Selection: 312 words · 1,904 characters` when text is selected (in the editor or the rendered note; frontmatter
+  never counted). While typing, the outline and the counts catch up after a short pause.
+- **Properties form** (#82, Write mode): the frontmatter as a form between the title and the text, collapsible to one
+  line ("Properties · 6 · ⚠ 1"); its lines are hidden in the editor and the cursor, select-all and editing keys can't
+  reach them (a key that would shows them instead). Fields by kind: a picker (a value outside the list stays, flagged),
+  a date with **Today**, a number field (`inputmode="decimal"`, non-canonical input like `007` kept as typed), a
+  switch, a text field (commits on Enter or leaving it), chips with ✕ and an Add field (Enter adds and keeps the
+  keyboard; link lists suggest note names and open the note on a tap), read-only text with "Edit in YAML" for block
+  scalars, maps, multi-line lists, anchors and tags. **+ Property** adds a property: the schema's missing ones are
+  offered, any plain name (letters, digits, spaces, `-`, `_`) can be typed. A change edits only that property's lines,
+  is one undo step and autosaves like typing; an edit that can't keep every other byte is refused ("Edit this property
+  in YAML") and writes nothing. New `[[…]]` list items are written quoted; a bare list stays bare (`.md` added when
+  its items carry it). **YAML** shows the raw lines (remembered per browser); a note whose frontmatter can't be read
+  ("Can't read these properties: …"), "Edit in YAML", a refused edit, or a search hit or find-in-note match inside
+  the frontmatter shows that note's lines without changing the preference. Disabled when read-only. Phone: 44 px
+  targets, no auto-capitalization or correction in names, Enter says "done".
+- **Wiki schema:** on pages in `Wiki/` the form flags what doesn't fit, under the field, and never fixes it or blocks
+  saving: `type` (entity, concept, topic, source, synthesis), `tags`, `updated` required; `confidence` high, medium or
+  low; dates must be calendar dates; values of the wrong kind ("should be a number", "should be true or false",
+  "should be a list", "should be a single value"); unquoted `[[…]]` in any list. Unknown properties are shown, not
+  flagged. Outside `Wiki/` kinds come from the values and nothing is flagged. A vault's `.karpathy/schema.json`
+  (`appliesTo` folders, `fields` with `kind`, `values`, `required`, `linkStyle`) replaces the default schema and
+  applies without a reload; a broken one shows "Schema file ignored: …" once and the default applies. It is hidden
+  in the tree and doesn't disable chat.
 - **Read mode:** rendered, sanitized Markdown of the note's current text; frontmatter as a properties table, where
   `related` / `sources` values that name a note are links. Obsidian syntax: callouts `> [!type] Title`, `==highlight==`,
   `%%comments%%` hidden, footnotes, task markers ☑ / ☐, media embeds (below), `![[note]]` as a link (no
@@ -483,7 +517,12 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
 - Search skips files ignored by `.gitignore` and hidden files; capped at 200 hits.
 - Vaults are full clones; there is no disk-space check before adding a vault and no per-file size limit.
 - Push failures aren't retried in the background, only on the next pull, commit or "retry".
-- The frontmatter properties table understands simple YAML only; other values are shown raw.
+- The frontmatter properties table (Read mode) understands simple YAML only; other values are shown raw.
+- **Properties form:** no form in Read mode; no frontmatter is created on a note that has none; nested maps,
+  multi-line values, anchors and tags are edited in YAML only; very large numbers show rounded; `updated` is never
+  bumped automatically. A form edit that makes the frontmatter longer than 20,000 characters turns it into body text
+  in the editor (no bytes lost).
+- **Outline:** a heading inside a callout, quote or list lands on its top-level block in Read mode.
 - The offline cache has no automated test in WebKit (Playwright's offline WebKit fails even service-worker-served
   requests); on iPhone/iPad it needs a check by hand.
 - **Media:** fetched whole before it shows (no streaming; the bearer token can't ride on `<img src>`), so seeking

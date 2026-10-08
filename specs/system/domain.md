@@ -122,6 +122,23 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Plan turn / run turn** | Plan turn: the first turn of a research run; reads the wiki, scouts the web a little (≤ 3 searches, ≤ 2 fetches), writes the plan note and stops for the user's "go". Run turn: any later turn; reads the plan note, searches, fetches, saves source files (≤ 8 per turn), writes cited pages, ticks off the note, and ends by asking to continue when questions remain. The scouting budget and the stop are skill instructions, not a backend rule; the hard bound is the web caps. | `research` skill |
 | **Source file** | A file in `Sources/` that a research run saved for one web page: frontmatter `url`, `title`, `fetched`, then a summary with short quotes, never the full page (the vault's own rules may change folder, name and frontmatter only). A URL already in `Sources/` isn't saved again. Wiki pages cite it in `sources:` and with `[[Sources/…]]`. | `research` skill |
 | **Harness config** | An `.opencode/`, `opencode.json` or `opencode.jsonc` inside a vault. Its presence disables chat for that vault, because it could override the AI's restrictions. | `HARNESS_CONFIG` |
+| **Outline** | The note's headings in document order, nested by level, from the same Markdown parser in Write and Read mode. Headings in code, the frontmatter and `%%comments%%` are not part of it. *Avoid:* table of contents, TOC, navigator. | web `lib/outline.ts`, `OutlinePanel` |
+| **Heading** *(outline entry)* | One ATX (`## Title`) or setext (`Title` + `===`) heading: level 1–6, display text (wikilinks by their label, no emphasis marks, "(untitled)" when empty), source line. Its **section** runs to the next heading of the same or a higher level. | `OutlineItem { level, text, line }` |
+| **Current section** | The heading whose section holds the line at the top of the visible pane; marked in the outline while scrolling. | `currentHeading(items, topLine)` |
+| **Jump** | Scrolling the open note so a heading is at the top of the pane (in Read mode its top-level block, briefly highlighted). Not a navigation: no history entry, the cursor doesn't move, the phone keyboard stays closed. *Avoid:* go to, navigate. | NotePane `jumpTo(line)` |
+| **Note info** | Words, characters and reading time of the note's body, or of the selection when there is one; the frontmatter is never counted. Words and characters by the browser's segmenter (the user's language rules); characters without line breaks. *Avoid:* statistics. | web `lib/noteinfo.ts` |
+| **Reading time** | Words ÷ 220, rounded up to whole minutes, shown with "~". One rate for every language. | `WORDS_PER_MINUTE` |
+| **Frontmatter** | The YAML block between `---` lines at the very start of a note. Part of the note's text: the AI and Obsidian edit it as text, and the app keeps it byte for byte unless the user changes a property. | `splitFrontmatter`, `frontmatterEndLine` |
+| **Property** | One top-level key of the frontmatter with its value. *Avoid:* field (that's the form element), metadata, attribute. | `Prop` (`lib/frontmatter.ts`) |
+| **Properties form** | The typed view of a note's properties in Write mode, one field per property; it writes back through the editor, one edit at a time. Read mode keeps the properties table. | web `PropertiesPanel` |
+| **Properties view** | How Write mode shows the frontmatter: `open` (the form), `closed` (the form collapsed to one line) or `yaml` (the raw lines in the editor). Per browser, survives a reload. A note can show its YAML lines without changing the preference (unreadable frontmatter, "Edit in YAML", a refused edit, a hit or a blocked keystroke in the hidden lines). | localStorage `karpathy.propsView`; NotePane `yamlFor` |
+| **Property kind** | How a property is shown and edited: `text`, `enum`, `date`, `number`, `boolean`, `list`, `links`, or `raw` (read-only, edit in YAML). From the schema rule when the value's shape fits it, else from the value. | `PropertyKind` |
+| **Link list** | A `links` property: each item names a note, either bare (`dolomites`) or as a quoted wikilink (`"[[openai]]"`); a new item follows the list's existing style. | `sources`, `related` by default |
+| **Wiki schema** | The rules a wiki page's properties should follow: per property its kind, allowed values and whether it is required, plus the folders the rules apply to. *Avoid:* template, frontmatter spec. | web `lib/schema.ts` `Schema` |
+| **Default schema** | The LLM-wiki schema built into the app: `type` (entity, concept, topic, source, synthesis), `tags`, `updated` required; `sources`, `related` (link lists), `confidence` (high, medium, low) optional; for notes in `Wiki/`. | `DEFAULT_SCHEMA` |
+| **Schema file** | `.karpathy/schema.json` in the vault root. If present and valid it replaces the default schema for that vault (`appliesTo` `""` or `/` = the whole vault). A vault file like any other: hidden in the tree, editable by the AI, committed by the user; not harness config. A broken one is reported once and the default applies. | store `schema`, `SCHEMA_PATH` |
+| **Schema violation** | A property that doesn't follow the schema: a missing required property, a value outside an enum, not a calendar date, a value of the wrong kind ("should be a number", "should be true or false", "should be a list", "should be a single value"), an unquoted wikilink in a list. Shown, never fixed by the app, never blocks saving. *Avoid:* error (saving still works), lint (the AI skill). | `validate()` → `Violation[]` |
+| **Refused edit** | A form edit the app can't make while keeping every other byte of the frontmatter. Nothing is written; the note shows its YAML lines. | `editFrontmatter()` → `{ refused }` |
 
 ### Operations
 
@@ -377,6 +394,52 @@ stateDiagram-v2
 ```
 
 No navigation changes the mode; only the Write/Read toggle does.
+
+### Jump to a heading
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant P as Outline sheet / panel
+    participant N as NotePane
+    U->>P: tap "Contradictions" (line 212)
+    alt Write mode
+      P->>N: jumpTo(212)
+      N->>N: editor.gotoLine(212, focus: false, align: start)
+    else Read mode
+      P->>N: jumpTo(212)
+      N->>N: scrollToLine(pane, 212, top)<br/>block of line 212 gets "hit" for 1.5 s
+    end
+    N-->>P: phone or tablet: close
+    Note over N: no history entry, cursor unchanged
+```
+
+### Edit a property
+
+```mermaid
+flowchart TD
+    A[User changes a field] --> B[Frontmatter text the form was built from<br/>= frontmatter in the editor now?]
+    B -->|no: AI or pull changed it| R1[Nothing written, a toast;<br/>the form rebuilds from the new text]
+    B -->|yes| C[Compute the edit on that text]
+    C --> D{Invariant holds?<br/>parses without errors,<br/>other properties unchanged,<br/>only the touched lines differ,<br/>new value reads back as intended}
+    D -->|no| R2[Refused edit:<br/>toast + YAML lines, nothing written]
+    D -->|yes| E[One editor change]
+    E --> F[Autosave, drafts, undo<br/>as for typing]
+```
+
+### Which schema applies
+
+```mermaid
+flowchart TD
+    V[Vault activated, or files-changed<br/>names .karpathy/schema.json] --> G[GET /file .karpathy/schema.json]
+    G -->|404| DS[Default schema]
+    G -->|200| P{Valid JSON<br/>and valid shape?}
+    P -->|no| T[Toast once per problem:<br/>schema file ignored] --> DS
+    P -->|yes| VS[Vault schema]
+    DS & VS --> A{Note path inside<br/>one of appliesTo?}
+    A -->|yes| VAL[Kinds from the rules, validate]
+    A -->|no| INF[Kinds from values, no flags]
+```
 
 ### AI turn
 
@@ -636,6 +699,16 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
   next time the file list is built, but not while a sync runs or the vault is in Conflict (files can be missing for
   a while then). Removing or replacing a vault drops all its stamps. A pull stamps nothing: pulled commits count
   through git history.
+- **The outline and the note info never change the note.** One parser, one list, positions by source line, the same
+  in both modes. While typing they refresh after a pause, never per keystroke.
+- **A form edit is a text edit of the touched property's lines,** made through the editor; every other byte of the note
+  stays ([ADR 0005](../../docs/adr/0005-frontmatter-edits-through-the-yaml-cst.md)). If it can't, it is refused and
+  nothing is written. Keys that read the same on screen (`1` and `"1"`) make the frontmatter unreadable in the form.
+- **The hidden frontmatter can't be typed into:** cursor moves and select-all stop at the body; a typed or deleted
+  change that would reach the hidden lines is dropped and the lines are shown.
+- **Never fix silently.** Schema violations are shown; values change only when the user changes them. Unknown
+  properties are kept and shown in their place. `updated` is never bumped by the app ("Today" sets it on a tap).
+- **Wikilinks the app writes into YAML lists are quoted** (`"[[x]]"`); bare names stay bare in a bare list.
 - **A commit with the AI trailer counts for neither author** in git history: it mixes both, and the stamps say who
   wrote which file. History from before edit stamps existed has no AI dates.
 - **A chat attachment is a path in the vault root,** checked with the raw-file rules (and uploadable, ≤ 20 MB) when
