@@ -1,7 +1,7 @@
 ---
 feature: rework-ingestion-pipeline
 title: "Plan: server-side ingestion pipeline"
-status: applying
+status: applied
 order: 4
 created: 2026-10-08
 edited: 2026-10-08
@@ -120,7 +120,7 @@ step that needs it.
     `python -c "import httpx; httpx.get(…)"` and `gog` both honour `HTTPS_PROXY` (no direct route exists, so success
     proves it). Fails today: no ingest image in the test helpers.
   - Verify: `npm test -w apps/backend` → all green
-- [ ] Ansible: copy `ingest.json` (rendered from `deploy/settings/`; real profiles only for `hetzner`) and the
+- [x] Ansible: copy `ingest.json` (rendered from `deploy/settings/`; real profiles only for `hetzner`) and the
       per-vault mounts, `gog_keyring_password` and `ingest_token` secrets, `just ingest-auth <target>` (Gmail only)
   - Depends on: 10
   - Test first: `packages/settings` tests (profiles render, only hetzner may have them); the role itself has no unit

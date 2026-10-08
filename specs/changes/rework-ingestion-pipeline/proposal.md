@@ -1,7 +1,7 @@
 ---
 feature: rework-ingestion-pipeline
 title: "Proposal: rework the ingestion pipeline"
-status: applying
+status: applied
 order: 1
 created: 2026-10-08
 edited: 2026-10-08

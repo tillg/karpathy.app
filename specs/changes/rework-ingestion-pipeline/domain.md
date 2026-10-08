@@ -1,7 +1,7 @@
 ---
 feature: rework-ingestion-pipeline
 title: "Domain: input queue and ingestion"
-status: applying
+status: applied
 order: 2
 created: 2026-10-08
 edited: 2026-10-08

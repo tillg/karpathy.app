@@ -126,6 +126,7 @@ edited: 2026-10-08
   - [20:30 — Release after the central-settings-yaml release, separately](#run-2026-10-08-1858-14)
   - [21:00 — Fix the review's high and medium findings; leave four for follow-up](#run-2026-10-08-1858-15)
   - [20:50 — Retro: name the dead port forwarder in the test helper's error](#run-2026-10-08-1858-16)
+  - [22:00 — Run deploy-e2e against the VM's remotes of the other checkout](#run-2026-10-08-1858-17)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1695,3 +1696,17 @@ edited: 2026-10-08
 - **Why:** the cheapest mechanical pointer at the moment the symptom appears.
 - **Alternatives:** a CLAUDE.md line (read by every agent, needed rarely).
 - **Consequences:** plugin-level retro items are drafted in the run's report, not filed.
+
+## 22:00 — Run deploy-e2e against the VM's remotes of the other checkout {#run-2026-10-08-1858-17}
+
+- **Status:** open
+- **Context:** step 12's Verify (`just deploy-e2e local`). The Lima VM was created from `~/git/karpathy_app`, so it
+  mounts that checkout's `tmp/dev/remotes` as `/remotes`; the e2e helpers write their bare repos into this checkout's
+  `tmp/dev/remotes/e2e`, and every clone failed (391 of 436 red, all "repository doesn't exist").
+- **Question:** recreate the VM with this checkout's mount, or point this run at the mounted folder?
+- **Decision:** for this one run, `tmp/dev/remotes/e2e` here is a symlink to the other checkout's; restored right after.
+- **Why:** the VM holds the just-deployed release and the other session may still use it; recreating it (`just vm
+  reset`) means a full redeploy.
+- **Alternatives:** `just vm reset` from this checkout; an `E2E_REMOTES` override in `e2e/helpers.ts` (the cleaner fix).
+- **Consequences:** test repos of this run land in `~/git/karpathy_app/tmp/dev/remotes/e2e` (throwaway). Worth a
+  follow-up: `just deploy-e2e` should check that the VM mounts this checkout's remotes.
