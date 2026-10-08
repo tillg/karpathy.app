@@ -1,0 +1,11 @@
+# The secrets deploy/settings/ refers to ({ secret: name }), by name, from the target's vault. The vault keeps
+# provider keys as one dict (vault_opencode_env: OPENROUTER_API_KEY → secret openrouter_api_key). The
+# opencode password is generated on the host instead (tasks/main.yml).
+app_settings_secrets: >-
+  {{ {
+       'bearer_token': bearer_token,
+       'github_token': github_token | default(''),
+       'dns_api_token': dns_api_token | default(''),
+       'git_author_name': vault_git_author_name | default(''),
+       'git_author_email': vault_git_author_email | default(''),
+     } | combine(dict((vault_opencode_env | default({})).keys() | map('lower') | zip((vault_opencode_env | default({})).values()))) }}

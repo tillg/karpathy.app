@@ -104,6 +104,8 @@ edited: 2026-10-08
   - [19:30 — Test dev.sh's render and legacy check as stack.sh functions, not with a fake docker](#run-2026-10-08-1839-8)
   - [19:40 — Tests read the committed settings files, never the developer's overlay](#run-2026-10-08-1839-9)
   - [19:40 — Migrate this Mac's deploy/.env and opencode.env into dev.local.yaml and a secret file](#run-2026-10-08-1839-10)
+  - [19:55 — Keep the targets' vault layout; role app maps vault values to secret names](#run-2026-10-08-1839-11)
+  - [19:55 — Keep `domain` in the inventory, checked against the settings](#run-2026-10-08-1839-12)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1355,3 +1357,30 @@ edited: 2026-10-08
 - **Alternatives:** delete the old files and run dev on Ollama.
 - **Consequences:** delete `tmp/legacy-env-backup/` once happy; `rm deploy/settings/dev.local.yaml`
   switches dev back to Ollama.
+
+## 19:55 — Keep the targets' vault layout; role app maps vault values to secret names {#run-2026-10-08-1839-11}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 25 planned one vault entry per secret name and a new
+  `fill_vault.py`. The prod vault is encrypted with a Keychain password and holds only
+  `vault_opencode_env: { OPENROUTER_API_KEY }` besides the existing entries.
+- **Question:** re-encrypt and restructure both vaults during an unattended prod deploy, or map?
+- **Decision:** keep the vaults as they are. `roles/app/vars/main.yml` builds the secret store from them
+  (`bearer_token`, `github_token`, `dns_api_token`, `vault_git_author_*`, and each `vault_opencode_env` key
+  lower-cased: `OPENROUTER_API_KEY` → `openrouter_api_key`). A stack test checks that every secret a
+  target's settings use has a source.
+- **Why:** no risky rewrite of the prod vault while the user is away; the settings files still name
+  every secret; `fill_vault.py` keeps working unchanged.
+- **Alternatives:** one vault entry per secret name (cleaner, but a vault migration on both targets).
+- **Consequences:** `plan.md` step 25 rewritten to the mapping; a vault restructure can follow later.
+
+## 19:55 — Keep `domain` in the inventory, checked against the settings {#run-2026-10-08-1839-12}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 26; the monitoring role (Gatus) and the smoke check read
+  `domain`, and `just deploy --only monitoring` runs without role app.
+- **Question:** drop `domain` from `group_vars` (it repeats `proxy.domain`)?
+- **Decision:** keep it; role app asserts it equals the rendered `DOMAIN` and stops on a mismatch.
+- **Why:** host provisioning stays in Ansible (decided in review); the check prevents drift.
+- **Alternatives:** have the monitoring role render the settings too.
+- **Consequences:** one value in two places, enforced equal at every deploy.

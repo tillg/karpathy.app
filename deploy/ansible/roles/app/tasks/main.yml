@@ -101,17 +101,75 @@
   vars:
     app_env_lines: "{{ (app_env_current.content | default('') | b64decode).splitlines() }}"
 
+# The target's app settings: deploy/settings/{settings,<target>}.yaml, rendered on the controller with the
+# secrets of its vault (render-settings.sh, secrets on stdin), then copied to shared/ with this host's facts.
+- name: Settings from deploy/settings/
+  delegate_to: localhost
+  become: false
+  run_once: true
+  check_mode: false
+  block:
+    - name: Temp directory for the rendered settings
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: .settings
+      register: app_settings_tmp
+
+    - name: Render deploy/settings/ for {{ target }}
+      ansible.builtin.command:
+        cmd: "{{ playbook_dir }}/render-settings.sh {{ target }} {{ app_settings_tmp.path }}/out"
+        stdin: "{{ app_settings_secrets | to_json }}"
+      changed_when: false
+      no_log: true
+
+    - name: Rendered settings
+      ansible.builtin.set_fact:
+        app_rendered:
+          env: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/.env') }}"
+          opencode: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/opencode.env') }}"
+          providers: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/opencode-providers.json') }}"
+          settings: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/settings.json') }}"
+      no_log: true
+  always:
+    - name: Remove the rendered settings from the controller
+      ansible.builtin.file:
+        path: "{{ app_settings_tmp.path }}"
+        state: absent
+      when: app_settings_tmp.path is defined
+
+- name: Settings as compose sees them
+  ansible.builtin.set_fact:
+    app_settings_env: "{{ dict(app_rendered.env.splitlines() | select('match', '^[A-Z_]+=') | map('split', '=', 1)) }}"
+  no_log: true
+
+# `domain` stays in the inventory for the monitoring role; it must name the same host as the settings.
+- name: The inventory's domain matches proxy.domain of {{ target }}
+  ansible.builtin.assert:
+    that: app_settings_env.DOMAIN == domain
+    fail_msg: "domain ({{ domain }}) differs from proxy.domain in deploy/settings/ ({{ app_settings_env.DOMAIN }})"
+
+# Older releases' compose.yml read the same keys (rollback); the host facts come from this inventory.
 - name: Compose settings (.env)
-  ansible.builtin.template:
-    src: env.j2
+  ansible.builtin.copy:
     dest: "{{ app_root }}/shared/.env"
-    mode: "0644"
+    content: |
+      # Rendered by Ansible (role app) for target {{ target }}: deploy/settings/ plus this host's facts.
+      {{ app_rendered.env }}
+      APP_VERSION={{ app_release }}
+      DEPLOYED_AT={{ app_deployed_at }}
+      BIND_IP={{ bind_ip }}
+      HTTPS_PORT={{ https_port }}
+      APP_UID={{ deploy_uid }}
+      APP_GID={{ deploy_gid }}
+    mode: "0600"
+  no_log: true
 
 - name: Target-specific compose file
   ansible.builtin.template:
     src: compose.target.yml.j2
     dest: "{{ app_root }}/shared/compose.target.yml"
     mode: "0644"
+  register: app_target_compose
 
 # Compose bind-mounts secret files as they are: each readable only by the container that uses it
 # (backend: uid 1000; proxy: Caddy as root without CAP_DAC_OVERRIDE, so root must own its token).
@@ -152,14 +210,52 @@
   register: app_opencode_password
   no_log: true
 
-- name: Provider keys (opencode.env)
+# Bind-mounted files are replaced, not edited: a change needs a recreate (below).
+- name: Settings files for opencode and the backend
   ansible.builtin.copy:
-    dest: "{{ app_root }}/shared/opencode.env"
-    # Also the optional web settings: EXA_API_KEY, WEB_FETCH_CAP, WEB_SEARCH_CAP (all keys of vault_opencode_env).
-    content: "# Rendered by Ansible (role app): provider API keys, opencode only.\n{% for k, v in opencode_env.items() %}{{ k }}={{ v }}\n{% endfor %}"
-    mode: "0600"
+    dest: "{{ app_root }}/shared/{{ item.name }}"
+    content: "{{ item.content }}\n"
+    owner: "{{ item.owner | default(omit) }}"
+    group: "{{ item.owner | default(omit) }}"
+    mode: "{{ item.mode }}"
+  loop:
+    # The gateway's API key, Exa, the web caps, the model: opencode only.
+    - { name: opencode.env, content: "{{ app_rendered.opencode }}", mode: "0600" }
+    - { name: opencode-providers.json, content: "{{ app_rendered.providers }}", mode: "0644" }
+    # Holds the commit author; secrets only as /run/secrets paths.
+    - { name: settings.json, content: "{{ app_rendered.settings }}", owner: "{{ deploy_uid }}", mode: "0600" }
+  loop_control: { label: "{{ item.name }}" }
   register: app_provider_keys
   no_log: true
+
+# The native Ollama on the Mac, through a /v1-only relay (as in dev), when the target's gateway is Ollama.
+- name: Ollama relay config
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../proxy/Caddyfile.ollama-relay"
+    dest: "{{ app_root }}/shared/Caddyfile.ollama-relay"
+    mode: "0644"
+  when: app_settings_env.OLLAMA_UPSTREAM is defined
+
+- name: The Mac's Ollama answers and has {{ app_settings_env.DEFAULT_MODEL }}
+  ansible.builtin.uri:
+    url: http://127.0.0.1:11434/api/show
+    method: POST
+    body_format: json
+    body: { model: "{{ app_settings_env.DEFAULT_MODEL | regex_replace('^ollama/', '') }}" }
+    timeout: 5
+  register: app_ollama
+  failed_when: false
+  check_mode: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+  when: app_settings_env.OLLAMA_UPSTREAM is defined
+
+- name: Ollama is ready for {{ target }}
+  ansible.builtin.assert:
+    that: app_ollama.status == 200
+    fail_msg: "no Ollama with {{ app_settings_env.DEFAULT_MODEL }} on this Mac: run `just ollama install` (and `ollama pull …`)"
+  when: app_settings_env.OLLAMA_UPSTREAM is defined
 
 # Pull before switching `current`, so a failed pull leaves it on the running release.
 - name: Pull the images of v{{ app_release }}

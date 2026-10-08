@@ -212,7 +212,7 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
   - Verify: `npm test -w packages/settings -- render` → green; `bash deploy/stack.test.sh` → all ok;
     `just dev up` → `just e2e e2e/chat.spec.ts` green.
 
-- [ ] Role `app` renders on the controller and copies the files to `shared/`
+- [x] Role `app` renders on the controller and copies the files to `shared/`
   - Test first: `deploy/stack.test.sh` › "ansible render task". Runs the role's render script
     (`deploy/ansible/render-settings.sh <target> <outdir>`, the wrapper the task calls) against
     `inventories/local` with its test vault: produces `.env`, `opencode.env`, `opencode-providers.json`,
@@ -220,21 +220,23 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
     the wrapper doesn't exist.
   - Verify: `bash deploy/stack.test.sh` → all ok; `cd deploy/ansible && ansible-lint && ansible-playbook -i inventories/local --vault-id local@vault-pass-client.sh --syntax-check site.yml` → ok.
 
-- [ ] Secret files come from `--list-secrets`; vault entries per secret name
-  - Test first: `stack.test.sh` › "fill_vault prompts per secret ref". `fill_vault.py --dry-run hetzner`
-    lists exactly the names `settings --list-secrets hetzner` prints, minus `opencode_password`
-    (generated on the host). Fails today: `fill_vault.py` uses its own list and the `opencode_env` dict.
+- [x] Every secret a target's settings use has a source in role `app` (vault layout unchanged, see
+  DECISIONS.md run 2026-10-08 18:39)
+  - Test first: `stack.test.sh` › "every secret in the settings has a source in role app": each name
+    `settings --list-secrets <target>` prints is named in `roles/app/vars/main.yml`, is a provider key
+    from `vault_opencode_env`, or is `opencode_password` (generated on the host).
   - Verify: `bash deploy/stack.test.sh` → all ok; `ansible-lint` → ok.
 
-- [ ] Remove `env.j2`, the opencode.env task and the app keys from `group_vars`
+- [x] Remove `env.j2`, the opencode.env task and the app keys from `group_vars`
   - `compose.target.yml.j2`: gate the `/remotes` mount on `remotes_dir is defined` (stays in `local`
     group_vars as host plumbing) and drop its `GIT_REMOTE_BASE` env (the backend reads it from
     `settings.json`).
   - Test first: existing render golden test (`.env` ⊇ legacy keys) passes before and after.
-  - Verify: `rtk grep -n "default_model\|tls_mode\|git_author\|opencode_env" deploy/ansible` → no match;
+  - Verify: `rtk grep -rn "default_model\|tls_mode\|^git_author\|^opencode_env" deploy/ansible/inventories deploy/ansible/roles` → no match
+    (the vault's own `vault_git_author_*` / `vault_opencode_env` stay);
     `ansible-playbook … --syntax-check` for both inventories → ok; `just check` → green.
 
-- [ ] `local` runs the Ollama relay; role `app` checks the Mac's Ollama first
+- [x] `local` runs the Ollama relay; role `app` checks the Mac's Ollama first
   - Test first: `stack.test.sh` › "target relay only for the ollama gateway". Renders
     `compose.target.yml.j2` (via `ansible -m template` on localhost) for `local` and `hetzner`:
     `local` has the relay service, `OLLAMA_UPSTREAM` and `NO_PROXY=…,ollama.internal`; `hetzner` has

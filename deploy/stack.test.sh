@@ -180,6 +180,62 @@ grep -q 'settings_render dev' "$here/dev.sh" && grep -q 'settings_legacy_check' 
   && ok "dev.sh up renders and checks for legacy files" || bad "dev.sh up renders and checks for legacy files" "missing"
 grep -q 'settings_render prodtest' "$here/../justfile" && ok "just prodtest renders" || bad "just prodtest renders" "missing"
 
+# Ansible (role app) renders a target's settings on the controller: render-settings.sh takes the target's secrets
+# as JSON on stdin (name → value), never as arguments, and removes them again.
+(
+  fails=0
+  out=$(mktemp -d)
+  printf '{"bearer_token":"tok-SECRET","github_token":"","dns_api_token":"d:SECRET","git_author_name":"Jane","git_author_email":"j@x","openrouter_api_key":"or-SECRET"}' \
+    | "$here/ansible/render-settings.sh" hetzner "$out" > "$out.log" 2>&1; rc=$?
+  eq "render-settings.sh hetzner exits 0" "$rc" 0
+  for f in .env opencode.env opencode-providers.json settings.json; do
+    [ -s "$out/$f" ] && ok "… writes $f" || bad "… writes $f" "missing"
+  done
+  grep -q '^OPENROUTER_API_KEY=or-SECRET$' "$out/opencode.env" && ok "… the key reaches opencode.env" || bad "… the key reaches opencode.env" "no"
+  grep -q '^GIT_AUTHOR_NAME=Jane$' "$out/.env" && ok "… the vault's author reaches .env" || bad "… the vault's author reaches .env" "no"
+  ! grep -q SECRET "$out.log" && ok "… prints no secret" || bad "… prints no secret" "leaked"
+  [ -z "$(ls -A "$out" | grep -v -e '^\.env$' -e '^opencode.env$' -e '^opencode-providers.json$' -e '^settings.json$')" ] \
+    && ok "… leaves no secret store behind" || bad "… leaves no secret store behind" "$(ls -A "$out")"
+  printf '{"bearer_token":"t"}' | "$here/ansible/render-settings.sh" hetzner "$out/2" >/dev/null 2>&1 \
+    && bad "a missing required secret fails" "rc 0" || ok "a missing required secret fails"
+  [ ! -e "$out/2.secrets" ] && ok "… and cleans up" || bad "… and cleans up" "store left"
+  rm -rf "$out" "$out.log"
+  exit "$fails"
+) || fails=$((fails + 1))
+
+# Every secret a target's settings use has a source in role app: named in roles/app/vars/main.yml, a provider
+# key from vault_opencode_env (<NAME>_API_KEY → <name>_api_key), or the opencode password made on the host.
+for t in local hetzner; do
+  missing=$("$here/../node_modules/.bin/tsx" "$here/../packages/settings/src/cli.ts" --no-local --list-secrets "$t" | while read -r name; do
+    case "$name" in (opencode_password|*_api_key) continue ;; esac
+    grep -q "'$name'" "$here/ansible/roles/app/vars/main.yml" || echo "$name"
+  done)
+  eq "$t: every secret in the settings has a source in role app" "$missing" ""
+done
+
+# A target's compose.target.yml: the Ollama relay only when deploy/settings/ picks the Ollama gateway.
+(
+  fails=0
+  out=$(mktemp -d)
+  tpl=${TARGET_TEMPLATE:-$here/ansible/roles/app/templates/compose.target.yml.j2}
+  ANSIBLE_LOCALHOST_WARNING=False ansible localhost -m template -a "src=$tpl dest=$out/local.yml" \
+    -e '{"target":"local","remotes_dir":"/remotes","vaults_fs_mount":"/srv/vaults","app_settings_env":{"OLLAMA_UPSTREAM":"192.168.5.2:11434"}}' >/dev/null 2>&1
+  ANSIBLE_LOCALHOST_WARNING=False ansible localhost -m template -a "src=$tpl dest=$out/hetzner.yml" \
+    -e '{"target":"hetzner","vaults_fs_mount":"/srv/vaults","app_settings_env":{}}' >/dev/null 2>&1
+  for t in local hetzner; do
+    cfg=$(cd "$here" && OLLAMA_UPSTREAM=192.168.5.2:11434 docker compose -f compose.yml -f "$out/$t.yml" config --format json 2>&1) \
+      || { bad "$t: compose.target.yml merges" "$cfg"; continue; }
+    has=$(node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8")); const r=c.services["ollama-relay"]; console.log(r ? `${r.environment.OLLAMA_UPSTREAM} ${c.services.opencode.environment.NO_PROXY}` : "none")' <<<"$cfg")
+    if [ "$t" = local ]; then
+      eq "local: relay to the Mac's Ollama, opencode reaches it direct" "$has" "192.168.5.2:11434 localhost,127.0.0.1,0.0.0.0,ollama.internal"
+    else
+      eq "hetzner: no relay" "$has" none
+    fi
+  done
+  rm -rf "$out"
+  exit "$fails"
+) || fails=$((fails + 1))
+
 # deploy/dev.sh against the real Docker daemon.
 out=$("$here/dev.sh" stacks 2>&1)
 eq "dev.sh stacks prints 9 lines" "$(grep -c 'https://localhost:80[1-9]0' <<<"$out")" 9
