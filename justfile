@@ -22,8 +22,13 @@ check:
     npm run lint
     npm run typecheck
     npm test
+    just settings check
     bash deploy/stack.test.sh
     node --experimental-strip-types --test e2e/stack.unit.ts
+
+# App settings (deploy/settings/): `just settings show <env>|check|render <env> --out <dir> --secrets <dir>`
+settings *args:
+    @node_modules/.bin/tsx packages/settings/src/cli.ts {{args}}
 
 # The dev LLM, native on this Mac (Metal GPU) and shared by all dev stacks: `just ollama install|uninstall|status`
 ollama action:

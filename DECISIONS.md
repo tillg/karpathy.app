@@ -93,6 +93,11 @@ edited: 2026-10-08
   - [13:46 — Treat the backend auth test failure as flaky, not as a red baseline](#run-2026-10-05-1346-3)
   - [14:20 — No link from a token error in the Vaults dialog to Settings](#run-2026-10-05-1346-4)
   - [14:50 — Archive on the 14:12 test run and my own commit messages](#run-2026-10-05-1346-5)
+- [2026-10-08 18:39 — Build central-settings-yaml (#133), merge, release and deploy to prod](#run-2026-10-08-1839)
+  - [18:39 — Merge to main, push, release and deploy to prod, as the task asks](#run-2026-10-08-1839-1)
+  - [18:45 — Commit closely related plan steps together](#run-2026-10-08-1839-2)
+  - [18:45 — Treat openrouter as a built-in gateway kind: any model id is valid](#run-2026-10-08-1839-3)
+  - [18:45 — The backend parses settings.json with its own small schema](#run-2026-10-08-1839-4)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1205,3 +1210,63 @@ edited: 2026-10-08
 - **Why:** no app code changed since the green run; the user asked for the archive without being asked back.
 - **Alternatives:** a second full e2e run before archiving.
 - **Consequences:** two commits: system description update, then "- cleaned from change".
+
+# 2026-10-08 18:39 — Build central-settings-yaml (#133), merge, release and deploy to prod {#run-2026-10-08-1839}
+
+- **Started by:** `/autonomous` (driving `/spec:apply central-settings-yaml`)
+- **Task, as given:**
+
+  > and then merge, commit and push and deploy it to PROD. Keep me updated via ntfy
+
+## 18:39 — Merge to main, push, release and deploy to prod, as the task asks {#run-2026-10-08-1839-1}
+
+- **Status:** open
+- **Overrides:** `/autonomous` — deploy only to non-production unless the task names production; CLAUDE.md
+  — never create or switch branches without permission (the task asks to merge into `main`).
+- **Context:** `central-settings-yaml`; the task names merge, push and a prod deploy explicitly.
+- **Question:** how far to take the change without the user?
+- **Decision:** implement on `central-settings-yaml`, push it after each green unit, then fast-forward or
+  merge `main`, cut a release with `just release`, deploy with `just deploy local` first and then
+  `just deploy hetzner`. Progress goes to the dev ntfy topic.
+- **Why:** the task says so; `local` first because this change rewrites the deploy path (rollback test).
+- **Alternatives:** stop before prod and leave the release to the user.
+- **Consequences:** rollback = `just deploy hetzner <previous version> --only app` (the rendered `.env`
+  keeps every key older releases read).
+
+## 18:45 — Commit closely related plan steps together {#run-2026-10-08-1839-2}
+
+- **Status:** open
+- **Overrides:** `/spec:apply` (inside `/autonomous`) — commit each ticked step.
+- **Context:** `central-settings-yaml` plan steps 1–6 (loader, schema, secrets) share one module and
+  were written test-first as one red → green round.
+- **Question:** one commit per step, or per group of steps?
+- **Decision:** one commit per small group of steps that touch the same files, each group green.
+- **Why:** per-step commits of a module that doesn't exist yet would be noise; every commit is still green.
+- **Alternatives:** strict one commit per step.
+- **Consequences:** commit messages name the step numbers they cover.
+
+## 18:45 — Treat openrouter as a built-in gateway kind: any model id is valid {#run-2026-10-08-1839-3}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 5 (cross-field rules); `architecture.md` names only
+  `anthropic` and `openai` as kinds with built-in models.
+- **Question:** must an openrouter model be listed under the gateway's `models`?
+- **Decision:** no. `openrouter`, `anthropic` and `openai` are built-in kinds; `models` only adds options.
+- **Why:** opencode knows OpenRouter's catalogue; the only listed model is there for its ZDR routing
+  options. Requiring a list would block picking another OpenRouter model for no gain.
+- **Alternatives:** require every openrouter model to be listed (stricter typo check).
+- **Consequences:** `architecture.md` updated to match.
+
+## 18:45 — The backend parses settings.json with its own small schema {#run-2026-10-08-1839-4}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 13; `architecture.md` says the shared schema is "exported to
+  the backend".
+- **Question:** make the backend image depend on `packages/settings`, or give it its own schema of the
+  rendered `settings.json`?
+- **Decision:** own schema in `apps/backend/src/settings.ts`; a test in `packages/settings` parses the
+  rendered file with it, so the two can't drift.
+- **Why:** the rendered file is a different shape (secrets as `{ file }`), and the backend Dockerfile then
+  needs no new package (dev bind mounts, prod copies).
+- **Alternatives:** the shared package in the image (one schema, but YAML + loader code in the image).
+- **Consequences:** none beyond the cross-package test.

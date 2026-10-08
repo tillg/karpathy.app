@@ -1,0 +1,6 @@
+# The local target: the Lima VM (`just vm up`, https://localhost:9444), deployed like production.
+ai: { gateway: ollama, model: ollama/qwen2.5:3b }
+git:
+  remote_base: file:///remotes/
+  author: { name: karpathy.app local, email: local@karpathy.app }
+timezone: Europe/Berlin
