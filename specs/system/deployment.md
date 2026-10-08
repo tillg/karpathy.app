@@ -26,7 +26,7 @@ flowchart TB
   end
   subgraph Host["Target host (Ubuntu 24.04)"]
     rels[/opt/karpathy.app/releases/vX.Y.Z/] --> cur[current → vX.Y.Z]
-    shared[/opt/karpathy.app/shared: .env, opencode.env, settings.json, secrets, compose.target.yml/]
+    shared[/opt/karpathy.app/shared: .env, opencode.env, settings.json, ingest.json, secrets, compose.target.yml/]
     cur --> app[compose project karpathy-app]
     shared --> app
     mon[compose project karpathy-monitoring]
@@ -59,14 +59,19 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
   `:latest` only for the highest final version) → `release` (`gh release create`, `compose.yml` as
   asset; pre-releases never become "Latest"). Permissions are read-only except for the push and release
   jobs.
+- **The ingest image's private source:** the ingest image is built from the private repo `tillg/ingest_email` at the
+  commit in `deploy/ingest/ingest-email.ref`. CI and the release workflow check it out with a read-only deploy key on
+  that repo (repo secret `INGEST_EMAIL_DEPLOY_KEY`, `persist-credentials: false`) and hand it to the build as the named
+  build context `ingest_email`; the `check` job of a release needs the secret too. Locally,
+  `deploy/ingest/fetch-source.sh` clones it into `tmp/ingest_email-src` with the developer's own git access.
 - **One version string without the `v`:** image tag, `APP_VERSION` (baked into the backend image and
   the PWA build) and what `GET /api/health` reports. Dev and prodtest builds report `dev`. Every tag is
   built on its own; a final release on an RC's commit isn't a retag (the version is in the images).
 - **Built and Deployed:** the guard job's time goes into the backend image as `BUILT_AT`; role `app`
   writes `DEPLOYED_AT` to `shared/.env`, keeping it when the same version is redeployed (an unchanged
   `.env` recreates nothing). `GET /api/health` reports both as `built` / `deployed` (`null` locally).
-- Images: `ghcr.io/tillg/karpathy.app-{proxy,backend,opencode,egress}`, public (the repo is), pulled
-  anonymously. Every version stays in GHCR.
+- Images: `ghcr.io/tillg/karpathy.app-{proxy,backend,opencode,egress,ingest}`, public (the repo is), pulled
+  anonymously. Every version stays in GHCR. Releases before `0.0.17-rc.1` have no `ingest` image.
 
 ## The compose stack on a target
 
@@ -84,16 +89,21 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
 - Settings arrive rendered ([Settings on a target](#settings-on-a-target)): compose interpolates `shared/.env`, the
   backend mounts `shared/settings.json` read-only (`SETTINGS_FILE=/etc/karpathy/settings.json`), opencode reads
   `shared/opencode.env`.
-- Networks: `edge` (proxy), `internal` (`internal: true`: proxy, backend, opencode, egress) and `egress` (backend
-  and the `egress` Squid proxy, the only two with a route out). opencode reaches the internet only through
-  `egress:3128`; the backend talks to opencode with the `opencode_password` (HTTP Basic, also in opencode's
-  healthcheck).
+- Networks: `edge` (proxy), `internal` (`internal: true`: proxy, backend, opencode, ingest, egress) and `egress`
+  (backend and the `egress` Squid proxy, the only two with a route out). opencode and ingest reach the internet only
+  through `egress:3128`; the backend talks to opencode with the `opencode_password` (HTTP Basic, also in opencode's
+  healthcheck) and to the ingest endpoint (`ingest:8090`) with the `ingest_token`.
+- **Ingest service** ([architecture.md](architecture.md#ingest-service-deployingest)): volume `ingest-state` (Gmail
+  keyring, Instagram session; backed up with the server), `shared/ingest.json` read-only at `/etc/ingest/config.json`,
+  healthy while its last-run file is younger than 20 min. Without profiles it idles, healthy.
 
 A target adds `shared/compose.target.yml` (rendered by Ansible): the `vaults` volume as a bind mount
 of `/srv/vaults`; on `local` also the e2e bare repos at `/remotes` with `safe.directory` (plus `GIT_REMOTE_BASE` as
 env, which only releases from before the settings read), and, when the target's gateway is Ollama, the `ollama-relay`
 service (`ollama.internal` on `internal` + `egress`, upstream `${OLLAMA_UPSTREAM}`) with `NO_PROXY=…,ollama.internal`
-for opencode.
+for opencode, and the ingest service's vault mounts: per ingest profile whose vault is already cloned,
+`/srv/vaults/<id>[/<root>]/Input` read-write and `…/Sources` read-only at the same path under `/vaults` (the `vaults`
+volume itself is not mounted into it).
 
 ## Targets
 
@@ -135,7 +145,7 @@ host.
 | `tailscale` | Apt repo, `tailscale up` with a single-use `tag:server` key, refreshes the facts so `bind_ip` (the tailnet IP) is known; stops with a clear message for a used key or a taken tailnet name. `hetzner` only. |
 | `docker` | Docker CE + compose plugin; on Tailscale hosts, Docker starts after `tailscaled` and `net.ipv4.ip_nonlocal_bind=1` lets containers bind the tailnet IP before it exists at boot. |
 | `vaults_fs` | A loop-mounted ext4 file at `/srv/vaults` (5 G local, 20 G hetzner, inside the backed-up disk), `nofail`; Docker requires the mount. |
-| `app` | Downloads the release's `compose.yml` once, renders the target's settings on the controller and writes `shared/` ([Settings on a target](#settings-on-a-target)), checks the Mac's Ollama when the gateway is Ollama, pulls the images before switching `current`, `docker compose up` (recreated when a secret, `opencode.env`, `settings.json` or the relay config changed), smoke check, keeps the 5 most recently deployed releases and their images. |
+| `app` | Downloads the release's `compose.yml` once, renders the target's settings on the controller and writes `shared/` ([Settings on a target](#settings-on-a-target)), checks the Mac's Ollama when the gateway is Ollama, sets up the ingest service when the release has its image (`ingest.json`, `Input/` and `Sources/` in each profile vault that is cloned, their mounts in `compose.target.yml`, the generated `gog_keyring_password` and `ingest_token`), pulls the images before switching `current`, `docker compose up` (recreated when a secret, `opencode.env`, `settings.json`, `ingest.json` or the relay config changed), smoke check, keeps the 5 most recently deployed releases and their images. |
 | `monitoring` | Beszel hub + agent and Gatus as compose project `karpathy-monitoring`, Beszel provisioned through its API, the heartbeat timer. |
 
 ```mermaid
@@ -149,6 +159,7 @@ sequenceDiagram
   A->>A: assert domain == rendered DOMAIN
   A->>H: shared/.env (+ host facts), compose.target.yml, secrets (0600)
   A->>H: shared/opencode.env, settings.json (0600), Caddyfile.ollama-relay (Ollama gateway only)
+  A->>H: ingest (release with the image): ingest.json, Input/ + Sources/ per cloned profile vault, ingest secrets
   A->>R: pull the images (via H)
   A->>H: current → releases/vX, compose up, wait for healthy
   A->>H: smoke check: /api/health through the proxy, version == X
@@ -165,7 +176,8 @@ sequenceDiagram
   key the old `env.j2` wrote (`DEFAULT_MODEL`, `GIT_AUTHOR_*`, `TLS_MODE`, …; a golden test pins the set) and
   `compose.target.yml` still sets `GIT_REMOTE_BASE` on `local`: a release from before the settings ignores
   `settings.json` and reads those. Checked on `local` (rollback to 0.0.15 and forward again). Not covered: releases
-  older than the egress proxy on `local`.
+  older than the egress proxy on `local`. A release whose `compose.yml` has no `ingest` image (before `0.0.17-rc.1`) gets no
+  `ingest.json` and no ingest mounts (fact `app_ingest`).
 - **Bootstrap:** `just deploy hetzner <version> --bootstrap <public-ip>` runs the same play once as
   `root` on the public IP (with the temporary `setup-ssh` firewall); it needs exactly one inventory host
   and forgets the IP's old host key. Rebuilding a server is a short procedure in `deploy/README.md`.
@@ -180,8 +192,8 @@ flowchart LR
   V[("vault.yml<br/>vault_bearer_token, vault_opencode_env, …")] --> M["roles/app/vars/main.yml<br/>app_settings_secrets:<br/>secret name → value"]
   M -->|"JSON on stdin (no_log)"| R["render-settings.sh TARGET OUT<br/>temp secret store 0700"]
   S["deploy/settings/<br/>settings.yaml + TARGET.yaml"] --> R
-  R -->|"settings render TARGET --no-local"| O["OUT: .env · opencode.env · settings.json<br/>(controller temp dir, removed in always:)"]
-  O --> H["shared/.env = rendered .env + host facts<br/>shared/opencode.env · shared/settings.json"]
+  R -->|"settings render TARGET --no-local"| O["OUT: .env · opencode.env · settings.json · ingest.json<br/>(controller temp dir, removed in always:)"]
+  O --> H["shared/.env = rendered .env + host facts<br/>shared/opencode.env · shared/settings.json · shared/ingest.json"]
 ```
 
 - **Secret names from the vault:** the vault layout is unchanged; `roles/app/vars/main.yml` maps it to the names the
@@ -196,6 +208,8 @@ flowchart LR
 - **`shared/.env`** (0600) is the rendered `.env` plus this host's facts: `APP_VERSION`, `DEPLOYED_AT` (kept on a
   redeploy of the same version), `BIND_IP`, `HTTPS_PORT`, `APP_UID`, `APP_GID`. **`shared/opencode.env`** (0600) and
   **`shared/settings.json`** (0600, owned by `deploy`) are copied as rendered; a change to either recreates the stack.
+  **`shared/ingest.json`** (0600, owned by `deploy`) likewise; its profiles also decide the ingest mounts. Only
+  `hetzner.yaml` may hold profiles, and it holds none yet ([Ingest cutover](#ingest-cutover)).
 - **Checks:** `domain` (inventory) must equal the rendered `DOMAIN`; with the Ollama gateway the Mac's Ollama must
   answer on `127.0.0.1:11434` with the default model. The smoke check reads `TLS_MODE` from the rendered `.env`.
 - `just settings show <target>` prints what a target runs with (secrets as references); the controller needs the
@@ -222,6 +236,11 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
 | Provider key of the gateway, optional `EXA_API_KEY` (with the non-secret web caps, model and provider config) | opencode | `shared/opencode.env` (0600), rendered from `deploy/settings/`; vault: `vault_opencode_env` |
 | Commit author (`hetzner`: secret references, no personal data in the public repo) | backend | resolved into `shared/settings.json` (uid 1000, 0600) and `shared/.env` (0600); vault: `vault_git_author_name` / `_email` |
 | opencode server password | backend, opencode | `shared/secrets/opencode_password` (uid 1000, 0600); generated once on the target by role `app` (`force: false`), no vault entry; a change recreates the stack |
+| Ingest token, gog keyring password | backend + ingest; ingest | `shared/secrets/ingest_token`, `shared/secrets/gog_keyring_password` (uid 1000, 0600); generated once on the target by role `app` like the opencode password, no vault entry; a change recreates the stack |
+| Gmail OAuth client + refresh token | ingest | gog's file keyring in the `ingest-state` volume; put there by `just ingest-auth <target> <email>` from the Mac's Keychain, not by the playbook |
+| Instagram session | ingest | `ingest-state` volume; made in the app (Settings › Instagram), not by the playbook |
+| Ingest profile account and allowed senders (`hetzner`: secret references) | ingest | resolved into `shared/ingest.json` (0600); vault entries and their mapping in `roles/app/vars/main.yml` still to be added with the first profile |
+| `INGEST_EMAIL_DEPLOY_KEY` | CI, release workflow | GitHub repo secret (read-only deploy key on `tillg/ingest_email`); not on any host |
 | Tailscale auth key | `tailscale up` | not stored; single-use |
 | ntfy topic, healthchecks.io URL, Beszel password / hub key / token | monitoring | monitoring files, 0600 |
 
@@ -238,6 +257,49 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
   `<app url>/#token=…`. The PWA stores a token from that link and removes it from the URL and history;
   the home-screen app on iOS has its own storage, so its token screen can scan the QR code with the
   camera ("Scan QR code").
+
+## Ingest service operations {#ingest-cutover}
+
+- **Gmail:** `just ingest-auth <target> <email>` (targets `dev` = this checkout's dev stack, `local`, `hetzner`) pipes
+  this Mac's gog OAuth client (`gog auth credentials`) and the account's refresh token (Keychain `gogcli`,
+  `token:default:<email>`, from `gog auth add <email>` once) into the target's `ingest` container (`gog auth credentials
+  set`, `gog auth import --refresh-token-stdin`) and checks `gog auth list`. Nothing is printed or written to disk on the
+  way. Checked against a dev stack with a throwaway account.
+- **Instagram:** Settings › Instagram in the app, by the user ([functional.md](functional.md#instagram-connection)).
+- **Profiles:** `ingest.profiles` in `deploy/settings/hetzner.yaml`, then a redeploy. Dev stacks, prodtest, `local`
+  and the tests never get profiles; a real end-to-end mail test uses a separate test label (e.g. `MyLifeTest`), never a
+  real one.
+
+**Cutover (open).** From 0.0.17 on, production has the ingest service running idle (no profiles), the input count,
+the Ingest button and `move_to_sources`. Until the cutover the Mac's launchd agent (`com.tillg.ingest-email.all`) keeps fetching
+mail into the vaults' `Sources/` as before. The remaining steps, by the operator:
+
+```mermaid
+flowchart LR
+  Z[Mac: run the old /ingest once<br/>per vault to drain Sources/] --> A
+  A[just ingest-auth hetzner email<br/>Settings › Instagram › Connect] --> B[Mac: launchctl bootout<br/>com.tillg.ingest-email.all,<br/>move the plist away]
+  B --> C[profiles in hetzner.yaml,<br/>their secrets in the vault,<br/>redeploy]
+  C --> D[test mail → Input · 1<br/>on the phone ≤ 15 min, tap Ingest]
+  D --> E[watch Instagram a week:<br/>failed_links reasons]
+```
+
+0. On the Mac, per vault: run the old llm-wiki `/ingest` once so every source it already fetched is ingested; what's
+   left stays in `Sources/` (nothing is migrated into `Input/`). Each vault needs its own `ingest` skill in
+   `.agents/skills/ingest/` (reads `Input/`, uses `move_to_sources`) and a real `Schema/methodology.md` instead of the
+   symlink into `llm_wiki` before it can ingest on the server.
+1. `just ingest-auth hetzner <email>`, then Settings › Instagram › Connect (the first real login from the server).
+2. On the Mac: `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.tillg.ingest-email.all.plist` and move the
+   plist away. Stopping it first avoids two pollers on one Gmail label.
+3. Add the profiles to `deploy/settings/hetzner.yaml` (account and allowed senders as secret references, their values in
+   the `hetzner` vault, mapped in `roles/app/vars/main.yml`), `just deploy hetzner`; send a test mail → `Input · 1` on
+   the phone within 15 min; tap Ingest.
+4. Watch Instagram for a week (`failed_links` reasons). If Hetzner's IP is blocked, decide on the fallback: only the
+   Instagram resolver on the Mac against the server's `Input/`.
+5. Push the demo vault (run book chapter "Ingest from the inbox") now that the feature is released.
+
+The ingest-email prerequisites (atomic item creation, `archive_dirs` duplicate lookup, hand-made items, Reel
+re-encoding, `no-session` waits) are open in its own repo; they matter as soon as a profile is enabled, and bumping
+`deploy/ingest/ingest-email.ref` to a tag that has them is part of the cutover.
 
 ## Monitoring {#monitoring}
 
@@ -265,7 +327,9 @@ flowchart LR
   `hetzner` only.
 - **Heartbeat**: every 5 min a ping to healthchecks.io, or `/fail` with the reason when a container of
   `karpathy-app` or `karpathy-monitoring` isn't running or is unhealthy. The only way to notice the
-  whole box gone: healthchecks.io raises the alert after 5 min period + 5 min grace.
+  whole box gone: healthchecks.io raises the alert after 5 min period + 5 min grace. A stuck ingest loop (last-run
+  file older than 20 min) makes the `ingest` container unhealthy, so Beszel and the heartbeat report it like any
+  other container.
 - **ntfy**: one random topic per target on ntfy.sh, no account; alerts carry system names and numbers,
   never note content. `just ntfy-topic <target>` copies it.
 - RAM: about 20 MB for hub and agent. The Beszel agent has the Docker socket, which makes it
@@ -329,6 +393,8 @@ flowchart LR
 | DNS at GoDaddy | Same place as the operator's other domains; the key can't be limited to one zone. |
 | Separate login user `ops` | A breakout of the app's uid must not reach sudo or Docker. |
 | Website on GitHub Pages, deployed by Actions (no `gh-pages` branch) | Free, no server, source next to the code; generated files stay out of git history. |
+| A read-only deploy key for the private ingest-email, not a personal token | Least privilege: one repo, read only; the developer's token can write every repo. Making the repo public was the other option. |
+| Ingest profiles only on `hetzner`, enabled by the operator after the Mac agent is stopped | Two pollers on one Gmail label would fetch twice; any other stack with a real label would take mails before production. |
 | Website as plain HTML + CSS, no generator | One page; revisit when there are more than ~3 pages or shared markup gets copied. |
 | App tokens copied into `site/style.css`, kept equal by a test | Looks like the app without touching the app's build; drift fails CI. |
 | Custom domain set only after the first deploy was checked on `tillg.github.io` | A set custom domain redirects the github.io URL to a domain that still pointed elsewhere. |
@@ -349,3 +415,7 @@ flowchart LR
 - Changing a token in `apps/web/src/styles.css` fails the site test until `site/style.css` gets the same value.
 - GitHub didn't start the certificate for a custom domain set before DNS pointed at it; removing and re-setting
   the domain started it.
+- CI on fork and Dependabot PRs has no `INGEST_EMAIL_DEPLOY_KEY`, so the ingest checkout and the jobs after it fail
+  there (#135).
+- Only vaults already cloned get ingest mounts: a profile for a vault added later needs a redeploy.
+- The ingest image is public on GHCR, with the private ingest-email's code inside ([security.md](security.md#gaps-known-not-built)).

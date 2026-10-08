@@ -11,8 +11,8 @@ As built on 2026-10-02. This page describes what exists; the reasons behind it a
 
 ## Overview
 
-A thin backend in front of git and an agent harness, a PWA in front of the backend, all in one docker compose
-stack. Only the reverse proxy publishes ports.
+A thin backend in front of git and an agent harness, a PWA in front of the backend, and an ingest service that fills
+the vaults' `Input/` from mail and the web, all in one docker compose stack. Only the reverse proxy publishes ports.
 
 ```mermaid
 flowchart LR
@@ -24,24 +24,32 @@ flowchart LR
     B[backend: Node/Express<br/>vault, file, git, chat API]
     O[opencode serve<br/>agent loop + tools]
     E[egress: Squid<br/>public addresses only]
+    I[ingest: ingest-email<br/>mail + links into Input/]
     V[(volume vaults:<br/>git clones)]
     C[(volume config:<br/>config.json)]
     OD[(volume opencode-data)]
+    IST[(volume ingest-state:<br/>Gmail token, Instagram session)]
   end
   GH[(GitHub)]
   LLM[LLM provider]
   WEB[(Exa, public web)]
+  GI[(Gmail API, Instagram,<br/>linked pages)]
   PWA -- "HTTPS, Bearer token,<br/>JSON + NDJSON" --> P
   P -- "/api/*" --> B
   B -- "@opencode-ai/sdk (HTTP + SSE),<br/>Basic auth" --> O
+  B -- "/instagram/* :8090,<br/>ingest token" --> I
   B -- "git, ripgrep" --> V
   B --> C
   O -- "file tools" --> V
   O --> OD
+  I -- "Input/ rw, Sources/ ro" --> V
+  I --> IST
   B -- "fetch / push (token header)" --> GH
   O -- "HTTP(S)_PROXY" --> E
+  I -- "HTTP(S)_PROXY" --> E
   E -- "model API" --> LLM
   E -- "web search, web fetch" --> WEB
+  E -- "mail, links" --> GI
 ```
 
 ## Technology stack
@@ -54,7 +62,8 @@ flowchart LR
 | Proxy | Caddy 2.10 built with a `caddy-dns/<provider>` module (GoDaddy) for DNS-01. |
 | Shared | `packages/shared`: TypeScript types for the API (no runtime schemas). |
 | Settings | `packages/settings`: zod schema, loader, secret resolution and renderer for `deploy/settings/` (YAML), run with `tsx` as `just settings …` ([Settings](#settings)). |
-| Tests | Vitest (backend projects `default`, `github`, `llm`; web unit tests for `lib/`), Playwright e2e (desktop, iPad, iPhone in Chromium and WebKit), axe-core. |
+| Ingest | Python 3.13 image running [ingest-email](https://github.com/tillg/ingest_email) (private repo, pinned commit) with instascraper 1.1.0, the `gog` Gmail CLI 0.43.0 (checksum-verified), tesseract (deu, eng), poppler and ffmpeg; a stdlib `http.server` endpoint ([Ingest service](#ingest-service-deployingest)). |
+| Tests | Vitest (backend projects `default`, `github`, `llm`; web unit tests for `lib/` and component tests with `@testing-library/react` in jsdom), pytest (the ingest endpoint, in the image's test stage), shell tests (`*.test.sh`), Playwright e2e (desktop, iPad, iPhone in Chromium and WebKit), axe-core. |
 | Website | Plain HTML + CSS in `site/`, no framework or dependencies; tests with `node:test`; GitHub Pages. |
 | Tooling | npm workspaces (`apps/*`, `packages/*`, `site`), ESLint flat config, `just`, GitHub Actions CI. |
 
@@ -111,6 +120,8 @@ flowchart LR
   `buildTree(entries, sort, filter)` sorts and filters client-side (no request on a switch, works on the cached
   listing). The choice is `sortFilter` in the store (localStorage `karpathy.treeSort` / `karpathy.treeFilter`).
   `TreeMenu` is the header's icon button with a menu of `menuitemradio` groups.
+- **Input count and Ingest button** (`lib/tree.ts` `inputCount`, `FileTree.tsx`, `Shell.tsx`, store `ingestNow`): see
+  [Ingest](#ingest).
 - **Mode preference** (`store.tsx`): `mode` is read from and written to localStorage `karpathy.mode`; `openNote` never
   changes it. An in-memory `places` map (`vault\0path` → scroll top, top line, mode) is filled when a note is left
   and restored on Back/Forward; `lib/place.ts` maps between source lines and Read-mode blocks.
@@ -130,9 +141,10 @@ flowchart LR
     vaults" back button on details and add, `reloadVaults()` on mount. The list opens details on a row click; "Edit
     vault" in `NotePane` / `ChangesPanel` opens that vault's details directly (`setAdminOpen('vaults', vaultId)`);
     the vault switcher's **Manage vaults…** opens the list. A nested help `Modal` ("What is a vault?", static, no
-    backend) and a nested confirm `Modal` for missing folders.
-  - `SettingsDialog` (`testid="settings-dialog"`, title "Settings"): the GitHub token form, `SettingsForm` and the
-    versions; no back button. Opened by the sidebar gear (`open-settings`).
+    backend) and a nested confirm `Modal` for missing folders. The list shows `InstagramNotice` while the Instagram
+    connection is `expired`.
+  - `SettingsDialog` (`testid="settings-dialog"`, title "Settings"): the GitHub token form, `InstagramSettings`
+    ([Ingest](#ingest)), `SettingsForm` and the versions; no back button. Opened by the sidebar gear (`open-settings`).
 - **Service worker**: precaches the app shell; `vault-api` NetworkFirst cache (5 s timeout) for the vault list, file
   tree and opened notes; auto-update with a re-check whenever the app becomes visible.
 
@@ -151,20 +163,21 @@ on its own ([deployment.md › Website](deployment.md#website)).
 
 | Module | Responsibility |
 |---|---|
-| `main.ts` | Loads the settings (`SETTINGS_FILE`, default `/etc/karpathy/settings.json`), reads the container wiring from env (`PORT`, `VAULTS_DIR`, `CONFIG_DIR`, `OPENCODE_URL`, `OPENCODE_VAULTS_DIR`) and the build/deploy facts (`APP_VERSION`, `BUILT_AT`, `DEPLOYED_AT`), wires the services, graceful shutdown. |
+| `main.ts` | Loads the settings (`SETTINGS_FILE`, default `/etc/karpathy/settings.json`), reads the container wiring from env (`PORT`, `VAULTS_DIR`, `CONFIG_DIR`, `OPENCODE_URL`, `OPENCODE_VAULTS_DIR`; `INGEST_URL` and `INGEST_TOKEN_FILE` for the ingest endpoint, both or none) and the build/deploy facts (`APP_VERSION`, `BUILT_AT`, `DEPLOYED_AT`), wires the services, graceful shutdown. |
 | `settings.ts` | `loadBackendSettings(path)`: parses the rendered `settings.json` with the backend's own zod schema and reads each `{ file }` secret; a missing or invalid file stops the start with the path and the failing key. |
 | `app.ts` | Express routes under `/api`, error mapping, NDJSON writer (15 s keepalive). `/healthz` outside auth; `/api/health` also reports the release version (`APP_VERSION`, `dev` for local builds), which the settings dialog shows next to the PWA's own. |
 | `auth.ts` | Bearer token check (hashed, constant-time compare). |
-| `vaults.ts` | Vault lifecycle (add with preflight, clone, patch, remove), file API, search, status, events, commit/push/discard, conflict resolution; per-vault runtime state; per-vault token access check (`checkAccess`). Reads the GitHub token through a getter per git operation. Runs the agents move after clone, pull and open (`agentsMove`), keeps the last result (`lastAgentsMove`) and counts running commit-message proposals (`proposing`, `isProposing`). |
+| `vaults.ts` | Vault lifecycle (add with preflight, clone, patch, remove), file API, search, status (incl. `inputChangedCount`), events, commit/push/discard, conflict resolution; per-vault runtime state; per-vault token access check (`checkAccess`). Reads the GitHub token through a getter per git operation. Runs the agents move after clone, pull and open (`agentsMove`), keeps the last result (`lastAgentsMove`) and counts running commit-message proposals (`proposing`, `isProposing`). |
 | `agents-standard.ts` | The agents move: `scanLegacy`, `migrateToAgents`, `restageSkillLink` ([The agents move](#the-agents-move)); also `readFrontmatter`. |
 | `preflight.ts` | `preflight()`: the attach check ([Attach preflight](#attach-preflight)); `REQUIRED_FOLDERS`. |
 | `github-token.ts` | `GitHubToken`: the server-wide token (stored over secret), its source, `GET /user` identity check, redaction of every value seen. |
-| `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure, commit, push, conflict sides and resolution; hardened `runGit`. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
+| `ingest.ts` | `callIngest`: proxies the Instagram routes to the ingest service's endpoint ([Ingest](#ingest)). |
+| `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure (its dirty check and stash leave `<root>/Input` out), commit, push, conflict sides and resolution; hardened `runGit`. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
 | `files.ts`, `paths.ts` | Tree listing, versions (content hash), ripgrep search (also `filesMentioning` for the move's link scan), the note graph (`graph`: notes + links via the shared `noteLinks`, for `GET /vaults/:id/graph`); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
 | `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`, and `fetch` and `refresh` through `tryShared`, which never queues; exclusive: every other git operation). `fetch` and `refresh` are quiet: they don't change `busy`. `holds(label)` tells whether a shared holder with that label exists. |
 | `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events. |
 | `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. Also the command list (`commands()`, name-clash rule, skill stamp and refresh) and command turns (`instructionsFor`) ([Commands](#commands)). |
-| `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface (`commands(dir)`, `refresh(dir)` next to prompt, models and events) and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`; `ToolCall.url` is set for `webfetch`, `open_url` and `save_url` (also in `WRITE_TOOLS`, so a download is a changed file and gets an AI stamp). |
+| `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface (`commands(dir)`, `refresh(dir)` next to prompt, models and events) and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`; `ToolCall.url` is set for `webfetch`, `open_url` and `save_url` (also in `WRITE_TOOLS`, so a download is a changed file and gets an AI stamp). `move_to_sources` is in `WRITE_TOOLS` too: its chip path is `Sources/<name>`, `writtenPaths` reports every moved file's old and new path from the tool's `metadata.files`. |
 | `harness/command.ts` | Pure: `parseCommand`, `expandCommand`, `withoutBaseDir`, `commandInstructions`. |
 | `commit-message.ts` | Proposes commit messages with a throwaway, tool-less session; marked as a running proposal so a skill refresh doesn't cut it off. |
 | `config-store.ts` | Atomic, serialized writes to `/config/config.json`; also holds the GitHub token set in the app. Knows the deployment's default model (`defaultModel`) and stores the model only as `modelOverride` while it differs from it ([Settings](#settings)). |
@@ -173,8 +186,8 @@ on its own ([deployment.md › Website](deployment.md#website)).
 
 The pinned stock image (`deploy/opencode/Dockerfile`) plus a **managed config** at `/etc/opencode/opencode.json` (merged last, so a vault can't override it; it holds policy only, no provider):
 agents `vault` (edits allowed except `.git` and harness config), `vault-readonly` (default; used during conflicts) and
-`commit-message` (no tools); `bash`, `webfetch`, `websearch`, `save_url`, `task`, `question` and `external_directory` denied
-(`save_url` is allowed for `vault` only; `websearch`, `webfetch` and `save_url` are switched on per turn by the backend, see [Web access](#web-access));
+`commit-message` (no tools); `bash`, `webfetch`, `websearch`, `save_url`, `move_to_sources`, `task`, `question` and `external_directory` denied
+(`save_url` and `move_to_sources` are allowed for `vault` only; `websearch`, `webfetch` and `save_url` are switched on per turn by the backend, see [Web access](#web-access); `move_to_sources` is not in that map, the agent alone decides);
 reading `*.env` denied; snapshots, sharing and auto-update off. The image sets `OPENCODE_ENABLE_EXA=true` and
 `OPENCODE_WEBSEARCH_PROVIDER=exa`; its entrypoint exports the `opencode_password` secret as
 `OPENCODE_SERVER_PASSWORD` (HTTP Basic on every route, health included). The image sets `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`:
@@ -198,9 +211,9 @@ So a vault can't switch off the zero-data-retention routing or point the gateway
 file would be merged *before* the project config, which is why the providers don't travel that way (a vault's
 `zdr: false` won in the check that found it).
 
-The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `open_url`, `save_url`),
+The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `open_url`, `save_url`, `move_to_sources`),
 `plugins/` (`known-url`), `lib/` (helpers) and `skills/` (the **app skills**, today `research`). The bake step waits for
-the three tools in the tool ids and for the plugin before it makes the dir read-only.
+the four tools in the tool ids and for the plugin before it makes the dir read-only.
 
 **Custom tool `open_note`** (`deploy/opencode/tools/open_note.ts`, path check in `deploy/opencode/lib/resolve-note.ts`):
 checks that `path` resolves inside `context.directory`, exists, is a file and has no dot segment, then returns
@@ -243,6 +256,18 @@ proxy, passed explicitly as Bun's `fetch` `proxy` option from `HTTP(S)_PROXY`; w
 still fetches `NO_PROXY` hosts directly, so redirects are followed by hand (at most 5) and every hop to a `NO_PROXY` host is
 refused ("internal host refused") ("No egress proxy configured"). Baked like `open_note`; allowed for `vault` only, not `vault-readonly`.
 
+**Custom tool `move_to_sources`** (`deploy/opencode/tools/move_to_sources.ts`, logic in
+`deploy/opencode/lib/move-to-sources.ts`, import-free so the backend tests load it): args `{ name }`, one input item
+folder name. Moves `Input/<name>` to `Sources/<name>` with one `rename` (atomic, no copy of media) and returns `Moved to
+Sources/<name>` plus `metadata.files: [{ filePath: "Input/<name>/<f>", movePath: "Sources/<name>/<f>" }]` for every
+moved file (the shape `apply_patch` reports; opencode passes a custom tool's metadata into the tool part). Refuses a
+name that is empty, `.`/`..`, hidden or has a `/` or `\`; `Input`, `Input/<name>` or `Sources` that is a symlink (`lstat`)
+or not a directory; an item whose `index.md` frontmatter still has `unresolved_links` (a small reader for that one key:
+inline value or block list, quoted key, blank and comment lines skipped); and an existing target, which it claims first
+with a non-recursive `mkdir` so `rename` only ever replaces that empty folder ("Sources/<name> exists: rename or merge by
+hand"). Creates `Sources/` if missing. Baked like `open_note`; allowed for `vault` only, so a read-only or conflict turn
+can't move.
+
 **Plugin `known-url`** (`deploy/opencode/plugins/known-url.ts`, pure decision in `deploy/opencode/lib/known-url.ts`,
 baked into the same global config dir): a `tool.execute.before` hook for `webfetch`, `websearch`, `open_url` and `save_url`
 (`GUARDED_TOOLS`). It loads the session's messages through opencode's plugin client (failing closed without them) and
@@ -254,10 +279,53 @@ after the last user message and refuses once the per-turn cap is reached (`capFr
 plugin's `WRITE_TOOLS`: a file it saved and the AI reads back is not a known source. `open_url` has no cap: the user taps each chip. Stateless, so it survives an opencode
 restart.
 
+### Ingest service (`deploy/ingest`)
+
+The compose service `ingest` runs the existing ingest-email tool (Python, ~4.6k lines with resolvers, OCR, Instagram
+pacing and retry state) in its own container instead of porting it: not in the backend image (it holds the GitHub and
+bearer tokens while this parses untrusted mail and web pages), not in opencode's (bash is denied there on purpose, and
+fetching is not AI work). Deterministic, no LLM, never commits.
+
+- **Image** (`deploy/ingest/Dockerfile`, the fifth release image `ghcr.io/tillg/karpathy.app-ingest`): a build stage
+  installs ingest-email and instascraper (at its own tag, `v1.1.0`, newer than ingest-email's `[instagram]` extra pins:
+  it has the code callback) into a venv, so git stays out of the runtime image; the runtime stage is
+  `python:3.13-slim` plus `tesseract-ocr` (`deu`, `eng`), `poppler-utils`, `ffmpeg` and the static `gog` binary (pinned
+  release, sha256 per arch). ingest-email is a **private** repo pinned to the commit in `deploy/ingest/ingest-email.ref`;
+  its source comes in as the **named build context `ingest_email`**, so the build itself needs no credentials:
+  `deploy/ingest/fetch-source.sh` clones it into `tmp/ingest_email-src` with the developer's own git access (`just dev
+  up`, `just prodtest`, the shell tests), CI and the release workflow check it out with a read-only deploy key
+  ([deployment.md](deployment.md#releases)). A `test` stage adds pytest and `test_server.py`; it is never published.
+  Runs as `APP_UID`, `init: true`.
+- **Loop** (`deploy/ingest/run.sh`, the container's command): every `INGEST_LOOP_S` (60 s) it renders ingest-email's own
+  config from `/etc/ingest/config.json` and runs `ingest-email resolve <profile>` per profile, every `INGEST_FETCH_S`
+  (900 s) first `ingest-email ingest <profile>`. Per profile the render maps `vault` (+ `root`) to
+  `target_dir=/vaults/<id>[/<root>]/Input` and `archive_dirs=[…/Sources]`, `label` to the four Gmail labels
+  (`<label>`, `/processed`, `/failed`, `/rejected`), and passes `account`, `allowed_senders` and `settings` on; a vault
+  that isn't cloned is skipped with a log line, `Input/` is created in a cloned one. Profiles run in sequence, one
+  process per container; ingest-email's per-profile lock stays (against a manual `docker compose exec ingest
+  ingest-email …`). At start it removes leftover `Input/.tmp-*` folders. It exports the `gog_keyring_password` secret
+  as `GOG_KEYRING_PASSWORD`, starts `server.py` and restarts it whenever it died.
+- **Health:** the loop touches the last-run file `/state/last-run` before and after every ingest-email call (a long
+  resolve with Instagram pacing is not a stuck loop); the healthcheck fails when it is older than 20 min. With no
+  profiles the loop idles and the file stays fresh.
+- **Why a poll loop, not a watcher:** "within a minute" is enough, `resolve` is a cheap scan of `Input/*/index.md`, and
+  inotify on a bind or volume mount adds a failure mode. Instagram pacing (1–3 min per post, 08:00–23:00, daily caps)
+  stays inside ingest-email and only delays the next round; it never holds an app lock.
+- **Endpoint** (`deploy/ingest/server.py`, stdlib `ThreadingHTTPServer` on `:8090`, `internal` network only): the
+  Instagram connection ([Ingest](#ingest)). Every request needs `Authorization: Bearer <ingest_token>` (compose
+  secret, compared with `hmac.compare_digest`); only request lines are logged, never bodies.
+- **Compose:** `user` = the app uid, `cap_drop: [ALL]`, `no-new-privileges`, bounded logs; network `internal` only
+  with `HTTP(S)_PROXY=http://egress:3128` (httpx, `gog` and instagrapi all honour it); `GOG_HOME=/state/gog`,
+  `GOG_KEYRING_BACKEND=file`, `HOME=/state/home` (instascraper's session and activity ledger); secrets
+  `gog_keyring_password` and `ingest_token`; volume `ingest-state` at `/state`; `ingest.json` (rendered from
+  `deploy/settings/`) bind-mounted read-only at `/etc/ingest/config.json` (`create_host_path: false`); depends on a
+  healthy `egress`. The base `compose.yml` mounts no vault: a target adds one `Input/` (rw) and `Sources/` (ro) bind
+  mount per profile vault in `compose.target.yml`; dev and prodtest mount the whole `vaults` volume.
+
 ### Egress proxy (`deploy/egress`)
 
 Squid 6 in an own Alpine image (base pinned by digest; the fourth release image), on networks `internal` and
-`egress`. `squid.conf` has one `dst` ACL of internal ranges (loopback, RFC 1918, link-local, CGNAT/tailnet, ULA,
+`egress`. Used by opencode and by the ingest service. `squid.conf` has one `dst` ACL of internal ranges (loopback, RFC 1918, link-local, CGNAT/tailnet, ULA,
 multicast, …) that is denied, then allows everything else; Squid checks after DNS resolution on every request, so
 each redirect hop is re-checked. opencode gets `HTTP_PROXY`/`HTTPS_PROXY=http://egress:3128` and
 `NO_PROXY=localhost,127.0.0.1,0.0.0.0` (its plugin client calls its own server directly; dev and tests add the
@@ -432,6 +500,8 @@ sequenceDiagram
     running is waited for first (at most 10 s, without queueing for the lock). Otherwise the cached list is returned.
   - `Vaults.open` waits up to 5 s for a `refresh` holder before its `tryExclusive` pull, so the pull of the same app load
     doesn't skip.
+  - Known gap (#134): a skill folder *created* in the vault on the server (in the app or by the AI) isn't in opencode's
+    list until the next pull; e2e therefore delivers its stub `ingest` skill by push and pull.
 - **Command turns.** `harness/command.ts`: `parseCommand(text)` needs `/` and a name `[A-Za-z0-9][\w.:-]*` at the start, then
   whitespace or the end. `expandCommand(template, args)` follows opencode's rules (`$1…$N`, the highest taking the rest;
   `$ARGUMENTS`), but appends nothing when there is no placeholder, because the user's message already carries the arguments;
@@ -505,6 +575,136 @@ sequenceDiagram
 - **Web:** `toolLabel` → `open <host><path…>`; `toolHref` returns the URL of a completed `open_url` too. `ToolChip` renders it as
   an `<a target="_blank" rel="noopener noreferrer">` action chip (arrow icon, full URL as tooltip). A refused one is the usual error
   chip; tapping it shows "URL not in this chat: …".
+
+## Ingest
+
+Five pieces, mostly independent (#131): the ingest service ([above](#ingest-service-deployingest)), the input count,
+the Ingest button, `move_to_sources` ([opencode](#opencode-deployopencode)) and the Instagram connection. **The app
+contains no ingest logic:** its only coupling to the vault's skill is the name `ingest` and the generic
+`move_to_sources` tool.
+
+### Input count
+
+```mermaid
+sequenceDiagram
+  participant IS as ingest service
+  participant W as backend watcher (chokidar)
+  participant S as web store
+  participant T as FileTree / Shell
+  IS->>W: new Input/mail-…/ (add index.md)
+  W->>S: files-changed [Input/mail-…/index.md]
+  S->>S: unknown path → refreshFiles()
+  S->>T: tree with Input/mail-…/
+  T->>T: inputCount(tree) = 7 → badge
+```
+
+- **No backend change:** chokidar reports the `add` of the item's `index.md` (it ignores `addDir`), the store re-lists
+  the tree on an unknown path, and `listTree` lists folders (dot-folders hidden, so a `.tmp-*` never shows).
+- `inputCount(tree)` (`lib/tree.ts`, pure): the direct child folders of the root folder named exactly `Input`, not
+  starting with `.`. Client-side because the tree is already complete and live in the browser; a status field would
+  duplicate it with its own invalidation.
+- `FileTree.tsx` computes it from the unfiltered tree; the `Input` row shows `.input-badge` (`aria-label="7 sources
+  waiting to be ingested"`, danger colour token), hidden at 0. Under a tree filter that hides every item, a synthetic
+  empty `Input` row keeps the badge visible. `Shell.tsx` puts the same count on the phone's Files tab.
+- **Commit reminder:** `VaultStatus.inputChangedCount` (changed paths under `Input/`, from the same `changes()` as
+  `changedCount`); the web's `reminderCount` is `changedCount - inputChangedCount`. The Changes list and the pill show
+  everything.
+
+### Ingest button
+
+- Rendered in the `Input` row (`trow-act`, `data-testid="ingest-now"`) when the count is > 0 **and** the vault's command
+  list (`GET /vaults/:id/commands`, loaded while the count is > 0 and on `commandsNonce`) has `ingest`. The phone's Files
+  tab shows the same tree, so it needs no second button (no button in the phone header).
+- Disabled with the reason as `title` when offline, in conflict, while `status.busy === 'turn'`, and while starting.
+- Store `ingestNow()`: `POST /vaults/:id/chats`, switch to the new chat (wide/tablet: open the chat; phone: the Chat
+  tab), `recordCommand(vault, 'ingest')`, then the same prompt path a typed message uses with the text `/ingest`. So
+  ADR 0004 holds (the backend expands the skill text, never opencode's command endpoint) and the turn queues like any
+  other. Unlike a command chip it sends.
+- **The vault's skill** (`.agents/skills/ingest/SKILL.md`, owned by the vault, also used by Claude Code on the Mac): the
+  app relies on, but can't enforce, that it handles any queue size in one call, skips items with `unresolved_links`,
+  cites `Sources/<name>/index.md`, and finishes one item (pages, then `move_to_sources`, or `mv` without the tool)
+  before the next. Everything it reads must lie in the vault. No app skill named `ingest` ships.
+
+### Writing into a live vault without the backend's lock
+
+The backend's `VaultLock` is in-process; the ingest service can't take it, and a backend-driven run under the lock was
+rejected (Instagram pacing makes a run minutes long, and writer preference would stall pulls and commits). The service
+keeps to operations that are safe next to git and editor work:
+
+| Operation | How | Safe because |
+|---|---|---|
+| New item | build in `Input/.tmp-<rand>/`, rename to `Input/<name>/` | rename is atomic; `listTree` skips dot-folders; leftovers removed at start. **Not yet:** the pinned ingest-email still writes mail items in place (prerequisite open) |
+| Update link state | `index.md` via temp file + `os.replace` | never a half-written `index.md` |
+| Touch an item | only while it has `unresolved_links` | once ready, it belongs to the AI and the user |
+
+- **Pull keeps `Input/` in place:** `git stash --include-untracked` removes and later recreates untracked folders, which
+  would detach the service's bind mount of `Input/` and race its writes. So the pull's dirty check (`git status
+  --porcelain`) and stash take the pathspec `-- . ':(exclude)<root>/Input'`; waiting items stay while the pull
+  fast-forwards around them.
+- **Commit:** a newly arrived item makes the changed set differ from the reviewed one, so the commit fails with the
+  existing `409 changes-moved` and the user reviews again (no partial commits).
+- **Accepted:** the user editing an item's `index.md` in the same second the service rewrites it (last writer wins; the
+  editor's version check shows the stale-save dialog), and the Mac editing a committed `Input/<name>/index.md` while
+  the server resolves it (an ordinary git conflict). A long `/ingest` turn holds the vault lock like any turn.
+
+### Instagram connection
+
+```mermaid
+sequenceDiagram
+  participant U as Settings › Instagram
+  participant B as backend (ingest.ts)
+  participant S as ingest server.py :8090
+  participant IG as Instagram (via egress)
+  U->>B: POST /api/ingest/instagram/login {username, password}
+  B->>S: POST /instagram/login (Bearer ingest_token)
+  S->>IG: login_interactive_free (worker thread, staging dir)
+  IG-->>S: 2FA / challenge required
+  S-->>B: {state: "code", via: "SMS"}
+  B-->>U: "Code sent by SMS" + code field
+  U->>B: POST /api/ingest/instagram/code {code}
+  B->>S: POST /instagram/code
+  S->>IG: login with the code
+  IG-->>S: ok
+  S->>S: install session (0600) under the lock, IG_USERNAME, forget password
+  S-->>U: {state: "connected", account}
+```
+
+The browser carries the form, the server does the login: instascraper's password login with a stable emulated device.
+The session cookie can't come from the user's browser (instagram.com's `sessionid` is HttpOnly on another origin), and
+Instagram has no API for reading other people's posts. A session minted on the server's IP is also the one Instagram
+then sees in use.
+
+- **Endpoint routes:** `GET /instagram/status` → `{ state, account?, via?, waitingLinks }`; `POST /instagram/login
+  {username, password}` → `{state: "connected", account}` or `{state: "code", via}`; `POST /instagram/code {code}`;
+  `POST /instagram/disconnect` (drops a pending login and the session files) → status.
+- **Pending login:** a worker thread runs instascraper's `login_interactive_free(username, password, code)`
+  (instascraper ≥ 1.1.0); when Instagram wants a code, `code(via)` blocks on a queue that `POST /instagram/code` fills,
+  at most 300 s (`expired-code`, 400). One pending login at a time; a new login supersedes it. `POST /login` and
+  `/code` wait at most 90 s for the next answer, else `504 login-timeout` and the login is cancelled. Errors:
+  `wrong-password` (400), `expired-code` (400), `no-pending-login` (409), `login-failed` (502, the exception's type
+  only).
+- **Sessions:** each attempt logs in into its own `mkdtemp` staging dir under `/state/instagram-login/` (a copy of the
+  old session keeps the device ids stable); only a successful, still-current attempt installs
+  `~/.config/instascraper/session-<user>.json` (0600) under the service lock and sets `IG_USERNAME` in instascraper's
+  config, so the resolver's client uses it. A pending or superseded login never touches a working session.
+- **Status, read from the vaults** (ingest-email stays as it is): `waitingLinks` = Instagram URLs in an
+  `Input/*/index.md`'s `unresolved_links` with reason `no-session`; `waiting-for-code` while a login waits for a code;
+  `not-connected` without a session; `expired` when such a link's item was rewritten by the resolver after the session
+  file was installed (right after a connect it reads `connected` until the resolver has tried again). The status never
+  logs in.
+- **Username:** `^[A-Za-z0-9._]{1,30}$`, not only dots (a leading `@` is dropped), checked by the backend's zod schema
+  and again in the service, because it becomes part of file names.
+- **Backend** (`src/ingest.ts`, routes in `app.ts`): `GET /ingest/instagram`, `POST /ingest/instagram/login|code|
+  disconnect`, bearer-guarded and zod-validated (`.strict()`, password ≤ 200, code ≤ 20 characters), proxied to
+  `INGEST_URL` (`http://ingest:8090`) with the token from `INGEST_TOKEN_FILE` and a 120 s timeout. The service's errors
+  keep their status as `{ error, code }`, except 401/403 (a token mismatch), which become `502 ingest-auth` because the
+  web app treats every 401 as "log out"; unreachable or not configured is `503 ingest-down` "Ingest service not running".
+- **Web** (`InstagramSettings.tsx`): status line, then the form (username, password → Connect, or Reconnect when
+  `expired`), the code step ("Code sent by <via>", Verify, Cancel, which only resets the form), or Disconnect when
+  connected; `InstagramNotice` in the Vaults list while `expired`. Types `InstagramStatus`, `InstagramLoginAnswer` in
+  `packages/shared`.
+- **Dev and e2e:** `compose.dev.yml` sets `INGEST_FAKE_INSTAGRAM_LOGIN=1`, a built-in fake login (password `wrong`
+  fails, a user `twofa…` asks for code `000000` by SMS). Prod and prodtest never set it (`compose.test.sh` asserts it).
 
 ## The agents move
 
@@ -874,8 +1074,10 @@ flowchart LR
 | Store | Content | Owner |
 |---|---|---|
 | Volume `vaults` → `/vaults/<id>` | Full git clone of each vault repo (no shallow or sparse clone). The notes themselves. | backend (git), opencode (file tools) |
+| `<vault root>/Input/` (in the clone, tracked by git) | The ingest queue: one folder per input item, its `index.md` frontmatter holding the link state (`unresolved_links`, `resolved_links`, `failed_links`). | ingest service (creates, updates while links are open), AI (`move_to_sources`), user |
+| Volume `ingest-state` → `/state` | gog's encrypted file keyring (Gmail OAuth client and refresh token), instascraper's session and activity ledger (`home/.config/instascraper/`), login staging dirs, ingest-email's rendered config and locks, the last-run file. Backed up with the server, not in git. | ingest service |
 | `deploy/settings/*.yaml` (git) | The settings of every environment: central file, environment files; gitignored local overlays for dev and prodtest. Secret references only. | operator / developer |
-| `tmp/settings/<env>/` (dev, prodtest), `/opt/karpathy.app/shared/` (target) | Rendered files: `.env` (compose), `opencode.env` (0600), `settings.json` (backend, mounted read-only at `/etc/karpathy/settings.json`). | renderer; Ansible on a target |
+| `tmp/settings/<env>/` (dev, prodtest), `/opt/karpathy.app/shared/` (target) | Rendered files: `.env` (compose), `opencode.env` (0600), `settings.json` (backend, mounted read-only at `/etc/karpathy/settings.json`), `ingest.json` (0600, the ingest service's profiles, mounted read-only at `/etc/ingest/config.json`). | renderer; Ansible on a target |
 | Volume `config` → `/config/config.json` | `vaults` (config + `cloned` / `cloneError` / `pendingFolders`), `settings` (threshold, web access, `modelOverride` only while ≠ the default model), `githubToken` (plaintext, if set in the app), `aiTouched`, `editStamps` (per vault and path: last AI / human write, epoch ms), `conflicts`, `queued` turns. | backend only |
 | `/vaults/.preflight/` | Short-lived blobless clones of the attach preflight; emptied at startup. | backend |
 | Volume `opencode-data` | opencode sessions = chat history, including attached files (base64, after opencode's resize), until the chat is deleted. | opencode |
@@ -884,7 +1086,7 @@ flowchart LR
 | Browser localStorage | Token, local drafts, tree expansion state, tree sort and filter (`karpathy.treeSort`, `karpathy.treeFilter`), main pane, mode preference (`karpathy.mode`), properties view (`karpathy.propsView`). | web |
 | localStorage `karpathy.recentCommands.<vault>`, `karpathy.shownMoves` | The last 10 commands started in a vault (chip order); the agents moves already announced (last 50). | web |
 | Backend memory | Per vault: the skill stamp of the last opencode refresh, the last agents move, the skill-link scan after it, running commit-message proposals. Lost on restart (the first check then refreshes). | backend |
-| opencode image `/opt/opencode-config/opencode/` | Tools `open_note`, `open_url` and `save_url`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
+| opencode image `/opt/opencode-config/opencode/` | Tools `open_note`, `open_url`, `save_url` and `move_to_sources`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
 | Browser memory | Object URLs of media (≤ 200 MB), places of notes seen this session. Lost on reload. | web |
 | Service worker cache `vault-api` | Vault list, file trees, opened notes (for offline reading); cleared on 401. | web |
 
@@ -894,9 +1096,10 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 
 - **Exposed:** one HTTPS origin: the PWA plus `/api/*` (full route list in `apps/backend/src/app.ts`). Every `/api`
   route needs the bearer token; `/healthz` exists only inside the stack.
-- **Consumed:** GitHub over HTTPS (clone, fetch, push), the opencode HTTP API on the internal network, the LLM
-  provider APIs, Exa and public web pages (from opencode only, through the egress proxy), and the DNS provider API
-  (DNS-01, from the proxy only).
+- **Consumed:** GitHub over HTTPS (clone, fetch, push), the opencode HTTP API and the ingest endpoint (`:8090`) on the
+  internal network, the LLM provider APIs, Exa and public web pages (from opencode, through the egress proxy), the
+  Gmail API, Instagram and the pages linked in mails (from the ingest service, through the egress proxy), and the DNS
+  provider API (DNS-01, from the proxy only).
 
 ## External systems
 
@@ -906,6 +1109,9 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 | LLM providers (OpenRouter in production, any via opencode) | Model behind opencode, chosen as the environment's gateway in `deploy/settings/`; keys only in the rendered `opencode.env` | OpenRouter `z-ai/glm-5.3` on zero-data-retention hosts in production |
 | Ollama | Dev, prodtest and the `local` target (native on the Mac, `just ollama install`); CI and integration LLM tests (container; models from `deploy/settings/test.yaml`) | in use |
 | Exa | Web search backend (opencode `websearch`, MCP at `mcp.exa.ai`); optional `EXA_API_KEY`, else the anonymous, rate-limited endpoint | in use |
+| Gmail (via `gog`) | The ingest profiles' labels: read, relabel; OAuth client and refresh token copied from the Mac by `just ingest-auth` | built; no profile enabled in production yet |
+| Instagram (via instascraper / instagrapi) | Posts and Reels behind Instagram links in mails; password login from Settings › Instagram | built; the real login not yet tried from the server |
+| `tillg/ingest_email`, `tillg/instascraper` (GitHub) | Sources of the ingest image: the private ingest-email at a pinned commit (deploy key in CI), instascraper at a tag | in use |
 | Let's Encrypt + GoDaddy DNS | Certificate for `app.karpathy.app` via DNS-01; the A record points at the server's tailnet IP. The apex and `www` point at GitHub Pages | in use |
 | GitHub Pages | Hosts the website at `karpathy.app` (with GitHub's own Let's Encrypt certificate) | in use |
 | ghcr.io | The app's release images (public) and opencode's base image | in use |
@@ -917,21 +1123,28 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 ## Infrastructure
 
 - **Runtime = docker compose** in dev and prod (`deploy/compose.yml`). Services `proxy` (networks `edge` +
-  `internal`), `backend` and `egress` (`internal` + `egress`), `opencode` (`internal` only, which is
-  `internal: true`: no route out but the egress proxy); backend and opencode run as uid 1000; all with
+  `internal`), `backend` and `egress` (`internal` + `egress`), `opencode` and `ingest` (`internal` only, which is
+  `internal: true`: no route out but the egress proxy); backend, opencode and ingest run as uid 1000; all with
   `cap_drop: [ALL]`, `no-new-privileges` and log rotation. Settings come rendered from `deploy/settings/`
   ([Settings](#settings)): compose interpolates `.env`, the backend reads `settings.json` (`SETTINGS_FILE`),
-  opencode gets `opencode.env`. Secrets are files mounted as compose secrets (`deploy/secrets/` in dev,
-  `tmp/prodtest/secrets/` in prodtest, `shared/secrets/` on a target: `bearer_token`, `github_token`,
-  `opencode_password`, `dns_api_token`); provider keys, `EXA_API_KEY` and the web caps come from `opencode.env`.
+  opencode gets `opencode.env`, ingest `ingest.json`. Secrets are files mounted as compose secrets (`deploy/secrets/`
+  in dev, `tmp/prodtest/secrets/` in prodtest, `shared/secrets/` on a target: `bearer_token`, `github_token`,
+  `opencode_password`, `dns_api_token`, `gog_keyring_password`, `ingest_token`; the last two generated like the
+  opencode password); provider keys, `EXA_API_KEY` and the web caps come from `opencode.env`.
 - **Dev** (`compose.dev.yml`, `just dev up [N]`): numbered dev stacks side by side, one per checkout; stack N on
   https://localhost:80N0 with Caddy's internal CA, Vite with HMR (`web` service), bind-mounted sources, local bare
   repos as remotes (`dev.yaml`: `git.remote_base: file:///remotes/`), the native Ollama on the Mac as the model
-  unless the developer's `dev.local.yaml` picks another gateway. Details: [Dev stacks](#dev-stacks).
+  unless the developer's `dev.local.yaml` picks another gateway. The `ingest` service mounts the whole `vaults` volume,
+  idles (no profiles in `dev.yaml`) and has the fake Instagram login; `just dev up` first runs
+  `deploy/ingest/fetch-source.sh` for its build context. Details: [Dev stacks](#dev-stacks).
 - **Local prod test** (`compose.prodtest.yml`, `just prodtest`): the prod images as project
-  `karpathy-app-N-prodtest` on https://localhost:80N5, paired with the checkout's dev stack N.
-- **CI** (`.github/workflows/ci.yml`): lint, typecheck, tests, web build, a compose config check, and
-  `ansible-lint` + syntax checks of the playbook on every push and PR; weekly (and on demand) GitHub and LLM test suites.
+  `karpathy-app-N-prodtest` on https://localhost:80N5, paired with the checkout's dev stack N (ingest idle, whole
+  `vaults` volume, no fake login).
+- **CI** (`.github/workflows/ci.yml`): lint, typecheck, tests, web build, a compose config check, the ingest image
+  (built from the private ingest-email, checked out with the read-only deploy key `INGEST_EMAIL_DEPLOY_KEY`) with its
+  loop and endpoint tests, and `ansible-lint` + syntax checks of the playbook on every push and PR; weekly (and on
+  demand) GitHub and LLM test suites. Fork and Dependabot PRs have no deploy key, so the ingest checkout fails there
+  (#135).
 - **Website** (`.github/workflows/pages.yml`): the site test, then `_site/` to GitHub Pages on every push to `main`
   that touches `site/`, `assets/icons/` or the app's stylesheet.
 - **Releases and production:** a tag `vX.Y.Z` builds the images (amd64 + arm64) to GHCR; the Ansible playbook
@@ -1035,7 +1248,7 @@ flowchart TB
   subgraph Mac["Mac: dev / prodtest"]
     DS["dev.sh up · just prodtest up<br/>(settings_render)"] --> PK
     DSS[("deploy/secrets/ ·<br/>tmp/prodtest/secrets/")] --> PK
-    PK --> DO["tmp/settings/ENV/<br/>.env · opencode.env · settings.json"]
+    PK --> DO["tmp/settings/ENV/<br/>.env · opencode.env · settings.json · ingest.json"]
     DO --> DC[docker compose]
   end
   subgraph Ctl["Mac: Ansible controller"]
@@ -1043,7 +1256,7 @@ flowchart TB
     AR -->|"temp secret store (0700)"| PK
   end
   subgraph Host["Target host"]
-    SH["shared/: .env + host facts ·<br/>opencode.env · settings.json · secrets/"] --> HC[docker compose]
+    SH["shared/: .env + host facts ·<br/>opencode.env · settings.json · ingest.json · secrets/"] --> HC[docker compose]
   end
   SY --> PK
   SL -.-> PK
@@ -1066,6 +1279,7 @@ flowchart TB
 | `timezone` | `Etc/UTC` | `local`, `hetzner`: `Europe/Berlin` |
 | `commit_reminder_threshold` | Default of the commit reminder (4) | — |
 | `files.visible_dot_dirs` | Dot-folders the file tree shows (`[.agents]`; names start with `.`, never `.git`) | — |
+| `ingest` | `defaults` (ingest-email options: `max_per_poll` 20, `resolve_max_urls_per_mail` 5, `run_interval_s` 900) and `profiles` (`{}`: the loop idles). A profile: `vault` (backend vault id), optional `root`, `label`, `account` and `allowed_senders` (each may be a secret reference, so no personal data lands in the public repo), optional `settings` (ingest-email options) | only `hetzner` may set profiles (none yet; a test asserts `dev`, `local`, `prodtest` and `test` have none) |
 | `gateways.<id>` | `kind`, `name`, `base_url`, `relay_upstream`, `api_key`, `models` (opencode's per-model config, passed through): `openrouter` (built-in kind; `z-ai/glm-5.3` with its zero-data-retention provider routing) and `ollama` (`openai-compatible`, base URL `http://ollama.internal:11434/v1`, `qwen2.5:3b` and `qwen3-vl:2b` with limits) | `local`: `ollama.relay_upstream: 192.168.5.2:11434` |
 
 **Load and validate** (`packages/settings`, plain TypeScript run with `tsx`, deps `yaml` and `zod`):
@@ -1075,7 +1289,7 @@ flowchart TB
 | `schema.ts` | Strict zod schema (`settingsSchema`, unknown keys fail), `partialSettingsSchema` for environment files (every key optional at any depth, secret references whole), `crossFieldErrors`: `ai.gateway` names a gateway; `ai.model` / `ai.vision_model` are `<gateway>/<model>` and, unless the kind is built in (`openrouter`, `anthropic`, `openai`), listed under the gateway's `models`; `proxy.tls: dns` needs `proxy.dns.api_token`. |
 | `load.ts` | `environments(dir)`, `loadSettings(env, { dir, overlay })`: central file (complete) ← environment file (partial) ← local overlay (dev, prodtest; skipped with `overlay: false`; for other environments an error), merged map by map, validated complete again. Every error names the file (or `<env> (merged)`) and the YAML path. |
 | `secrets.ts` | `secretRefs(settings)`: every reference with its path, from all settings except gateways other than the chosen one. `resolveSecrets(settings, store)`: reads `<store>/<name>`, trims one trailing newline, fails listing every missing non-optional secret. |
-| `render.ts` | Pure functions, settings + resolved secrets in, file text out: `renderComposeEnv`, `renderOpencodeEnv`, `renderOpencodeProviders`, `renderBackendSettings`. |
+| `render.ts` | Pure functions, settings + resolved secrets in, file text out: `renderComposeEnv`, `renderOpencodeEnv`, `renderOpencodeProviders`, `renderBackendSettings`, `renderIngestConfig`. |
 | `cli.ts` | `render <env> --out <dir> --secrets <dir> [--compose-dir <dir>]`, `show <env>` (effective settings, secrets as references), `get <env> <path>` (one value, e.g. CI's test models), `check` (every environment validates; in `just check` and CI), `--list-secrets <env>`; `--dir`, `--no-local`. `just settings …` runs it. |
 
 **Rendered files:**
@@ -1085,10 +1299,12 @@ flowchart TB
 | `.env` (0600) | compose interpolation | `DOMAIN`, `TLS_MODE`, `DNS_PROVIDER`, `TZ`, `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (resolved), `GIT_REMOTE_BASE`, `DEFAULT_MODEL` (= `ai.model`), `OLLAMA_UPSTREAM` (only for a gateway with `relay_upstream`), `SETTINGS_DIR` (dev, prodtest: the rendered dir relative to `deploy/`). A superset of the old Ansible `env.j2`, so an older release's `compose.yml` still finds every name (rollback); a target appends its host facts. |
 | `opencode.env` (0600) | opencode (`env_file`) | The gateway's key under its provider's variable (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`; none for `openai-compatible`), `EXA_API_KEY` if set, `WEB_FETCH_CAP`, `WEB_SEARCH_CAP`, `OPENCODE_MODEL`, `OPENCODE_CONFIG_CONTENT` (`{ provider: { <gateway>: … } }`, merged after a vault's own config, see [opencode](#opencode-deployopencode)). Values compose's env-file parser reads back verbatim (`$` escaped). |
 | `settings.json` | backend (`SETTINGS_FILE`) | Only what the backend needs: `auth`, `git` (remote base, resolved author, token), `ai.model`, `ai.web_access`, `commit_reminder_threshold`, `files`. The compose secrets (`bearer_token`, `opencode_password`, `github_token`, `dns_api_token`) become `{ file: "/run/secrets/<name>" }`; any other reference is resolved inline. |
+| `ingest.json` (0600) | ingest service (`/etc/ingest/config.json`) | `{ defaults, profiles }`; per profile `vault`, `root`, `label`, `account` and `allowed_senders` with their secrets resolved, and the profile's `settings` merged in. `run.sh` turns it into ingest-email's own config ([Ingest service](#ingest-service-deployingest)). |
 
 **Compose.** `compose.yml` mounts `${SETTINGS_DIR:-.}/settings.json` read-only at `/etc/karpathy/settings.json`
 (`create_host_path: false`: a missing render fails instead of leaving a directory) and sets `SETTINGS_FILE`; opencode
-takes `env_file: ${SETTINGS_DIR:-.}/opencode.env` (optional, so `compose config` works without a render). On a target
+takes `env_file: ${SETTINGS_DIR:-.}/opencode.env` (optional, so `compose config` works without a render), ingest mounts
+`${SETTINGS_DIR:-.}/ingest.json` read-only at `/etc/ingest/config.json` (also `create_host_path: false`). On a target
 `SETTINGS_DIR` is unset and `shared/` is the project dir. No model or gateway literal is left in any compose file;
 `compose.dev.yml` / `compose.prodtest.yml` keep only stack plumbing (ports, builds, source mounts, the Ollama relay
 with `OLLAMA_UPSTREAM`, `NO_PROXY` for `ollama.internal`). A dev stack renders the settings of the checkout it is
@@ -1219,6 +1435,25 @@ The ones that shape the whole system:
   `HTTP(S)_PROXY`, and each redirect hop is checked against `NO_PROXY`, which Bun honors even for an explicit proxy: a direct
   fetch from the opencode container can reach `backend` and `opencode` on the compose network.
   The AI then embeds the file by editing the note itself, so there is no second write path into notes.
+- **Ingest = a queue folder plus a deterministic service plus a vault skill** (#131): whatever is in `Input/` is new,
+  instead of guessing "new" from uncited sources and the wiki log. `Input/` is capitalised like `Sources/` and `Wiki/`
+  and tracked by git, so the queue is backed up, visible and can be fed from the Mac; the cost is that waiting items
+  show in Changes and are committed twice. Fetching runs on the server so nothing needs the Mac; interpreting stays a
+  vault skill, so the app holds no ingest logic and the same skill runs in Claude Code.
+- **The ingest service reuses ingest-email in its own container,** behind the egress proxy and without app tokens
+  (see [Ingest service](#ingest-service-deployingest)). Its source comes in as a named build context, checked out with
+  a read-only deploy key in CI, not a personal token (one repo, read-only) and not by making the repo public.
+- **The input count is computed in the browser** from the live tree; a backend field would duplicate it. It counts every
+  item, ready or not: one number, the queue length.
+- **One tap sends a bare `/ingest`;** batching is the skill's job. A long ingest holds the vault lock like any turn;
+  Stop is the user's control, and the skill's item-by-item order keeps Stop consistent.
+- **The ingest service writes without the backend's lock,** using only atomic renames and only items with open links;
+  the pull leaves `Input/` out of its stash so the bind mount and the service's writes survive a pull.
+- **Instagram is connected from the browser, logged in on the server:** the cookie can't be read cross-origin and
+  Instagram has no reading API; a server-minted session is also the one Instagram sees in use. The status is read from
+  the vaults' items, not from a status file in ingest-email, so the pinned ingest-email works as is.
+- **Only production gets real ingest profiles;** any other stack with a real label would take mails before production
+  sees them.
 - **Swapping main and side column is CSS only** (`order`/`flex`): a keyed reorder in JSX keeps component state but
   moves DOM nodes, which drops keyboard focus and resets scroll positions. Cost: Tab order doesn't follow the visual
   order when the chat is in main.
@@ -1278,6 +1513,9 @@ The ones that shape the whole system:
 - **No mocks:** integration tests use real git (local bare repos as remotes, a second clone plays "Obsidian") and
   the real opencode container — built from `deploy/opencode/Dockerfile` (`kai-test-opencode`), so tests load the same
   config and tools as prod; CI builds it once before `npm test`. A scripted fake LLM provider would count as a mock.
+  The one agreed exception is the Instagram login (a real one is a flag-risk event and needs a phone): a fake
+  instascraper login in `test_server.py`, a local HTTP stand-in for the ingest service in `ingest-routes.test.ts`, and
+  the dev-only fake login mode for e2e.
 - **Three tiers:** *default* (`npm test`, every push: unit + git integration + opencode lifecycle, no secrets; chat
   tests use a model name Ollama doesn't have, so turns fail fast and the lifecycle is tested without an LLM),
   *`@github`* (weekly + locally: against the private throwaway repo `tillg/karpathy-app-test-vault`, pushing only
@@ -1313,6 +1551,32 @@ The ones that shape the whole system:
   follows, drop (Chromium only: a synthesized file drop isn't reliable in WebKit), visibility, growth warning, chat
   chips, the phone layout. Uploads are held with `page.route` (not answered), which needs `serviceWorkers: 'block'`.
   The chat test sends a real prompt to the dev stack's model.
+- **Ingest tests:** web units `tree.test.ts` (`inputCount`) and `reminder.test.ts`; web component tests with
+  `@testing-library/react` in jsdom (`// @vitest-environment jsdom` per file, vitest includes `.tsx`;
+  `src/test/fake-api.tsx` renders the real `AppProvider` against a fake `fetch` at the HTTP boundary):
+  `FileTree.test.tsx` (badge, button only with an `ingest` command, disabled states), `Shell.test.tsx` (phone tab count),
+  `store.test.tsx` (`ingestNow` creates a chat, then sends `/ingest`), `InstagramSettings.test.tsx` (code step,
+  errors, Reconnect). Backend: `move-to-sources.test.ts` (real temp vault: moves with media, every refusal),
+  `opencode-tools.test.ts` (`move_to_sources` in agent `vault`, absent in `vault-readonly`), `harness-map.test.ts`
+  (both paths of a move), `api.test.ts` (`inputChangedCount`), `repo.test.ts` (a pull keeps `Input/` the same
+directory with its items), `ingest-routes.test.ts`
+  (bearer, zod, forwarding with the token to a real local HTTP stand-in for the service, 503, 401 → 502, no password in
+  the log), `ingest-egress.test.ts` (a real ingest + egress container pair: the backend stand-in,
+  `169.254.169.254` and a private IP refused, a public URL through the proxy, httpx and `gog` honouring
+  `HTTPS_PROXY`), `plan-gaps.test.ts` (five services, ingest publishes nothing and has exactly its two secrets).
+  Ingest service: `deploy/ingest/run.test.sh` (the loop against a fake `ingest-email` on `PATH`: fetch and resolve
+  cadence, last-run file also during a long call, skipped vault, `.tmp-*` cleanup, the rendered ingest-email config,
+  idle without profiles), `compose.test.sh`
+  (`docker compose config` for prod, dev and prodtest: internal network only, proxy env, healthcheck, own secrets only,
+  named build context, fake login only in dev), `server.test.sh` (pytest `test_server.py` in the image's test stage,
+  with a fake instascraper login: token, code step, 0600 session and no password under `/state`, superseded logins,
+  code timeout, status never logging in); all in `just check`. Settings: `render.test.ts` (`ingest.json`),
+  `repo-settings.test.ts` (no profiles outside `hetzner`). e2e: `ingest.spec.ts` (an item written into `Input/` shows
+  the badge; Ingest sends `/ingest` in a new chat and is disabled while the turn runs; no button without the skill;
+  the stub skill arrives by push and pull, as a real skill does; `@llm`: the full move) and `instagram.spec.ts` (wrong
+  password, connect with a code, disconnect, against the dev stack's fake login); the `@llm` and Instagram cases run in
+  the `desktop` project only. The real Instagram login is never
+  called from a test (flag risk, 2FA).
 - **Dev stack tests** (in `just check`): `deploy/stack.test.sh` (ports, owner from `compose ls` JSON, states,
   resolution order, claims, refusals) and `e2e/stack.unit.ts` (the e2e target resolution).
 - **Settings tests:** `packages/settings` units: merge, schema and cross-field errors with file and YAML path, secret

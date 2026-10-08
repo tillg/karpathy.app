@@ -15,7 +15,8 @@ Built up to the MVP milestone **M4**: a chat that reads and writes configured va
 (M0 scaffold, M1 vaults and reading, M2 editing and git, M3 AI reads, M4 AI writes). Next is **M5**: the existing
 wiki skills usable in the chat ([Skills](#skills)), at least `query` and `lint` on mobile, and at least one
 non-Claude model tried. The chat part of it is built: skills in `.agents/skills/` start with `/name` (palette and chips); the
-skills that need shell or credentials are not.
+skills that need shell or credentials are not. Fetching mail and links moved out of the skills into a server-side
+**ingest service**, so a vault's `/ingest` only turns what waits in `Input/` into wiki pages ([Ingest](#ingest)).
 
 Next to the app there is a public **website** at https://karpathy.app: one static start page that says what the
 app is, that the project ships code and not a running service (self-hosting needs a server, Tailscale and a set of
@@ -58,7 +59,7 @@ flowchart LR
     M[Manage vaults…] --> L[Vaults: list]
     L --> D[details] & A[Add vault] & H[What is a vault?]
     E[Edit vault] --> D
-    G[gear] --> S[Settings: GitHub · App · Version]
+    G[gear] --> S[Settings: GitHub · Instagram · App · Version]
 ```
 
 The **Vaults** dialog has three views, switched inside it (no router). Details and Add vault have an "All vaults" back
@@ -69,6 +70,8 @@ button to the list.
   short explanation of `Sources/` (immutable source documents), `Wiki/` (the AI-maintained knowledge base) and optional
   `Schema/` (instructions for the AI), with a folder sketch and the note that the app offers to create missing folders.
   "Edit vault" in the note pane and the changes panel (vault not cloned) opens that vault's details directly.
+  While the Instagram connection is `expired`, the list shows "Instagram disconnected — N links waiting.
+  **Reconnect in Settings**", which opens the Settings dialog.
 - **Vault details:** the edit fields, **Retry** and **Remove** for one vault.
   - **Edit vault:** name any time; repo, branch or root only when the vault has no uncommitted changes and no unpushed
     commits.
@@ -78,8 +81,9 @@ button to the list.
   stored and clones in the background only if the check passes (list refreshes every 2 s). A failure after the check
   shows the git error with **Retry** and **Edit**.
 - **Switch vault** from the vault menu (shows `name · branch`); the open note is saved first.
-- **Settings** dialog (the gear; no back button), in three groups:
+- **Settings** dialog (the gear; no back button), in four groups:
   - **GitHub:** the server-wide token ([GitHub token](#github-token)).
+  - **Instagram:** the ingest service's Instagram login ([Instagram connection](#instagram-connection)).
   - **App:** commit reminder threshold (1–1000 changed files), the model (`provider/model`, server-wide; the
     server rejects models opencode doesn't offer) and the **Web access** switch (on by default, for all vaults: "Lets
     the AI search the web (via Exa) and read pages you or it found. Each search and page is shown in the chat.").
@@ -120,11 +124,31 @@ applies to the next git operation. The deployment's `github_token` secret (setti
   (401).", "GitHub is not reachable from the server right now."), plus one line per vault: the repo with a check mark,
   or why that vault's repo or branch isn't reachable with this token. Typing in the field clears the result.
 
+#### Instagram connection
+
+The ingest service fetches Instagram posts with one logged-in account per deployment. Settings › Instagram makes and
+renews that login from any device; no Mac step.
+
+- **Status line:** "Connected as @x", "Expired: Instagram rejected the session of @x", "Waiting for the code" or "Not
+  connected", each followed by "— N links waiting" when Instagram links in the vaults' `Input/` wait for a session.
+- **Connect** (or **Reconnect** when expired): Instagram username (a leading `@` is dropped; letters, digits, `.` and
+  `_`, at most 30) and password, with the note "The server logs in once and keeps only the session; the password is not
+  stored." The password field is cleared on submit.
+- **Code step:** when Instagram asks for a 2FA or challenge code, the form shows "Code sent by SMS" (or the channel
+  Instagram named) and a code field: **Verify** finishes the login, **Cancel** returns to the form. The code must come
+  within 5 minutes ("The code request expired: connect again").
+- **Disconnect** (when connected) removes the session.
+- Errors under the form: "Wrong username or password", "Instagram did not answer in time: connect again" (no answer
+  within 90 s), "Instagram login failed: <error type>". Without a running ingest service the section shows only "Ingest
+  service not running".
+- The Vaults list carries the "Instagram disconnected" notice while the status is `expired` (see Vault list above).
+
 ### Notes
 
 - **File tree:** folders first, collapsed by default, expansion remembered per vault; `.md` hidden in names;
   dot-entries never shown, except the `.agents/` folder (the vault's skills; dot-files and other dot-folders inside it stay
   hidden). The whitelist is the deployment setting `files.visible_dot_dirs` (`[.agents]`; never `.git`). The open note's folders open and its row scrolls into view, unless a filter hides the note.
+  The `Input` folder carries the red **input count** and the **Ingest** button ([Ingest](#ingest)).
 - **Sort and filter the tree** (#122): two buttons in the *Notes* header, both remembered per browser for all vaults.
   - **Sort** (⇅): by **Name** (A → Z / Z → A) or by **Last changed** (Newest first / Oldest first). Picking a
     criterion sets its natural direction (A → Z, newest first). The menu stays open, so criterion and direction
@@ -259,7 +283,8 @@ instant; Refresh reads it again (no live updates). three.js loads on first open 
   changes of the vault root and pushes. If new changes arrived since the review, the commit is refused with the list.
 - **Unpushed commits:** "N unpushed commits · retry".
 - **Commit reminder** when changes pass the threshold: "Later" brings it back at 2× the threshold, a second "Later"
-  silences it until the count drops again.
+  silences it until the count drops again. Changes under `Input/` don't count (waiting input items aren't unsaved
+  work); the Changes list and the pill still show them.
 - **Git status pill:** "Conflict" / "Syncing…" / "AI working…" / "N uncommitted" / "All committed", plus
   "· N unpushed", "· N incoming" and "· offline".
 - **Incoming changes and the one-tap pull:** while the app is open, the backend fetches GitHub every 2 minutes and on
@@ -346,6 +371,52 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
 - **Read-only while in conflict** ("the AI can only read, not change notes"); web search and fetch, Open chips and commands still work (a command that writes can't save anything then).
 - The AI can read and edit notes in the vault root only; its changes are uncommitted until the user commits.
 
+### Ingest
+
+Mails, links and Instagram posts get into a wiki without the Mac (#131): the server fetches them into the vault's
+`Input/`, and one tap lets the vault's `ingest` skill turn them into wiki pages.
+
+```mermaid
+flowchart LR
+  G[Gmail label] -->|every 15 min| F[ingest service]
+  U[user drops a folder<br/>Obsidian, Mac push] --> I
+  F -->|new item| I[(Input/)]
+  I -->|every minute| R[ingest service:<br/>resolve links]
+  R -->|sibling items| I
+  I --> B[file tree: Input · 7]
+  B -->|tap Ingest| S[new chat: /ingest]
+  S -->|wiki pages| W[(Wiki/)]
+  S -->|move_to_sources| SO[(Sources/)]
+```
+
+- **Input count:** the `Input` row in the file tree shows a red bullet with the number of items waiting (every direct
+  sub-folder, also those whose links are still being fetched; aria label "7 sources waiting to be ingested"), hidden
+  at 0. It shows when the folder is collapsed and under a tree filter too (the `Input` row stays even if the filter
+  hides its items). On the phone the **Files** tab in the tab bar carries the same count. It updates live as items
+  arrive and as the AI moves them out.
+- **Ingest button** next to the count, also in the phone Files tab's tree: opens a new chat and sends `/ingest` in one
+  tap (the chat opens, on the phone the Chat tab), so the turn shows every file read, written and moved. Shown only
+  when the vault has an `ingest` command; without one the count's tooltip says "Add an `ingest` skill to
+  `.agents/skills/` to ingest from here". Disabled with the reason as tooltip when offline, in conflict, while an AI
+  turn runs in the vault, and while it is starting. It counts as a use of `/ingest` for the command chips. Tapping it
+  never fetches mail: mail arrives only through the ingest service.
+- **What the vault's `ingest` skill does** (the vault's own instructions, not the app's): reads the items in `Input/`
+  that have no open links (it skips the others and says so), writes or updates the wiki pages citing
+  `Sources/<name>/index.md`, then moves the item with **`move_to_sources`**; one item completely before the next, so
+  **Stop** leaves a consistent state. Questions go wherever the vault's rules say.
+- **`move_to_sources`** (AI tool, not in a read-only conflict turn): moves `Input/<name>` to `Sources/<name>`. It shows as
+  a changed chip `Sources/<name>`; every moved file counts as an AI change (old and new path) in Changes and the commit.
+  It refuses a name with `/` or `..` or a leading dot, a symlink, an item that is still being processed ("still being
+  processed (unresolved_links): leave it for the next ingest") and an existing target ("Sources/<name> exists: rename or
+  merge by hand"); the turn goes on.
+- **The ingest service** (on the server): every 15 minutes it fetches the mails of each configured Gmail label into the
+  vault's `Input/` (sender allowlist; each mail moves to the label's `/processed`, `/rejected` or `/failed`), every minute
+  it resolves the links in waiting items (web pages, PDFs with OCR, YouTube, GitHub, Instagram) into sibling items. A
+  folder the user drops into `Input/` (Obsidian, or pushed from the Mac and pulled) is picked up within a minute. Nothing
+  is committed: items, moves and pages are uncommitted changes until **Commit & Push**.
+- **Gmail access** is set up by the operator (`just ingest-auth <target> <email>`), **Instagram** by the user in
+  Settings › Instagram ([Instagram connection](#instagram-connection)).
+
 ### Skills
 
 A vault follows the open **`.agents` standard**: instructions in `AGENTS.md`, skills in `.agents/skills/<name>/SKILL.md`
@@ -375,8 +446,9 @@ Whether a skill works depends on what it needs:
 - **Shell** (Python scripts such as `film-import.py`, `rg` via bash): doesn't work, because `bash` is denied. Making
   it work needs Python in the opencode image and a bash command allowlist re-checked against the leaks in
   [security.md](security.md#confining-the-ai).
-- **Credentials** (`ingest-email` with Gmail, the Instagram scraper): need secrets for the opencode service and
-  network access; not set up.
+- **Credentials** (`ingest-email` with Gmail, the Instagram scraper): not for the AI. Fetching runs in the ingest
+  service ([Ingest](#ingest)) with its own secrets; a skill step that runs `ingest-email` or compresses Reels must be
+  dropped, the vault's `ingest` skill only reads `Input/`.
 - **Steps that commit or push:** never run (the AI can't commit); such steps must be dropped from the skill.
 - **Global instructions:** `~/.claude/CLAUDE.md` and hooks such as RTK don't travel; anything a skill relies on must
   be in the vault repo, and every file it reads must lie inside the vault root.
@@ -427,6 +499,25 @@ sequenceDiagram
 
 If the AI stops at the caps or after 8 sources, it lists the open questions; "continue" starts the next block.
 
+### Ingest a mail from the phone
+
+```mermaid
+sequenceDiagram
+  actor U as User (phone)
+  participant G as Gmail
+  participant IS as Ingest service
+  participant App
+  participant AI
+  U->>G: mails a link to the address labelled MyLife
+  IS->>G: fetch (≤ 15 min), label /processed
+  IS->>App: Input/mail-…/ appears → Files tab "1"
+  IS->>App: link resolved (≤ 1 min) → Input/web-…/, "2"
+  U->>App: taps Ingest
+  App->>AI: new chat, /ingest
+  AI-->>App: writes Wiki pages, move_to_sources × 2 (chips), Files tab clears
+  U->>App: reviews the diffs, Commit & Push
+```
+
 ### Open a vault that still uses `CLAUDE.md` and `.claude/`
 
 The user opens the vault; the app pulls and moves it to `AGENTS.md` and `.agents/skills/`. The notice "Moved to the .agents
@@ -475,8 +566,12 @@ sequenceDiagram
 | Settings: reminder threshold, model (or Use default), Web access | A model override stored only while it differs from the deployment's default |
 | URLs in prompts and notes, web search queries (AI) | Web chips; pages and results in the chat only |
 | "Add a picture of X from <URL>" (AI) | A new media file or PDF in the vault (changed chip) and an embed in the note |
+| Mail to an ingest profile's Gmail label; a folder dropped into `Input/` | Input items (and sibling items for its links) in `Input/`, the input count |
+| Tap on Ingest | A new chat running `/ingest`: wiki pages, items moved to `Sources/` (uncommitted) |
+| Instagram username, password, maybe a code (Settings › Instagram) | The Instagram connection's status; the password is not stored |
 
-No pasting of images, no video or audio uploads by the user (the AI may save them from a URL), no exports, e-mail or push notifications.
+No pasting of images, no video or audio uploads by the user (the AI may save them from a URL), no exports, no outgoing
+e-mail, no push notifications (also not when something arrives in `Input/`).
 
 ## States and transitions
 
@@ -550,7 +645,8 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
   - Only skills are commands: no variables like `{activeNote}`, no argument hints, no command files (opencode reads them only
     from `.opencode/`, which disables chat); a user prompt becomes a small skill instead.
   - A skill added on the Mac shows after the vault pulled it; a skill the AI or the user edits shows the next time the list
-    loads while no turn runs.
+    loads while no turn runs. A skill *created* in the app or by the AI (e.g. a new `ingest` skill) doesn't show as a
+    command, and so brings no Ingest button, until the next pull (#134).
   - `@imports` of `CLAUDE.md` that point outside the repo (e.g. a symlink `Schema/methodology.md` → `../../llm_wiki/…`), at
     a missing file or at a gitignored file can't be pasted into `AGENTS.md`, so opencode doesn't see that text; the line
     stays as it was.
@@ -561,6 +657,25 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
   searches and 20 fetches per turn and your reply before each block. No cost cap in money. Fetched web content that lands in
   `Sources/` is unreviewed until you review the diff.
 - **Links:** the AI's own reply text can still contain links of any URL (not checked); only the Open chip is guarded.
+- **Ingest:**
+  - No ingest profile is enabled in production yet: the service runs idle there until the cutover
+    ([deployment.md › Ingest cutover](deployment.md#ingest-cutover)). Mail accounts and labels are a deploy setting,
+    not configurable in the app.
+  - The ingest service runs ingest-email at a pinned commit that still lacks: atomic item creation (a mail folder is
+    written in place), a duplicate lookup in `Sources/` (an item already moved there can be fetched again), completing
+    hand-made items (URLs in a dropped folder without `unresolved_links` aren't resolved), Reel re-encoding, and
+    waiting for an Instagram session (a `no-session` link is given up after 5 polls, about 75 minutes, and "N links
+    waiting" then drops although nothing was fetched).
+  - The real Instagram login is tested only against a fake; the first real connect happens in production. Instagram
+    may challenge or block logins and fetches from the server's datacenter IP; a failed post ends in `failed_links`.
+  - **Cancel** in the Instagram code step only resets the form: the server's pending login waits for a code until its
+    5-minute timeout, and reopening Settings shows the code field again (#135).
+  - A new item arriving between the review and the commit makes the commit refuse with the changed list ("changes
+    moved"); review again. A long `/ingest` turn holds the vault: commits and pulls wait until it ends or is stopped.
+  - Items are uncommitted until the user commits: discarding them loses them (their mails have already left the
+    Gmail label), and their media sits on the vault disk meanwhile. An item that was committed in `Input/` and then
+    moved shows in Changes as deletes plus adds.
+  - No notification when something arrives, no scheduled (unattended) ingest.
 - **Uploads:**
   - Chat attachments are useful only with a model that reads images (and PDFs); the production model is text-only
     today, so the AI gets only an "ERROR: Cannot read …" note and says so.

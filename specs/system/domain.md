@@ -24,8 +24,8 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 |---|---|---|
 | **Vault** | A GitHub repo (optionally a subfolder of it) whose Markdown notes the app works on. *Avoid:* workspace, project, notebook. | `VaultConfig` / `Vault` (`packages/shared`) |
 | **Vault root** | The folder inside the repo that the vault starts at; the repo root unless a subfolder was configured. Nothing outside it is visible. | `VaultConfig.root` (`''` = repo root) |
-| **Vault structure** | The folders a vault is expected to have under its vault root: `Sources/` and `Wiki/` (required) and `Schema/` (optional, only mentioned in the help). Only the required ones are checked, and only when a vault is attached; existing vaults are never checked or repaired. Names match case-insensitively (`wiki/` counts as `Wiki/`). | `REQUIRED_FOLDERS` (`preflight.ts`) |
-| **Sources** | `Sources/`: immutable source documents (articles, mails, PDFs, clips) that humans or ingest skills add and that aren't rewritten afterwards. | |
+| **Vault structure** | The folders a vault is expected to have under its vault root: `Sources/` and `Wiki/` (required) and `Schema/` (optional, only mentioned in the help). `Input/` is not part of it: it appears when something waits. Only the required ones are checked, and only when a vault is attached; existing vaults are never checked or repaired. Names match case-insensitively (`wiki/` counts as `Wiki/`). | `REQUIRED_FOLDERS` (`preflight.ts`) |
+| **Sources** | `Sources/`: the archive of ingested sources (articles, mails, PDFs, clips), not rewritten afterwards. Fetched mail and links no longer land here: they wait in `Input/` and are moved here once ingested ([Ingest](#ingest)). Chat uploads (`Sources/upload-…`) and research source files still land here directly. | |
 | **Wiki** | `Wiki/`: the knowledge base the AI maintains from the sources (entities, concepts, topics, syntheses, index, log). | |
 | **Schema** | `Schema/`: optional instructions for the AI (e.g. `Schema/CLAUDE.md`, methodology). | |
 | **Attach preflight** | The check that runs when a vault is added, before anything is stored or cloned into the vault directory: repo and branch reachable with the GitHub token, vault root exists, required folders present. A vault that fails it was never attached. | `preflight()` |
@@ -76,11 +76,11 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Draft** | The local browser copy of an unsaved change (`{base, text}`), kept until the server has the text. Internal term; to the user it's still an unsaved change. | localStorage `karpathy.draft:*` |
 | **Commit** | The user-triggered act of recording all uncommitted changes of a vault and pushing them to GitHub in one step. There is no commit without a push attempt. *Avoid:* sync, save, publish. | `Vaults.commit` |
 | **Unpushed commit** | A commit whose push failed; it is pushed again on the next pull, commit or manual retry. If GitHub has moved on meanwhile, the next pull turns it back into uncommitted changes. | `VaultStatus.unpushedCount` |
-| **Commit reminder** | A prompt that appears once the number of uncommitted changes passes a threshold (default 4), offering to commit. | `Settings.commitReminderThreshold` |
+| **Commit reminder** | A prompt that appears once the number of uncommitted changes passes a threshold (default 4), offering to commit. Changes under `Input/` don't count: waiting input items are pending work, not unsaved results. | `Settings.commitReminderThreshold`, `VaultStatus.inputChangedCount` |
 | **Stale save** | A save rejected because the file changed (by the AI or a pull) since the editor loaded it. *Avoid:* conflict (reserved for git). | HTTP 409 `stale` |
 | **Conflict** | A git-level clash between the vault's uncommitted changes and changes pulled from GitHub. It blocks all writes to the vault until the user resolves each clashing file: keep **mine**, **theirs** or **both**. | `VaultState` `conflict`, `conflictPaths` |
 | **Busy** | What the vault is doing right now: `none`, `turn` (an AI turn holds it) or `sync` (a git operation holds it or waits for it). | `VaultStatus.busy` |
-| **Pull** | The backend's sync with GitHub (fetch, fast-forward, re-apply uncommitted changes). Runs on open, before every commit and push, before every AI turn, and when the user taps the incoming count (pill segment, Changes banner, open-note bar). The same pull every time: a pull never commits. | `Repo.pull`, `POST /vaults/:id/pull` |
+| **Pull** | The backend's sync with GitHub (fetch, fast-forward, re-apply uncommitted changes; uncommitted changes under `Input/` stay in place instead of being stashed). Runs on open, before every commit and push, before every AI turn, and when the user taps the incoming count (pill segment, Changes banner, open-note bar). The same pull every time: a pull never commits. | `Repo.pull`, `POST /vaults/:id/pull` |
 | **Incoming change** | A vault file that GitHub's branch changed since the last commit the vault and GitHub share, and that the vault doesn't have yet. Counted in files, not commits; only files inside the vault root count. Known as of the last fetch (at most one fetch interval old). The mirror image of an uncommitted change. *Avoid:* incoming commit, behind, remote change, pending change. | `VaultStatus.incomingCount`, `incomingPaths` |
 | **Background fetch** | A `git fetch` of the vault's branch that the backend runs on its own while a browser has the vault open: every 2 minutes and on every connect to the vault's event stream. It only updates the clone's copy of GitHub's branch; files, uncommitted changes and unpushed commits stay as they are. Never shown as "Syncing…". *Avoid:* sync, poll, auto-pull. | `Vaults.fetchRemote` |
 | **pullError** | Set when the last contact with GitHub failed: a pull or a background fetch. Cleared by the next one that succeeds, and when the vault's repo changes. Shown as "· offline". | `VaultStatus.pullError` |
@@ -140,13 +140,32 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Schema violation** | A property that doesn't follow the schema: a missing required property, a value outside an enum, not a calendar date, a value of the wrong kind ("should be a number", "should be true or false", "should be a list", "should be a single value"), an unquoted wikilink in a list. Shown, never fixed by the app, never blocks saving. *Avoid:* error (saving still works), lint (the AI skill). | `validate()` → `Violation[]` |
 | **Refused edit** | A form edit the app can't make while keeping every other byte of the frontmatter. Nothing is written; the note shows its YAML lines. | `editFrontmatter()` → `{ refused }` |
 
+### Ingest
+
+Terms for getting mails, links and Instagram posts into a wiki ([Ingest an input item](#ingest-an-input-item)).
+
+| Term | Meaning | In code |
+|---|---|---|
+| **Input** | `Input/` in the vault root: the queue of sources not yet ingested, one sub-folder per item. Written by the ingest service and by the user (Obsidian, a folder pushed from the Mac), emptied by the AI's ingest. Created on demand; not part of the vault structure, so a vault without it simply has nothing waiting. Tracked by git like any folder: waiting items are uncommitted changes, and a folder pushed into `Input/` from the Mac arrives with the next pull. *Avoid:* inbox. | `INPUT_DIR = 'Input'` (`packages/shared`) |
+| **Input item** | One direct sub-folder of `Input/`: an `index.md` (frontmatter + body) and its files (`original.eml`, attachments, images, video, PDF and its text). Named `<kind>-YYYY-MM-DD-<slug>` (`mail-…`, `insta-…`, `web-…`, `youtube-…`, `gh-…`). Loose files directly in `Input/` are not items. | folder |
+| **Input count** | The number of direct sub-folders of `Input/` (with or without `index.md`; hidden folders such as `.tmp-*` and loose files don't count), shown as the red badge on `Input`. It is the queue length, not the processing state: items whose links are still being fetched count too. | web `inputCount(tree)` |
+| **Open link** | A URL in an item's `index.md` the ingest service hasn't fetched yet (frontmatter `unresolved_links`). It becomes a `resolved_links` entry `{url, source}`, whose source is a **sibling item** in `Input/`, or a `failed_links` entry `{url, attempts, reason}`. An item with open links is still being processed. | ingest-email frontmatter |
+| **Waiting link** | An Instagram link that couldn't be fetched because there is no live Instagram session (reason `no-session`). Shown as "N links waiting" in Settings › Instagram. | `waitingLinks` |
+| **Ingest service** | The compose service `ingest`: fetches mail into `Input/` every 15 minutes and resolves open links every minute. Deterministic, no LLM, never commits, never touches an item that has no open links. *Avoid:* pipeline (that's the whole path from mail to wiki). | `deploy/ingest/` |
+| **Ingest profile** | One Gmail label → one vault: the label (with its sub-labels `/processed`, `/failed`, `/rejected`), the gog account, the allowed senders, ingest-email options and the vault id (plus its root) whose `Input/` it fills. A setting per environment; only production may have any. | `ingest.profiles` (`deploy/settings/`) |
+| **Ingest** | The AI step: the vault's `ingest` skill turns ready input items into wiki pages and moves each finished item to `Sources/`. It never fetches anything. *Avoid:* import. | vault skill `.agents/skills/ingest/` |
+| **Ingest button** | The button next to the input count: a new chat that sends `/ingest` in one tap. Shown only when the vault has an `ingest` command. | web `ingestNow()` |
+| **Move to sources** | One call of the AI's `move_to_sources` tool: `Input/<name>` becomes `Sources/<name>` in one rename. Never overwrites, never deletes, refuses an item with open links. | `move_to_sources` tool |
+| **Instagram connection** | The ingest service's logged-in Instagram session, one account per deployment. States `not-connected`, `waiting-for-code` (Instagram asked for a 2FA or challenge code, at most 5 min), `connected` (as `@account`), `expired` (a session exists, but the resolver still reported `no-session` for an Instagram link after it was made). Made and renewed in Settings › Instagram; the password is used once and never kept. | ingest service `/instagram/*`, `InstagramStatus` |
+| **Last-run file** | `/state/last-run` in the ingest container, touched around every ingest-email call; the container is unhealthy when it is older than 20 minutes. Not the **heartbeat** (the healthchecks.io ping). | compose healthcheck |
+
 ### Operations
 
 Terms for running the app, not for using it ([deployment.md](deployment.md)).
 
 | Term | Meaning | In code |
 |---|---|---|
-| **Release** | A git tag `vX.Y.Z` with the four images CI built from it and the `compose.yml` attached to the GitHub release. Never changes once published; a tag whose images failed to build isn't one. *Avoid:* build, deployment. | `.github/workflows/release.yml` |
+| **Release** | A git tag `vX.Y.Z` with the five images CI built from it and the `compose.yml` attached to the GitHub release. Never changes once published; a tag whose images failed to build isn't one. *Avoid:* build, deployment. | `.github/workflows/release.yml` |
 | **Pre-release** | A release from a `vX.Y.Z-rc.N` tag, from any commit. Deployable by name, never GitHub's "Latest" or `:latest`. | `guard` job |
 | **Version (of a release)** | `X.Y.Z`, the tag without the `v`; also the image tag and what `/api/health` reports. Local builds report `dev`. | `APP_VERSION` |
 | **Target** | A named place a release is deployed to: `local` (the Lima VM) or `hetzner`. One host with its own secrets (Ansible Vault) and host provisioning (inventory); its app settings are the **environment** of the same name (`deploy/settings/<target>.yaml`). Every target is an environment, not every environment a target. *Avoid:* stage, server. | `deploy/ansible/inventories/<target>`, `deploy/settings/<target>.yaml` |
@@ -186,7 +205,7 @@ Terms for configuring the app per environment ([architecture.md](architecture.md
 
 | Term | Meaning | In code |
 |---|---|---|
-| **Setting** | A value an operator chooses per environment and the app reads at start: gateway, model, domain, TLS mode, timezone, git identity and remote base, web caps, visible dot-dirs, which secret each component needs. Never changed by the app itself. *Avoid:* config (that's `config.json`, runtime state). | `Settings` (`packages/settings`) |
+| **Setting** | A value an operator chooses per environment and the app reads at start: gateway, model, domain, TLS mode, timezone, git identity and remote base, web caps, visible dot-dirs, ingest profiles, which secret each component needs. Never changed by the app itself. *Avoid:* config (that's `config.json`, runtime state). | `Settings` (`packages/settings`) |
 | **Environment** | A named way the stack runs: `dev` (dev stack N), `prodtest`, `test` (CI and the backend's integration tests), `local` (the Lima VM target) and `hetzner` (production). It exists exactly when `deploy/settings/<env>.yaml` exists. Every target is an environment; not every environment is a target. | `environments()` |
 | **Central settings file** | `deploy/settings/settings.yaml`, committed: every setting with the value all environments share. Must validate on its own as complete settings. | `settingsSchema` |
 | **Environment file** | `deploy/settings/<env>.yaml`, committed: the same shape, but only what that environment overrides (all keys optional, unknown keys still fail). | `partialSettingsSchema` |
@@ -197,7 +216,7 @@ Terms for configuring the app per environment ([architecture.md](architecture.md
 | **Gateway** | A named way to reach LLMs, the key is opencode's provider id: a kind (`openrouter`, `anthropic`, `openai`: built into opencode, any model id is valid; `openai-compatible`: only its listed models), optional base URL, API key (a secret reference), the relay upstream (Ollama) and per-model options (e.g. OpenRouter's zero-data-retention routing). `ai.gateway` picks one per environment. | `gateways`, `BUILT_IN_KINDS` |
 | **Default model** | `ai.model` of the effective settings, `<gateway>/<model id>`. What the backend and opencode use unless an admin overrode it. The `test` environment adds `ai.vision_model`. | `settings.json` `ai.model`, `ConfigStore.defaultModel` |
 | **Model override** | The model an admin picked in the Settings dialog, stored in `config.json` only while it differs from the default model; choosing the default again removes it, so the next default change reaches the installation. | `modelOverride`, `SettingsView.modelOverridden` |
-| **Rendered files** | What the renderer writes from the effective settings for components that can't read YAML: the compose `.env`, `opencode.env` (API key, web caps, model, provider config) and the backend's `settings.json`. Generated, never edited, never committed. | `just settings render`, `tmp/settings/<env>/` |
+| **Rendered files** | What the renderer writes from the effective settings for components that can't read YAML: the compose `.env`, `opencode.env` (API key, web caps, model, provider config), the backend's `settings.json` and the ingest service's `ingest.json`. Generated, never edited, never committed. | `just settings render`, `tmp/settings/<env>/` |
 
 Three kinds of configuration exist; only settings live in `deploy/settings/`:
 
@@ -208,6 +227,7 @@ flowchart TB
     s2[domain, TLS, timezone]
     s3[git identity, remote base]
     s4[web caps, visible dot-dirs, secret references]
+    s5[ingest profiles]
   end
   subgraph R["Runtime state: written by the app"]
     r1[vaults]
@@ -268,6 +288,10 @@ erDiagram
   VAULT_ROOT ||--|| SOURCES : "requires"
   VAULT_ROOT ||--|| WIKI : "requires"
   VAULT_ROOT ||--o| SCHEMA : "may have"
+  VAULT_ROOT ||--o| INPUT : "may have"
+  INPUT ||--o{ INPUT_ITEM : "queues"
+  INPUT_ITEM }o--o| SOURCES : "moved to when ingested"
+  INGEST_PROFILE }o--|| VAULT : "fills Input/ of"
   VAULT ||--o{ VAULT_SKILL : "has, in .agents/skills"
   VAULT_SKILL }o--o| APP_SKILL : "replaces (same name)"
   VAULT_SKILL ||--o{ COMMAND : "is listed as"
@@ -323,9 +347,12 @@ more.
 | Actor | What it can do |
 |---|---|
 | **Operator** (the same person as the user, on the Mac) | Cuts releases, deploys them to the targets, holds the vault passwords (Keychain) and gets the alerts. |
-| **User** (single person, holds the bearer token) | Manage vaults and settings, read and edit notes, upload photos and PDFs (button or drop; the first upload to a flat page moves it into its own folder), attach them to prompts, search, chat with the AI, review diffs, discard, commit and push, resolve conflicts. Uses the app as a PWA on phone, iPad and desktop. |
-| **AI** (opencode agent, on the user's behalf) | Inside one vault root only: read notes; write notes unless the vault is in conflict (then read-only); open one note in the user's editor when the user asks to see it (also in conflict). Receives attached images and PDFs as message content when its model reads them. With Web access on: web search, and web fetch of known URLs (also in conflict); outside a conflict also save a known URL's image, video, audio or PDF as a new vault file (media download). Follows a command's instructions; in a research plan turn it scouts only a little and stops for the user's reply. Offers a known URL to the user as an Open chip when asked to show a page (also with Web access off and in conflict). It can't run shell commands (a skill's shell snippets are never run), fetch or offer URLs it built itself, reach internal hosts, read `.env` files, edit `.git` or harness config, create other binary files, overwrite a media file, commit or push. |
-| **Vault author** (whoever pushes to the repo) | Adds commands by adding skills to `.agents/skills/` (or to `.claude/`, which the agents move picks up on the next pull). A skill is instructions for the AI, not code. |
+| **User** (single person, holds the bearer token) | Manage vaults and settings, connect Instagram, start an ingest with one tap, drop folders into `Input/` or delete them, read and edit notes, upload photos and PDFs (button or drop; the first upload to a flat page moves it into its own folder), attach them to prompts, search, chat with the AI, review diffs, discard, commit and push, resolve conflicts. Uses the app as a PWA on phone, iPad and desktop. |
+| **AI** (opencode agent, on the user's behalf) | Inside one vault root only: read notes; write notes unless the vault is in conflict (then read-only); open one note in the user's editor when the user asks to see it (also in conflict). Receives attached images and PDFs as message content when its model reads them. With Web access on: web search, and web fetch of known URLs (also in conflict); outside a conflict also save a known URL's image, video, audio or PDF as a new vault file (media download). Follows a command's instructions; in a research plan turn it scouts only a little and stops for the user's reply. Offers a known URL to the user as an Open chip when asked to show a page (also with Web access off and in conflict). Outside a conflict, moves a ready input item from `Input/` to `Sources/` (`move_to_sources`). It can't run shell commands (a skill's shell snippets are never run), fetch or offer URLs it built itself, reach internal hosts, read `.env` files, edit `.git` or harness config, create other binary files, overwrite a media file, commit or push. |
+| **Vault author** (whoever pushes to the repo) | Adds commands by adding skills to `.agents/skills/` (or to `.claude/`, which the agents move picks up on the next pull). A skill is instructions for the AI, not code. Owns the vault's `ingest` skill; the app ships none. |
+| **Ingest service** (compose service `ingest`) | Fetches the mails of each ingest profile's Gmail label into the vault's `Input/` and resolves their links (web pages, PDFs with OCR, YouTube, GitHub, Instagram) into sibling items. Touches an item only while it has open links; never commits, never moves anything to `Sources/`. Sees only `Input/` and `Sources/` of the configured vaults on a target. |
+| **Gmail** | Holds the ingest profiles' labels; the ingest service reads the top label and moves each mail once, to `/processed`, `/rejected` (sender not allowed) or `/failed`. Never touched by the AI's ingest. |
+| **Instagram** | Serves posts and Reels to the ingest service with the session made in Settings › Instagram; may ask for a 2FA or challenge code, or reject a session. |
 | **User's browser** | Loads a page the user opened from an Open chip, with the user's own cookies and network. |
 | **Device (iOS)** | Converts HEIC photos to JPEG when the picker's accepted types are an explicit list without HEIC. |
 | **Search backend (Exa)** | Receives the AI's web search queries; returns results. |
@@ -622,6 +649,66 @@ sequenceDiagram
 | Pages behind a login, videos, apps | fail or come back empty | open with the user's own browser session |
 | URL rule | known URL | known URL |
 
+### Ingest an input item
+
+```mermaid
+stateDiagram-v2
+  [*] --> Arrived: mail fetched / user drops a folder
+  Arrived --> Resolving: has unresolved_links
+  Arrived --> Ready: no open links
+  Resolving --> Resolving: retry (≤ 5 attempts)
+  Resolving --> Ready: every link resolved or failed
+  Ready --> Ingested: AI writes wiki pages,<br/>then move_to_sources
+  Ingested --> [*]: in Sources/, cited by Wiki pages
+  Ready --> Discarded: user deletes / discards
+  Resolving --> Discarded
+```
+
+- **Arrived, Resolving and Ready all count** in the input count. The ingest skill skips items that still have
+  `unresolved_links`, says so and leaves them for the next run.
+- A resolved link becomes a **sibling item** (`insta-…/` next to `mail-…/`), ingested on its own; the mail's
+  `resolved_links` names it by folder name, so the reference survives the move to `Sources/`.
+- The skill cites the final path `Sources/<name>/index.md` in the pages it writes, then moves the item, and finishes
+  one item (pages, then move) before the next, so **Stop** leaves finished items in `Sources/` and the rest untouched in
+  `Input/`.
+
+Who does what:
+
+```mermaid
+flowchart TB
+  subgraph Server
+    IS[Ingest service] -->|create items,<br/>update link state| IN[(Input/)]
+    AI[AI turn /ingest] -->|read| IN
+    AI -->|write| WK[(Wiki/)]
+    AI -->|move_to_sources| SR[(Sources/)]
+    BE[Backend] -->|watch, list| IN
+  end
+  GM[Gmail label] --> IS
+  WEB[Websites, Instagram,<br/>YouTube, GitHub] --> IS
+  U[User] -->|tap Ingest| AI
+  U -->|commit + push| GH[(GitHub)]
+  GH -->|pull| MAC[Mac: Obsidian,<br/>Claude Code]
+```
+
+- **Ingest service:** fetches and resolves; owns an item while it has open links.
+- **AI (the vault's `ingest` skill):** interprets; owns an item once it is ready; the only one that moves items to
+  `Sources/` (in Claude Code on the Mac the skill uses `mv` instead of the tool).
+- **User:** taps Ingest, reviews and commits; may drop items into `Input/` or delete them.
+- **Mac:** fetches nothing; a git clone like any other. It may still feed the queue (a folder in `Input/`, pushed) and
+  run the vault's `ingest` skill in Claude Code.
+
+**Gmail labels** (`MyLife` as the example; each profile has its own). Only the top label is read; each mail leaves it
+in the same fetch run, once:
+
+| Moved to | When |
+|---|---|
+| `MyLife/processed` | its folder (`index.md`, `original.eml`, attachments) is in `Input/`; its links are resolved later and don't change the label |
+| `MyLife/rejected` | the sender is not in the profile's allowed senders (checked before the mail is read; a profile with an empty list is refused as a config error); nothing is written |
+| `MyLife/failed` | fetching, parsing or writing it failed (logged) |
+
+A mail whose folder was written but whose label move failed stays in the top label; the next run recognizes it by
+`message_id` and writes nothing twice.
+
 ### Commit
 
 1. The user opens the commit dialog; the app flushes the open note and asks for a proposed message (a tool-less AI
@@ -643,7 +730,7 @@ flowchart TD
   U -->|yes| R[reset --mixed to merge-base:<br/>they become uncommitted changes]
   U -->|no| S
   R --> S{uncommitted changes?}
-  S -->|yes| ST[stash incl. untracked] --> FF
+  S -->|yes| ST[stash incl. untracked,<br/>except Input/] --> FF
   S -->|no| FF[fast-forward to origin]
   FF --> POP{stash pop clean?}
   POP -->|yes| OK
@@ -795,6 +882,17 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
 - **Sources keep their URL** and are summaries with short quotes, never full pages.
 - **Link offers follow the known-URL rule and need the user's tap.** The AI offers a page only when the user asked
   to see one.
+- **Nothing in the ingest pipeline commits** (ADR 0001): fetched items, moves and wiki pages are uncommitted changes
+  until the user commits. The ingest service never touches git.
+- **An item leaves `Input/` only through the ingest skill** (`move_to_sources` in the app, `mv` in Claude Code) or by
+  the user deleting or discarding it. The input count at zero means "all ingested", not "all resolved".
+- **Two writers in `Input/`, kept apart:** the ingest service writes an item only while it has open links (link state
+  rewritten through a temp file and a rename); once ready, the item belongs to the AI and the user.
+- **The pull never moves `Input/`:** its dirty check and stash leave `Input/` out, so waiting items stay where they are
+  (the ingest service bind-mounts the folder) while the pull fast-forwards around them.
+- **Only production reads real mail:** dev stacks, prodtest, tests and `local` have no ingest profiles (the service
+  idles), so no other stack takes mails from a real label first.
+- **Vault content stays in its language;** the ingest pipeline adds no translation.
 - **Single user:** one bearer token, one git identity, one server-wide model.
 - **Settings name secrets, never hold them:** `deploy/settings/` is committed to a public repo, so a secret appears
   there only as a secret reference; its value stays in a secret store. Rendered files are generated, never edited.

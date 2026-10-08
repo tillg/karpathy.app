@@ -127,6 +127,8 @@ edited: 2026-10-08
   - [21:00 — Fix the review's high and medium findings; leave four for follow-up](#run-2026-10-08-1858-15)
   - [20:50 — Retro: name the dead port forwarder in the test helper's error](#run-2026-10-08-1858-16)
   - [22:00 — Run deploy-e2e against the VM's remotes of the other checkout](#run-2026-10-08-1858-17)
+  - [22:30 — Archive rework-ingestion-pipeline with its decisions still open](#run-2026-10-08-1858-18)
+  - [22:30 — Leave the public ingest image as it is; the user decides](#run-2026-10-08-1858-19)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1710,3 +1712,29 @@ edited: 2026-10-08
 - **Alternatives:** `just vm reset` from this checkout; an `E2E_REMOTES` override in `e2e/helpers.ts` (the cleaner fix).
 - **Consequences:** test repos of this run land in `~/git/karpathy_app/tmp/dev/remotes/e2e` (throwaway). Worth a
   follow-up: `just deploy-e2e` should check that the VM mounts this checkout's remotes.
+
+## 22:30 — Archive rework-ingestion-pipeline with its decisions still open {#run-2026-10-08-1858-18}
+
+- **Status:** open
+- **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`.
+- **Context:** all 17 steps ticked, full suite and VM e2e green, v0.0.17 live; the decisions of this run (1–19) are
+  `open` because nobody can review them during the run.
+- **Question:** archive now or leave the change open?
+- **Decision:** archive (the `/autonomous` rule): system description updated, change folder in history, then deleted.
+- **Why:** the system description must match what runs in prod.
+- **Alternatives:** keep `specs/changes/rework-ingestion-pipeline/` until the review.
+- **Consequences:** a decision reverted later is undone with `/spec:tweak`.
+
+## 22:30 — Leave the public ingest image as it is; the user decides {#run-2026-10-08-1858-19}
+
+- **Status:** open
+- **Context:** the archive's system update found that the GHCR images are public (targets pull anonymously), so
+  `ghcr.io/tillg/karpathy.app-ingest:0.0.17-rc.1` and `:0.0.17` contain the installed `ingest_email` package (its
+  `src/` modules only: no tests, fixtures or mails) of the private `tillg/ingest_email` repo.
+- **Question:** make the package private now?
+- **Decision:** no; report it first.
+- **Why:** a private package makes every target's next pull fail until a registry login is set up there (deploys and
+  rollbacks break); the published code holds no secrets.
+- **Alternatives:** set `karpathy.app-ingest` private on GHCR plus a read-only pull token on the targets (Ansible
+  `docker login`); or make `ingest_email` public.
+- **Consequences:** documented as a gap in `specs/system/security.md` and `deployment.md`.

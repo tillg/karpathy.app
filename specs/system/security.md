@@ -23,6 +23,10 @@ flowchart LR
   E -- "provider key" --> LLM[LLM provider]
   E -- "web search queries" --> EXA[Exa]
   E -- "web fetch of known URLs" --> WEB[public web]
+  B -- "internal network only,<br/>ingest token" --> I[ingest service]
+  I -. "Input/ rw, Sources/ ro<br/>of configured vaults" .-> V
+  I -- "mail, links, Instagram" --> E
+  E -- "Gmail API, linked pages" --> MW[Gmail, Instagram,<br/>public web]
 ```
 
 ## Authentication
@@ -44,6 +48,12 @@ flowchart LR
 | LLM provider key (the chosen gateway's only), optional `EXA_API_KEY` | opencode | rendered `opencode.env` (env file, 0600) |
 | opencode server password | backend, opencode | compose secret `opencode_password` (named in `settings.json`; opencode's entrypoint exports it as `OPENCODE_SERVER_PASSWORD`); generated once per target, never in the vault or the AI's reach |
 | Commit author on `hetzner` (personal data, not a credential) | backend | secret references resolved inline into `settings.json` and `.env` (both 0600) |
+| Ingest token | backend, ingest | compose secret `ingest_token`, generated once per target; the backend reads it from `INGEST_TOKEN_FILE` and sends it as a bearer token to the ingest endpoint |
+| gog keyring password | ingest | compose secret `gog_keyring_password`, generated once per target; `run.sh` exports it as `GOG_KEYRING_PASSWORD` |
+| Gmail OAuth client + refresh token | ingest | gog's file keyring in the `ingest-state` volume, encrypted with the keyring password; piped in from the Mac's Keychain by `just ingest-auth`, never printed or written to disk on the way |
+| Instagram session (cookies, device ids) | ingest | `session-<user>.json` (0600) in the `ingest-state` volume; the password is never stored |
+| Ingest profile account and allowed senders (personal data) | ingest | secret references resolved into `ingest.json` (0600) |
+| `INGEST_EMAIL_DEPLOY_KEY` | CI and the release workflow | GitHub repo secret: the private half of a read-only deploy key on `tillg/ingest_email` only |
 
 **Secrets are references in the settings.** `deploy/settings/` is committed to a public repo, so a setting that is
 secret holds only `{ secret: <name> }`; the renderer reads the value from a secret store (one file per name). In
@@ -54,7 +64,8 @@ temp store only while the renderer runs; the rendered files are removed from the
 and every task that handles them doesn't log. Compose secret files are written 0600. `just settings show` prints
 references, never values; the renderer never logs a value; the legacy check in `dev.sh` names keys of an old
 `deploy/.env` / `opencode.env`, not their values. `settings.json` holds no credential: only `/run/secrets/…` paths.
-opencode never receives the GitHub or bearer token.
+opencode never receives the GitHub or bearer token; the ingest service receives none of the app's secrets (bearer,
+GitHub, opencode password, provider keys), only its own two.
 
 ## GitHub token
 
@@ -85,7 +96,8 @@ opencode never receives the GitHub or bearer token.
   can't turn the routing off or point the gateway at another URL. Not as an `OPENCODE_CONFIG` file: that is merged
   before the project config, and a vault's `zdr: false` won (found in the review of #133, checked on a dev stack).
 - **Denied tools:** `bash`, `task`, `question`, `external_directory`; `webfetch`, `websearch` and `save_url` are denied in the
-  managed config too and switched on per turn only (see [Web access](#web-access)). No permission is ever "ask", so a
+  managed config too and switched on per turn only (see [Web access](#web-access)); `move_to_sources` is denied globally
+  and allowed in agent `vault` only. No permission is ever "ask", so a
   turn never blocks on an approval (opencode's built-in defaults contain `ask` rules, each one is overridden). Reading
   `*.env` is denied; editing `.git`, `opencode.json(c)` and `.opencode/` is denied. Why:
   - `bash` would get around every file-tool rule: write during a read-only turn, read other vaults under
@@ -119,12 +131,13 @@ opencode never receives the GitHub or bearer token.
 - **App skills come only from the image** (`/opt/opencode-config/opencode/skills/`, read-only, root-owned like the tools),
   never from a vault. A vault skill of the same name only replaces it in that vault; the backend decides the clash, and the
   AI's `skill` tool may still load either.
-- **The custom tools, `open_note`, `open_url` and `save_url`, come from the image**, never from a vault: they sit in a root-owned,
+- **The custom tools, `open_note`, `open_url`, `save_url` and `move_to_sources`, come from the image**, never from a vault: they sit in a root-owned,
   read-only global config dir (`XDG_CONFIG_HOME=/opt/opencode-config`), pre-populated at build so opencode installs nothing at
   runtime. `open_note` checks the path lexically and by `stat` inside the session directory, refuses dot-segments, reads no
   content and changes nothing. `open_url` fetches nothing and returns `offered <url>` for an http(s) URL (see
   [Web access](#web-access)). Both are allowed for `vault-readonly` too. `save_url` is the one custom tool that writes: it
-  is allowed for `vault` only, and only a known URL becomes a new media file or PDF (see [Web access](#web-access)). opencode *would* load tools from a vault's
+  is allowed for `vault` only, and only a known URL becomes a new media file or PDF (see [Web access](#web-access)). `move_to_sources`, also
+  `vault` only, can only rename `Input/<name>` to a new `Sources/<name>` ([Ingest service](#ingest-service)). opencode *would* load tools from a vault's
   `.opencode/tools/`; the harness-config rule below is what stops that.
 - **Harness config in a vault** (`.opencode/`, `opencode.json(c)`) disables chat for that vault and can't be created
   through the file API. It is code (plugins, custom tools, MCP servers with a `command`), and the managed config can
@@ -154,6 +167,31 @@ Within it, `webfetch`, `save_url` and `open_url` need a known URL, and only `web
 
 Not taken: an approval prompt per call (needs `ask`, which blocks the turn), a domain allowlist (defeats reading what
 the user points to), provider server tools (tied to one model vendor, ADR 0002).
+
+## Ingest service
+
+The compose service `ingest` parses untrusted input on a timer: mails and their attachments, HTML of any page a mail
+links to, PDFs (poppler, tesseract OCR), images and videos (ffmpeg), Instagram responses. It is fenced in like opencode
+and holds nothing of the app's:
+
+| Risk | Guard | What remains |
+|---|---|---|
+| A parser bug turns into code execution in the container | Non-root (`APP_UID`), `cap_drop: [ALL]`, `no-new-privileges`, `init`, bounded logs; no app secret in the container (no bearer, GitHub, opencode password or provider key); no published port | The attacker holds the ingest token, the gog keyring (and its password) and the Instagram session, and can write into the configured vaults' `Input/` |
+| **SSRF:** a mail links to the backend, opencode, the metadata service or the tailnet | Network `internal` only, every request through the egress proxy (`HTTP(S)_PROXY`, honoured by httpx, `gog` and instagrapi), which refuses loopback, private, link-local and tailnet ranges after DNS, on every redirect hop; `ingest-egress.test.ts` checks it in a real container pair | The service shares the `internal` network with backend and opencode, so code running in it could reach `backend:8787` and `opencode:4096` directly, though each still needs its token or password (#135) |
+| The service damages notes or the git repo | Mounts on a target: only `<vault>/<root>/Input` (rw) and `…/Sources` (ro) of the profiles' vaults, never `.git`, `Wiki/` or another vault; it never runs git; it touches an item only while it has open links | Dev and prodtest mount the whole `vaults` volume (no real profiles there) |
+| Untrusted mail reaches the AI (prompt injection) | `allowed_senders` allowlist per profile, checked before a mail is read (others go to `/rejected` unread; an empty list is a config error, never "everyone"); items are vault content like an ingested note today | An allowed sender's mail or a linked page can carry instructions; the diff review before commit is the safety net (ADR 0001) |
+| The AI's ingest misuses `move_to_sources` | The tool only renames `Input/<name>` (a single, non-hidden segment, a real directory, no symlink on `Input`, the item or `Sources`) to a new `Sources/<name>` claimed with `mkdir`; never overwrites, never deletes, refuses items with open links; `vault` agent only, so not in conflict or read-only turns | — |
+| Someone else drives the ingest endpoint | `:8090` on the `internal` network only; every request needs the `ingest_token` (constant-time compare); opencode's web tools go through the egress proxy, which refuses internal hosts, and don't have the token | — |
+| The Instagram password leaks | It crosses browser → proxy (TLS) → backend → ingest once, inside the request: never stored or logged (the backend logs no bodies, `server.py` logs request lines only; `test_server.py` checks that no password lands under `/state`); the session file holds cookies and device ids only | The password is in process memory while the login runs |
+| A crafted username escapes the session dir | Instagram username format `^[A-Za-z0-9._]{1,30}$`, not only dots, checked by the backend's zod schema and again in the service, because it becomes part of file names; each attempt gets its own `mkdtemp` staging dir; a session is installed under the service lock, so a superseded login never installs | — |
+| An ingest-side 401 logs the user out | A 401/403 from the service (token mismatch) becomes `502 ingest-auth`; the web app logs out only on the backend's own 401 | — |
+| Dev conveniences reach production | The fake Instagram login (`INGEST_FAKE_INSTAGRAM_LOGIN=1`) is set only in `compose.dev.yml`; `compose.test.sh` asserts prod and prodtest don't have it. Only `hetzner` may have ingest profiles (a settings test) | — |
+| The build leaks a credential | ingest-email comes in as a named build context; CI checks it out with a read-only deploy key on that one repo (`INGEST_EMAIL_DEPLOY_KEY`, `persist-credentials: false`), never a personal token; the image holds no git credentials | Revoke with `gh repo deploy-key delete <id> -R tillg/ingest_email` |
+
+- Nothing in the pipeline commits: the user reviews fetched items, wiki pages and moves before anything reaches GitHub.
+- A pull never stashes `Input/` (pathspec exclude), so it can't detach the service's bind mount or race its writes.
+- Gmail access is set up from the Mac (`just ingest-auth`): the OAuth client and refresh token are piped over SSH into
+  `docker exec` on stdin, never as arguments, and land only in the encrypted keyring.
 
 ## The agents move
 
@@ -222,8 +260,9 @@ kinds, strings only) and can only change which fields and flags the form shows; 
 
 ## Runtime hardening
 
-- On a target only the proxy publishes ports (443 only, no port 80); backend and opencode are on the internal network.
-- Backend and opencode run as uid 1000, not root; every service has `cap_drop: [ALL]` (the proxy keeps
+- On a target only the proxy publishes ports (443 only, no port 80); backend, opencode and ingest are on the internal
+  network.
+- Backend, opencode and ingest run as uid 1000, not root; every service has `cap_drop: [ALL]` (the proxy keeps
   `NET_BIND_SERVICE`), `no-new-privileges` and bounded logs.
 - opencode's snapshots, sharing and auto-update are off; its version is pinned.
 - **Dev stacks on the Mac** (prod is unchanged): besides the proxy on 80N0, the backend's HTTP API is published on
@@ -268,3 +307,18 @@ kinds, strings only) and can only change which fields and flags the form shows; 
 - A `WEB_FETCH_CAP` / `WEB_SEARCH_CAP` left in a target's `vault_opencode_env` is ignored: the caps are settings
   now (`ai.web`); no vault sets them today.
 - The GoDaddy API key can change every domain of the account and sits on the server.
+- **Ingest service** (#135 and the open ingest-email prerequisites):
+  - It shares the `internal` network with backend and opencode; a separate network for ingest, egress and backend
+    would narrow what a compromised parser can reach.
+  - **Cancel** in the Instagram code step only resets the form; the server's pending login waits for a code until its
+    5-minute timeout.
+  - The pinned ingest-email writes mail items in place (not atomically), so for a moment a half-written item can be
+    visible to the backend, the AI and a pull.
+  - The Gmail refresh token and the Instagram session sit in the `ingest-state` volume (the keyring encrypted with a
+    password stored next to it as a compose secret): root on the host can read both. Gmail access is the account's
+    full Gmail scope that gog was granted, not only the label.
+  - Instagram logins and fetches come from a datacenter IP, which Instagram flags more often; a flagged account is the
+    user's own.
+  - The ingest image is public on GHCR like the others (targets pull anonymously), so the code of the private
+    ingest-email repo inside it can be read by anyone who pulls it (checked 2026-10-08: `karpathy.app-ingest:0.0.17`
+    pulls without a login). It holds no secret.
