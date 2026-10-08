@@ -69,7 +69,8 @@ works from iPad/phone, not just the Mac terminal.
   same remote. No second sync system.
 - **Runtime = docker compose, in dev and prod.** Services: reverse proxy (auto-TLS), backend,
   opencode, egress proxy (opencode's only way to the internet: public destinations only). They share the vault clones via a compose volume. Only the proxy publishes ports. In dev,
-  bind-mount the sources for hot reload rather than running anything natively. The Docker CLI
+  bind-mount the sources for hot reload rather than running anything natively; the one exception is the dev
+  model, a native Ollama on the Mac shared by all dev stacks (`just ollama install`). The Docker CLI
   talks to Rancher Desktop.
 - **Security:** provider API keys server-side only; opencode reachable only on the internal
   compose network (`internal: true`, password-protected), version pinned, file access restricted to the session's vault; a single-user bearer token guards all endpoints;
@@ -89,6 +90,19 @@ Every user-visible feature also updates the demo run book: `Karpathy Demo.md` in
 feature does, a page in the vault that shows it, and a *Try it* step. Bump its `updated`. Do it in the same piece
 of work as the feature. Push the demo vault only once the feature is released, so the guide never describes
 something prod doesn't have yet.
+
+## Parallel dev stacks
+
+Several agents may run dev stacks on this Mac at the same time, one per checkout (main clone or
+`.worktrees/<name>`). Stack N (1–9) is compose project `karpathy-app-N` on ports 80N0–80N9 (80N0 = the app,
+header `karpathy #N`).
+
+- Start a stack only with `just dev up`: it reuses this checkout's stack or takes the first free one, and
+  remembers it in `tmp/dev/stack`. `just dev up N` pins one; it is refused if another checkout owns it.
+- `just dev stacks` shows which stacks are free and which checkout owns the others.
+- Never `down`, restart or exec into a stack another checkout owns, and never start one with raw
+  `docker compose` (no hand-written port overrides in `tmp/`).
+- `just e2e` and `just prodtest` target this checkout's stack automatically. Run `just dev down` when done.
 
 ## Progress messages (ntfy)
 

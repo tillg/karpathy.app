@@ -36,7 +36,7 @@ provision:
       find "$(getent passwd "$u" | cut -d: -f6)" -xdev -gid 1000 -exec chgrp -h "$u" {} +
     fi
 
-# Only these reach the Mac; 8443 (dev) and 9443 (prodtest) are taken. Everything else stays in the VM.
+# Only these reach the Mac; 8010-8099 (dev stacks and their prodtest) are taken. Everything else stays in the VM.
 portForwards:
 - { guestPort: 443, hostPort: 9444 }
 - { guestPort: 8090, hostPort: 9090 }

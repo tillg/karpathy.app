@@ -788,7 +788,7 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 |---|---|---|
 | GitHub | Vault repos; fine-grained token as an HTTP extra header, never in `.git/config`; `api.github.com/user` for the token test | in use |
 | LLM providers (OpenRouter in production, any via opencode) | Model behind opencode; keys only in `opencode.env` | OpenRouter `z-ai/glm-5.3` on zero-data-retention hosts in production |
-| Ollama | Dev, local prod test and CI LLM tests | in use |
+| Ollama | Dev and local prod test (native on the Mac, `just ollama install`); CI and integration LLM tests (container) | in use |
 | Exa | Web search backend (opencode `websearch`, MCP at `mcp.exa.ai`); optional `EXA_API_KEY`, else the anonymous, rate-limited endpoint | in use |
 | Let's Encrypt + GoDaddy DNS | Certificate for `app.karpathy.app` via DNS-01; the A record points at the server's tailnet IP. The apex and `www` point at GitHub Pages | in use |
 | GitHub Pages | Hosts the website at `karpathy.app` (with GitHub's own Let's Encrypt certificate) | in use |
@@ -806,10 +806,12 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
   `cap_drop: [ALL]`, `no-new-privileges` and log rotation. Secrets are files mounted as compose secrets
   (`deploy/secrets/` in dev, `shared/secrets/` on a target: `bearer_token`, `github_token`, `opencode_password`);
   provider keys, `EXA_API_KEY` and the web caps come from `opencode.env`.
-- **Dev** (`compose.dev.yml`, `just dev`): https://localhost:8443 with Caddy's internal CA, Vite with HMR (`web`
-  service), bind-mounted sources, local bare repos as remotes (`GIT_REMOTE_BASE=file:///remotes/`), Ollama.
-- **Local prod test** (`compose.prodtest.yml`, `just prodtest`): the prod images on https://localhost:9443 next to
-  the dev stack.
+- **Dev** (`compose.dev.yml`, `just dev up [N]`): numbered dev stacks side by side, one per checkout; stack N on
+  https://localhost:80N0 with Caddy's internal CA, Vite with HMR (`web` service), bind-mounted sources, local bare
+  repos as remotes (`GIT_REMOTE_BASE=file:///remotes/`), the native Ollama on the Mac as the model. Details:
+  [Dev stacks](#dev-stacks).
+- **Local prod test** (`compose.prodtest.yml`, `just prodtest`): the prod images as project
+  `karpathy-app-N-prodtest` on https://localhost:80N5, paired with the checkout's dev stack N.
 - **CI** (`.github/workflows/ci.yml`): lint, typecheck, tests, web build, a compose config check, and
   `ansible-lint` + syntax checks of the playbook on every push and PR; weekly (and on demand) GitHub and LLM test suites.
 - **Website** (`.github/workflows/pages.yml`): the site test, then `_site/` to GitHub Pages on every push to `main`
@@ -819,6 +821,70 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
   Hetzner CPX22 reachable only over Tailscale, https://app.karpathy.app, running since 2026-10-02), with
   monitoring (Beszel, Gatus, a healthchecks.io heartbeat, alerts via ntfy). All of it:
   [deployment.md](deployment.md).
+
+### Dev stacks {#dev-stacks}
+
+Several agents develop on the Mac at once, each in its own checkout (main clone or `.worktrees/<name>`), and each
+needs a running stack for e2e tests and screenshots. Stack N (1–9) is compose project `karpathy-app-N` and owns the
+port block 80N0–80N9 (vocabulary: [domain.md](domain.md#development)).
+
+```mermaid
+flowchart TD
+    J["justfile<br/>dev · e2e · prodtest · ollama"] --> D["deploy/dev.sh"]
+    J --> L
+    D --> L["deploy/stack.sh<br/>resolve N · ownership · ports"]
+    L -->|"docker compose ls -a"| DK[(Docker daemon)]
+    L -->|"read/write"| F["tmp/dev/stack<br/>(this and other worktrees)"]
+    D -->|"-p karpathy-app-N<br/>STACK · PROXY_PORT · BACKEND_PORT"| C["compose.yml + compose.dev.yml<br/>proxy :80N0 · backend 127.0.0.1:80N1"]
+    J -->|"-p karpathy-app-N-prodtest<br/>PRODTEST_PORT"| P["compose.yml + compose.prodtest.yml<br/>proxy :80N5"]
+    C -->|"ollama relay (/v1 only)<br/>→ host.docker.internal:11434"| OL[("native Ollama<br/>127.0.0.1:11434")]
+    P -->|"ollama-bridge relay (/v1 only)"| OL
+    E["e2e/stack.ts"] -->|"read"| F
+    E --> H["e2e/helpers.ts · global-setup.ts<br/>playwright.config.ts"]
+```
+
+- **Ports.** 80N0 is the proxy (the app over HTTPS; the Vite HMR socket goes through it, `HMR_CLIENT_PORT`), 80N1
+  the backend's HTTP API on `127.0.0.1` for debugging without TLS (the backend can publish because it is also on
+  the `egress` network), 80N5 the paired prodtest's proxy. 80N3 (opencode) and 80N4 (web) are reserved but never
+  published: both sit only on the `internal: true` network. The rest is spare.
+- **`deploy/stack.sh`** (sourced; `jq`, `nc`) holds all of it; the compose files only interpolate `STACK`,
+  `PROXY_PORT`, `BACKEND_PORT` and `PRODTEST_PORT`, and fail with a pointer to `just dev up` when they are unset
+  (`:?`), so a raw `docker compose up` can't silently start a stack on a colliding port. `stack_resolve` picks N
+  from the argument, then `$STACK`, then `tmp/dev/stack`, then (only for `up`) the first free stack. `stack_state`
+  says `mine`, `free`, `other:<checkout>`, `orphan` or `port-busy`: the owner is the checkout in the project's
+  Docker `ConfigFiles`, else another worktree (`git worktree list`) whose `tmp/dev/stack` claims N. The claim
+  exists because `up --build` builds for minutes before `docker compose ls` lists the project; in the first
+  acceptance run a second `up` 20 s later took the same stack. A same-second race between two `up`s is still
+  possible (no lock).
+- **`deploy/dev.sh up [N] | down | logs | ps | token | stacks`** runs
+  `docker compose -p karpathy-app-N -f compose.yml -f compose.dev.yml` (`-p` overrides `name: karpathy-app`, so prod
+  is untouched). `up` refuses a stack another checkout owns or whose ports a stranger holds (naming the owner and
+  the first free stack), a second stack while this checkout holds one, and a missing native Ollama; it may take
+  over an orphan, remembers N, pulls the dev model unless Ollama has it, and prints URL and token. `down` keeps the
+  volumes and releases the claim. `stacks` lists 1–9 with state, URL and owner, read-only. Volumes (`vaults`,
+  `config`, `caddy-data`) are per project, so each stack has its own vaults and Caddy CA.
+- **Images per stack.** The dev services reset `image:`, so compose names them `karpathy-app-N-<service>` and
+  parallel builds never overwrite each other's images. Prodtest still uses `ghcr…:dev` tags, shared across
+  checkouts (known risk).
+- **Native Ollama.** The dev model runs on the Mac, not in a container: `just ollama install` sets up the
+  LaunchAgent `app.karpathy.ollama` (`ollama serve` from Homebrew, `OLLAMA_HOST=127.0.0.1:11434`,
+  `OLLAMA_CONTEXT_LENGTH=16384`, Metal GPU, models in `~/.ollama`); `status` and `uninstall` go with it. It refuses
+  when another server already answers on 11434 (it would lack the context length). One Ollama serves every stack
+  and every prodtest. Containers reach the Mac's loopback as `host.docker.internal`.
+- **Ollama relay.** Each stack keeps a small Caddy (`ollama` in dev, `ollama-bridge` in prodtest, both
+  `deploy/proxy/Caddyfile.ollama-relay`) on the `internal` network (alias `ollama.internal`) and `egress`.
+  opencode's provider config (`dev-ollama.json`: `http://ollama.internal:11434/v1`) and `NO_PROXY` use that name.
+  The relay passes only `/v1/*` and answers 403 to the rest, so Ollama's admin API (pull, delete, create) stays out
+  of a prompt-injected AI's reach. It rewrites `Host` to `localhost:11434`, because a loopback-bound Ollama answers
+  403 to any other `Host` (its DNS-rebinding guard).
+- **Stack label.** The dev `web` service sets `VITE_STACK=N`; `brandName()` (`apps/web/src/lib/brand.ts`) makes the
+  vault switcher's brand `karpathy #N`. The prod PWA is built without it and keeps `karpathy.app`, as do the token
+  screen, the chat author line and `<title>`.
+- **e2e target.** `e2e/stack.ts` is the TypeScript twin of `stack_resolve` without claiming: `E2E_BASE_URL` (a
+  non-dev stack, with `E2E_BACKEND_CONTAINER`), then `STACK`, then `tmp/dev/stack` → `https://localhost:80N0` and
+  container `karpathy-app-N-backend-1`; otherwise it throws "run just dev up". `just prodtest e2e` sets
+  `E2E_BASE_URL=https://localhost:80N5`. The `justfile` never sets `E2E_BASE_URL` for dev stacks, so the dev-only
+  specs (`attach.spec.ts`) run on every numbered stack.
 
 ## Design decisions
 
@@ -860,8 +926,18 @@ The ones that shape the whole system:
   check must be re-run. Backend and opencode run as the same uid so files the AI writes stay committable.
 - **Commit message proposals go through opencode** (agent `commit-message`, a throwaway session that is deleted
   afterwards), not a second LLM client, because only opencode holds provider keys.
-- **Runtime = docker compose in dev and prod**, nothing native in dev. Rancher Desktop bind mounts deliver no
-  inotify events, so the dev `web` and `backend` containers poll for source changes.
+- **Runtime = docker compose in dev and prod**, nothing native in dev except the dev Ollama. Rancher Desktop bind
+  mounts deliver no inotify events, so the dev `web` and `backend` containers poll for source changes.
+- **Numbered dev stacks, one scheme** (80N0, no stack 0 on 8443): two port schemes is what the hand-written
+  `tmp/compose.*.yml` overrides showed going wrong (a missing `HMR_CLIENT_PORT`, shared image tags, commands
+  hitting the wrong stack). The remembered stack per checkout beats `STACK=N` on every command, which is how agents
+  end up on the wrong stack; a bare `up` takes the first free stack rather than always stack 1. Ownership comes from
+  Docker plus the other worktrees' claims, not a separate registry that could go stale.
+- **One native Ollama for all dev stacks, a relay per stack:** an Ollama container per stack duplicates memory and
+  models, and a shared container is still CPU-only in the Rancher VM. The relay is a Caddy with a `/v1` allowlist,
+  not raw socat: socat exposed the admin API, and since Ollama runs on the Mac, `/api/pull` from an "insecure"
+  registry could have made the Mac request LAN or loopback addresses the egress proxy forbids. Cost: a host
+  dependency (`brew install ollama`).
 - **Read-only git commands run with `GIT_OPTIONAL_LOCKS=0`**: status polling raced with Discard on `index.lock`.
 - **The AI shows notes through a server-side, check-only tool** (`open_note`), not a client-side function: the agent
   loop runs in opencode on the server, so the browser can't execute tools. The UI learns about it from the existing
@@ -963,7 +1039,8 @@ The ones that shape the whole system:
   opencode provider config. Ollama otherwise truncates opencode's prompt to about 2k tokens silently, and the model
   then ignores `AGENTS.md` and misuses tools. The vision test uses `qwen3-vl:2b` (`LLM_VISION_MODEL`, declared with
   `modalities.input: [text, image]`); Ollama's `qwen2.5vl` has no tool support, so opencode refuses every turn with
-  it. Both models must be in the Ollama volume (CI pulls both into `ollama-models`); a missing model fails the test
+  it. Both models must be where the tests' Ollama finds them (CI pulls both into `ollama-models`; the dev stacks use
+  the native Ollama's `~/.ollama`, and `just dev up` pulls the dev model); a missing model fails the test
   fast as *inconclusive: no tool call*. The test container declares image input on the not-pulled `DEAD_MODEL_2`, so `modelInput` is tested without
   a model run.
 - **Command and move tests:** default tier: `command.test.ts` (parse, expand; a `` !`id -u` `` stays literal),
@@ -978,7 +1055,10 @@ The ones that shape the whole system:
   follows, drop (Chromium only: a synthesized file drop isn't reliable in WebKit), visibility, growth warning, chat
   chips, the phone layout. Uploads are held with `page.route` (not answered), which needs `serviceWorkers: 'block'`.
   The chat test sends a real prompt to the dev stack's model.
-- **e2e:** Playwright against the running stack (dev, or the prod images via `E2E_BASE_URL`); every test fails on a
+- **Dev stack tests** (in `just check`): `deploy/stack.test.sh` (ports, owner from `compose ls` JSON, states,
+  resolution order, claims, refusals) and `e2e/stack.unit.ts` (the e2e target resolution).
+- **e2e:** Playwright against the checkout's own dev stack N (`e2e/stack.ts`), or the prod images via
+  `E2E_BASE_URL` (`just prodtest e2e`); every test fails on a
   CSP violation (so the media specs prove the prod `media-src` only when run with `just prodtest e2e`; the dev proxy
   sets no CSP). Media fixtures are tiny real files in `e2e/fixtures/media/`. Offline e2e in WebKit is skipped (Playwright's offline WebKit fails even service-worker-served
   requests).

@@ -4,19 +4,22 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test as base, expect, request, type APIRequestContext, type Page } from '@playwright/test';
+import { stackTarget } from './stack';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-/** Defaults target the dev stack; override to run against another stack (e.g. deploy/compose.prodtest.yml). */
-export const BASE_URL = process.env.E2E_BASE_URL ?? 'https://localhost:8443';
+/** This checkout's dev stack by default; E2E_BASE_URL targets another stack (e.g. deploy/compose.prodtest.yml). */
+const target = stackTarget(process.env, ROOT);
+export const BASE_URL = target.baseURL;
+/** The dev stack's compose project (karpathy-app-N); undefined for a non-dev target (E2E_BASE_URL). */
+export const PROJECT = 'project' in target ? target.project : undefined;
 export const TOKEN = readFileSync(resolve(ROOT, process.env.E2E_TOKEN_FILE ?? 'deploy/secrets/bearer_token'), 'utf8').trim();
 /**
- * Runs a command in the target stack's backend container. Defaults to the dev stack; another stack
- * sets E2E_BACKEND_CONTAINER, and one on another Docker daemon E2E_DOCKER (e.g. `limactl shell karpathy-vm sudo docker`).
+ * Runs a command in the target stack's backend container: this checkout's dev stack, or E2E_BACKEND_CONTAINER.
+ * A stack on another Docker daemon also sets E2E_DOCKER (e.g. `limactl shell karpathy-vm sudo docker`).
  */
 export function backendExec(...args: string[]): string {
   const [cmd, ...pre] = (process.env.E2E_DOCKER ?? 'docker').split(' ');
-  const container = process.env.E2E_BACKEND_CONTAINER ?? 'karpathy-app-backend-1';
-  return execFileSync(cmd, [...pre, 'exec', container, ...args], { encoding: 'utf8' });
+  return execFileSync(cmd, [...pre, 'exec', target.backendContainer, ...args], { encoding: 'utf8' });
 }
 /** Host dir mounted as /remotes in the backend (GIT_REMOTE_BASE=file:///remotes/). */
 export const REMOTES = join(ROOT, 'tmp/dev/remotes/e2e');

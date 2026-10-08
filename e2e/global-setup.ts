@@ -9,6 +9,6 @@ export default async function globalSetup() {
   mkdirSync(REMOTES, { recursive: true });
   const api = await Api.create();
   const res = await api.ctx.get('/api/health');
-  if (!res.ok()) throw new Error(`dev stack not reachable (${BASE_URL}/api/health → ${res.status()}); run deploy/dev.sh up`);
+  if (!res.ok()) throw new Error(`dev stack not reachable (${BASE_URL}/api/health → ${res.status()}); run just dev up`);
   await api.ctx.dispose();
 }
