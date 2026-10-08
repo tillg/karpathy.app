@@ -100,7 +100,7 @@ describe('chat API against a real opencode container', () => {
     const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
     const web = async () => {
       const rules = ((await t.raw.session.get({ directory: t.dir, sessionID: chatId })).data as { permission?: { permission: string; action: string }[] }).permission ?? [];
-      return Object.fromEntries(['websearch', 'webfetch'].map((n) => [n, rules.filter((r) => r.permission === n).at(-1)?.action]));
+      return Object.fromEntries(['websearch', 'webfetch', 'save_url'].map((n) => [n, rules.filter((r) => r.permission === n).at(-1)?.action]));
     };
     const turn = async (text: string) => {
       await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text });
@@ -108,11 +108,11 @@ describe('chat API against a real opencode container', () => {
     };
     await t.store.update((c) => { c.settings.webAccess = false; });
     await turn('off');
-    expect(await web()).toEqual({ websearch: 'deny', webfetch: 'deny' });
+    expect(await web()).toEqual({ websearch: 'deny', webfetch: 'deny', save_url: 'deny' });
     await t.store.update((c) => { c.settings.webAccess = true; });
     await turn('on');
-    expect(await web()).toEqual({ websearch: 'allow', webfetch: 'allow' });
-    // Conflict: read-only agent, web still allowed.
+    expect(await web()).toEqual({ websearch: 'allow', webfetch: 'allow', save_url: 'allow' });
+    // Conflict: read-only agent, web still allowed, downloads into the vault not.
     await t.api.get(`/vaults/${t.id}/file?path=Other.md`);
     await t.api.post(`/vaults/${t.id}/open`);
     const { writeFile } = await import('node:fs/promises');
@@ -122,7 +122,7 @@ describe('chat API against a real opencode container', () => {
     await turn('conflict two');
     expect(t.vaults.isConflict(t.id)).toBe(true);
     expect((await userAgents(t.raw, t.dir, chatId)).at(-1)).toBe('vault-readonly');
-    expect(await web()).toEqual({ websearch: 'allow', webfetch: 'allow' });
+    expect(await web()).toEqual({ websearch: 'allow', webfetch: 'allow', save_url: 'deny' });
   });
 
   it('in Conflict every turn uses "vault-readonly"', async () => {

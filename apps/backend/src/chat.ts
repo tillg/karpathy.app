@@ -364,8 +364,9 @@ export class ChatService {
         text: turn.text,
         agent: running.readonly ? 'vault-readonly' : 'vault',
         model: settings.model,
-        // Sent with every turn, `false` included: opencode keeps the rule on the session.
-        tools: { websearch: settings.webAccess, webfetch: settings.webAccess },
+        // Sent with every turn, `false` included: opencode keeps the rule on the session. A session rule beats
+        // the agent's, so save_url (it writes) is sent false in a read-only turn.
+        tools: { websearch: settings.webAccess, webfetch: settings.webAccess, save_url: settings.webAccess && !running.readonly },
         ...(instructions ? { instructions } : {}),
         ...(turn.attachments?.length ? { files: turn.attachments.map((path) => ({ path, mime: uploadMime(path), url: pathToFileURL(posix.join(this.dir(vaultId), path)).href })) } : {}),
       });

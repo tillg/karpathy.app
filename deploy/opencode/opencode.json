@@ -32,6 +32,7 @@
     "task": "deny",
     "question": "deny",
     "doom_loop": "deny",
+    "save_url": "deny",
     "read": {
       "*": "allow",
       "*.env": "deny",
@@ -58,7 +59,8 @@
           "*.opencode/*": "deny"
         },
         "open_note": "allow",
-        "open_url": "allow"
+        "open_url": "allow",
+        "save_url": "allow"
       }
     },
     "vault-readonly": {

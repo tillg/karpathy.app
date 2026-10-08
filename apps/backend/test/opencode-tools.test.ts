@@ -1,15 +1,17 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { HarnessEvent } from '../src/harness/map.js';
 import { offerUrl } from '../../../deploy/opencode/lib/offer-url.js';
 import { OpencodeHarness } from '../src/harness/opencode.js';
-import { DEAD_MODEL, LLM_MODEL, startOpencode, testDir } from './opencode-container.js';
+import { DEAD_MODEL, INTERNAL_TARGET, LLM_MODEL, startOpencode, testDir } from './opencode-container.js';
 
 // The custom tools baked into the opencode image (deploy/opencode/tools), as the real container sees them.
 
 let oc: Awaited<ReturnType<typeof startOpencode>>;
+// A public-internet check is skipped offline.
+const online = await fetch('https://www.w3.org/', { method: 'HEAD', signal: AbortSignal.timeout(5000) }).then(() => true, () => false);
 const vaultsDir = join(testDir('opencode-tools'), 'vaults');
 
 beforeAll(async () => {
@@ -54,6 +56,58 @@ describe('opencode custom tools', () => {
     expect(cfg.agent.vault.permission.open_note).toBe('allow');
     expect(cfg.agent['vault-readonly'].permission.open_note).toBe('allow');
     expect(cfg.agent['commit-message'].permission).toEqual({ '*': 'deny' });
+  });
+});
+
+describe('save_url tool', () => {
+  /**
+   * Runs the baked tool's execute inside the container, on opencode's own Bun, for each URL; one output line
+   * each. A local server on :8080 answers with a PNG, so a call that gets past the proxy rules saves a file.
+   */
+  async function runSaveUrl(urls: string[], env: Record<string, string> = {}) {
+    await mkdir(join(vaultsDir, 'save'), { recursive: true });
+    await writeFile(join(vaultsDir, 'probe.ts'), [
+      "const t = (await import('/opt/opencode-config/opencode/tools/save_url.ts')).default;",
+      "const s = Bun.serve({ port: 8080, hostname: '0.0.0.0', fetch: () => new Response(new Uint8Array([137, 80, 78, 71]), { headers: { 'content-type': 'image/png' } }) });",
+      `for (const [i, url] of ${JSON.stringify(urls)}.entries()) {`,
+      "  try { console.log(await t.execute({ url, filePath: `probe-${i}.png` }, { directory: '/vaults/save' })); } catch (e) { console.log('ERR ' + e.message); }",
+      '}',
+      's.stop();',
+    ].join('\n'));
+    const r = spawnSync('docker', ['exec', '-e', 'BUN_BE_BUN=1', ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]), oc.name, 'opencode', 'run', '/vaults/probe.ts'], { encoding: 'utf8' });
+    return `${r.stdout}${r.stderr}`.trim().split('\n');
+  }
+
+  it('opencode lists save_url as a tool', async () => {
+    const r = await oc.fetch(`${oc.url}/experimental/tool/ids?directory=/vaults`);
+    expect(await r.json()).toContain('save_url');
+  });
+
+  it('save_url is denied by default, allowed for vault only', async () => {
+    const cfg = JSON.parse(await readFile(join(import.meta.dirname, '../../../deploy/opencode/opencode.json'), 'utf8'));
+    expect(cfg.permission.save_url).toBe('deny');
+    expect(cfg.agent.vault.permission.save_url).toBe('allow');
+    expect(cfg.agent['vault-readonly'].permission.save_url).toBeUndefined();
+    expect(cfg.agent['commit-message'].permission).toEqual({ '*': 'deny' });
+  });
+
+  it('save_url refuses without an egress proxy instead of going direct', async () => {
+    expect(await runSaveUrl([`http://${INTERNAL_TARGET}/x.png`], { HTTP_PROXY: '' })).toEqual(['ERR No egress proxy configured: downloads are disabled']);
+  });
+
+  it('save_url reaches no internal host: the proxy refuses it, NO_PROXY hosts are refused before Bun goes direct', async () => {
+    // compose's NO_PROXY, plus the internal target: Bun would fetch all of these without the proxy.
+    const env = { NO_PROXY: `localhost,127.0.0.1,0.0.0.0,${INTERNAL_TARGET}` };
+    const local = ['localhost', 'LOCALHOST', 'localhost.', 'foo.localhost', '127.0.0.1', '127.1', '0', '2130706433', '[::1]'].map((h) => `http://${h}:8080/x.png`);
+    const out = await runSaveUrl([...local, `http://${INTERNAL_TARGET}/x.png`, 'http://169.254.169.254/x.png'], env);
+    expect(out).toHaveLength(local.length + 2);
+    for (const line of out) expect(line).toMatch(/^ERR (internal host refused|download failed: HTTP 403)/);
+    expect(await readdir(join(vaultsDir, 'save'))).toEqual([]);
+  });
+
+  it.skipIf(!online)('save_url saves a public image into the vault', async () => {
+    expect(await runSaveUrl(['https://www.w3.org/Icons/w3c_home.png'])).toEqual([expect.stringMatching(/^saved probe-0\.png \(\d+ KB\)\. Embed it in a note with !\[\[probe-0\.png\]\]$/)]);
+    expect((await readFile(join(vaultsDir, 'save/probe-0.png'))).subarray(1, 4).toString()).toBe('PNG');
   });
 });
 

@@ -15,7 +15,8 @@ export type HarnessEvent =
   | { type: 'file-edited'; path: string };
 
 const DENIED_PREFIX = 'The user has specified a rule which prevents you from using this specific tool call';
-const WRITE_TOOLS = new Set(['edit', 'write', 'apply_patch', 'patch', 'multiedit']);
+/** File-writing tools; save_url (deploy/opencode/tools) downloads a media file or PDF into the vault. */
+const WRITE_TOOLS = new Set(['edit', 'write', 'apply_patch', 'patch', 'multiedit', 'save_url']);
 /** Tools that ask the UI to show a note (deploy/opencode/tools). */
 const OPEN_TOOLS = new Set(['open_note']);
 
@@ -53,7 +54,7 @@ export function mapToolPart(part: Json, root: string): ToolCall {
     opens: OPEN_TOOLS.has(tool),
     ...(path ? { path } : {}),
     ...(tool === 'websearch' && str(input.query) ? { query: str(input.query) } : {}),
-    ...((tool === 'webfetch' || tool === 'open_url') && str(input.url) ? { url: str(input.url) } : {}),
+    ...((tool === 'webfetch' || tool === 'open_url' || tool === 'save_url') && str(input.url) ? { url: str(input.url) } : {}),
     ...(str(state.title) ? { title: str(state.title) } : {}),
     ...(error && status === 'error' ? { error } : {}),
   };
