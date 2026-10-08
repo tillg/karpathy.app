@@ -80,6 +80,10 @@ _Avoid_: Attachment (that's the file), inline image, transclusion (embedding a n
 The user putting a file from the device into the vault: a photo or a PDF, with the **+** (Take photo, Choose file) or by dropping it on the note. It creates a new vault file and never overwrites one; the result is an uncommitted change.
 _Avoid_: Import, add file, attach (that's the button)
 
+**Media download**:
+The AI saving a known URL's image, video, audio file or PDF into the vault as a new file (`save_url`), then embedding it in the note. It never overwrites; the result is an uncommitted change.
+_Avoid_: Upload (that's the user's), attach
+
 **Own folder**:
 A folder that belongs to one page and holds its attachments: the folder carries the page's name (`Wiki/foo/foo.md`) or the page is its `index.md`. A page that isn't in one is flat; its first upload from the editor moves it into one.
 _Avoid_: Rename (there is no general rename)

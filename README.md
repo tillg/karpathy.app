@@ -64,6 +64,8 @@ Wikipedia page on X") and it offers it as an **Open chip** (`open en.wikipedia.o
 new browser tab only when you tap the chip. It works with Web access off (your browser loads the page, not
 the server), and only for URLs that already appear in the chat, like fetches.
 
+Ask it to add a picture, video, audio file or PDF from a URL to a note ("add a picture of X from <URL> to this note") and it saves the file as a new vault file next to the note and embeds it (`save_url`; Web access on, not in conflict, known URLs only, counts as a fetch, never overwrites, max 50 MB).
+
 **Commands.** Typing `/` in the chat composer opens the **command palette**: the vault's skills with their
 descriptions, filtered as you type; picking one fills in `/name ` for the arguments (slash commands). A new,
 empty chat shows up to four **command chips** (the ones you used last in this vault first); a tap puts `/name `

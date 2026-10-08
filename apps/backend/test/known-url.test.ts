@@ -3,6 +3,7 @@ import {
   callsThisTurn,
   capFromEnv,
   extractUrls,
+  GUARDED_TOOLS,
   guardWebCall,
   isKnownUrl,
   knownTexts,
@@ -173,5 +174,14 @@ describe('guardWebCall', () => {
     expect(guardWebCall('websearch', { query: 'x' }, [user('hi')], { fetch: 20, search: 0 })).toBe('Search limit reached (0 per turn)');
     expect(guardWebCall('websearch', { query: 'x' }, [user('hi')], caps)).toBeNull();
     expect(guardWebCall('read', { filePath: 'x' }, [], caps)).toBeNull();
+  });
+
+  it('save_url needs a known URL and shares the fetch cap with webfetch', () => {
+    const saves = (n: number) => ({ info: { role: 'assistant' }, parts: Array.from({ length: n }, () => ({ type: 'tool', tool: 'save_url', state: { status: 'completed', output: '' } })) });
+    expect(GUARDED_TOOLS).toContain('save_url');
+    expect(guardWebCall('save_url', { url: 'https://a.com/c.png', filePath: 'c.png' }, [user('see https://a.com/c.png')], caps)).toBeNull();
+    expect(guardWebCall('save_url', { url: 'https://a.com/c.png?d=secret', filePath: 'c.png' }, [user('see https://a.com/c.png')], caps)).toMatch(/^URL not in this chat/);
+    expect(guardWebCall('save_url', { url: 'https://a.com/c.png' }, [user('see https://a.com/c.png'), fetches(10), saves(10)], caps)).toBe('Fetch limit reached (20 per turn)');
+    expect(guardWebCall('webfetch', { url: 'https://a.com/c.png' }, [user('see https://a.com/c.png'), fetches(19), saves(1)], caps)).toBe('Fetch limit reached (20 per turn)');
   });
 });

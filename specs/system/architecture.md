@@ -148,7 +148,7 @@ on its own ([deployment.md › Website](deployment.md#website)).
 | `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`, and `fetch` and `refresh` through `tryShared`, which never queues; exclusive: every other git operation). `fetch` and `refresh` are quiet: they don't change `busy`. `holds(label)` tells whether a shared holder with that label exists. |
 | `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events. |
 | `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. Also the command list (`commands()`, name-clash rule, skill stamp and refresh) and command turns (`instructionsFor`) ([Commands](#commands)). |
-| `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface (`commands(dir)`, `refresh(dir)` next to prompt, models and events) and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`; `ToolCall.url` is set for `webfetch` and `open_url`. |
+| `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface (`commands(dir)`, `refresh(dir)` next to prompt, models and events) and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`; `ToolCall.url` is set for `webfetch`, `open_url` and `save_url` (also in `WRITE_TOOLS`, so a download is a changed file and gets an AI stamp). |
 | `harness/command.ts` | Pure: `parseCommand`, `expandCommand`, `withoutBaseDir`, `commandInstructions`. |
 | `commit-message.ts` | Proposes commit messages with a throwaway, tool-less session; marked as a running proposal so a skill refresh doesn't cut it off. |
 | `config-store.ts` | Atomic, serialized writes to `/config/config.json`; also holds the GitHub token set in the app. |
@@ -157,8 +157,8 @@ on its own ([deployment.md › Website](deployment.md#website)).
 
 The pinned stock image (`deploy/opencode/Dockerfile`) plus a **managed config** at `/etc/opencode/opencode.json` (merged last, so a vault can't override it):
 agents `vault` (edits allowed except `.git` and harness config), `vault-readonly` (default; used during conflicts) and
-`commit-message` (no tools); `bash`, `webfetch`, `websearch`, `task`, `question` and `external_directory` denied
-(`websearch` and `webfetch` are switched on per turn by the backend, see [Web access](#web-access));
+`commit-message` (no tools); `bash`, `webfetch`, `websearch`, `save_url`, `task`, `question` and `external_directory` denied
+(`save_url` is allowed for `vault` only; `websearch`, `webfetch` and `save_url` are switched on per turn by the backend, see [Web access](#web-access));
 reading `*.env` denied; snapshots, sharing and auto-update off. The image sets `OPENCODE_ENABLE_EXA=true` and
 `OPENCODE_WEBSEARCH_PROVIDER=exa`; its entrypoint exports the `opencode_password` secret as
 `OPENCODE_SERVER_PASSWORD` (HTTP Basic on every route, health included). The image sets `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`:
@@ -166,9 +166,9 @@ opencode then reads a vault's skills from `.agents/skills/` only, and still load
 first). The image has no git binary, so opencode can't detect
 a worktree and stays confined to the session directory (the vault root).
 
-The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `open_url`),
+The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `open_url`, `save_url`),
 `plugins/` (`known-url`), `lib/` (helpers) and `skills/` (the **app skills**, today `research`). The bake step waits for
-both tools in the tool ids and for the plugin before it makes the dir read-only.
+the three tools in the tool ids and for the plugin before it makes the dir read-only.
 
 **Custom tool `open_note`** (`deploy/opencode/tools/open_note.ts`, path check in `deploy/opencode/lib/resolve-note.ts`):
 checks that `path` resolves inside `context.directory`, exists, is a file and has no dot segment, then returns
@@ -200,14 +200,26 @@ nothing and needs no Web access (the server makes no request). Baked like `open_
 `vault-readonly` (`commit-message` keeps `"*": "deny"`). The web app turns the completed call into an Open chip ([Link
 offers](#link-offers)).
 
+**Custom tool `save_url`** (`deploy/opencode/tools/save_url.ts`, logic in `deploy/opencode/lib/save-url.ts`): args `{ url, filePath }`.
+Downloads one http(s) URL into the vault as a **new** media file or PDF (`SAVE_TYPES`: the media table without SVG, plus
+`pdf`; a test keeps it in sync with `packages/shared`) and returns `saved <path> (<size>). Embed it in a note with
+![[<path>]]`; the AI then edits the note itself. It never overwrites (`wx`: "already exists: …; choose another name"),
+creates missing folders, and refuses a path outside the vault (symlinks resolved), a dot-segment, a non-http(s) URL, an HTTP
+error, a Content-Type that doesn't fit the extension (an HTML page saved as `.png`; `application/octet-stream` passes) and
+a file over 50 MB (the upload cap; the partial file is removed). Timeout 120 s. The download always goes through the egress
+proxy, passed explicitly as Bun's `fetch` `proxy` option from `HTTP(S)_PROXY`; without a proxy env the tool refuses. Bun
+still fetches `NO_PROXY` hosts directly, so redirects are followed by hand (at most 5) and every hop to a `NO_PROXY` host is
+refused ("internal host refused") ("No egress proxy configured"). Baked like `open_note`; allowed for `vault` only, not `vault-readonly`.
+
 **Plugin `known-url`** (`deploy/opencode/plugins/known-url.ts`, pure decision in `deploy/opencode/lib/known-url.ts`,
-baked into the same global config dir): a `tool.execute.before` hook for `webfetch`, `websearch` and `open_url`
+baked into the same global config dir): a `tool.execute.before` hook for `webfetch`, `websearch`, `open_url` and `save_url`
 (`GUARDED_TOOLS`). It loads the session's messages through opencode's plugin client (failing closed without them) and
-throws what `guardWebCall(tool, args, messages, caps)` returns, or lets the call run on `null`. `guardWebCall`: for `webfetch`
-and `open_url` it collects user text and completed tool outputs and refuses "URL not in this chat: paste it into the
-chat first" unless the URL is known (`extractUrls`, `isKnownUrl`); for `webfetch` and `websearch` it counts the calls
+throws what `guardWebCall(tool, args, messages, caps)` returns, or lets the call run on `null`. `guardWebCall`: for `webfetch`,
+`open_url` and `save_url` it collects user text and completed tool outputs and refuses "URL not in this chat: paste it into the
+chat first" unless the URL is known (`extractUrls`, `isKnownUrl`); for `webfetch`, `save_url` and `websearch` it counts the calls
 after the last user message and refuses once the per-turn cap is reached (`capFromEnv`: `WEB_FETCH_CAP` /
-`WEB_SEARCH_CAP`, default 20). `open_url` has no cap: the user taps each chip. Stateless, so it survives an opencode
+`WEB_SEARCH_CAP`, default 20; `webfetch` and `save_url` calls together count against the fetch cap). `save_url` is also in the
+plugin's `WRITE_TOOLS`: a file it saved and the AI reads back is not a known source. `open_url` has no cap: the user taps each chip. Stateless, so it survives an opencode
 restart.
 
 ### Egress proxy (`deploy/egress`)
@@ -328,11 +340,12 @@ sequenceDiagram
 ```
 
 - **Setting:** `Settings.webAccess` (default `true`; an old `config.json` reads as `true` through the defaults merge).
-- **Per turn:** `chat.ts` sends `tools: { websearch: webAccess, webfetch: webAccess }` with every prompt of both chat
+- **Per turn:** `chat.ts` sends `tools: { websearch: webAccess, webfetch: webAccess, save_url: webAccess && !readonly }` with every prompt of both chat
   agents, `false` included: opencode stores the map as the session's permission, replacing earlier rules and merged
   after the agent's. Any later per-turn rule must go into the same map.
 - **Mapping:** `harness/map.ts` sets `ToolCall.query` (websearch `input.query`) and `ToolCall.url` (webfetch
-  `input.url`); `writes`/`opens` stay false, no `path`.
+  `input.url`); `writes`/`opens` stay false, no `path`. `save_url` is the exception: `writes` is true and `input.filePath` feeds
+  `writtenPaths`, so a download shows in Changes and gets an AI stamp.
 - **Chips:** `toolLabel(call)` (`lib/chat.ts`) → `searched the web: "<query>"` and `fetched <host><path>` (path cut at
   60 characters, full URL as tooltip). A completed fetch chip with an `http(s)` URL is a link (new tab, `noopener
   noreferrer`); a search chip is a label; a refused fetch shows the guard's message.
@@ -755,7 +768,7 @@ flowchart LR
 | Browser localStorage | Token, local drafts, tree expansion state, tree sort and filter (`karpathy.treeSort`, `karpathy.treeFilter`), main pane, mode preference (`karpathy.mode`). | web |
 | localStorage `karpathy.recentCommands.<vault>`, `karpathy.shownMoves` | The last 10 commands started in a vault (chip order); the agents moves already announced (last 50). | web |
 | Backend memory | Per vault: the skill stamp of the last opencode refresh, the last agents move, the skill-link scan after it, running commit-message proposals. Lost on restart (the first check then refreshes). | backend |
-| opencode image `/opt/opencode-config/opencode/` | Tools `open_note` and `open_url`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
+| opencode image `/opt/opencode-config/opencode/` | Tools `open_note`, `open_url` and `save_url`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
 | Browser memory | Object URLs of media (≤ 200 MB), places of notes seen this session. Lost on reload. | web |
 | Service worker cache `vault-api` | Vault list, file trees, opened notes (for offline reading); cleared on 401. | web |
 
@@ -874,6 +887,11 @@ The ones that shape the whole system:
   approval dialog (needs `ask`), a background job, GPT Researcher as an MCP server (a new service and outbound path).
 - **`open_url` is a check-only server tool; the tab opens on the user's tap** (browsers block `window.open` without one).
   It works with Web access off, since the server makes no request.
+- **`save_url` is a custom tool, not `bash` + `curl`.** `bash` stays denied, and a tool can enforce what a shell can't: a new
+  file only, media/PDF extensions, inside the vault, a size cap, the known-URL rule. The proxy is passed explicitly, not left to
+  `HTTP(S)_PROXY`, and each redirect hop is checked against `NO_PROXY`, which Bun honors even for an explicit proxy: a direct
+  fetch from the opencode container can reach `backend` and `opencode` on the compose network.
+  The AI then embeds the file by editing the note itself, so there is no second write path into notes.
 - **Swapping main and side column is CSS only** (`order`/`flex`): a keyed reorder in JSX keeps component state but
   moves DOM nodes, which drops keyboard focus and resets scroll positions. Cost: Tab order doesn't follow the visual
   order when the chat is in main.
@@ -951,7 +969,7 @@ The ones that shape the whole system:
 - **Command and move tests:** default tier: `command.test.ts` (parse, expand; a `` !`id -u` `` stays literal),
   `agents-standard.test.ts` (scan, move, convert, clashes, inlined imports, the staged link), `api.test.ts` (the move on open and pull, the commit carrying a real symlink, the
   `agents-move` event), `harness-map.test.ts`, `chat.test.ts` (command turns, skill refresh), `known-url.test.ts` (`guardWebCall`),
-  `opencode-tools.test.ts` (`open_url` against the real container), web `commands.test.ts`; `@llm`: `/query`, the research
+  `save-url.test.ts` (against a real local HTTP server), `opencode-tools.test.ts` (`open_url`, and `save_url` incl. proxy enforcement: loopback variants, `NO_PROXY` hosts and an internal host refused, with Bun itself as the oracle, against the real container), web `commands.test.ts`; `@llm`: `/query`, the research
   plan and run turns, resume, a link offer; e2e `commands.spec.ts` (palette, chips, move notice) and `ai-open-url.spec.ts`.
 - **Upload tests:** default tier: the upload route, collisions, refusals, the move and its link rewrite, source
   folders, prompts with attachments (a stored opencode user message with a file part is the

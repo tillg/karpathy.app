@@ -40,7 +40,7 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Vault state** | `cloning` → `ready` or `clone-failed`; `ready` ↔ `conflict`. The attach preflight comes before the vault exists, so it is not a state. | `VaultState` |
 | **Vault file** | Any file in the vault: a note, a media file or a binary file. The file tree, Delete, the Changes list and commits work on vault files. *Avoid:* note (for anything that isn't text), document, item. | `FileEntry`; web store `note` (identifier kept) |
 | **Note** | A vault file that is UTF-8 text, usually `.md`. Only notes can be edited and have a Write/Read mode. | `FileContent.binary === false` |
-| **Media file** | A vault file whose extension is in the media table: an image, video or audio file. Shown, never edited; may be created by an upload. Every media file is binary, not every binary file is a media file. *Avoid:* attachment, asset, resource. | `mediaKind(path)` → `image` · `video` · `audio` · `null` |
+| **Media file** | A vault file whose extension is in the media table: an image, video or audio file. Shown, never edited; may be created by an upload or by the AI's media download. Every media file is binary, not every binary file is a media file. *Avoid:* attachment, asset, resource. | `mediaKind(path)` → `image` · `video` · `audio` · `null` |
 | **Media kind** | `image`, `video` or `audio`, from the extension alone (case-insensitive), never from content sniffing. Decides the HTML element and the Content-Type the backend sends. | `MEDIA` (`packages/shared/src/media.ts`) |
 | **Binary file** | A vault file that isn't text and isn't a media file (`.pdf`, `.zip`, …). Shown as a file card. | `FileContent.binary && !mediaKind(path)` |
 | **Embed** | Markdown that asks for a file to be shown inside a note: `![[target]]`, `![[target\|300]]` (width in px) or `![alt](path)`. Showing it never changes the note. *Avoid:* attachment (that's the file), inline image, transclusion (embedding a note's text, not built). | web `lib/media.ts` `parseEmbed` |
@@ -95,9 +95,10 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Hit position** | Where an opened note should land: a line (search hit) or a heading (`[[note#heading]]`). Write mode puts the cursor on the line; Read mode scrolls to the rendered top-level block that contains the line and briefly highlights it. | store `note.goto`; Read-mode blocks carry `data-line` |
 | **Place** | Where the user left a note: scroll position and mode. Back to a note seen in this session restores it; switching Write ↔ Read keeps the same source line. In memory only. | store `places`; web `lib/place.ts` |
 | **Web access** | The global setting, on by default. On: the AI may web search and web fetch in every vault. Off: it has neither tool. | `Settings.webAccess` |
-| **Web search / web fetch** | One call of `websearch` (a query to the search backend, results with titles, URLs and page text) or `webfetch` (one URL downloaded as Markdown, text or an image). Never just "search" (that's the user's vault search) or "fetch". | `ToolCall.query`, `ToolCall.url` |
+| **Web search / web fetch** | One call of `websearch` (a query to the search backend, results with titles, URLs and page text) or `webfetch` (one URL downloaded as Markdown, text or an image into the chat). Never just "search" (that's the user's vault search) or "fetch". | `ToolCall.query`, `ToolCall.url` |
 | **Known URL** | A URL that appears verbatim in the chat as the model saw it: user messages and earlier tool outputs (notes read, results, fetched pages; a truncated output counts as its preview). Only known URLs may be fetched or offered as a link; scheme/host case, default port and fragment don't matter, path and query must match. The hidden instructions of a command turn count as user text, so a URL written in a skill is known. | `deploy/opencode/lib/known-url.ts` |
-| **Web caps** | At most N web fetches and N web searches per turn, counted separately (default 20 each, per target). | `WEB_FETCH_CAP`, `WEB_SEARCH_CAP` |
+| **Web caps** | At most N web fetches and N web searches per turn, counted separately (default 20 each, per target). A media download counts as a web fetch. | `WEB_FETCH_CAP`, `WEB_SEARCH_CAP` |
+| **Media download** | One call of the AI's `save_url` tool: a known http(s) URL saved into the vault as a **new** media file or PDF (never an overwrite, at most 50 MB, wrong Content-Type refused, no SVG), at the path the AI picks next to the note, so the AI can embed it with `![[path]]`. Needs Web access and no conflict; counts as a web fetch; always goes through the egress proxy. Streams as a changed chip. *Avoid:* attach, upload (that's the user's). | `save_url` tool, `ToolCall.url`, `ToolCall.writes` |
 | **Web content** | Search results and fetched pages: untrusted input, like an ingested note. Lives only in the chat; reaches the vault only if the AI writes about it. | tool output |
 | **Search backend** | Exa, the one recipient of web search queries; fixed by the release (opencode image env). | `OPENCODE_WEBSEARCH_PROVIDER=exa` |
 | **Egress proxy** | The only path from the AI's container to the internet; refuses internal addresses. | compose service `egress` |
@@ -223,7 +224,7 @@ more.
 |---|---|
 | **Operator** (the same person as the user, on the Mac) | Cuts releases, deploys them to the targets, holds the vault passwords (Keychain) and gets the alerts. |
 | **User** (single person, holds the bearer token) | Manage vaults and settings, read and edit notes, upload photos and PDFs (button or drop; the first upload to a flat page moves it into its own folder), attach them to prompts, search, chat with the AI, review diffs, discard, commit and push, resolve conflicts. Uses the app as a PWA on phone, iPad and desktop. |
-| **AI** (opencode agent, on the user's behalf) | Inside one vault root only: read notes; write notes unless the vault is in conflict (then read-only); open one note in the user's editor when the user asks to see it (also in conflict). Receives attached images and PDFs as message content when its model reads them. With Web access on: web search, and web fetch of known URLs (also in conflict). Follows a command's instructions; in a research plan turn it scouts only a little and stops for the user's reply. Offers a known URL to the user as an Open chip when asked to show a page (also with Web access off and in conflict). It can't run shell commands (a skill's shell snippets are never run), fetch or offer URLs it built itself, reach internal hosts, read `.env` files, edit `.git` or harness config, create binary files, commit or push. |
+| **AI** (opencode agent, on the user's behalf) | Inside one vault root only: read notes; write notes unless the vault is in conflict (then read-only); open one note in the user's editor when the user asks to see it (also in conflict). Receives attached images and PDFs as message content when its model reads them. With Web access on: web search, and web fetch of known URLs (also in conflict); outside a conflict also save a known URL's image, video, audio or PDF as a new vault file (media download). Follows a command's instructions; in a research plan turn it scouts only a little and stops for the user's reply. Offers a known URL to the user as an Open chip when asked to show a page (also with Web access off and in conflict). It can't run shell commands (a skill's shell snippets are never run), fetch or offer URLs it built itself, reach internal hosts, read `.env` files, edit `.git` or harness config, create other binary files, overwrite a media file, commit or push. |
 | **Vault author** (whoever pushes to the repo) | Adds commands by adding skills to `.agents/skills/` (or to `.claude/`, which the agents move picks up on the next pull). A skill is instructions for the AI, not code. |
 | **User's browser** | Loads a page the user opened from an Open chip, with the user's own cookies and network. |
 | **Device (iOS)** | Converts HEIC photos to JPEG when the picker's accepted types are an explicit list without HEIC. |
@@ -367,7 +368,9 @@ No navigation changes the mode; only the Write/Read toggle does.
    opens the note in the editor: on the wide layout right away, on a phone or in the tablet overlay when the turn
    ends (only the last one of the turn); while the user is editing, a notice and the "opened" chip show it instead.
 4. With **Web access** on, the turn may also web search and web fetch known URLs through the egress proxy; each
-   call streams as a web chip. A fetch of an unknown URL fails as a tool error and the turn goes on.
+   call streams as a web chip. A fetch of an unknown URL fails as a tool error and the turn goes on. Outside a
+   conflict the AI may also **media download** a known URL into the vault (`save_url`, a new file, counted as a fetch)
+   and then edits the note to embed it.
 5. The lock is released when opencode reports the session idle. Changes stay uncommitted.
 
 A prompt that starts with the name of one of the vault's commands is a **command turn** ([below](#command-turn)); the
@@ -594,7 +597,7 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
   same source line (per top-level block). A new open lands at the top or its hit position.
 - **The user may upload images and PDFs** (uploadable files, at most 50 MB), with the button or by dropping them on
   the note. An upload creates a new file and never overwrites one; existing files that aren't notes can't be
-  replaced or edited; the AI creates no binary files; pasting images is not built. Offline, nothing can be uploaded
+  replaced or edited; the AI creates binary files only by a media download (new media files and PDFs from a known URL); pasting images is not built. Offline, nothing can be uploaded
   and media isn't available.
 - **A page with attachments lives in its own folder.** The first editor upload to a flat page moves it there and
   rewrites, in the same step, the path-form links to it and the relative links inside it. The move is refused while
