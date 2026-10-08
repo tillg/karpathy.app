@@ -1290,6 +1290,9 @@ edited: 2026-10-08
 - **Alternatives:** record a red baseline and accept those two failures in every commit.
 - **Consequences:** a later run where they fail again is not counted as new; worth an issue if they keep
   flaking.
+  19:57: other `api.test.ts` cases (branch names `x/`, `x^`, conflict 405/409) failed once each in full runs
+  under load (load average 9–10: a busy native Ollama, Sophos scans); every one passed when `api.test.ts`
+  ran alone, twice. Counted as the same flakiness.
 
 ## 19:20 — Admin model: a "Default: …" line and a "Use default" button, not a picker entry {#run-2026-10-08-1839-6}
 

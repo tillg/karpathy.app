@@ -72,6 +72,9 @@ works from iPad/phone, not just the Mac terminal.
   bind-mount the sources for hot reload rather than running anything natively; the one exception is the dev
   model, a native Ollama on the Mac shared by all dev stacks (`just ollama install`). The Docker CLI
   talks to Rancher Desktop.
+- **Settings = `deploy/settings/`** (`settings.yaml` + one override file per environment, #133). Every
+  setting a component reads comes from there (rendered into `.env`, `opencode.env`, the opencode provider
+  config and the backend's `settings.json`); add new settings there, not as env vars or literals.
 - **Security:** provider API keys server-side only; opencode reachable only on the internal
   compose network (`internal: true`, password-protected), version pinned, file access restricted to the session's vault; a single-user bearer token guards all endpoints;
   HTTPS mandatory (reverse proxy with auto-TLS).

@@ -101,7 +101,7 @@ settings_legacy_check() {
   [ "$found" = 0 ] && return 0
   cat >&2 <<'MSG'
 Move model and gateway choices to deploy/settings/dev.local.yaml (e.g. `ai: { gateway: openrouter,
-model: openrouter/z-ai/glm-5.3 }`) and each key to deploy/secrets/<name> (OPENROUTER_API_KEY →
+model: openrouter/<model> }`) and each key to deploy/secrets/<name> (OPENROUTER_API_KEY →
 deploy/secrets/openrouter_api_key, EXA_API_KEY → exa_api_key), then delete these files.
 MSG
   return 1

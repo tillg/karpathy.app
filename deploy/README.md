@@ -142,6 +142,15 @@ managed by Ansible.
 |---|---|
 | `just hetzner-watch install\|uninstall\|now` | Checks at 08:00 and 14:00 whether a cheaper Hetzner server (CX23, CAX11) can be booked again and pushes to ntfy when it can. Needs a read-only Hetzner API token in the Keychain (`karpathy-hetzner-api`). |
 
+## Settings
+
+A target's app settings (model and gateway, domain and TLS, timezone, commit author, web caps) are
+`settings/settings.yaml` plus `settings/<target>.yaml` (see the main README, *Settings*); `just settings show
+<target>` prints them. `just deploy` renders them on this Mac with the target's secrets and copies the result
+to `shared/` (`.env`, `opencode.env`, `opencode-providers.json`, `settings.json`). The inventory keeps only
+what configures the host (Tailscale, disk size, monitoring, `domain` for the monitoring, which must equal
+the settings' `proxy.domain`).
+
 ## Secrets
 
 Each target has its own encrypted Ansible Vault,
@@ -250,8 +259,8 @@ deploy/
   hetzner-watch/           the availability check behind `just hetzner-watch`
 ```
 
-On a target: the app in `/opt/karpathy.app` (`releases/`, `current`, `shared/` with `.env` and
-secrets), monitoring in `/opt/karpathy-monitoring`, the vaults on the loop-mounted `/srv/vaults`.
+On a target: the app in `/opt/karpathy.app` (`releases/`, `current`, `shared/` with the rendered
+settings and the secrets), monitoring in `/opt/karpathy-monitoring`, the vaults on the loop-mounted `/srv/vaults`.
 
 ## When something goes wrong
 

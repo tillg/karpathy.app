@@ -52,11 +52,11 @@ backend uses the `github_token` secret of the deployment.
 **Web access.** The AI can search the web and read pages. It is on by default; switch it off under
 Settings (the gear) → Web access (one switch for all vaults). Each search and page read shows as a
 chip in the chat (`searched the web: "…"`, `fetched example.com/post`); a fetched chip opens the page.
-Searches go to Exa. `EXA_API_KEY` in `deploy/opencode.env` is optional (see `deploy/opencode.env.example`);
+Searches go to Exa. An Exa key (secret `exa_api_key`: `deploy/secrets/exa_api_key` in dev) is optional;
 without it Exa's anonymous endpoint is used, which is rate-limited, so set a key in production
 (`just secrets <target>` asks for it). The AI can fetch only URLs that already appear in the chat (you
 paste them, or a note or search result contains them), at most 20 fetches and 20 searches per turn
-(`WEB_FETCH_CAP` / `WEB_SEARCH_CAP` in `opencode.env`, applied on restart). The opencode container
+(`ai.web.fetch_cap` / `search_cap` in [`deploy/settings/`](#settings), applied on restart). The opencode container
 has no direct internet access: it goes through an `egress` proxy that refuses private, loopback and
 link-local addresses, and opencode's API needs a generated password. Note that `localhost`/`127.0.0.1`/`0.0.0.0` are in opencode's `NO_PROXY`, so loopback requests (needed by its plugin client) bypass the proxy: only that password protects opencode's own API from the AI's web fetches (`opencode_password` secret; dev
 and prodtest create it, deploys generate it once on the target). Ask the AI to open a web page ("open the
@@ -161,7 +161,7 @@ Everything runs in docker compose (on this Mac: Rancher Desktop), except the dev
 Ollama on the Mac (Metal GPU), shared by all dev stacks. Set it up once with `brew install ollama` and
 `just ollama install` (a LaunchAgent on 127.0.0.1:11434; `just ollama status|uninstall`).
 
-**Dev** (hot reload, `qwen2.5:3b` on the native Ollama as the model). Several dev stacks run side by side,
+**Dev** (hot reload, the model from `deploy/settings/dev.yaml`: the native Ollama). Several dev stacks run side by side,
 one per checkout (main clone or worktree): stack N (1–9) is on https://localhost:80N0, and its header
 reads `karpathy #N`.
 
@@ -191,10 +191,39 @@ a new version is out (checked on load and whenever it comes back into view). If 
 still shows an old build, delete the site's website data (Safari: Settings → Privacy →
 Manage Website Data → `localhost`) and enter the token again.
 
-To clone from GitHub in dev, put a token into `deploy/secrets/github_token` (or set one under
-Settings in the app). To work
-offline against local bare repos instead, create them under `tmp/dev/remotes/<owner>/<name>.git`
-and set `GIT_REMOTE_BASE=file:///remotes/` in `deploy/.env`.
+Dev stacks clone from local bare repos under `tmp/dev/remotes/<owner>/<name>.git` (`git.remote_base:
+file:///remotes/` in `deploy/settings/dev.yaml`; the e2e suite creates its repos there). To clone from GitHub
+instead, set `git: { remote_base: https://github.com/ }` in `deploy/settings/dev.local.yaml` and put a token
+into `deploy/secrets/github_token` (or set one under Settings in the app).
+
+### Settings
+
+Every app setting lives in [`deploy/settings/`](deploy/settings/) (#133): `settings.yaml` holds each setting with
+the value all environments share, and `<env>.yaml` only what an environment changes: `dev` (dev stacks),
+`prodtest`, `test` (CI and integration tests), `local` (the VM target) and `hetzner` (production). Among them:
+the LLM gateway and model (`ai.gateway`, `ai.model`, `gateways`), domain and TLS, timezone, git remote and
+commit author, the web caps, and the dot-folders the file tree shows (`files.visible_dot_dirs`).
+
+```sh
+just settings show hetzner    # the merged settings of an environment (secrets as references)
+just settings get dev ai.model
+just settings check           # every environment validates (part of just check and CI)
+```
+
+Secrets are never in these files, only references (`{ secret: openrouter_api_key }`). Their values are files
+in `deploy/secrets/<name>` in dev and come from the target's vault on a server. `just dev up`, `just prodtest`
+and `just deploy` render the files the containers read (compose `.env`, `opencode.env`, opencode's provider
+config, the backend's `settings.json`) into `tmp/settings/<env>/` or the target's `shared/`. Your own dev
+choices go into the gitignored `deploy/settings/dev.local.yaml` (or `prodtest.local.yaml`), e.g. a hosted
+model:
+
+```yaml
+ai: { gateway: openrouter, model: openrouter/<model> }   # plus the key in deploy/secrets/openrouter_api_key
+```
+
+The model in the settings is the default; one picked under Settings in the app overrides it until you choose
+**Use default** again. The old hand-edited `deploy/.env` and `deploy/opencode.env` are no longer read:
+`just dev up` names their keys and where each one goes now.
 
 **Prod** (the Hetzner server `app.karpathy.app`, reachable only over Tailscale) is never built or
 configured by hand: releases go there with `just deploy hetzner`, see [Deploying](#deploying).
@@ -204,8 +233,8 @@ configured by hand: releases go there with `just deploy hetzner`, see [Deploying
 ```sh
 npm test               # unit + integration: real git against local bare repos, real opencode container (Docker)
 npm run test:github    # @github: clone/push against the throwaway repo tillg/karpathy-app-test-vault
-npm run test:llm       # @llm: real model turns (default: local Ollama qwen2.5:3b, see apps/backend/test/opencode-container.ts)
-                       # the /research tests need a capable model: LLM_TEST_MODEL=openrouter/z-ai/glm-5.3 with OPENROUTER_API_KEY set (costs money)
+npm run test:llm       # @llm: real model turns (default: the local Ollama models of deploy/settings/test.yaml)
+                       # the /research tests need a capable model: LLM_TEST_MODEL=openrouter/<model> with OPENROUTER_API_KEY set (costs money)
 npm run test:e2e       # Playwright against this checkout's dev stack
 npm run typecheck
 ```

@@ -252,11 +252,11 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
 
 ## Phase 6: docs and single source
 
-- [ ] README, `deploy/README.md`, `CLAUDE.md` (architecture bullet) describe the `deploy/settings/` files
+- [x] README, `deploy/README.md`, `CLAUDE.md` (architecture bullet) describe the `deploy/settings/` files
   - Test first: none — docs.
   - Verify: `rtk grep -n "deploy/settings/settings.yaml\|dev.local.yaml" README.md deploy/README.md` → matches; `rtk grep -rn "deploy/.env\b\|opencode.env.example" README.md deploy/README.md CLAUDE.md` → no match.
 
-- [ ] Model and gateway literals live only in `deploy/settings/`
+- [x] Model and gateway literals live only in `deploy/settings/`
   - Test first: `repo-settings.test.ts` › "model literals live only in deploy/settings/" walks the tracked
     files (`git ls-files`, excluding `specs/`, `DECISIONS.md`, `node_modules`, test fixtures) and asserts
     `openrouter/z-ai/glm-5.3`, `qwen2.5:3b`, `qwen3-vl:2b` and `ollama.internal:11434/v1` occur only in

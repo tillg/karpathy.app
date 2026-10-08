@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -50,5 +51,19 @@ describe('deploy/settings', () => {
   it('environment files only hold what differs from settings.yaml', () => {
     const central = yaml('settings.yaml');
     for (const env of environments()) expect(repeated(central, yaml(`${env}.yaml`)), `${env}.yaml`).toEqual([]);
+  });
+
+  it('model literals live only in deploy/settings/', () => {
+    const root = new URL('../../../', import.meta.url).pathname;
+    const files = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean)
+      // History and tests (their fixtures name models on purpose) are not settings.
+      .filter((f) => !/^(specs\/|DECISIONS\.md$|deploy\/settings\/)/.test(f) && !/(\.test\.(ts|sh)|\.spec\.ts)$|(^|\/)test\//.test(f));
+    const only = ['openrouter/z-ai/glm-5.3', 'qwen2.5:3b', 'qwen3-vl:2b', 'ollama.internal:11434/v1', 'anthropic/claude-sonnet-5'];
+    const hits = files.flatMap((f) => {
+      let text: string;
+      try { text = readFileSync(root + f, 'utf8'); } catch { return []; }
+      return only.filter((lit) => text.includes(lit)).map((lit) => `${f}: ${lit}`);
+    });
+    expect(hits).toEqual([]);
   });
 });
