@@ -109,6 +109,7 @@ edited: 2026-10-08
   - [20:20 — Run-book chapter left uncommitted in the demo vault](#run-2026-10-08-1858-13)
   - [20:30 — Release after the central-settings-yaml release, separately](#run-2026-10-08-1858-14)
   - [21:00 — Fix the review's high and medium findings; leave four for follow-up](#run-2026-10-08-1858-15)
+  - [20:50 — Retro: name the dead port forwarder in the test helper's error](#run-2026-10-08-1858-16)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1439,4 +1440,16 @@ edited: 2026-10-08
   move redoes that part).
 - **Why:** the fixed ones break data, security or CI; the open ones are low-risk or need a design change.
 - **Alternatives:** fix everything now (delays the release; the network split touches the egress design).
-- **Consequences:** issue to file for the four open items.
+- **Consequences:** filed as #135 (and #134 for the stale skill list found in e2e).
+
+## 20:50 — Retro: name the dead port forwarder in the test helper's error {#run-2026-10-08-1858-16}
+
+- **Status:** open
+- **Context:** `/spec:retro` inside this run. Three backend suites failed with "opencode did not start: opencode server
+  listening …": the container was fine, Rancher Desktop's port forwarder had died (every published port refused).
+- **Question:** which environment fix?
+- **Decision:** `startOpencode` (apps/backend/test/opencode-container.ts) says so when opencode logged "listening" but
+  the host can't reach it, with the restart command. No test: it is a test helper's error text.
+- **Why:** the cheapest mechanical pointer at the moment the symptom appears.
+- **Alternatives:** a CLAUDE.md line (read by every agent, needed rarely).
+- **Consequences:** plugin-level retro items are drafted in the run's report, not filed.

@@ -182,6 +182,9 @@ export async function startOpencode(vaultsDir: string, env: Record<string, strin
     if (Date.now() > deadline) {
       const logs = docker('logs', name);
       docker('rm', '-f', name); // don't leak it
+      // Up inside, unreachable from the host: Rancher Desktop's port forwarder died (every published port refuses).
+      if (logs.includes('opencode server listening'))
+        throw new Error(`opencode is up in the container, but ${url} doesn't answer from the host: Rancher Desktop's port forwarder? Restart it: rdctl shutdown && open -a "Rancher Desktop". Logs: ${logs}`);
       throw new Error(`opencode did not start: ${logs}`);
     }
     await new Promise((r) => setTimeout(r, 300));
