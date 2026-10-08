@@ -1,7 +1,7 @@
 ---
 feature: central-settings-yaml
 title: "Plan: one central settings file"
-status: applying
+status: applied
 order: 4
 created: 2026-10-08
 edited: 2026-10-08
@@ -244,7 +244,7 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
   - Verify: `bash deploy/stack.test.sh` → all ok; `ansible-lint` → ok; with `just ollama uninstall`,
     `just deploy local …` stops with "run `just ollama install`" (then reinstall).
 
-- [ ] Deploy to `local` and roll back to the previous release
+- [x] Deploy to `local` and roll back to the previous release
   - Test first: none — end-to-end on the VM, no harness beyond the smoke check.
   - Verify: cut `vX.Y.Z-rc.1`, `just deploy local X.Y.Z-rc.1` → smoke check green, `just e2e` against
     local green, including `e2e/chat.spec.ts` (the AI answers through the Mac's Ollama); `just deploy local <previous release> --only app` → smoke check green (rollback with the

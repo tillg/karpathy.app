@@ -1,7 +1,7 @@
 ---
 feature: central-settings-yaml
 title: "Proposal: one central settings file"
-status: applying
+status: applied
 order: 1
 created: 2026-10-08
 edited: 2026-10-08

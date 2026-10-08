@@ -1,7 +1,7 @@
 ---
 feature: central-settings-yaml
 title: "Domain: settings, environments and secret references"
-status: applying
+status: applied
 order: 2
 created: 2026-10-08
 edited: 2026-10-08

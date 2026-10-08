@@ -1,7 +1,7 @@
 ---
 feature: central-settings-yaml
 title: "Architecture: settings file, renderer and consumers"
-status: applying
+status: applied
 order: 3
 created: 2026-10-08
 edited: 2026-10-08
