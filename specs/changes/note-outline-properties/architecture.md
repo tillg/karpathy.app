@@ -1,7 +1,7 @@
 ---
 feature: note-outline-properties
 title: "Architecture: note outline, note info and a properties editor"
-status: proposed
+status: applied
 order: 3
 created: 2026-10-04
 edited: 2026-10-04

@@ -1,7 +1,7 @@
 ---
 feature: note-outline-properties
 title: "Domain: outline, note info, properties and the wiki schema"
-status: proposed
+status: applied
 order: 2
 created: 2026-10-04
 edited: 2026-10-04

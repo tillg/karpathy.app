@@ -5,6 +5,7 @@ import { prepare } from './lib/attach';
 import { draftAction, dropDraft, dropVaultDrafts, getDraft, putDraft } from './lib/drafts';
 import { invalidate } from './lib/media';
 import { readNdjson } from './lib/ndjson';
+import { DEFAULT_SCHEMA, parseSchema, SCHEMA_PATH, type Schema } from './lib/schema';
 import { loadSortFilter, saveSortFilter, usesDates, type TreeSortFilter } from './lib/tree';
 import { formatRoute, parseRoute } from './lib/route';
 import { parseWikilink, resolveWikilink } from './lib/wikilink';
@@ -57,6 +58,9 @@ interface OpenNote { vault: string; path: string; version: string; saved: string
 const ACTIVE_KEY = 'karpathy.activeVault';
 const CHAT_MAIN_KEY = 'karpathy.chatMain';
 const MODE_KEY = 'karpathy.mode';
+const PROPS_VIEW_KEY = 'karpathy.propsView';
+/** How Write mode shows the frontmatter: the properties form open or collapsed, or the raw YAML lines. */
+export type PropsView = 'open' | 'closed' | 'yaml';
 const AUTOSAVE_MS = 1500;
 const RETRY_MS = 10_000;
 const drafts = () => localStorage;
@@ -498,6 +502,13 @@ function useAppState() {
     setModeState(m);
     try { localStorage.setItem(MODE_KEY, m); } catch { /* not remembered */ }
   }, []);
+  const [propsView, setPropsViewState] = useState<PropsView>(() => {
+    try { const v = localStorage.getItem(PROPS_VIEW_KEY); return v === 'closed' || v === 'yaml' ? v : 'open'; } catch { return 'open'; }
+  });
+  const setPropsView = useCallback((v: PropsView) => {
+    setPropsViewState(v);
+    try { localStorage.setItem(PROPS_VIEW_KEY, v); } catch { /* not remembered */ }
+  }, []);
   // Tree sort and filter (#122): per-browser preference for all vaults.
   const [sortFilter, setSortFilterState] = useState(() => loadSortFilter(localStorage));
   const sortFilterRef = useRef(sortFilter);
@@ -733,6 +744,21 @@ function useAppState() {
     clearTimeout(datesTimer.current);
     datesTimer.current = setTimeout(() => void refreshFiles(), 500);
   }, [refreshFiles]);
+  // The wiki schema of the active vault (#82): its `.karpathy/schema.json` when present and valid, else the default.
+  const [schema, setSchema] = useState<{ vault: string; schema: Schema } | null>(null);
+  const loadSchema = useCallback(async (vault: string) => {
+    let next = DEFAULT_SCHEMA;
+    try {
+      const r = parseSchema((await api.file(vault, SCHEMA_PATH)).content);
+      if ('error' in r) toast(`Schema file ignored: ${r.error}`);
+      else next = r;
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 404)) return; // offline or failing: keep what we have
+    }
+    if (activeRef.current === vault) setSchema({ vault, schema: next });
+  }, [toast]);
+  useEffect(() => { if (usable && activeId) void loadSchema(activeId); }, [usable, activeId, loadSchema]);
+
   const onEvent = useCallback((vault: string, e: VaultEvent) => {
     if (vault !== activeRef.current) return;
     if (e.type === 'status') {
@@ -755,6 +781,7 @@ function useAppState() {
       return;
     }
     setChangesNonce((x) => x + 1);
+    if (e.files.some((f) => f.path === SCHEMA_PATH)) void loadSchema(vault);
     if (e.files.some((f) => f.version === null || !pathsRef.current.includes(f.path))) void refreshFiles();
     else refreshDatesSoon();
     // Cached media bytes of a changed file are stale: drop them and let the shown embeds fetch again.
@@ -778,7 +805,7 @@ function useAppState() {
     if (n.draft === n.saved && !inflight.current) {
       void load(n.path).then((r) => r === 'ok' && toast('Updated by AI or another device'));
     }
-  }, [refreshFiles, refreshDatesSoon, load, toast, setStatusFor]);
+  }, [refreshFiles, refreshDatesSoon, load, toast, setStatusFor, loadSchema]);
   useVaultEvents(usable ? activeId : null, online, onEvent);
 
   const conflict = status?.state === 'conflict';
@@ -793,7 +820,8 @@ function useAppState() {
     keepDeletedNote, closeDeletedNote,
     followLink, exists, readOnly, conflict,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain,
-    sidebarOpen, setSidebarOpen, mode, setMode, sortFilter, setSortFilter, scrollRef, placeNow, adminOpen, setAdminOpen, commitOpen, setCommitOpen, chatId, setChatId,
+    schema: schema?.vault === activeId ? schema.schema : DEFAULT_SCHEMA,
+    sidebarOpen, setSidebarOpen, mode, setMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, adminOpen, setAdminOpen, commitOpen, setCommitOpen, chatId, setChatId,
   };
 }
 

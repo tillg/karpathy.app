@@ -38,10 +38,26 @@ test.describe('accessibility (axe)', () => {
     await openApp(page, vault.id);
     await openNote(page, 'Home.md');
     await scan(page, 'shell, Write mode');
+    await page.getByTestId('outline-button').click();
+    await expect(page.getByTestId('outline-item').first()).toBeVisible();
+    await scan(page, 'outline, Write mode');
+    await page.getByTestId('outline-button').click();
+
+    // The properties form with a schema flag (#82).
+    await api.write(vault.id, 'wiki/Flags.md', '---\ntype: concept\ntags: [a]\nupdated: 2026-10-02\nrelated: ["[[Home]]"]\nconfidence: very-high\n---\n# Flags\n');
+    await openNote(page, 'wiki/Flags.md');
+    await expect(page.getByTestId('props-violation')).toBeVisible();
+    await scan(page, 'properties form');
+    await openNote(page, 'Home.md');
+    expect((await api.ctx.post(`/api/vaults/${vault.id}/discard?path=${encodeURIComponent('wiki/Flags.md')}`)).ok()).toBe(true); // the change counts below stay as they were
 
     await page.getByTestId('mode-read').click();
     await expect(page.getByTestId('read-view').locator('a.wl').first()).toBeVisible();
     await scan(page, 'Read mode');
+    await page.getByTestId('outline-button').click();
+    await expect(page.getByTestId('outline-item').first()).toBeVisible();
+    await scan(page, 'outline, Read mode');
+    await page.getByTestId('outline-button').click();
     // Wide code block: keyboard-scrollable (#45).
     await page.locator('[data-testid="tree-item"][data-path="Code.md"]').click();
     // Wait for Code.md to be open (the mode is sticky: it opens in Read mode, as Home.md was).
