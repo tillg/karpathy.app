@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # `render-settings.sh <target> <outdir>`: renders deploy/settings/ for a target on the controller (role app).
 # The target's secrets come as a JSON object (secret name → value) on stdin, never as arguments; they live in
-# a private temp store only while the renderer runs. Writes .env, opencode.env, opencode-providers.json and
-# settings.json to <outdir>.
+# a private temp store only while the renderer runs. Writes .env, opencode.env and settings.json to
+# <outdir>.
 set -euo pipefail
 target=$1 out=$2
 repo=$(cd "$(dirname "$0")/../.." && pwd -P)

@@ -10,7 +10,7 @@ import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { Document, isMap, visit } from 'yaml';
 import { environments, loadSettings, SETTINGS_DIR } from './load.js';
-import { renderBackendSettings, renderComposeEnv, renderOpencodeEnv, renderOpencodeProviders } from './render.js';
+import { renderBackendSettings, renderComposeEnv, renderOpencodeEnv } from './render.js';
 import { resolveSecrets, secretRefs } from './secrets.js';
 
 const { values, positionals } = parseArgs({
@@ -26,7 +26,7 @@ const { values, positionals } = parseArgs({
   },
 });
 const dir = values.dir!;
-const local = !values['no-local'];
+const overlay = !values['no-local'];
 
 function usage(): never {
   console.error('usage: settings render <env> --out <dir> --secrets <dir> [--compose-dir <dir>] | show <env> | get <env> <path> | check | --list-secrets <env>');
@@ -35,30 +35,30 @@ function usage(): never {
 
 function run(): void {
   if (values['list-secrets']) {
-    const names = new Set(secretRefs(loadSettings(values['list-secrets'], { dir, local })).map((r) => r.name));
+    const names = new Set(secretRefs(loadSettings(values['list-secrets'], { dir, overlay })).map((r) => r.name));
     console.log([...names].join('\n'));
     return;
   }
   const [cmd, env] = positionals;
   if (cmd === 'check') {
-    for (const e of environments(dir)) loadSettings(e, { dir, local });
+    for (const e of environments(dir)) loadSettings(e, { dir, overlay });
     return;
   }
   if (cmd === 'get' && env && positionals[2]) {
-    let v: unknown = loadSettings(env, { dir, local });
+    let v: unknown = loadSettings(env, { dir, overlay });
     for (const k of positionals[2].split('.')) v = (v as Record<string, unknown> | undefined)?.[k];
     if (v === undefined) throw new Error(`${env}: no setting ${positionals[2]}`);
     console.log(typeof v === 'string' ? v : JSON.stringify(v));
     return;
   }
   if (cmd === 'show' && env) {
-    const doc = new Document(loadSettings(env, { dir, local }));
+    const doc = new Document(loadSettings(env, { dir, overlay }));
     visit(doc, { Map: (_, node) => void (isMap(node) && node.has('secret') && (node.flow = true)) });
     process.stdout.write(doc.toString({ lineWidth: 0 }));
     return;
   }
   if (cmd === 'render' && env && values.out && values.secrets) {
-    const settings = loadSettings(env, { dir, local });
+    const settings = loadSettings(env, { dir, overlay });
     const secrets = resolveSecrets(settings, values.secrets);
     const out = resolve(values.out);
     const settingsDir = values['compose-dir'] ? relative(resolve(values['compose-dir']), out) : undefined;
@@ -69,7 +69,6 @@ function run(): void {
     };
     write('.env', renderComposeEnv(settings, secrets, { settingsDir }), 0o600);
     write('opencode.env', renderOpencodeEnv(settings, secrets), 0o600);
-    write('opencode-providers.json', JSON.stringify(renderOpencodeProviders(settings), null, 2) + '\n');
     write('settings.json', renderBackendSettings(settings, secrets));
     return;
   }

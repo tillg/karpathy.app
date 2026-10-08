@@ -6,7 +6,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./stack.sh
-compose() { docker compose -p "$STACK_PROJECT" -f compose.yml -f compose.dev.yml --env-file ../tmp/settings/dev/.env "$@"; }
+# The rendered settings (settings_render); a stack started before deploy/settings/ can still go down without them.
+compose() { docker compose -p "$STACK_PROJECT" -f compose.yml -f compose.dev.yml ${SETTINGS_ENV:+--env-file "$SETTINGS_ENV"} "$@"; }
+[ -f ../tmp/settings/dev/.env ] && SETTINGS_ENV=../tmp/settings/dev/.env
 
 case "${1:-up}" in
   up)
@@ -31,6 +33,7 @@ case "${1:-up}" in
     touch secrets/github_token secrets/dns_api_token
     # deploy/settings/ (dev.yaml, your dev.local.yaml) → tmp/settings/dev/, which compose reads.
     settings_render dev secrets || exit 1
+    SETTINGS_ENV=../tmp/settings/dev/.env
     stack_remember "$n"
     # An Ollama model (~2 GB) lives with the native Ollama, pulled once for all stacks.
     model=$(sed -n 's/^DEFAULT_MODEL=//p' ../tmp/settings/dev/.env)

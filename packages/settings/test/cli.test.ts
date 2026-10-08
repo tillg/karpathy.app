@@ -12,13 +12,13 @@ const cli = (...args: string[]) => {
 };
 
 describe('settings CLI', () => {
-  it('render writes the four files', () => {
+  it('render writes the three files', () => {
     const out = tempDir();
     const store = tempDir({ bearer_token: 'tok-SECRET', opencode_password: 'pw' });
     const r = cli('render', 'dev', '--out', out, '--secrets', store, '--compose-dir', join(out, '..'));
     expect(r.err).toBe('');
     expect(r.code).toBe(0);
-    for (const f of ['.env', 'opencode.env', 'opencode-providers.json', 'settings.json']) expect(readFileSync(join(out, f), 'utf8')).not.toBe('');
+    for (const f of ['.env', 'opencode.env', 'settings.json']) expect(readFileSync(join(out, f), 'utf8')).not.toBe('');
     expect(statSync(join(out, 'opencode.env')).mode & 0o777).toBe(0o600);
     expect(readFileSync(join(out, '.env'), 'utf8')).toContain(`SETTINGS_DIR=${out.split('/').pop()}`);
     expect(r.out).not.toContain('tok-SECRET');

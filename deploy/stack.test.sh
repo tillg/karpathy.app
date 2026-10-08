@@ -138,8 +138,10 @@ checkout() { local d; d=$(mktemp -d); git -C "$d" init -q; echo "$d"; }
     get() { node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8")); const v=(new Function("c","return "+process.argv[1]))(c); console.log(typeof v==="string"?v:JSON.stringify(v))' "$1" <<<"$cfg"; }
     eq "$env: backend has SETTINGS_FILE" "$(get 'c.services.backend.environment.SETTINGS_FILE')" /etc/karpathy/settings.json
     eq "$env: backend mounts the rendered settings.json" "$(get 'c.services.backend.volumes.find(v=>v.target==="/etc/karpathy/settings.json").source')" "$out/$env/settings.json"
-    eq "$env: opencode reads the rendered providers" "$(get 'c.services.opencode.environment.OPENCODE_CONFIG')" /etc/opencode-providers.json
-    eq "$env: … mounted from the render" "$(get 'c.services.opencode.volumes.find(v=>v.target==="/etc/opencode-providers.json").source')" "$out/$env/opencode-providers.json"
+    # OPENCODE_CONFIG_CONTENT is merged after a vault's own opencode.json (OPENCODE_CONFIG before it), so a vault
+    # can't turn off the ZDR routing or point the gateway elsewhere.
+    eq "$env: opencode gets the providers as OPENCODE_CONFIG_CONTENT" "$(get 'JSON.parse(c.services.opencode.environment.OPENCODE_CONFIG_CONTENT).provider.openrouter.models["z-ai/glm-5.3"].options.provider.zdr')" true
+    eq "$env: … and no OPENCODE_CONFIG file a vault could override" "$(get 'c.services.opencode.environment.OPENCODE_CONFIG ?? "unset"')" unset
     # Compared, never printed: a wrong compose file could hand over a real key. `config` prints $ as $$ (the
     # container gets $y).
     eq "$env: opencode.env key survives verbatim" "$(get 'c.services.opencode.environment.OPENROUTER_API_KEY===`sk-or-#1 "x" $$y`')" true
@@ -188,13 +190,13 @@ grep -q 'settings_render prodtest' "$here/../justfile" && ok "just prodtest rend
   printf '{"bearer_token":"tok-SECRET","github_token":"","dns_api_token":"d:SECRET","git_author_name":"Jane","git_author_email":"j@x","openrouter_api_key":"or-SECRET"}' \
     | "$here/ansible/render-settings.sh" hetzner "$out" > "$out.log" 2>&1; rc=$?
   eq "render-settings.sh hetzner exits 0" "$rc" 0
-  for f in .env opencode.env opencode-providers.json settings.json; do
+  for f in .env opencode.env settings.json; do
     [ -s "$out/$f" ] && ok "… writes $f" || bad "… writes $f" "missing"
   done
   grep -q '^OPENROUTER_API_KEY=or-SECRET$' "$out/opencode.env" && ok "… the key reaches opencode.env" || bad "… the key reaches opencode.env" "no"
   grep -q '^GIT_AUTHOR_NAME=Jane$' "$out/.env" && ok "… the vault's author reaches .env" || bad "… the vault's author reaches .env" "no"
   ! grep -q SECRET "$out.log" && ok "… prints no secret" || bad "… prints no secret" "leaked"
-  [ -z "$(ls -A "$out" | grep -v -e '^\.env$' -e '^opencode.env$' -e '^opencode-providers.json$' -e '^settings.json$')" ] \
+  [ -z "$(ls -A "$out" | grep -v -e '^\.env$' -e '^opencode.env$' -e '^settings.json$')" ] \
     && ok "… leaves no secret store behind" || bad "… leaves no secret store behind" "$(ls -A "$out")"
   printf '{"bearer_token":"t"}' | "$here/ansible/render-settings.sh" hetzner "$out/2" >/dev/null 2>&1 \
     && bad "a missing required secret fails" "rc 0" || ok "a missing required secret fails"

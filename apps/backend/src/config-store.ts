@@ -69,7 +69,7 @@ export class ConfigStore {
     }
     store.data = {
       vaults: raw.vaults ?? [],
-      settings: store.effective(raw.settings ?? {}, base),
+      settings: store.withOverride(raw.settings ?? {}, base),
       aiTouched: raw.aiTouched ?? {},
       editStamps: raw.editStamps ?? {},
       conflicts: raw.conflicts ?? {},
@@ -80,7 +80,7 @@ export class ConfigStore {
   }
 
   /** Stored settings over the defaults; the model is the override, else the default. */
-  private effective({ modelOverride, model, ...rest }: StoredSettings, base: Settings): Settings {
+  private withOverride({ modelOverride, model, ...rest }: StoredSettings, base: Settings): Settings {
     return { ...base, ...rest, model: modelOverride ?? model ?? base.model };
   }
 

@@ -85,7 +85,7 @@ prodtest action="up" *args:
     # A running prodtest remembers its stack (tmp/prodtest/stack), so e2e and down find it after `just dev down`.
     n=$(cat tmp/prodtest/stack 2>/dev/null || stack_resolve "")
     stack_ports "$n"
-    prodtest_compose() { docker compose -p "$STACK_PROJECT-prodtest" -f deploy/compose.yml -f deploy/compose.prodtest.yml --env-file tmp/settings/prodtest/.env "$@"; }
+    prodtest_compose() { docker compose -p "$STACK_PROJECT-prodtest" -f deploy/compose.yml -f deploy/compose.prodtest.yml $([ -f tmp/settings/prodtest/.env ] && echo --env-file tmp/settings/prodtest/.env) "$@"; }
     case "{{action}}" in
       up)
         mkdir -p tmp/prodtest/secrets

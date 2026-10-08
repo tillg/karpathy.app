@@ -147,7 +147,7 @@ managed by Ansible.
 A target's app settings (model and gateway, domain and TLS, timezone, commit author, web caps) are
 `settings/settings.yaml` plus `settings/<target>.yaml` (see the main README, *Settings*); `just settings show
 <target>` prints them. `just deploy` renders them on this Mac with the target's secrets and copies the result
-to `shared/` (`.env`, `opencode.env`, `opencode-providers.json`, `settings.json`). The inventory keeps only
+to `shared/` (`.env`, `opencode.env` with the provider config, `settings.json`). The inventory keeps only
 what configures the host (Tailscale, disk size, monitoring, `domain` for the monitoring, which must equal
 the settings' `proxy.domain`).
 

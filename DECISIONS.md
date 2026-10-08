@@ -106,6 +106,7 @@ edited: 2026-10-08
   - [19:40 — Migrate this Mac's deploy/.env and opencode.env into dev.local.yaml and a secret file](#run-2026-10-08-1839-10)
   - [19:55 — Keep the targets' vault layout; role app maps vault values to secret names](#run-2026-10-08-1839-11)
   - [19:55 — Keep `domain` in the inventory, checked against the settings](#run-2026-10-08-1839-12)
+  - [20:30 — Act on the review: providers via OPENCODE_CONFIG_CONTENT, and which findings stay open](#run-2026-10-08-1839-13)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1387,3 +1388,26 @@ edited: 2026-10-08
 - **Why:** host provisioning stays in Ansible (decided in review); the check prevents drift.
 - **Alternatives:** have the monitoring role render the settings too.
 - **Consequences:** one value in two places, enforced equal at every deploy.
+
+## 20:30 — Act on the review: providers via OPENCODE_CONFIG_CONTENT, and which findings stay open {#run-2026-10-08-1839-13}
+
+- **Status:** open
+- **Context:** `central-settings-yaml`, `/spec:adversarial-code-review` over `ee26a7a..HEAD` (Defects,
+  Standards, Spec). The HIGH finding: moving the OpenRouter ZDR routing from the managed `opencode.json` into
+  an `OPENCODE_CONFIG` file let a vault's own `opencode.json` override it. Checked on the dev stack: a
+  project file set `zdr: false` and won.
+- **Question:** which findings to fix before the prod release?
+- **Decision:** fixed: the providers go in `OPENCODE_CONFIG_CONTENT` (in `opencode.env`), which opencode
+  merges after project files (checked: `zdr` stays `true` against the same vault file), no providers file
+  any more; compose's `--env-file` only when rendered (old stacks can still go down); `$` escaped in
+  double-quoted env values; the `settings.json` bind mount doesn't create a missing source; the Ollama
+  relay config change recreates the stack; `settings.json` group = `deploy_gid`; the e2e test reloads to
+  show the override persists; renames (`withOverride`, `overlay: false`); architecture text updated.
+  Left open: `commit_reminder_threshold` / `ai.web.access` stay "stored wins" like before (only the
+  model got override semantics, as the spec says); a legacy stored model ≠ the new default is kept as
+  an override (prod checked after deploy); rollback to releases older than the egress proxy on `local`;
+  web caps in the vault (none are set); the test that greps `opencode-container.ts`.
+- **Why:** the HIGH one is a security regression; the rest are cheap or would widen the scope.
+- **Alternatives:** keep the routing block in the managed `opencode.json` (policy in the image, but the
+  model name twice and the gateway no longer from the settings).
+- **Consequences:** release `0.0.16-rc.2` carries the fixes; rc.1 (built before them) is not deployed.

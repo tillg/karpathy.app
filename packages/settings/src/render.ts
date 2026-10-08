@@ -19,17 +19,18 @@ function text(v: string | { secret: string }, secrets: Secrets): string {
   return isRef(v) ? (secrets[v.secret] ?? '') : v;
 }
 
-/** One `KEY=value` line that compose's env-file parser and dotenv read back verbatim. */
+/** One `KEY=value` line that compose's env-file parser reads back verbatim. */
 function line(key: string, value: string): string {
   if (/^[\w./:@+,-]*$/.test(value)) return `${key}=${value}`;
   if (!value.includes("'") && !value.includes('\n')) return `${key}='${value}'`;
-  return `${key}=${JSON.stringify(value)}`;
+  // Compose expands $ inside double quotes; $$ is a literal $.
+  return `${key}=${JSON.stringify(value).replaceAll('$', '$$$$')}`;
 }
 
 const lines = (entries: [string, string | undefined][]) =>
   entries.filter((e): e is [string, string] => e[1] !== undefined).map(([k, v]) => line(k, v)).join('\n') + '\n';
 
-/** opencode's `provider` config for the chosen gateway (passed as OPENCODE_CONFIG). */
+/** opencode's `provider` config for the chosen gateway (OPENCODE_CONFIG_CONTENT in opencode.env). */
 export function renderOpencodeProviders(s: Settings): { provider: Record<string, unknown> } {
   const gw = s.gateways[s.ai.gateway]!;
   const provider =
@@ -39,7 +40,11 @@ export function renderOpencodeProviders(s: Settings): { provider: Record<string,
   return { provider: { [s.ai.gateway]: provider } };
 }
 
-/** opencode.env: the gateway's API key, Exa, the web caps and the default model. */
+/**
+ * opencode.env: the gateway's API key, Exa, the web caps, the default model and the gateway's provider config.
+ * The providers go in OPENCODE_CONFIG_CONTENT, which opencode merges after a vault's own opencode.json (an
+ * OPENCODE_CONFIG file comes before it): a vault can't turn off the ZDR routing or redirect the gateway.
+ */
 export function renderOpencodeEnv(s: Settings, secrets: Secrets): string {
   const gw = s.gateways[s.ai.gateway]!;
   const keyVar = KEY_VARS[gw.kind];
@@ -49,6 +54,7 @@ export function renderOpencodeEnv(s: Settings, secrets: Secrets): string {
     ['WEB_FETCH_CAP', String(s.ai.web.fetch_cap)],
     ['WEB_SEARCH_CAP', String(s.ai.web.search_cap)],
     ['OPENCODE_MODEL', s.ai.model],
+    ['OPENCODE_CONFIG_CONTENT', JSON.stringify(renderOpencodeProviders(s))],
   ]);
 }
 

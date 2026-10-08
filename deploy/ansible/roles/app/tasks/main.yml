@@ -127,7 +127,6 @@
         app_rendered:
           env: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/.env') }}"
           opencode: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/opencode.env') }}"
-          providers: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/opencode-providers.json') }}"
           settings: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/settings.json') }}"
       no_log: true
   always:
@@ -169,7 +168,6 @@
     src: compose.target.yml.j2
     dest: "{{ app_root }}/shared/compose.target.yml"
     mode: "0644"
-  register: app_target_compose
 
 # Compose bind-mounts secret files as they are: each readable only by the container that uses it
 # (backend: uid 1000; proxy: Caddy as root without CAP_DAC_OVERRIDE, so root must own its token).
@@ -216,14 +214,13 @@
     dest: "{{ app_root }}/shared/{{ item.name }}"
     content: "{{ item.content }}\n"
     owner: "{{ item.owner | default(omit) }}"
-    group: "{{ item.owner | default(omit) }}"
+    group: "{{ item.group | default(omit) }}"
     mode: "{{ item.mode }}"
   loop:
-    # The gateway's API key, Exa, the web caps, the model: opencode only.
+    # The gateway's API key and provider config, Exa, the web caps, the model: opencode only.
     - { name: opencode.env, content: "{{ app_rendered.opencode }}", mode: "0600" }
-    - { name: opencode-providers.json, content: "{{ app_rendered.providers }}", mode: "0644" }
     # Holds the commit author; secrets only as /run/secrets paths.
-    - { name: settings.json, content: "{{ app_rendered.settings }}", owner: "{{ deploy_uid }}", mode: "0600" }
+    - { name: settings.json, content: "{{ app_rendered.settings }}", owner: "{{ deploy_uid }}", group: "{{ deploy_gid }}", mode: "0600" }
   loop_control: { label: "{{ item.name }}" }
   register: app_provider_keys
   no_log: true
@@ -234,6 +231,7 @@
     src: "{{ playbook_dir }}/../proxy/Caddyfile.ollama-relay"
     dest: "{{ app_root }}/shared/Caddyfile.ollama-relay"
     mode: "0644"
+  register: app_relay_config
   when: app_settings_env.OLLAMA_UPSTREAM is defined
 
 - name: The Mac's Ollama answers and has {{ app_settings_env.DEFAULT_MODEL }}
@@ -286,7 +284,9 @@
     pull: missing
     build: never
     # Containers read secrets and env files at start: a rotated one needs a recreate.
-    recreate: "{{ 'always' if app_secrets is changed or app_opencode_password is changed or app_provider_keys is changed else 'auto' }}"
+    recreate: >-
+      {{ 'always' if app_secrets is changed or app_opencode_password is changed or app_provider_keys is changed
+         or app_relay_config is changed else 'auto' }}
     remove_orphans: true
     wait: true
     wait_timeout: 300

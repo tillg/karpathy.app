@@ -45,15 +45,15 @@ export function merge(base: Record<string, unknown>, over: Record<string, unknow
 
 /**
  * The effective settings of `env`: settings.yaml ← <env>.yaml ← <env>.local.yaml (dev, prodtest).
- * `local: false` skips the developer's overlay (tests of the committed files).
+ * `overlay: false` skips the developer's local overlay (tests of the committed files).
  */
-export function loadSettings(env: string, { dir = SETTINGS_DIR, local: useLocal = true }: { dir?: string; local?: boolean } = {}): Settings {
+export function loadSettings(env: string, { dir = SETTINGS_DIR, overlay = true }: { dir?: string; overlay?: boolean } = {}): Settings {
   const envs = environments(dir);
   if (!envs.includes(env)) throw new SettingsError(`unknown environment ${env} (${envs.join(', ')})`);
   let data = readYaml(join(dir, 'settings.yaml'), settingsSchema, 'settings.yaml');
   data = merge(data, readYaml(join(dir, `${env}.yaml`), partialSettingsSchema, `${env}.yaml`));
   const local = join(dir, `${env}.local.yaml`);
-  if (useLocal && existsSync(local)) {
+  if (overlay && existsSync(local)) {
     if (!OVERLAY_ENVS.includes(env))
       throw new SettingsError(`${env}.local.yaml: local overlays apply to dev and prodtest only`);
     data = merge(data, readYaml(local, partialSettingsSchema, `${env}.local.yaml`));

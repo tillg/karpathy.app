@@ -159,6 +159,11 @@ test.describe('admin area', () => {
       await expect(page.getByTestId('settings-saved')).toBeVisible();
       await expect(hint).toHaveAttribute('data-overridden', 'true');
       expect(await api.settings()).toMatchObject({ model: other, modelOverridden: true });
+      // The override survives a reload.
+      await page.reload();
+      await openSettings(page);
+      await expect(model).toHaveValue(other);
+      await expect(hint).toHaveAttribute('data-overridden', 'true');
       await page.getByTestId('settings-model-reset').click();
       await expect(model).toHaveValue(cur.defaultModel);
       await page.getByTestId('settings-save').click();

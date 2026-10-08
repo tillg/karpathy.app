@@ -21,7 +21,7 @@ flowchart TB
   subgraph Dev["Mac: dev / prodtest"]
     DS[dev.sh · just prodtest] -->|settings render dev| PK
     DSS[(deploy/secrets/)] --> PK
-    PK --> DO[tmp/settings/dev/<br/>.env · opencode.env ·<br/>opencode-providers.json · settings.json]
+    PK --> DO[tmp/settings/dev/<br/>.env · opencode.env ·<br/>settings.json]
     DO --> DC[docker compose]
   end
   subgraph Ctl["Mac: Ansible controller"]
@@ -30,7 +30,7 @@ flowchart TB
     PK --> AO[rendered files]
   end
   subgraph Host["Target host"]
-    SH[shared/: .env · opencode.env ·<br/>opencode-providers.json · settings.json · secrets/]
+    SH[shared/: .env · opencode.env ·<br/>settings.json · secrets/]
     SH --> HC[docker compose]
   end
   AO -->|copy, 0600 where secret| SH
@@ -180,8 +180,7 @@ Pure render functions keep the tests file-free: fixture settings in, expected te
 | File | Read by | Contents |
 |---|---|---|
 | `.env` | compose interpolation | `DOMAIN`, `TLS_MODE`, `DNS_PROVIDER`, `TZ`, `GIT_AUTHOR_NAME`/`EMAIL`, `GIT_REMOTE_BASE`, `DEFAULT_MODEL` (= `ai.model`), `SETTINGS_DIR`. Ansible appends its host facts (`APP_VERSION`, `DEPLOYED_AT`, `BIND_IP`, `HTTPS_PORT`, `APP_UID/GID`) as `env.j2` does today. |
-| `opencode.env` | opencode (`env_file`) | The gateway's API key under its provider's variable (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, …), `EXA_API_KEY` if set, `WEB_FETCH_CAP`, `WEB_SEARCH_CAP`, `OPENCODE_MODEL`. Mode 0600. |
-| `opencode-providers.json` | opencode via `OPENCODE_CONFIG` | `{ provider: { <id>: … } }` for the chosen gateway, in opencode's config schema (the `ollama` gateway renders exactly today's `dev-ollama.json`; `openrouter` exactly today's routing block). The managed `/etc/opencode/opencode.json` still wins for policy. |
+| `opencode.env` | opencode (`env_file`) | The gateway's API key under its provider's variable (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, …), `EXA_API_KEY` if set, `WEB_FETCH_CAP`, `WEB_SEARCH_CAP`, `OPENCODE_MODEL`, and `OPENCODE_CONFIG_CONTENT`: `{ provider: { <id>: … } }` for the chosen gateway (the `ollama` gateway renders exactly the old `dev-ollama.json`; `openrouter` exactly the old routing block). opencode merges it **after** a vault's own `opencode.json` (an `OPENCODE_CONFIG` file comes before it, checked on the dev stack), so a vault can't turn off the ZDR routing or redirect the gateway; the managed `/etc/opencode/opencode.json` still wins for policy. Mode 0600. |
 | `settings.json` | backend (`SETTINGS_FILE`) | Effective settings with secret refs replaced by `{ file: "/run/secrets/<name>" }`. No secret values. |
 | `secrets/<name>` | compose secrets | Only for a target: Ansible writes the resolved values (today's task, now driven by `secretRefs`). In dev the store already *is* the compose secrets dir. |
 
@@ -196,9 +195,9 @@ playbook can still deploy every older release (deployment.md, "Rollback").
   - backend: `SETTINGS_FILE: /etc/karpathy/settings.json`, volume
     `${SETTINGS_DIR:-.}/settings.json:/etc/karpathy/settings.json:ro`; drop `GIT_AUTHOR_*`,
     `DEFAULT_MODEL`, `TZ` stays (the container needs it as env).
-  - opencode: `env_file: ${SETTINGS_DIR:-.}/opencode.env` (required), `OPENCODE_CONFIG:
-    /etc/opencode-providers.json` with the rendered file mounted read-only; drop `OPENCODE_MODEL` from
-    `environment` (now in `opencode.env`).
+  - opencode: `env_file: ${SETTINGS_DIR:-.}/opencode.env` (optional, so `compose config` works without a
+    render); drop `OPENCODE_MODEL` from `environment` (now in `opencode.env`, with the providers).
+  - The `settings.json` bind mount doesn't create a missing source (`create_host_path: false`).
   - No literal model or gateway defaults remain (`${DEFAULT_MODEL:-anthropic/claude-sonnet-5}` goes).
 - `compose.dev.yml` / `compose.prodtest.yml`: drop `DEFAULT_MODEL`, `OPENCODE_MODEL`, `OPENCODE_CONFIG`,
   the `dev-ollama.json` mount, `GIT_REMOTE_BASE`, `GIT_AUTHOR_*`, `DOMAIN`, `TLS_MODE`. They keep only
@@ -231,7 +230,7 @@ sequenceDiagram
     R-->>D: exit 1, names the secret or YAML path
     D-->>U: stops before compose
   else valid
-    R->>D: .env, opencode.env, opencode-providers.json, settings.json
+    R->>D: .env, opencode.env, settings.json
     D->>C: --env-file tmp/settings/dev/.env up -d --build
   end
 ```
@@ -258,7 +257,7 @@ computes the effective model as `modelOverride ?? defaultModel`.
 | Admin picks the default | persists it | removes `modelOverride` |
 | Admin picks another model | persists it | stores `modelOverride` |
 | Deployment changes `ai.model` | ignored once persisted | applies unless overridden |
-| Existing `config.json` with `settings.model` | — | migrated on open: kept as `modelOverride` only if ≠ the default |
+| Existing `config.json` with `settings.model` | — | read as `modelOverride` only if ≠ the default; rewritten that way on the next save |
 
 `GET /api/settings` adds `defaultModel` and returns `model` (effective) plus `modelOverridden: boolean`.
 `PATCH /api/settings` takes `model: string | null` (`null` = back to default). Admin's picker shows
@@ -272,16 +271,17 @@ Role `app`:
 1. **Render on the controller** (`delegate_to: localhost`, `run_once`, `no_log`): write the target's
    vault secrets to a temp dir `T` (0700, removed in an `always:` block), then run:
    `node packages/settings/cli.ts render {{ target }} --out T/out --secrets T/secrets`.
-2. Copy `opencode.env`, `opencode-providers.json`, `settings.json` to `shared/` (0600 where secret); write
+2. Copy `opencode.env` and `settings.json` to `shared/` (0600 where secret); write
    `shared/.env` from the rendered `.env` plus the host facts (a short template that `include`s the
    rendered file, so `DEPLOYED_AT` stays stable and an unchanged `.env` still recreates nothing).
-3. Secret files: loop over `secretRefs` of the target (the CLI prints them with `--list-secrets`)
-   instead of today's hard-coded list. The opencode password stays generated on the host (not in the
-   vault), so it is excluded from the vault lookup but still a secret ref.
+3. Secret values: `roles/app/vars/main.yml` maps the vault to secret names (`vault_opencode_env` keys
+   lower-cased: `OPENROUTER_API_KEY` → `openrouter_api_key`); a stack test checks that every secret a
+   target's settings use (`--list-secrets`) has a source. The compose secret files stay the existing task.
+   The opencode password stays generated on the host (not in the vault).
 4. `group_vars/all/main.yml` loses the app settings (`domain`, `tls_mode`, `timezone` for the app,
    `default_model`, `git_*`, `opencode_env`). It keeps host provisioning, `app_url`, `bind_ip`,
-   `https_port`, and the `vault_*` mapping. `vault_opencode_env` (a dict) becomes one vault entry per
-   secret name (`vault_openrouter_api_key`, `vault_exa_api_key`); `fill_vault.py` prompts per secret ref.
+   `https_port`, `domain` (checked against the settings, read by monitoring) and the `vault_*` mapping. The
+   vault layout and `fill_vault.py` stay as they are (DECISIONS.md, run 2026-10-08 18:39).
 5. `env.j2` and the opencode.env task are removed; `roles/app/templates/env.j2`'s keys are covered by the
    golden test below.
 

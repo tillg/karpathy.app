@@ -59,7 +59,8 @@ services:
       - vaults:/vaults
       - config:/config
       # SETTINGS_DIR: the rendered settings, relative to this file; unset on a target (shared/ is the project dir).
-      - ${SETTINGS_DIR:-.}/settings.json:/etc/karpathy/settings.json:ro
+      # Not created when missing (a directory would block every later render): render first.
+      - { type: bind, source: "${SETTINGS_DIR:-.}/settings.json", target: /etc/karpathy/settings.json, read_only: true, bind: { create_host_path: false } }
     depends_on:
       opencode: { condition: service_healthy }
     # egress: the backend itself needs GitHub.
@@ -75,11 +76,11 @@ services:
     # opencode as PID 1 ignores SIGTERM (every stop was a SIGKILL after 10 s, #38).
     init: true
     user: *app-user
-    # The gateway's API key, Exa, the web caps and OPENCODE_MODEL, rendered from deploy/settings/.
+    # The gateway's API key and provider config (OPENCODE_CONFIG_CONTENT: merged after a vault's own
+    # opencode.json; /etc/opencode/opencode.json still wins), Exa, the web caps and OPENCODE_MODEL, rendered from
+    # deploy/settings/.
     env_file: [{ path: "${SETTINGS_DIR:-.}/opencode.env", required: false }]
     environment:
-      # The gateway's provider config, rendered from deploy/settings/; /etc/opencode/opencode.json still wins.
-      OPENCODE_CONFIG: /etc/opencode-providers.json
       # All outbound HTTP (LLM provider, Exa, webfetch) goes through the egress proxy; loopback stays direct
       # (the plugin client talks to 0.0.0.0:4096). Dev and prodtest add the Ollama host to NO_PROXY.
       HTTP_PROXY: http://egress:3128
@@ -90,7 +91,6 @@ services:
     volumes:
       - vaults:/vaults
       - opencode-data:/data
-      - ${SETTINGS_DIR:-.}/opencode-providers.json:/etc/opencode-providers.json:ro
     # /global/health needs the password too (basic auth; busybox wget has no --user).
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --header \"Authorization: Basic $$(printf 'opencode:%s' \"$$(cat /run/secrets/opencode_password)\" | base64 | tr -d '\\n')\" http://127.0.0.1:4096/global/health"]
