@@ -33,8 +33,9 @@ case "${1:-up}" in
     touch secrets/github_token secrets/dns_api_token
     # The dev model (~2 GB) lives with the native Ollama, pulled once for all stacks.
     ollama show qwen2.5:3b >/dev/null 2>&1 || ollama pull qwen2.5:3b
-    # The ingest image installs the private ingest-email repo.
-    GH_TOKEN="${GH_TOKEN:-$(gh auth token)}" compose up -d --build
+    # The ingest image's build context for the private ingest-email repo.
+    ingest/fetch-source.sh >/dev/null
+    compose up -d --build
     echo "Stack $n: https://localhost:$PROXY_PORT  token: $(cat secrets/bearer_token)"
     ;;
   down|logs|ps)

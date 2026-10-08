@@ -58,13 +58,14 @@ Five pieces, mostly independent:
 ### Image
 
 `deploy/ingest/Dockerfile`: `python:3.13-slim` + `tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng poppler-utils ffmpeg`
-+ the static `gog` binary (pinned release, checksum-verified) + `pip install "ingest-email[instagram] @
-git+https://github.com/tillg/ingest_email@<ref>"` (pulls `instascraper` at its pinned tag) in a build stage, so git
-stays out of the runtime image. `<ref>` is pinned to a commit (`INGEST_EMAIL_REF`) until the prerequisite tag exists.
-`ingest_email` is a **private** repo: the build takes a GitHub token as BuildKit secret `gh_token` (dev and prodtest:
-`gh auth token`; CI and release: repo secret `INGEST_EMAIL_TOKEN`); the token never lands in a layer. Built and
-published like the other images (`ghcr.io/tillg/karpathy.app-ingest:${APP_VERSION}`). Non-root (`APP_UID`),
-`cap_drop: [ALL]`, `no-new-privileges`, `init: true`, bounded logs.
++ the static `gog` binary (pinned release, checksum-verified) + ingest-email and `instascraper` (at its own tag, newer
+than ingest-email's `[instagram]` extra pins) installed in a build stage, so git stays out of the runtime image.
+`ingest_email` is a **private** repo, pinned to the commit in `deploy/ingest/ingest-email.ref` until the prerequisite
+tag exists. Its source comes in as the named build context `ingest_email`: `deploy/ingest/fetch-source.sh` clones it with
+the developer's own git access (dev, prodtest, tests); CI and the release workflow check it out with a read-only deploy
+key (repo secret `INGEST_EMAIL_DEPLOY_KEY`). The build itself needs no credentials. Built and published like the other
+images (`ghcr.io/tillg/karpathy.app-ingest:${APP_VERSION}`). Non-root (`APP_UID`), `cap_drop: [ALL]`,
+`no-new-privileges`, `init: true`, bounded logs.
 
 We **reuse** `ingest-email` instead of porting it to the Node backend: ~4.6k lines with resolvers, OCR, Instagram pacing,
 retry state and its own spec; a port would duplicate it and lose the Mac CLI. Rejected: Python + tools in the backend image

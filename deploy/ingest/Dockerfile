@@ -1,19 +1,16 @@
 # Ingest service: fetches mail and resolves links into the vaults' Input/ (deterministic, no LLM, never commits).
-# Runs ingest-email (its own repo, pinned) with the tools its resolvers call: tesseract (OCR), poppler (PDF),
+# Runs ingest-email (its own repo, at the commit in ingest-email.ref) with the tools its resolvers call: tesseract (OCR), poppler (PDF),
 # ffmpeg (Reels), and gog (Gmail).
 
-# ingest-email is private: the build needs a GitHub token as BuildKit secret `gh_token` (`gh auth token`; the
-# release workflow passes a repo secret). Without it the plain URL is used (works once the repo is public).
+# ingest-email is a private repo: it comes in as the named build context `ingest_email` (deploy/ingest/fetch-source.sh
+# locally, a deploy-key checkout in CI), so the build itself needs no GitHub credentials. instascraper (public) is
+# installed at its own tag, not through ingest-email's [instagram] extra: the ingest service needs a newer one.
 FROM python:3.13-slim AS build
-ARG INGEST_EMAIL_REF=e68a689b01e7b523708c0ff03d5e4cd86af6aa65
+ARG INSTASCRAPER_REF=v1.1.0
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
-RUN --mount=type=secret,id=gh_token,required=false set -e; \
-    python -m venv /opt/venv; \
-    if [ -s /run/secrets/gh_token ]; then \
-      git config --global url."https://x-access-token:$(cat /run/secrets/gh_token)@github.com/".insteadOf "https://github.com/"; \
-    fi; \
-    /opt/venv/bin/pip install --no-cache-dir "ingest-email[instagram] @ git+https://github.com/tillg/ingest_email@${INGEST_EMAIL_REF}"; \
-    rm -f /root/.gitconfig
+COPY --from=ingest_email . /src/ingest_email
+RUN python -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir /src/ingest_email "instascraper @ git+https://github.com/tillg/instascraper@${INSTASCRAPER_REF}"
 
 FROM python:3.13-slim
 ARG APP_UID=1000

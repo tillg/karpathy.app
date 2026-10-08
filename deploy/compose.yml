@@ -105,8 +105,8 @@ services:
   # the mounts of the configured vaults (Input/ rw, Sources/ ro); dev and prodtest mount the whole volume.
   ingest:
     image: ghcr.io/tillg/karpathy.app-ingest:${APP_VERSION:-dev}
-    # ingest-email is a private repo: building needs GH_TOKEN (`gh auth token`).
-    build: { context: .., dockerfile: deploy/ingest/Dockerfile, secrets: [gh_token] }
+    # ingest-email is a private repo, checked out beside the build by deploy/ingest/fetch-source.sh.
+    build: { context: .., dockerfile: deploy/ingest/Dockerfile, additional_contexts: { ingest_email: ../tmp/ingest_email-src } }
     restart: unless-stopped
     init: true
     user: *app-user
@@ -175,5 +175,3 @@ secrets:
   dns_api_token: { file: ./secrets/dns_api_token }
   gog_keyring_password: { file: ./secrets/gog_keyring_password }
   ingest_token: { file: ./secrets/ingest_token }
-  # Build only (the ingest image installs the private ingest-email repo).
-  gh_token: { environment: GH_TOKEN }

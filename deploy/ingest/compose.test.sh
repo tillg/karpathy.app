@@ -31,6 +31,7 @@ for v in prod dev prodtest; do
   check "$v: ingest reads its config read-only" py "$j" "any(m['target'] == '/etc/ingest/config.json' and m.get('read_only') for m in s['volumes'])"
 done
 
+check "prod: the image build takes ingest_email as a named build context, no token secret" py "$prod" "s['build'].get('additional_contexts', {}).get('ingest_email', '').endswith('tmp/ingest_email-src') and not s['build'].get('secrets') and 'gh_token' not in c.get('secrets', {})"
 check "prod: the whole vaults volume is not mounted (the deploy adds per-vault Input/ and Sources/)" py "$prod" "not any(m['target'] == '/vaults' for m in s['volumes'])"
 for v in dev prodtest; do
   j=${!v}

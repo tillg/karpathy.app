@@ -92,8 +92,9 @@ prodtest action="up" *args:
         [ -s tmp/prodtest/secrets/ingest_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/ingest_token
         touch tmp/prodtest/secrets/github_token tmp/prodtest/secrets/dns_api_token
         echo "$n" > tmp/prodtest/stack
-        # The ingest image installs the private ingest-email repo.
-        GH_TOKEN="${GH_TOKEN:-$(gh auth token)}" prodtest_compose up -d --build
+        # The ingest image's build context for the private ingest-email repo.
+        deploy/ingest/fetch-source.sh >/dev/null
+        prodtest_compose up -d --build
         echo "App: https://localhost:$PRODTEST_PORT  token: $(cat tmp/prodtest/secrets/bearer_token)"
         ;;
       down) prodtest_compose down -v && rm -f tmp/prodtest/stack ;;

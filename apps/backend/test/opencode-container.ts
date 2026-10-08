@@ -204,17 +204,12 @@ export const INGEST_IMAGE = `kai-test-ingest-${createHash('sha1').update(REPO).d
 /** Internal network like compose's `internal`: no route out, only the egress proxy (also on NET) reaches the internet. */
 const INGEST_NET = 'kai-test-ingest-net';
 
-/**
- * Starts the ingest container on INGEST_NET with compose's proxy env. Building needs a token for the private
- * ingest-email repo: GH_TOKEN, else `gh auth token`.
- */
+/** Starts the ingest container on INGEST_NET with compose's proxy env. Its build context needs ingest-email's source. */
 export async function startIngest() {
   ensureEgress();
-  let token = process.env.GH_TOKEN;
-  if (!token) try { token = execFileSync('gh', ['auth', 'token'], { encoding: 'utf8' }).trim(); } catch { /* none: the build fails if the repo is private */ }
+  const src = execFileSync(join(REPO, 'deploy/ingest/fetch-source.sh'), { encoding: 'utf8' }).trim();
   try {
-    execFileSync('docker', ['build', '-q', '--secret', 'id=gh_token,env=GH_TOKEN', '-t', INGEST_IMAGE, '-f', join(REPO, 'deploy/ingest/Dockerfile'), REPO],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GH_TOKEN: token ?? '' } });
+    docker('build', '-q', '--build-context', `ingest_email=${src}`, '-t', INGEST_IMAGE, '-f', join(REPO, 'deploy/ingest/Dockerfile'), REPO);
   } catch (e) {
     if (!String((e as { stderr?: string }).stderr).includes('already exists')) throw e;
   }
