@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { FileEntry, SearchHit } from '@karpathy/shared';
+import { noteLinks, type FileEntry, type GraphData, type SearchHit } from '@karpathy/shared';
 
 export function versionOf(content: Buffer | string): string {
   return createHash('sha256').update(content).digest('hex').slice(0, 16);
@@ -112,4 +112,17 @@ export async function search(root: string, q: string): Promise<{ hits: SearchHit
     ...content.filter((h) => !nameMatches(h.path)),
   ];
   return { hits: hits.slice(0, MAX_HITS), truncated: hits.length > MAX_HITS };
+}
+
+/** Every note under `root` and the notes it links to (wikilinks, embeds, relative Markdown links). */
+export async function graph(root: string): Promise<GraphData> {
+  const paths = (await listTree(root)).filter((f) => f.type === 'file').map((f) => f.path);
+  const notes = paths.filter((p) => /\.md$/i.test(p));
+  const links: GraphData['links'] = [];
+  for (const source of notes) {
+    // The AI or a pull may delete it between the listing and this read: then it has no links.
+    const text = await readFile(join(root, source), 'utf8').catch(() => '');
+    for (const target of noteLinks(text, source, paths)) links.push({ source, target });
+  }
+  return { nodes: notes.map((path) => ({ path })), links };
 }

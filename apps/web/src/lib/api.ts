@@ -1,5 +1,5 @@
 import type {
-  ChatDetail, ChatSummary, Change, Command, CommitResult, ConflictChoice, Diff, FileContent, FileEntry,
+  ChatDetail, ChatSummary, Change, Command, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData,
   SearchHit, Settings, SettingsView, TokenTest, UploadResult, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
@@ -95,6 +95,7 @@ export const api = {
     json<UploadResult>('POST', `${v(id)}/raw?name=${encodeURIComponent(name)}&${new URLSearchParams(target as Record<string, string>)}`, bytes),
   search: (id: string, text: string, signal?: AbortSignal) =>
     json<{ hits: SearchHit[]; truncated: boolean }>('GET', `${v(id)}/search?q=${encodeURIComponent(text)}`, undefined, signal),
+  graph: (id: string) => json<GraphData>('GET', `${v(id)}/graph`),
 
   changes: (id: string) => json<Change[]>('GET', `${v(id)}/changes`),
   diff: (id: string, path: string) => json<Diff>('GET', `${v(id)}/changes/diff?${q(path)}`),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rewriteLinks } from './relink.js';
+import { noteLinks, rewriteLinks } from './relink.js';
 
 const from = 'Wiki/serien/foo.md';
 const to = 'Wiki/serien/foo/foo.md';
@@ -46,5 +46,18 @@ describe('rewriteLinks: inside the moved page', () => {
   it('leaves wikilinks, embeds by name, absolute links and URLs alone', () => {
     const text = '![[a.png]] [[other]] [r](/Wiki/other.md) [w](https://example.com/a.md) [h](#Plot)';
     expect(own(text)).toBe(text);
+  });
+});
+
+describe('noteLinks', () => {
+  const vault = ['Wiki/a.md', 'Wiki/b.md', 'Wiki/sub/c.md', 'Wiki/img/p.png', 'Home.md'];
+  const links = (text: string, page = 'Wiki/a.md') => noteLinks(text, page, vault);
+
+  it('resolves wikilinks, embeds and relative Markdown links to notes', () => {
+    expect(links('[[b]] ![[c#Top]] [H](../Home.md) [[sub/c|C]]')).toEqual(['Wiki/b.md', 'Wiki/sub/c.md', 'Home.md']);
+  });
+
+  it('skips self links, missing targets, non-notes, URLs and code', () => {
+    expect(links('[[a]] [[nope]] ![[p.png]] [x](https://x.org/b.md) `[[b]]`\n```\n[[Home]]\n```')).toEqual([]);
   });
 });

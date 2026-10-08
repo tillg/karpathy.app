@@ -236,6 +236,10 @@ export function createApp(d: AppDeps) {
     res.json(await d.vaults.search(req.params.id!, typeof req.query.q === 'string' ? req.query.q : ''));
   });
 
+  api.get('/vaults/:id/graph', async (req, res) => {
+    res.json(await d.vaults.graph(req.params.id!));
+  });
+
   // ---- git ----
   api.get('/vaults/:id/changes', async (req, res) => {
     res.json(await d.vaults.changes(req.params.id!));

@@ -22,7 +22,7 @@ app is, that the project ships code and not a running service (self-hosting need
 secrets and keys), and how to ask for a hosted version (mail to the maintainer). It has no login and holds no user
 data ([deployment.md › Website](deployment.md#website)).
 
-Deliberately not built: an Obsidian clone (no graph view, plugins or canvas), multiple users or real-time
+Deliberately not built: an Obsidian clone (no plugins or canvas; the graph is a view, not an editor), multiple users or real-time
 collaboration, a sync protocol of its own, offline AI, creating GitHub repos from the app.
 
 ## Features
@@ -197,6 +197,14 @@ grouped per note with up to 4 line snippets; capped at 200 hits ("refine your se
 Several words find notes that contain all of them (in the text or the path) and show the lines of any of them; a
 `"quoted phrase"` matches as written (#107). Notes whose file name contains every word come first, the rest in path
 order (#99).
+
+### Graph
+
+The graph button (sidebar header) opens a 3D graph of the vault's notes (#130): one dot per `.md` file, a line per
+link between two notes (wikilinks, embeds and relative Markdown links, resolved like in the editor; links in code
+don't count). A dot grows with its number of links; the open note is orange. Drag rotates, pinch or scroll zooms,
+hovering shows the note's name, a click opens the note and closes the graph. The graph is read when opened (no live
+updates); three.js loads on first open only.
 
 ### Changes and commits
 
