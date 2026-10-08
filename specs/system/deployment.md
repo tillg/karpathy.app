@@ -22,10 +22,11 @@ flowchart TB
   subgraph Mac
     just[just deploy target version] --> pb[ansible-playbook site.yml]
     kc[(Keychain: vault password)] --> pb
+    st[deploy/settings/: settings.yaml + target.yaml] -->|rendered on the Mac| pb
   end
   subgraph Host["Target host (Ubuntu 24.04)"]
     rels[/opt/karpathy.app/releases/vX.Y.Z/] --> cur[current → vX.Y.Z]
-    shared[/opt/karpathy.app/shared: .env, secrets, compose.target.yml/]
+    shared[/opt/karpathy.app/shared: .env, opencode.env, settings.json, secrets, compose.target.yml/]
     cur --> app[compose project karpathy-app]
     shared --> app
     mon[compose project karpathy-monitoring]
@@ -79,14 +80,20 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
 - All services: `cap_drop: [ALL]` (the proxy keeps `NET_BIND_SERVICE`), `no-new-privileges`, json-file
   log rotation (3 × 10 MB). The backend has `init: true`: its PID 1 (`npm exec`) didn't reap orphaned
   git processes.
-- `TZ` from the target (`tzdata` in the backend image), so commit times follow it.
+- `TZ` from the target's settings (`timezone`; `tzdata` in the backend image), so commit times follow it.
+- Settings arrive rendered ([Settings on a target](#settings-on-a-target)): compose interpolates `shared/.env`, the
+  backend mounts `shared/settings.json` read-only (`SETTINGS_FILE=/etc/karpathy/settings.json`), opencode reads
+  `shared/opencode.env`.
 - Networks: `edge` (proxy), `internal` (`internal: true`: proxy, backend, opencode, egress) and `egress` (backend
   and the `egress` Squid proxy, the only two with a route out). opencode reaches the internet only through
   `egress:3128`; the backend talks to opencode with the `opencode_password` (HTTP Basic, also in opencode's
   healthcheck).
 
 A target adds `shared/compose.target.yml` (rendered by Ansible): the `vaults` volume as a bind mount
-of `/srv/vaults`; on `local` also the e2e bare repos at `/remotes` with `safe.directory`.
+of `/srv/vaults`; on `local` also the e2e bare repos at `/remotes` with `safe.directory` (plus `GIT_REMOTE_BASE` as
+env, which only releases from before the settings read), and, when the target's gateway is Ollama, the `ollama-relay`
+service (`ollama.internal` on `internal` + `egress`, upstream `${OLLAMA_UPSTREAM}`) with `NO_PROXY=…,ollama.internal`
+for opencode.
 
 ## Targets
 
@@ -95,13 +102,27 @@ of `/srv/vaults`; on `local` also the e2e bare repos at `/remotes` with `safe.di
 | `local` | Ubuntu 24.04 VM (Lima, `deploy/lima/karpathy-vm.yaml`), sized like the server; https://localhost:9444 | the Lima guest user | Caddy's internal CA |
 | `hetzner` | Hetzner CPX22, Nuremberg (CX23 was sold out); https://app.karpathy.app | `ops@karpathy` over Tailscale | Let's Encrypt via DNS-01 at GoDaddy |
 
-Each target is one inventory (`deploy/ansible/inventories/<target>`) with its settings in
-`group_vars/all/main.yml` and its secrets in an encrypted `vault.yml`.
+Each target is an environment with three homes:
+
+| What | Where |
+|---|---|
+| App settings (gateway, model, domain, TLS, timezone, git identity, …) | `deploy/settings/settings.yaml` + `deploy/settings/<target>.yaml` ([architecture.md](architecture.md#settings)) |
+| Host provisioning (Tailscale, host timezone, `vaults_fs_size`, `bind_ip`, `https_port`, `app_url`, monitoring, users) | `deploy/ansible/inventories/<target>/group_vars/all/main.yml` |
+| Secret values | the inventory's encrypted `vault.yml` |
+
+`domain` stays in `group_vars` as well (the monitoring role and the smoke check read it, and `--only monitoring`
+runs without role `app`); role `app` asserts it equals the rendered `DOMAIN` and stops on a mismatch.
+
+| Target | Model |
+|---|---|
+| `local` | The native Ollama on the Mac (`ollama/qwen2.5:3b`, `just ollama install`), the same one the dev stacks use, through the VM stack's `ollama-relay` to `192.168.5.2:11434` (Lima's address for the host, forwarded to the Mac's loopback). Role `app` checks on the controller that Ollama answers and has the model, else stops with "run `just ollama install`". |
+| `hetzner` | OpenRouter `z-ai/glm-5.3`, routed to zero-data-retention hosts (the central default). |
 
 Not targets, and not deployed by the playbook: the **dev stacks** on the Mac (stack N, project `karpathy-app-N`,
 on https://localhost:80N0, started with `just dev up [N]`) and their **paired prodtest** (the prod images built
-locally as `karpathy-app-N-prodtest` on https://localhost:80N5, `just prodtest`). Both use the native Ollama on the
-Mac as the model. Details: [architecture.md](architecture.md#dev-stacks).
+locally as `karpathy-app-N-prodtest` on https://localhost:80N5, `just prodtest`). They are the environments `dev`
+and `prodtest`; both use the native Ollama on the Mac as the model unless a developer's local overlay picks another
+gateway. Details: [architecture.md](architecture.md#dev-stacks).
 
 ## The playbook
 
@@ -114,7 +135,7 @@ host.
 | `tailscale` | Apt repo, `tailscale up` with a single-use `tag:server` key, refreshes the facts so `bind_ip` (the tailnet IP) is known; stops with a clear message for a used key or a taken tailnet name. `hetzner` only. |
 | `docker` | Docker CE + compose plugin; on Tailscale hosts, Docker starts after `tailscaled` and `net.ipv4.ip_nonlocal_bind=1` lets containers bind the tailnet IP before it exists at boot. |
 | `vaults_fs` | A loop-mounted ext4 file at `/srv/vaults` (5 G local, 20 G hetzner, inside the backed-up disk), `nofail`; Docker requires the mount. |
-| `app` | Downloads the release's `compose.yml` once, renders `shared/`, pulls the images before switching `current`, `docker compose up` (recreated when a secret or provider key changed), smoke check, keeps the 5 most recently deployed releases and their images. |
+| `app` | Downloads the release's `compose.yml` once, renders the target's settings on the controller and writes `shared/` ([Settings on a target](#settings-on-a-target)), checks the Mac's Ollama when the gateway is Ollama, pulls the images before switching `current`, `docker compose up` (recreated when a secret, `opencode.env`, `settings.json` or the relay config changed), smoke check, keeps the 5 most recently deployed releases and their images. |
 | `monitoring` | Beszel hub + agent and Gatus as compose project `karpathy-monitoring`, Beszel provisioned through its API, the heartbeat timer. |
 
 ```mermaid
@@ -124,7 +145,10 @@ sequenceDiagram
   participant R as GHCR
   A->>A: resolve version (arg or GitHub "Latest"), check the images exist
   A->>H: releases/vX/compose.yml (release asset, once)
-  A->>H: shared/.env, compose.target.yml, secrets (0600)
+  A->>A: render deploy/settings/ for the target (secrets from the vault, temp dir)
+  A->>A: assert domain == rendered DOMAIN
+  A->>H: shared/.env (+ host facts), compose.target.yml, secrets (0600)
+  A->>H: shared/opencode.env, settings.json (0600), Caddyfile.ollama-relay (Ollama gateway only)
   A->>R: pull the images (via H)
   A->>H: current → releases/vX, compose up, wait for healthy
   A->>H: smoke check: /api/health through the proxy, version == X
@@ -137,10 +161,45 @@ sequenceDiagram
   new release; there is no automatic rollback.
 - **Rollback** = deploying the older version with today's playbook (`just deploy <target> <old>
   --only app`, about 50 s). The playbook supports every release since it shipped; a template change
-  that would break an older `compose.yml` must stay backward compatible.
+  that would break an older `compose.yml` must stay backward compatible. That is why the rendered `.env` keeps every
+  key the old `env.j2` wrote (`DEFAULT_MODEL`, `GIT_AUTHOR_*`, `TLS_MODE`, …; a golden test pins the set) and
+  `compose.target.yml` still sets `GIT_REMOTE_BASE` on `local`: a release from before the settings ignores
+  `settings.json` and reads those. Checked on `local` (rollback to 0.0.15 and forward again). Not covered: releases
+  older than the egress proxy on `local`.
 - **Bootstrap:** `just deploy hetzner <version> --bootstrap <public-ip>` runs the same play once as
   `root` on the public IP (with the temporary `setup-ssh` firewall); it needs exactly one inventory host
   and forgets the IP's old host key. Rebuilding a server is a short procedure in `deploy/README.md`.
+
+## Settings on a target {#settings-on-a-target}
+
+Role `app` renders the target's settings with the same renderer as the dev stacks (`packages/settings`), on the
+controller, never on the host (which has no source checkout):
+
+```mermaid
+flowchart LR
+  V[("vault.yml<br/>vault_bearer_token, vault_opencode_env, …")] --> M["roles/app/vars/main.yml<br/>app_settings_secrets:<br/>secret name → value"]
+  M -->|"JSON on stdin (no_log)"| R["render-settings.sh TARGET OUT<br/>temp secret store 0700"]
+  S["deploy/settings/<br/>settings.yaml + TARGET.yaml"] --> R
+  R -->|"settings render TARGET --no-local"| O["OUT: .env · opencode.env · settings.json<br/>(controller temp dir, removed in always:)"]
+  O --> H["shared/.env = rendered .env + host facts<br/>shared/opencode.env · shared/settings.json"]
+```
+
+- **Secret names from the vault:** the vault layout is unchanged; `roles/app/vars/main.yml` maps it to the names the
+  settings refer to: `bearer_token`, `github_token`, `dns_api_token`, `git_author_name` / `git_author_email` (from
+  `vault_git_author_*`) and each key of `vault_opencode_env` lower-cased (`OPENROUTER_API_KEY` →
+  `openrouter_api_key`). A stack test checks that every secret a target's settings use (`--list-secrets`) has a
+  source there. The opencode password is still generated on the host; the renderer gets a placeholder, since
+  `settings.json` only names its file.
+- **`render-settings.sh`** takes the secrets as JSON on stdin (never as arguments), writes them to a `mktemp -d` store
+  (0700, files 0600, empty values left out) that its `trap` removes, and runs the CLI with `--no-local`. The rendered
+  files land in an Ansible temp dir that an `always:` block deletes.
+- **`shared/.env`** (0600) is the rendered `.env` plus this host's facts: `APP_VERSION`, `DEPLOYED_AT` (kept on a
+  redeploy of the same version), `BIND_IP`, `HTTPS_PORT`, `APP_UID`, `APP_GID`. **`shared/opencode.env`** (0600) and
+  **`shared/settings.json`** (0600, owned by `deploy`) are copied as rendered; a change to either recreates the stack.
+- **Checks:** `domain` (inventory) must equal the rendered `DOMAIN`; with the Ollama gateway the Mac's Ollama must
+  answer on `127.0.0.1:11434` with the default model. The smoke check reads `TLS_MODE` from the rendered `.env`.
+- `just settings show <target>` prints what a target runs with (secrets as references); the controller needs the
+  checkout's `node_modules` (`tsx`), as for every `just` recipe.
 
 ## Users and access on a server
 
@@ -160,12 +219,15 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
 | Bearer token | backend | `shared/secrets/bearer_token` (uid 1000, 0600) |
 | GitHub token | backend | `shared/secrets/github_token` (uid 1000, 0600); the fallback: a token set in the app's settings wins and needs no redeploy |
 | GoDaddy `<key>:<secret>` | proxy (DNS-01) | `shared/secrets/dns_api_token` (root, 0600: Caddy runs as root without CAP_DAC_OVERRIDE) |
-| Provider keys, optional `EXA_API_KEY`, `WEB_FETCH_CAP` / `WEB_SEARCH_CAP` | opencode | `shared/opencode.env` (0600) |
+| Provider key of the gateway, optional `EXA_API_KEY` (with the non-secret web caps, model and provider config) | opencode | `shared/opencode.env` (0600), rendered from `deploy/settings/`; vault: `vault_opencode_env` |
+| Commit author (`hetzner`: secret references, no personal data in the public repo) | backend | resolved into `shared/settings.json` (uid 1000, 0600) and `shared/.env` (0600); vault: `vault_git_author_name` / `_email` |
 | opencode server password | backend, opencode | `shared/secrets/opencode_password` (uid 1000, 0600); generated once on the target by role `app` (`force: false`), no vault entry; a change recreates the stack |
 | Tailscale auth key | `tailscale up` | not stored; single-use |
 | ntfy topic, healthchecks.io URL, Beszel password / hub key / token | monitoring | monitoring files, 0600 |
 
-- One Ansible Vault per target, encrypted in git; values named `vault_*`, mapped in `main.yml`. The
+- Which secret a component needs is named in `deploy/settings/` (secret references); the values stay in the vault.
+- One Ansible Vault per target, encrypted in git; values named `vault_*`, mapped in `group_vars/all/main.yml` and
+  `roles/app/vars/main.yml` ([Settings on a target](#settings-on-a-target)). The
   vault password is in the macOS Keychain (`karpathy-ansible-<target>`), read by
   `vault-pass-client.sh`. `just secrets <target>` fills a vault with hidden prompts (taking keys
   already entered for the dev stack as defaults) and generates the token, Beszel secrets and the ntfy

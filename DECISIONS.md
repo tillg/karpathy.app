@@ -107,6 +107,8 @@ edited: 2026-10-08
   - [19:55 — Keep the targets' vault layout; role app maps vault values to secret names](#run-2026-10-08-1839-11)
   - [19:55 — Keep `domain` in the inventory, checked against the settings](#run-2026-10-08-1839-12)
   - [20:30 — Act on the review: providers via OPENCODE_CONFIG_CONTENT, and which findings stay open](#run-2026-10-08-1839-13)
+  - [21:05 — Archive central-settings-yaml with its decisions still open](#run-2026-10-08-1839-14)
+  - [21:15 — Retro: pin opencode's provider merge order with an integration test](#run-2026-10-08-1839-15)
 - [2026-10-08 18:58 — Finish rework-ingestion-pipeline, commit, push, deploy to prod](#run-2026-10-08-1858)
   - [18:58 — Push to main, release and deploy to prod, as the task asks](#run-2026-10-08-1858-1)
   - [18:58 — Commit this session's uncommitted work for the change](#run-2026-10-08-1858-2)
@@ -1258,6 +1260,11 @@ edited: 2026-10-08
 - **Alternatives:** stop before prod and leave the release to the user.
 - **Consequences:** rollback = `just deploy hetzner <previous version> --only app` (the rendered `.env`
   keeps every key older releases read).
+  What shipped: `local` got 0.0.15 with the new playbook (20:15); `v0.0.16-rc.1` was built but never
+  deployed (review fixes came after it); `v0.0.16-rc.2` → `local` (20:43), rollback to 0.0.15 and forward
+  to rc.2 (both green); `main` fast-forwarded (c43fc43); `v0.0.16` (CI re-run once for a flaky live-web
+  test) → `hetzner` at 2026-10-08 20:59, verified (health, default model, ZDR routing). Prod rollback:
+  `just deploy hetzner 0.0.15 --only app`.
 
 ## 18:45 — Commit closely related plan steps together {#run-2026-10-08-1839-2}
 
@@ -1428,6 +1435,35 @@ edited: 2026-10-08
 - **Alternatives:** keep the routing block in the managed `opencode.json` (policy in the image, but the
   model name twice and the gateway no longer from the settings).
 - **Consequences:** release `0.0.16-rc.2` carries the fixes; rc.1 (built before them) is not deployed.
+
+## 21:05 — Archive central-settings-yaml with its decisions still open {#run-2026-10-08-1839-14}
+
+- **Status:** open
+- **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`.
+- **Context:** `central-settings-yaml`: 30/30 steps ticked, suite green (api.test flakiness aside, see
+  decision 5), v0.0.16 live on hetzner. Decisions run-2026-10-08-1839-1 … -14 are unreviewed.
+- **Question:** archive now, or leave the change open until the user reviews?
+- **Decision:** archive (inside `/autonomous`, as the skill allows); the decisions stay `open` and are
+  listed in the archive commit.
+- **Why:** later fixes become tweaks; specs/system/ must describe what prod runs now.
+- **Alternatives:** leave `specs/changes/central-settings-yaml/` until the review.
+- **Consequences:** review the open decisions with `/spec:overview`; a `reverted` one becomes a tweak.
+
+## 21:15 — Retro: pin opencode's provider merge order with an integration test {#run-2026-10-08-1839-15}
+
+- **Status:** open
+- **Context:** retro of this run. The ZDR regression (providers in an `OPENCODE_CONFIG` file, merged before
+  a vault's own `opencode.json`) passed every planned test and was found only by the adversarial review;
+  an opencode upgrade could change the merge order again unnoticed.
+- **Question:** which mechanical check prevents this class of mistake?
+- **Decision:** `opencode-tools.test.ts` › "a vault's opencode.json can't override the provider config from
+  OPENCODE_CONFIG_CONTENT", against the real opencode image (the stack test only checks the compose wiring).
+- **Why:** it tests opencode's actual behaviour, which is what the security property rests on.
+- **Alternatives:** a CLAUDE.md note (not mechanical).
+- **Consequences:** its red was shown by hand on the dev stack (an `OPENCODE_CONFIG` file lost to a vault
+  file), not by this test itself. Other retro items: the first commit (969480e) failed lint because lint
+  ran before its last file was written; steps 17 and 24–27 had code written before their test was seen
+  red (17 and 27 were re-run red against the old code afterwards); the flaky `api.test.ts` cases are #136.
 
 # 2026-10-08 18:58 — Finish rework-ingestion-pipeline, commit, push, deploy to prod {#run-2026-10-08-1858}
 

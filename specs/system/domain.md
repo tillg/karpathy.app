@@ -31,7 +31,7 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Attach preflight** | The check that runs when a vault is added, before anything is stored or cloned into the vault directory: repo and branch reachable with the GitHub token, vault root exists, required folders present. A vault that fails it was never attached. | `preflight()` |
 | **Missing folders** | The required folders absent from the vault root of a repo being attached. The user decides whether to create them. | `409 missing-folders` |
 | **Folder placeholder** | An empty `.gitkeep` that makes a created folder exist in git. It is an uncommitted change like any other; nothing is committed for the user. | `Vaults.createFolders` |
-| **GitHub token** | The single, server-wide credential for every git operation against GitHub (clone, pull, push, preflight). Set in the app's settings or, as fallback, the deployment's `GITHUB_TOKEN` secret. Never sent to the client in full (last 4 characters only), never given to the AI, never written into a repo. | `GitHubToken`, `config.githubToken` |
+| **GitHub token** | The single, server-wide credential for every git operation against GitHub (clone, pull, push, preflight). Set in the app's settings or, as fallback, the deployment's `github_token` secret (setting `git.github_token`). Never sent to the client in full (last 4 characters only), never given to the AI, never written into a repo. | `GitHubToken`, `config.githubToken` |
 | **Token source** | Where the active token comes from: `settings` (set in the app, wins), `secret` (the deployment secret, used while none is set in the app) or `none`. | `SettingsView.githubToken.source` |
 | **Token test** | A check of a token, the stored one or one typed but not saved: does GitHub accept it, whose is it, its scopes and expiry, and can it reach each configured vault's repo and branch. Stores nothing. | `TokenTest` |
 | **Vaults dialog** | Where the user manages vaults: the vault list, a vault's details (edit, retry, remove), Add vault and "What is a vault?". Opened from the vault menu's **Manage vaults…** or, on one vault's details, from **Edit vault**. Holds nothing that applies to every vault. *Avoid:* admin area, "Vaults & settings". | `adminOpen.view = 'vaults'`, `VaultsDialog` |
@@ -97,7 +97,7 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Web access** | The global setting, on by default. On: the AI may web search and web fetch in every vault. Off: it has neither tool. | `Settings.webAccess` |
 | **Web search / web fetch** | One call of `websearch` (a query to the search backend, results with titles, URLs and page text) or `webfetch` (one URL downloaded as Markdown, text or an image into the chat). Never just "search" (that's the user's vault search) or "fetch". | `ToolCall.query`, `ToolCall.url` |
 | **Known URL** | A URL that appears verbatim in the chat as the model saw it: user messages and earlier tool outputs (notes read, results, fetched pages; a truncated output counts as its preview). Only known URLs may be fetched or offered as a link; scheme/host case, default port and fragment don't matter, path and query must match. The hidden instructions of a command turn count as user text, so a URL written in a skill is known. | `deploy/opencode/lib/known-url.ts` |
-| **Web caps** | At most N web fetches and N web searches per turn, counted separately (default 20 each, per target). A media download counts as a web fetch. | `WEB_FETCH_CAP`, `WEB_SEARCH_CAP` |
+| **Web caps** | At most N web fetches and N web searches per turn, counted separately (20 each; a setting per environment). A media download counts as a web fetch. | settings `ai.web.fetch_cap` / `search_cap` → `WEB_FETCH_CAP`, `WEB_SEARCH_CAP` |
 | **Media download** | One call of the AI's `save_url` tool: a known http(s) URL saved into the vault as a **new** media file or PDF (never an overwrite, at most 50 MB, wrong Content-Type refused, no SVG), at the path the AI picks next to the note, so the AI can embed it with `![[path]]`. Needs Web access and no conflict; counts as a web fetch; always goes through the egress proxy. Streams as a changed chip. *Avoid:* attach, upload (that's the user's). | `save_url` tool, `ToolCall.url`, `ToolCall.writes` |
 | **Web content** | Search results and fetched pages: untrusted input, like an ingested note. Lives only in the chat; reaches the vault only if the AI writes about it. | tool output |
 | **Search backend** | Exa, the one recipient of web search queries; fixed by the release (opencode image env). | `OPENCODE_WEBSEARCH_PROVIDER=exa` |
@@ -149,7 +149,7 @@ Terms for running the app, not for using it ([deployment.md](deployment.md)).
 | **Release** | A git tag `vX.Y.Z` with the four images CI built from it and the `compose.yml` attached to the GitHub release. Never changes once published; a tag whose images failed to build isn't one. *Avoid:* build, deployment. | `.github/workflows/release.yml` |
 | **Pre-release** | A release from a `vX.Y.Z-rc.N` tag, from any commit. Deployable by name, never GitHub's "Latest" or `:latest`. | `guard` job |
 | **Version (of a release)** | `X.Y.Z`, the tag without the `v`; also the image tag and what `/api/health` reports. Local builds report `dev`. | `APP_VERSION` |
-| **Target** | A named place a release is deployed to: `local` (the Lima VM) or `hetzner`. One host with its own settings and secrets. *Avoid:* environment, stage, server. | `deploy/ansible/inventories/<target>` |
+| **Target** | A named place a release is deployed to: `local` (the Lima VM) or `hetzner`. One host with its own secrets (Ansible Vault) and host provisioning (inventory); its app settings are the **environment** of the same name (`deploy/settings/<target>.yaml`). Every target is an environment, not every environment a target. *Avoid:* stage, server. | `deploy/ansible/inventories/<target>`, `deploy/settings/<target>.yaml` |
 | **Deployment** | One `just deploy <target> [version]`: brings the host to the desired state, starts the release, ends with the smoke check. *Avoid:* rollout, ship. | `site.yml` |
 | **Current release** | The release a target runs now; earlier ones stay for rollback. | `/opt/karpathy.app/current` |
 | **Rollback** | A deployment of an older release, with today's playbook. | — |
@@ -177,8 +177,69 @@ alone (project `karpathy-app`), not numbered stacks.
 | **Remembered stack** | The number in `<checkout>/tmp/dev/stack`, written by `just dev up` and deleted by `just dev down`. Every later `dev`, `e2e` and `prodtest` command in that checkout uses it. A checkout holds at most one stack. | `stack_resolve`, `stack_remember` |
 | **Paired prodtest** | The prod images as project `karpathy-app-N-prodtest` on 80N5, taking N from the checkout's dev stack (remembered in `tmp/prodtest/stack` while it runs, so it outlives `just dev down`). | `just prodtest` |
 | **Native Ollama** | The dev LLM server on the Mac itself (LaunchAgent `app.karpathy.ollama`, `127.0.0.1:11434`, Metal GPU, models in `~/.ollama`), shared by all stacks and their prodtests. An outside service, like a cloud provider. | `just ollama install` |
-| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native Ollama and answers 403 to everything else. | `deploy/proxy/Caddyfile.ollama-relay` |
+| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native Ollama and answers 403 to everything else. The `local` target has one too (`ollama-relay`). Where it finds Ollama is the gateway's `relay_upstream` (`OLLAMA_UPSTREAM`): `host.docker.internal:11434` from a dev stack, `192.168.5.2:11434` from the Lima VM. | `deploy/proxy/Caddyfile.ollama-relay` |
 | **Stack label** | `karpathy #N`, the header brand (vault switcher) on dev stack N, so a browser tab shows which stack it is. Everywhere else the brand is `karpathy.app`. | `lib/brand.ts` › `brandName` |
+
+### Settings
+
+Terms for configuring the app per environment ([architecture.md](architecture.md#settings)).
+
+| Term | Meaning | In code |
+|---|---|---|
+| **Setting** | A value an operator chooses per environment and the app reads at start: gateway, model, domain, TLS mode, timezone, git identity and remote base, web caps, visible dot-dirs, which secret each component needs. Never changed by the app itself. *Avoid:* config (that's `config.json`, runtime state). | `Settings` (`packages/settings`) |
+| **Environment** | A named way the stack runs: `dev` (dev stack N), `prodtest`, `test` (CI and the backend's integration tests), `local` (the Lima VM target) and `hetzner` (production). It exists exactly when `deploy/settings/<env>.yaml` exists. Every target is an environment; not every environment is a target. | `environments()` |
+| **Central settings file** | `deploy/settings/settings.yaml`, committed: every setting with the value all environments share. Must validate on its own as complete settings. | `settingsSchema` |
+| **Environment file** | `deploy/settings/<env>.yaml`, committed: the same shape, but only what that environment overrides (all keys optional, unknown keys still fail). | `partialSettingsSchema` |
+| **Local overlay** | Optional, gitignored `deploy/settings/dev.local.yaml` or `prodtest.local.yaml`: one developer's own choices on top (e.g. "use OpenRouter"). Never read for `test` or a target (a `local.local.yaml` or `hetzner.local.yaml` is an error) and ignored by the tests (`--no-local`). Replaces the hand-edited `deploy/.env`. | `loadSettings(env, { overlay })` |
+| **Effective settings** | The central file deep-merged with the environment file and (dev, prodtest) the local overlay: maps merge key by key; scalars, lists and secret references replace. Validated as complete again, plus cross-field rules. `just settings show <env>` prints them. | `loadSettings()` |
+| **Secret reference** | A setting value `{ secret: <name> }`, optionally `optional: true`: *which* secret a component needs, never its value. The name (`[a-z][a-z0-9_]*`) is a file name in the secret store. Any string setting may be one (production's git author is). | `secretRef`, `secretRefs()` |
+| **Secret store** | A directory with one file per secret name, read when rendering: `deploy/secrets/` (dev), `tmp/prodtest/secrets/` (prodtest), and on a deployment a private temp dir on the Ansible controller filled from the target's vault. A missing or empty file fails unless the reference is optional. | `resolveSecrets()` |
+| **Gateway** | A named way to reach LLMs, the key is opencode's provider id: a kind (`openrouter`, `anthropic`, `openai`: built into opencode, any model id is valid; `openai-compatible`: only its listed models), optional base URL, API key (a secret reference), the relay upstream (Ollama) and per-model options (e.g. OpenRouter's zero-data-retention routing). `ai.gateway` picks one per environment. | `gateways`, `BUILT_IN_KINDS` |
+| **Default model** | `ai.model` of the effective settings, `<gateway>/<model id>`. What the backend and opencode use unless an admin overrode it. The `test` environment adds `ai.vision_model`. | `settings.json` `ai.model`, `ConfigStore.defaultModel` |
+| **Model override** | The model an admin picked in the Settings dialog, stored in `config.json` only while it differs from the default model; choosing the default again removes it, so the next default change reaches the installation. | `modelOverride`, `SettingsView.modelOverridden` |
+| **Rendered files** | What the renderer writes from the effective settings for components that can't read YAML: the compose `.env`, `opencode.env` (API key, web caps, model, provider config) and the backend's `settings.json`. Generated, never edited, never committed. | `just settings render`, `tmp/settings/<env>/` |
+
+Three kinds of configuration exist; only settings live in `deploy/settings/`:
+
+```mermaid
+flowchart TB
+  subgraph S["Settings: chosen per environment, read at start"]
+    s1[gateway, default model]
+    s2[domain, TLS, timezone]
+    s3[git identity, remote base]
+    s4[web caps, visible dot-dirs, secret references]
+  end
+  subgraph R["Runtime state: written by the app"]
+    r1[vaults]
+    r2[model override, GitHub token, threshold, web access]
+    r3[aiTouched, edit stamps, queued prompts]
+  end
+  subgraph P["Policy: versioned with the code, same everywhere"]
+    p1[opencode agents and permissions]
+    p2[egress rules]
+    p3[Caddy headers, CSP]
+  end
+  S -->|deploy/settings/| F[(central file +<br/>environment files)]
+  R -->|config.json| C[(config volume)]
+  P -->|baked into images| I[(images)]
+```
+
+The **model** spans the first two: the settings hold the default, `config.json` an optional override. Which model a
+turn uses:
+
+```mermaid
+flowchart LR
+  D[effective settings<br/>ai.model] --> E{model override<br/>in config.json?}
+  E -- no --> U[model used]
+  E -- yes --> O[override] --> U
+  A[admin saves a model] -->|= default| X[override removed]
+  A -->|≠ default| Y[override stored]
+```
+
+The commit reminder threshold and Web access also take their first value from the settings
+(`commit_reminder_threshold`, `ai.web.access`), but there a value saved in the app keeps winning; only the model
+has override semantics. The GitHub token is similar: the secret reference names the deployment's token, a token set
+in the app wins.
 
 ## Concepts and entities
 
@@ -214,10 +275,11 @@ erDiagram
   TURN }o--o| COMMAND : "may start with"
 ```
 
-- **Settings** are server-wide: the commit reminder threshold and the **model** (`provider/model`, default
-  `anthropic/claude-sonnet-5`). There is no per-chat model. The **GitHub token** is managed next to them but is
-  stored separately from them (never part of `Settings`).
-- The **GitHub token** is optional in the app: with none set, the deployment's `GITHUB_TOKEN` secret is used.
+- **Settings** (the app's, in the Settings dialog) are server-wide: the commit reminder threshold, Web access and
+  the **model** (`provider/model`). The default model comes from the environment's settings (`ai.model`, see
+  [Settings](#settings)); the dialog stores a **model override** only while it differs from it. There is no per-chat
+  model. The **GitHub token** is managed next to them but is stored separately from them (never part of `Settings`).
+- The **GitHub token** is optional in the app: with none set, the deployment's `github_token` secret is used.
   Removing the stored token falls back to the secret again. A token changed in the app applies to the next git
   operation without a restart. There is one token for all vaults; one per owner would be the follow-up if vaults ever
   span several owners (a fine-grained token covers one owner's repos).
@@ -225,7 +287,8 @@ erDiagram
   The same repo + branch + root can't be added twice, also not while the first add's preflight is still running.
   A vault exists in the config only after its attach preflight passed and, if folders were missing, the user agreed
   to create them.
-- A **vault file** is identified by its path relative to the vault root; dot-files and `.git` are never listed.
+- A **vault file** is identified by its path relative to the vault root; dot-files and `.git` are never listed, dot-folders only when the setting
+  `files.visible_dot_dirs` names them (today `.agents`).
 
 ### Media kinds
 
@@ -269,7 +332,7 @@ more.
 | **Public web** | Serves fetched pages; untrusted. |
 | **Obsidian / other git clients** | Change the same GitHub repo from other devices; their changes arrive on the next pull and can cause a conflict. |
 | **GitHub** | Hosts the vault repos; the backend clones, fetches and pushes with the GitHub token, and asks `GET /user` to test it. |
-| **LLM provider** (e.g. Anthropic; the native Ollama on the Mac in dev) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
+| **LLM provider** (the environment's gateway: OpenRouter in production; the native Ollama on the Mac in dev, prodtest and on `local`) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
 
 ## Processes
 
@@ -733,3 +796,5 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
 - **Link offers follow the known-URL rule and need the user's tap.** The AI offers a page only when the user asked
   to see one.
 - **Single user:** one bearer token, one git identity, one server-wide model.
+- **Settings name secrets, never hold them:** `deploy/settings/` is committed to a public repo, so a secret appears
+  there only as a secret reference; its value stays in a secret store. Rendered files are generated, never edited.
