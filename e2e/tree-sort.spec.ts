@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { backendExec, expect, openApp, test } from './helpers';
 
 // Sort and filter the file tree (#122). Folders start collapsed, so the visible file rows are the
-// vault root's files: AGENTS.md, Home.md, Ideas.md, all from the same seed commit.
+// vault root's files: AGENTS.md, CLAUDE.md, Home.md, Ideas.md, all from the same seed commit.
 const rootFiles = (page: Page) => page.locator('[data-testid="tree-item"][data-type="file"]');
 const sortButton = (page: Page) => page.getByTestId('tree-sort');
 const item = (page: Page, name: string | RegExp) => page.getByRole('menuitemradio', { name });
@@ -12,7 +12,7 @@ test.describe('tree sort and filter', () => {
     // Uncommitted now, so newer than the seed commit.
     await api.write(vault.id, 'Ideas.md', '# Ideas\n\nchanged\n');
     await openApp(page, vault.id);
-    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['AGENTS.md', 'Home.md', 'Ideas.md']);
+    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['AGENTS.md', 'CLAUDE.md', 'Home.md', 'Ideas.md']);
     await expect(sortButton(page)).not.toHaveClass(/\bon\b/);
 
     await sortButton(page).click();
@@ -20,9 +20,9 @@ test.describe('tree sort and filter', () => {
     await expect(item(page, 'Z → A')).toBeVisible();
     await item(page, 'Last changed').click();
     await expect(item(page, 'Newest first')).toHaveAttribute('aria-checked', 'true');
-    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['Ideas.md', 'AGENTS.md', 'Home.md']);
+    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['Ideas.md', 'AGENTS.md', 'CLAUDE.md', 'Home.md']);
     await item(page, 'Oldest first').click();
-    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['AGENTS.md', 'Home.md', 'Ideas.md']);
+    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['AGENTS.md', 'CLAUDE.md', 'Home.md', 'Ideas.md']);
     await item(page, 'Name').click();
     await expect(item(page, 'A → Z')).toHaveAttribute('aria-checked', 'true');
     await item(page, 'Last changed').click();
@@ -31,24 +31,24 @@ test.describe('tree sort and filter', () => {
     await expect(sortButton(page)).toHaveClass(/\bon\b/);
 
     await page.reload();
-    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['Ideas.md', 'AGENTS.md', 'Home.md']);
+    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['Ideas.md', 'AGENTS.md', 'CLAUDE.md', 'Home.md']);
     await expect(sortButton(page)).toHaveClass(/\bon\b/);
   });
 
   test('a save elsewhere moves the note up without a reload', async ({ page, api, vault }) => {
     await openApp(page, vault.id);
-    await expect(rootFiles(page)).toHaveCount(3);
+    await expect(rootFiles(page)).toHaveCount(4);
     // Modified while sorted by name (no refetch needed then): switching to Last changed must use fresh dates.
     await api.write(vault.id, 'Home.md', '# Home\n\nfrom another tab\n');
     await page.waitForTimeout(1500); // the change event has arrived and been handled
     await sortButton(page).click();
     await item(page, 'Last changed').click();
     await page.keyboard.press('Escape');
-    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['Home.md', 'AGENTS.md', 'Ideas.md']);
+    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['Home.md', 'AGENTS.md', 'CLAUDE.md', 'Ideas.md']);
     // An existing file modified elsewhere (another tab, the AI): no new path, so today's tree doesn't refetch.
     await page.waitForTimeout(1100); // mtimes must differ
     await api.write(vault.id, 'Ideas.md', '# Ideas\n\nfrom another tab\n');
-    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['Ideas.md', 'Home.md', 'AGENTS.md']);
+    await expect.poll(() => rootFiles(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-path')))).toEqual(['Ideas.md', 'Home.md', 'AGENTS.md', 'CLAUDE.md']);
   });
 
   test('a filtered-out open note does not expand its folders', async ({ page, vault }) => {
