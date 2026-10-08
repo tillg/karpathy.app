@@ -101,6 +101,8 @@ edited: 2026-10-08
   - [18:58 — Give CI read access to ingest_email with a deploy key, not a personal token](#run-2026-10-08-1858-5)
   - [18:58 — No Ingest button in the phone Files header](#run-2026-10-08-1858-6)
   - [18:58 — Deploy prod with no ingest profiles; leave the cutover to the user](#run-2026-10-08-1858-7)
+  - [19:20 — Extend the compose topology tests for the new ingest service](#run-2026-10-08-1858-8)
+  - [19:20 — Instagram status read from the vaults, not from ingest_email](#run-2026-10-08-1858-9)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1312,3 +1314,31 @@ edited: 2026-10-08
   prerequisites (decision 4) also argue for waiting.
 - **Alternatives:** enable profiles now (double fetch, untested prerequisites).
 - **Consequences:** report lists the cutover steps.
+
+## 19:20 — Extend the compose topology tests for the new ingest service {#run-2026-10-08-1858-8}
+
+- **Status:** open
+- **Overrides:** `~/.claude/CLAUDE.md` — never make tests pass by changing them without explicit permission.
+- **Context:** `rework-ingestion-pipeline` steps 10 and 14: `apps/backend/test/plan-gaps.test.ts` pins the exact service
+  list ("four services") and each service's exact secrets; the change adds the `ingest` service and gives the backend
+  `ingest_token`, both as `architecture.md` specifies.
+- **Question:** change these assertions?
+- **Decision:** extend them: five services, `ingest` publishes no port, backend secrets include `ingest_token`,
+  `ingest` gets exactly `gog_keyring_password` and `ingest_token`. Nothing is loosened.
+- **Why:** the test encodes the topology the spec changes on purpose; each new line asserts more than before.
+- **Alternatives:** leave them red (blocks every commit).
+- **Consequences:** none beyond the stricter checks.
+
+## 19:20 — Instagram status read from the vaults, not from ingest_email {#run-2026-10-08-1858-9}
+
+- **Status:** open
+- **Context:** `rework-ingestion-pipeline` step 13; architecture §6 has instascraper write `/state/instagram-status.json`
+  on a rejected session, which needs ingest_email changes (decision 4 leaves that repo alone).
+- **Question:** how does `GET /instagram/status` know "expired" and "N links waiting"?
+- **Decision:** from the vaults: Instagram links in an `Input/` item's `unresolved_links` with reason `no-session` are
+  "waiting"; a session in place plus waiting links = `expired`. A login writes its session to a staging dir and moves it
+  into place only on success, and sets `IG_USERNAME` in instascraper's config so the resolver uses it.
+- **Why:** works with the pinned ingest_email as is; the reason `no-session` is what its resolver writes today.
+- **Alternatives:** a status file written by ingest_email (needs its prerequisite work).
+- **Consequences:** with the pinned ingest_email a `no-session` link is still given up after 5 attempts (prerequisite
+  open); the count then drops although nothing was fetched.

@@ -49,6 +49,9 @@ services:
   # No profiles: the loop idles (dev stacks never read a real Gmail label).
   ingest:
     image: !reset null
+    # The e2e suite's Instagram login: no Instagram, password `wrong` fails, user twofa… asks for code 000000.
+    environment:
+      INGEST_FAKE_INSTAGRAM_LOGIN: "1"
     volumes:
       - ingest-state:/state
       - ./ingest/config.none.json:/etc/ingest/config.json:ro

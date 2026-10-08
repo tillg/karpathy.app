@@ -25,6 +25,7 @@ check:
     bash deploy/stack.test.sh
     bash deploy/ingest/run.test.sh
     bash deploy/ingest/compose.test.sh
+    bash deploy/ingest/server.test.sh
     node --experimental-strip-types --test e2e/stack.unit.ts
 
 # The dev LLM, native on this Mac (Metal GPU) and shared by all dev stacks: `just ollama install|uninstall|status`

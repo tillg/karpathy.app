@@ -49,8 +49,19 @@ for d in "$VAULTS"/*/Input/.tmp-*; do
   [ -d "$d" ] && rm -rf "$d" && log "removed leftover $d"
 done
 
+# The internal endpoint (Admin › Instagram via the backend), restarted if it dies.
+SERVER=${INGEST_SERVER:-/opt/ingest/server.py}
+server_pid=
+serve() {
+  [ -f "$SERVER" ] || return 0
+  if [ -z "$server_pid" ] || ! kill -0 "$server_pid" 2>/dev/null; then
+    python3 "$SERVER" & server_pid=$!
+  fi
+}
+
 last_fetch=0
 while :; do
+  serve
   profiles=$(render) || { log "config unreadable: $CONFIG"; profiles=""; }
   now=$(date +%s)
   fetch=$(( now - last_fetch >= FETCH_S ))

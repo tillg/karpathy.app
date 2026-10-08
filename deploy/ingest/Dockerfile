@@ -12,7 +12,7 @@ COPY --from=ingest_email . /src/ingest_email
 RUN python -m venv /opt/venv \
  && /opt/venv/bin/pip install --no-cache-dir /src/ingest_email "instascraper @ git+https://github.com/tillg/instascraper@${INSTASCRAPER_REF}"
 
-FROM python:3.13-slim
+FROM python:3.13-slim AS base
 ARG APP_UID=1000
 ARG APP_GID=1000
 ARG TARGETARCH
@@ -33,7 +33,21 @@ RUN set -e; \
     mkdir -p /state /vaults; chown ${APP_UID}:${APP_GID} /state /vaults
 COPY --from=build /opt/venv /opt/venv
 COPY --chmod=755 deploy/ingest/run.sh /usr/local/bin/ingest-loop
-ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1
-USER ${APP_UID}:${APP_GID}
+COPY deploy/ingest/server.py /opt/ingest/server.py
+ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 PYTHONPATH=/opt/ingest
 WORKDIR /state
 CMD ["/usr/local/bin/ingest-loop"]
+
+# Test stage (`--target test`): the runtime plus pytest and the server's tests. Never published.
+FROM base AS test
+RUN /opt/venv/bin/pip install --no-cache-dir pytest
+COPY deploy/ingest/test_server.py /opt/ingest/test_server.py
+ARG APP_UID=1000
+ARG APP_GID=1000
+USER ${APP_UID}:${APP_GID}
+
+# The published image (last stage).
+FROM base
+ARG APP_UID=1000
+ARG APP_GID=1000
+USER ${APP_UID}:${APP_GID}

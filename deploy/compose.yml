@@ -54,11 +54,14 @@ services:
       OPENCODE_URL: http://opencode:4096
       DEFAULT_MODEL: ${DEFAULT_MODEL:-anthropic/claude-sonnet-5}
       OPENCODE_VAULTS_DIR: /vaults
+      # The ingest service's internal endpoint (Admin › Instagram), token-guarded.
+      INGEST_URL: http://ingest:8090
+      INGEST_TOKEN_FILE: /run/secrets/ingest_token
       # Commit and log timestamps in the target's timezone (role app writes TZ to .env).
       TZ: ${TZ:-Etc/UTC}
       # When the running release was deployed, reported by /api/health (role app writes it to .env).
       DEPLOYED_AT: ${DEPLOYED_AT:-}
-    secrets: [bearer_token, github_token, opencode_password]
+    secrets: [bearer_token, github_token, opencode_password, ingest_token]
     volumes:
       - vaults:/vaults
       - config:/config

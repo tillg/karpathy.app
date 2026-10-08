@@ -32,6 +32,10 @@ for v in prod dev prodtest; do
 done
 
 check "prod: the image build takes ingest_email as a named build context, no token secret" py "$prod" "s['build'].get('additional_contexts', {}).get('ingest_email', '').endswith('tmp/ingest_email-src') and not s['build'].get('secrets') and 'gh_token' not in c.get('secrets', {})"
+check "prod: no fake Instagram login" py "$prod" "'INGEST_FAKE_INSTAGRAM_LOGIN' not in s['environment']"
+check "prodtest: no fake Instagram login" py "$prodtest" "'INGEST_FAKE_INSTAGRAM_LOGIN' not in s['environment']"
+check "dev: the fake Instagram login (e2e)" py "$dev" "s['environment'].get('INGEST_FAKE_INSTAGRAM_LOGIN') == '1'"
+check "prod: the backend reaches the ingest endpoint with the token" py "$prod" "c['services']['backend']['environment']['INGEST_URL'] == 'http://ingest:8090' and 'ingest_token' in [x['source'] for x in c['services']['backend']['secrets']]"
 check "prod: the whole vaults volume is not mounted (the deploy adds per-vault Input/ and Sources/)" py "$prod" "not any(m['target'] == '/vaults' for m in s['volumes'])"
 for v in dev prodtest; do
   j=${!v}

@@ -136,7 +136,7 @@ and 16 therefore replace instascraper's login function with a fake that answers 
 password", and step 14 talks to a local HTTP stand-in for the ingest service — **both are mocks and need your OK**
 before `/spec:apply` writes them. The real login is checked once by hand on the `local` VM (step 15's Verify).
 
-- [ ] Ingest service endpoint: status, login, code, disconnect (token-guarded, one pending login, 5-min timeout)
+- [x] Ingest service endpoint: status, login, code, disconnect (token-guarded, one pending login, 5-min timeout)
   - Depends on: 10
   - Test first: `deploy/ingest/test_server.py` (pytest, run in the image) › no token → 401; login → `code` → code →
     `connected`, session file 0600 and no password anywhere under `/state`; second login replaces a pending one; code
