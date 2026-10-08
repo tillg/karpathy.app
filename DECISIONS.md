@@ -108,6 +108,7 @@ edited: 2026-10-08
   - [19:55 — Keep `domain` in the inventory, checked against the settings](#run-2026-10-08-1839-12)
   - [20:30 — Act on the review: providers via OPENCODE_CONFIG_CONTENT, and which findings stay open](#run-2026-10-08-1839-13)
   - [21:05 — Archive central-settings-yaml with its decisions still open](#run-2026-10-08-1839-14)
+  - [21:15 — Retro: pin opencode's provider merge order with an integration test](#run-2026-10-08-1839-15)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1425,3 +1426,19 @@ edited: 2026-10-08
 - **Why:** later fixes become tweaks; specs/system/ must describe what prod runs now.
 - **Alternatives:** leave `specs/changes/central-settings-yaml/` until the review.
 - **Consequences:** review the open decisions with `/spec:overview`; a `reverted` one becomes a tweak.
+
+## 21:15 — Retro: pin opencode's provider merge order with an integration test {#run-2026-10-08-1839-15}
+
+- **Status:** open
+- **Context:** retro of this run. The ZDR regression (providers in an `OPENCODE_CONFIG` file, merged before
+  a vault's own `opencode.json`) passed every planned test and was found only by the adversarial review;
+  an opencode upgrade could change the merge order again unnoticed.
+- **Question:** which mechanical check prevents this class of mistake?
+- **Decision:** `opencode-tools.test.ts` › "a vault's opencode.json can't override the provider config from
+  OPENCODE_CONFIG_CONTENT", against the real opencode image (the stack test only checks the compose wiring).
+- **Why:** it tests opencode's actual behaviour, which is what the security property rests on.
+- **Alternatives:** a CLAUDE.md note (not mechanical).
+- **Consequences:** its red was shown by hand on the dev stack (an `OPENCODE_CONFIG` file lost to a vault
+  file), not by this test itself. Other retro items: the first commit (969480e) failed lint because lint
+  ran before its last file was written; steps 17 and 24–27 had code written before their test was seen
+  red (17 and 27 were re-run red against the old code afterwards); the flaky `api.test.ts` cases are #136.
