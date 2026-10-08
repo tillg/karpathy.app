@@ -107,6 +107,7 @@ edited: 2026-10-08
   - [19:55 — Keep the targets' vault layout; role app maps vault values to secret names](#run-2026-10-08-1839-11)
   - [19:55 — Keep `domain` in the inventory, checked against the settings](#run-2026-10-08-1839-12)
   - [20:30 — Act on the review: providers via OPENCODE_CONFIG_CONTENT, and which findings stay open](#run-2026-10-08-1839-13)
+  - [21:05 — Archive central-settings-yaml with its decisions still open](#run-2026-10-08-1839-14)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1411,3 +1412,16 @@ edited: 2026-10-08
 - **Alternatives:** keep the routing block in the managed `opencode.json` (policy in the image, but the
   model name twice and the gateway no longer from the settings).
 - **Consequences:** release `0.0.16-rc.2` carries the fixes; rc.1 (built before them) is not deployed.
+
+## 21:05 — Archive central-settings-yaml with its decisions still open {#run-2026-10-08-1839-14}
+
+- **Status:** open
+- **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`.
+- **Context:** `central-settings-yaml`: 30/30 steps ticked, suite green (api.test flakiness aside, see
+  decision 5), v0.0.16 live on hetzner. Decisions run-2026-10-08-1839-1 … -14 are unreviewed.
+- **Question:** archive now, or leave the change open until the user reviews?
+- **Decision:** archive (inside `/autonomous`, as the skill allows); the decisions stay `open` and are
+  listed in the archive commit.
+- **Why:** later fixes become tweaks; specs/system/ must describe what prod runs now.
+- **Alternatives:** leave `specs/changes/central-settings-yaml/` until the review.
+- **Consequences:** review the open decisions with `/spec:overview`; a `reverted` one becomes a tweak.

@@ -50,9 +50,10 @@ flowchart LR
 |---|---|
 | Web | React 19, Vite 8, TypeScript, CodeMirror 6 (`lang-markdown`, own live-preview decorations), `marked` 18 + DOMPurify, vite-plugin-pwa (Workbox), framework7-icons. No router library (hash routes), no state library (one context hook). |
 | Backend | Node 22, Express, TypeScript run with `tsx` (no build step), zod validation, chokidar, `@opencode-ai/sdk` v2, `git` and `ripgrep` binaries. |
-| Agent harness | `opencode serve` 1.18.25 (pinned image `ghcr.io/anomalyco/opencode`), provider-agnostic; default model `anthropic/claude-sonnet-5`, Ollama `qwen2.5:3b` in dev and tests. |
+| Agent harness | `opencode serve` 1.18.25 (pinned image `ghcr.io/anomalyco/opencode`), provider-agnostic; gateway and default model per environment from `deploy/settings/` (OpenRouter `z-ai/glm-5.3` in production, the native Ollama `qwen2.5:3b` in dev, prodtest, tests and on `local`). |
 | Proxy | Caddy 2.10 built with a `caddy-dns/<provider>` module (GoDaddy) for DNS-01. |
 | Shared | `packages/shared`: TypeScript types for the API (no runtime schemas). |
+| Settings | `packages/settings`: zod schema, loader, secret resolution and renderer for `deploy/settings/` (YAML), run with `tsx` as `just settings …` ([Settings](#settings)). |
 | Tests | Vitest (backend projects `default`, `github`, `llm`; web unit tests for `lib/`), Playwright e2e (desktop, iPad, iPhone in Chromium and WebKit), axe-core. |
 | Website | Plain HTML + CSS in `site/`, no framework or dependencies; tests with `node:test`; GitHub Pages. |
 | Tooling | npm workspaces (`apps/*`, `packages/*`, `site`), ESLint flat config, `just`, GitHub Actions CI. |
@@ -150,7 +151,8 @@ on its own ([deployment.md › Website](deployment.md#website)).
 
 | Module | Responsibility |
 |---|---|
-| `main.ts` | Reads env and `*_FILE` secrets, wires the services, graceful shutdown. |
+| `main.ts` | Loads the settings (`SETTINGS_FILE`, default `/etc/karpathy/settings.json`), reads the container wiring from env (`PORT`, `VAULTS_DIR`, `CONFIG_DIR`, `OPENCODE_URL`, `OPENCODE_VAULTS_DIR`) and the build/deploy facts (`APP_VERSION`, `BUILT_AT`, `DEPLOYED_AT`), wires the services, graceful shutdown. |
+| `settings.ts` | `loadBackendSettings(path)`: parses the rendered `settings.json` with the backend's own zod schema and reads each `{ file }` secret; a missing or invalid file stops the start with the path and the failing key. |
 | `app.ts` | Express routes under `/api`, error mapping, NDJSON writer (15 s keepalive). `/healthz` outside auth; `/api/health` also reports the release version (`APP_VERSION`, `dev` for local builds), which the settings dialog shows next to the PWA's own. |
 | `auth.ts` | Bearer token check (hashed, constant-time compare). |
 | `vaults.ts` | Vault lifecycle (add with preflight, clone, patch, remove), file API, search, status, events, commit/push/discard, conflict resolution; per-vault runtime state; per-vault token access check (`checkAccess`). Reads the GitHub token through a getter per git operation. Runs the agents move after clone, pull and open (`agentsMove`), keeps the last result (`lastAgentsMove`) and counts running commit-message proposals (`proposing`, `isProposing`). |
@@ -165,11 +167,11 @@ on its own ([deployment.md › Website](deployment.md#website)).
 | `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface (`commands(dir)`, `refresh(dir)` next to prompt, models and events) and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`; `ToolCall.url` is set for `webfetch`, `open_url` and `save_url` (also in `WRITE_TOOLS`, so a download is a changed file and gets an AI stamp). |
 | `harness/command.ts` | Pure: `parseCommand`, `expandCommand`, `withoutBaseDir`, `commandInstructions`. |
 | `commit-message.ts` | Proposes commit messages with a throwaway, tool-less session; marked as a running proposal so a skill refresh doesn't cut it off. |
-| `config-store.ts` | Atomic, serialized writes to `/config/config.json`; also holds the GitHub token set in the app. |
+| `config-store.ts` | Atomic, serialized writes to `/config/config.json`; also holds the GitHub token set in the app. Knows the deployment's default model (`defaultModel`) and stores the model only as `modelOverride` while it differs from it ([Settings](#settings)). |
 
 ### opencode (`deploy/opencode`)
 
-The pinned stock image (`deploy/opencode/Dockerfile`) plus a **managed config** at `/etc/opencode/opencode.json` (merged last, so a vault can't override it):
+The pinned stock image (`deploy/opencode/Dockerfile`) plus a **managed config** at `/etc/opencode/opencode.json` (merged last, so a vault can't override it; it holds policy only, no provider):
 agents `vault` (edits allowed except `.git` and harness config), `vault-readonly` (default; used during conflicts) and
 `commit-message` (no tools); `bash`, `webfetch`, `websearch`, `save_url`, `task`, `question` and `external_directory` denied
 (`save_url` is allowed for `vault` only; `websearch`, `webfetch` and `save_url` are switched on per turn by the backend, see [Web access](#web-access));
@@ -179,6 +181,22 @@ reading `*.env` denied; snapshots, sharing and auto-update off. The image sets `
 opencode then reads a vault's skills from `.agents/skills/` only, and still loads `CLAUDE.md` and `AGENTS.md` (`AGENTS.md`
 first). The image has no git binary, so opencode can't detect
 a worktree and stays confined to the session directory (the vault root).
+
+**Model and provider** come from the environment's settings, through the rendered `opencode.env` (`env_file`):
+`OPENCODE_MODEL` (the default model), the gateway's API key under its provider's variable (`OPENROUTER_API_KEY`, …)
+and `OPENCODE_CONFIG_CONTENT`, the gateway's provider config as JSON (for OpenRouter the model's zero-data-retention
+routing, for Ollama the `openai-compatible` provider with base URL and model limits). opencode merges its configs in
+this order, later wins:
+
+```mermaid
+flowchart LR
+  V["vault's own opencode.json<br/>(project config)"] --> C["OPENCODE_CONFIG_CONTENT<br/>providers from deploy/settings/"]
+  C --> M["/etc/opencode/opencode.json<br/>managed: agents, permissions"]
+```
+
+So a vault can't switch off the zero-data-retention routing or point the gateway elsewhere. An `OPENCODE_CONFIG`
+file would be merged *before* the project config, which is why the providers don't travel that way (a vault's
+`zdr: false` won in the check that found it).
 
 The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `open_url`, `save_url`),
 `plugins/` (`known-url`), `lib/` (helpers) and `skills/` (the **app skills**, today `research`). The bake step waits for
@@ -232,7 +250,7 @@ throws what `guardWebCall(tool, args, messages, caps)` returns, or lets the call
 `open_url` and `save_url` it collects user text and completed tool outputs and refuses "URL not in this chat: paste it into the
 chat first" unless the URL is known (`extractUrls`, `isKnownUrl`); for `webfetch`, `save_url` and `websearch` it counts the calls
 after the last user message and refuses once the per-turn cap is reached (`capFromEnv`: `WEB_FETCH_CAP` /
-`WEB_SEARCH_CAP`, default 20; `webfetch` and `save_url` calls together count against the fetch cap). `save_url` is also in the
+`WEB_SEARCH_CAP` in `opencode.env`, rendered from `ai.web.fetch_cap` / `search_cap`, default 20; `webfetch` and `save_url` calls together count against the fetch cap). `save_url` is also in the
 plugin's `WRITE_TOOLS`: a file it saved and the AI reads back is not a known source. `open_url` has no cap: the user taps each chip. Stateless, so it survives an opencode
 restart.
 
@@ -250,7 +268,9 @@ Ollama host). Gotcha: `::ffff:0:0/96` or `0.0.0.0/8` in the ACL make Squid read 
 Serves the built PWA from `/srv` with SPA fallback, proxies `/api/*` to the backend unbuffered (`flush_interval -1`),
 sets CSP and security headers (`img-src` and `media-src` allow `blob:` for media embeds; `frame-src` and
 `object-src` stay closed), and gets its certificate by DNS-01 (`TLS_MODE=dns`; GoDaddy, with a 90 s wait for
-GoDaddy's nameservers) or from Caddy's internal CA (`TLS_MODE=internal`: prodtest and the `local` target). A
+GoDaddy's nameservers) or from Caddy's internal CA (`TLS_MODE=internal`: dev, prodtest and the `local` target).
+`DOMAIN`, `TLS_MODE` and `DNS_PROVIDER` come from the rendered `.env` (settings `proxy.domain`, `proxy.tls`,
+`proxy.dns.provider`). A
 plain-HTTP site on `127.0.0.1:8081` answers the container healthcheck.
 
 ## Communication
@@ -353,7 +373,8 @@ sequenceDiagram
   B-->>W: NDJSON parts → web chips
 ```
 
-- **Setting:** `Settings.webAccess` (default `true`; an old `config.json` reads as `true` through the defaults merge).
+- **Setting:** `Settings.webAccess`; its default is the environment's `ai.web.access` (`true`), and a value saved
+  in the app wins (an old `config.json` without it reads the default through the defaults merge).
 - **Per turn:** `chat.ts` sends `tools: { websearch: webAccess, webfetch: webAccess, save_url: webAccess && !readonly }` with every prompt of both chat
   agents, `false` included: opencode stores the map as the session's permission, replacing earlier rules and merged
   after the agent's. Any later per-turn rule must go into the same map.
@@ -760,7 +781,8 @@ sequenceDiagram
 - The preflight clone is blobless, depth 1 and without checkout (commits and trees only, small even for media-heavy
   vaults), made in a random `pre-*` dir under `<vaultsDir>/.preflight/` on the vaults volume, and always removed.
   `Vaults.init()` removes `.preflight/` at startup (leftovers of a crash). The clone is killed after 60 s. It also
-  works against `file://` remotes (`GIT_REMOTE_BASE`) in tests and dev.
+  works against `file://` remotes (setting `git.remote_base`, `file:///remotes/` in dev, prodtest and on `local`) in
+  tests and dev.
 - **Folder check:** `git ls-tree HEAD[:<root>]`; only entries of type tree count, so a *file* named `Wiki` is missing.
   Names match case-insensitively; missing ones are created as `Sources/` / `Wiki/`. A root that isn't in the tree
   gives `rootExists: false`.
@@ -781,7 +803,8 @@ sequenceDiagram
 
 - **Storage:** `ConfigData.githubToken`, a top-level key of `config.json` and deliberately not part of `Settings`,
   because `GET /settings` returns settings verbatim. `GitHubToken.current()` returns the stored token, else the
-  `GITHUB_TOKEN` secret read at startup; `source()` is `settings | secret | none`; `clear()` falls back to the secret.
+  deployment's `github_token` secret (settings `git.github_token`, a compose secret file named in `settings.json`)
+  read at startup; `source()` is `settings | secret | none`; `clear()` falls back to the secret.
   Existing deployments therefore keep working unchanged.
 - **Live getter:** `Vaults` gets `githubToken: () => string | undefined` instead of a startup string and calls it
   per git operation (clone, pull, push, preflight, access check), so a changed token applies to the next one, no restart.
@@ -789,7 +812,7 @@ sequenceDiagram
 
   | Route | Body | Reply |
   |---|---|---|
-  | `GET /settings`, `PATCH /settings` | | `SettingsView`: settings + `githubToken: { source, last4 \| null }` (last4 of the current token, stored or secret), never the plaintext, + `modelInput` ([Uploads](#uploads)) |
+  | `GET /settings`, `PATCH /settings` | `PATCH`: `{ commitReminderThreshold?, model?, webAccess? }`; `model: null` = back to the default | `SettingsView`: settings (`model` = the effective one) + `defaultModel`, `modelOverridden` ([Settings](#settings)) + `githubToken: { source, last4 \| null }` (last4 of the current token, stored or secret), never the plaintext, + `modelInput` ([Uploads](#uploads)) |
   | `PUT /settings/github-token` | `{ token }` (trimmed, 20–255 chars, no whitespace; else 400) | `204` |
   | `DELETE /settings/github-token` | | `204`; falls back to the secret |
   | `POST /settings/github-token/test` | `{ token? }`, else the current token | `200 TokenTest` |
@@ -800,8 +823,8 @@ sequenceDiagram
   `github-authentication-token-expiration`); it reports 401 as "GitHub rejected the token (401)." and network failure as
   "GitHub is not reachable from the server right now.". In parallel, `Vaults.checkAccess` runs
   `git ls-remote --exit-code --heads <remote><repo>.git <branch>` per configured vault with the tested token, which
-  proves repo access (a fine-grained token passes `/user` without it). Nothing is stored. API base and remote base
-  come from server env, never from the request.
+  proves repo access (a fine-grained token passes `/user` without it). Nothing is stored. API base (env
+  `GITHUB_API_BASE`) and remote base (setting `git.remote_base`) come from the server, never from the request.
 - **Redaction:** `GitHubToken` remembers every value seen since startup (secret, stored, every set and every tested
   token) and `redact()` masks each as `***`; `Vaults` redacts clone, preflight and access-check messages with it.
 
@@ -851,7 +874,9 @@ flowchart LR
 | Store | Content | Owner |
 |---|---|---|
 | Volume `vaults` → `/vaults/<id>` | Full git clone of each vault repo (no shallow or sparse clone). The notes themselves. | backend (git), opencode (file tools) |
-| Volume `config` → `/config/config.json` | `vaults` (config + `cloned` / `cloneError` / `pendingFolders`), `settings`, `githubToken` (plaintext, if set in the app), `aiTouched`, `editStamps` (per vault and path: last AI / human write, epoch ms), `conflicts`, `queued` turns. | backend only |
+| `deploy/settings/*.yaml` (git) | The settings of every environment: central file, environment files; gitignored local overlays for dev and prodtest. Secret references only. | operator / developer |
+| `tmp/settings/<env>/` (dev, prodtest), `/opt/karpathy.app/shared/` (target) | Rendered files: `.env` (compose), `opencode.env` (0600), `settings.json` (backend, mounted read-only at `/etc/karpathy/settings.json`). | renderer; Ansible on a target |
+| Volume `config` → `/config/config.json` | `vaults` (config + `cloned` / `cloneError` / `pendingFolders`), `settings` (threshold, web access, `modelOverride` only while ≠ the default model), `githubToken` (plaintext, if set in the app), `aiTouched`, `editStamps` (per vault and path: last AI / human write, epoch ms), `conflicts`, `queued` turns. | backend only |
 | `/vaults/.preflight/` | Short-lived blobless clones of the attach preflight; emptied at startup. | backend |
 | Volume `opencode-data` | opencode sessions = chat history, including attached files (base64, after opencode's resize), until the chat is deleted. | opencode |
 | localStorage `karpathy.chips:<vault>:<chat>` | Unsent chat attachments (path, version, type, size) and their source folder. | web |
@@ -878,8 +903,8 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 | System | Used for | Status |
 |---|---|---|
 | GitHub | Vault repos; fine-grained token as an HTTP extra header, never in `.git/config`; `api.github.com/user` for the token test | in use |
-| LLM providers (OpenRouter in production, any via opencode) | Model behind opencode; keys only in `opencode.env` | OpenRouter `z-ai/glm-5.3` on zero-data-retention hosts in production |
-| Ollama | Dev and local prod test (native on the Mac, `just ollama install`); CI and integration LLM tests (container) | in use |
+| LLM providers (OpenRouter in production, any via opencode) | Model behind opencode, chosen as the environment's gateway in `deploy/settings/`; keys only in the rendered `opencode.env` | OpenRouter `z-ai/glm-5.3` on zero-data-retention hosts in production |
+| Ollama | Dev, prodtest and the `local` target (native on the Mac, `just ollama install`); CI and integration LLM tests (container; models from `deploy/settings/test.yaml`) | in use |
 | Exa | Web search backend (opencode `websearch`, MCP at `mcp.exa.ai`); optional `EXA_API_KEY`, else the anonymous, rate-limited endpoint | in use |
 | Let's Encrypt + GoDaddy DNS | Certificate for `app.karpathy.app` via DNS-01; the A record points at the server's tailnet IP. The apex and `www` point at GitHub Pages | in use |
 | GitHub Pages | Hosts the website at `karpathy.app` (with GitHub's own Let's Encrypt certificate) | in use |
@@ -894,13 +919,15 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 - **Runtime = docker compose** in dev and prod (`deploy/compose.yml`). Services `proxy` (networks `edge` +
   `internal`), `backend` and `egress` (`internal` + `egress`), `opencode` (`internal` only, which is
   `internal: true`: no route out but the egress proxy); backend and opencode run as uid 1000; all with
-  `cap_drop: [ALL]`, `no-new-privileges` and log rotation. Secrets are files mounted as compose secrets
-  (`deploy/secrets/` in dev, `shared/secrets/` on a target: `bearer_token`, `github_token`, `opencode_password`);
-  provider keys, `EXA_API_KEY` and the web caps come from `opencode.env`.
+  `cap_drop: [ALL]`, `no-new-privileges` and log rotation. Settings come rendered from `deploy/settings/`
+  ([Settings](#settings)): compose interpolates `.env`, the backend reads `settings.json` (`SETTINGS_FILE`),
+  opencode gets `opencode.env`. Secrets are files mounted as compose secrets (`deploy/secrets/` in dev,
+  `tmp/prodtest/secrets/` in prodtest, `shared/secrets/` on a target: `bearer_token`, `github_token`,
+  `opencode_password`, `dns_api_token`); provider keys, `EXA_API_KEY` and the web caps come from `opencode.env`.
 - **Dev** (`compose.dev.yml`, `just dev up [N]`): numbered dev stacks side by side, one per checkout; stack N on
   https://localhost:80N0 with Caddy's internal CA, Vite with HMR (`web` service), bind-mounted sources, local bare
-  repos as remotes (`GIT_REMOTE_BASE=file:///remotes/`), the native Ollama on the Mac as the model. Details:
-  [Dev stacks](#dev-stacks).
+  repos as remotes (`dev.yaml`: `git.remote_base: file:///remotes/`), the native Ollama on the Mac as the model
+  unless the developer's `dev.local.yaml` picks another gateway. Details: [Dev stacks](#dev-stacks).
 - **Local prod test** (`compose.prodtest.yml`, `just prodtest`): the prod images as project
   `karpathy-app-N-prodtest` on https://localhost:80N5, paired with the checkout's dev stack N.
 - **CI** (`.github/workflows/ci.yml`): lint, typecheck, tests, web build, a compose config check, and
@@ -923,12 +950,16 @@ port block 80N0–80N9 (vocabulary: [domain.md](domain.md#development)).
 flowchart TD
     J["justfile<br/>dev · e2e · prodtest · ollama"] --> D["deploy/dev.sh"]
     J --> L
-    D --> L["deploy/stack.sh<br/>resolve N · ownership · ports"]
+    D --> L["deploy/stack.sh<br/>resolve N · ownership · ports<br/>settings_render · settings_legacy_check"]
     L -->|"docker compose ls -a"| DK[(Docker daemon)]
     L -->|"read/write"| F["tmp/dev/stack<br/>(this and other worktrees)"]
+    S["deploy/settings/<br/>settings.yaml + dev.yaml / prodtest.yaml<br/>+ local overlay"] --> L
+    L -->|"render"| R["tmp/settings/dev/ · tmp/settings/prodtest/<br/>.env · opencode.env · settings.json"]
+    R -->|"--env-file"| C
+    R -->|"--env-file"| P
     D -->|"-p karpathy-app-N<br/>STACK · PROXY_PORT · BACKEND_PORT"| C["compose.yml + compose.dev.yml<br/>proxy :80N0 · backend 127.0.0.1:80N1"]
     J -->|"-p karpathy-app-N-prodtest<br/>PRODTEST_PORT"| P["compose.yml + compose.prodtest.yml<br/>proxy :80N5"]
-    C -->|"ollama relay (/v1 only)<br/>→ host.docker.internal:11434"| OL[("native Ollama<br/>127.0.0.1:11434")]
+    C -->|"ollama relay (/v1 only)<br/>→ OLLAMA_UPSTREAM"| OL[("native Ollama<br/>127.0.0.1:11434")]
     P -->|"ollama-bridge relay (/v1 only)"| OL
     E["e2e/stack.ts"] -->|"read"| F
     E --> H["e2e/helpers.ts · global-setup.ts<br/>playwright.config.ts"]
@@ -951,7 +982,13 @@ flowchart TD
   `docker compose -p karpathy-app-N -f compose.yml -f compose.dev.yml` (`-p` overrides `name: karpathy-app`, so prod
   is untouched). `up` refuses a stack another checkout owns or whose ports a stranger holds (naming the owner and
   the first free stack), a second stack while this checkout holds one, and a missing native Ollama; it may take
-  over an orphan, remembers N, pulls the dev model unless Ollama has it, and prints URL and token. `down` keeps the
+  over an orphan, refuses a leftover hand-edited `deploy/.env` or `deploy/opencode.env` (`settings_legacy_check`:
+  names their keys, never values, and where each goes now), creates the dev secrets, renders this checkout's
+  `deploy/settings/` for `dev` into `tmp/settings/dev/` (`settings_render`; a missing secret or invalid setting stops
+  it before compose), remembers N, pulls the default model if it is an Ollama one Ollama lacks, and prints URL and
+  token. Compose gets `--env-file ../tmp/settings/dev/.env` whenever that file exists, so a stack started before
+  the settings can still go down. `just prodtest up` does the same for `prodtest` (secrets in
+  `tmp/prodtest/secrets/`, plus any `deploy/secrets/*_api_key` for a hosted gateway). `down` keeps the
   volumes and releases the claim. `stacks` lists 1–9 with state, URL and owner, read-only. Volumes (`vaults`,
   `config`, `caddy-data`) are per project, so each stack has its own vaults and Caddy CA.
 - **Images per stack.** The dev services reset `image:`, so compose names them `karpathy-app-N-<service>` and
@@ -961,10 +998,15 @@ flowchart TD
   LaunchAgent `app.karpathy.ollama` (`ollama serve` from Homebrew, `OLLAMA_HOST=127.0.0.1:11434`,
   `OLLAMA_CONTEXT_LENGTH=16384`, Metal GPU, models in `~/.ollama`); `status` and `uninstall` go with it. It refuses
   when another server already answers on 11434 (it would lack the context length). One Ollama serves every stack
-  and every prodtest. Containers reach the Mac's loopback as `host.docker.internal`.
-- **Ollama relay.** Each stack keeps a small Caddy (`ollama` in dev, `ollama-bridge` in prodtest, both
-  `deploy/proxy/Caddyfile.ollama-relay`) on the `internal` network (alias `ollama.internal`) and `egress`.
-  opencode's provider config (`dev-ollama.json`: `http://ollama.internal:11434/v1`) and `NO_PROXY` use that name.
+  and every prodtest, and the `local` target's VM as well. Containers reach the Mac's loopback as
+  `host.docker.internal`.
+- **Ollama relay.** Each stack keeps a small Caddy (`ollama` in dev, `ollama-bridge` in prodtest, `ollama-relay` on
+  the `local` target, all `deploy/proxy/Caddyfile.ollama-relay`) on the `internal` network (alias `ollama.internal`)
+  and `egress`. opencode's provider config (the `ollama` gateway's `base_url`, `http://ollama.internal:11434/v1`, in
+  `OPENCODE_CONFIG_CONTENT`) and `NO_PROXY` use that name. The upstream is `{$OLLAMA_UPSTREAM}`, the gateway's
+  `relay_upstream` in the rendered `.env`: `host.docker.internal:11434` (the compose default) for dev and prodtest,
+  `192.168.5.2:11434` on `local` (Lima's user-mode address for the host, which forwards to the Mac's loopback, so
+  Ollama stays bound to `127.0.0.1`).
   The relay passes only `/v1/*` and answers 403 to the rest, so Ollama's admin API (pull, delete, create) stays out
   of a prompt-injected AI's reach. It rewrites `Host` to `localhost:11434`, because a loopback-bound Ollama answers
   403 to any other `Host` (its DNS-rebinding guard).
@@ -976,6 +1018,111 @@ flowchart TD
   container `karpathy-app-N-backend-1`; otherwise it throws "run just dev up". `just prodtest e2e` sets
   `E2E_BASE_URL=https://localhost:80N5`. The `justfile` never sets `E2E_BASE_URL` for dev stacks, so the dev-only
   specs (`attach.spec.ts`) run on every numbered stack.
+
+## Settings {#settings}
+
+Every app setting of every environment lives in `deploy/settings/` (issue #133; vocabulary:
+[domain.md](domain.md#settings)). One renderer turns it into the files each component reads; dev scripts and Ansible
+both call it.
+
+```mermaid
+flowchart TB
+  subgraph Repo["Checkout"]
+    SY["deploy/settings/settings.yaml<br/>+ ENV.yaml"]
+    SL["ENV.local.yaml<br/>gitignored, dev/prodtest only"]
+    PK["packages/settings<br/>load · merge · validate · render"]
+  end
+  subgraph Mac["Mac: dev / prodtest"]
+    DS["dev.sh up · just prodtest up<br/>(settings_render)"] --> PK
+    DSS[("deploy/secrets/ ·<br/>tmp/prodtest/secrets/")] --> PK
+    PK --> DO["tmp/settings/ENV/<br/>.env · opencode.env · settings.json"]
+    DO --> DC[docker compose]
+  end
+  subgraph Ctl["Mac: Ansible controller"]
+    AV[("vault.yml")] -->|"vars/main.yml maps<br/>to secret names"| AR["role app<br/>render-settings.sh"]
+    AR -->|"temp secret store (0700)"| PK
+  end
+  subgraph Host["Target host"]
+    SH["shared/: .env + host facts ·<br/>opencode.env · settings.json · secrets/"] --> HC[docker compose]
+  end
+  SY --> PK
+  SL -.-> PK
+  PK -->|"rendered files"| AR
+  AR -->|"copy, 0600"| SH
+```
+
+**Files.** `settings.yaml` (central: every setting with the shared value), one committed environment file each for
+`dev`, `prodtest`, `test`, `local` and `hetzner` (only what differs), and the gitignored local overlays
+`dev.local.yaml` / `prodtest.local.yaml`. The keys:
+
+| Key | Holds | Overridden by |
+|---|---|---|
+| `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | `dev`, `prodtest`, `test`, `local`: `ollama`, `ollama/qwen2.5:3b` |
+| `ai.vision_model` | The integration tests' vision model | `test`: `ollama/qwen3-vl:2b` |
+| `ai.web` | `access` (default of the Web access switch), `fetch_cap`, `search_cap` (20 each), `exa_api_key` (optional secret) | — |
+| `auth` | `bearer_token`, `opencode_password` (secret references) | — |
+| `git` | `remote_base` (`https://github.com/`), `author` (`name`, `email`), `github_token` (optional secret) | `dev`, `prodtest`, `local`: `file:///remotes/`; author per environment; `hetzner`: author as secrets `git_author_name` / `git_author_email` |
+| `proxy` | `domain` (`localhost`), `tls` (`internal` \| `dns`), `dns.provider` (`godaddy`), `dns.api_token` (optional secret) | `hetzner`: `app.karpathy.app`, `dns`, token required |
+| `timezone` | `Etc/UTC` | `local`, `hetzner`: `Europe/Berlin` |
+| `commit_reminder_threshold` | Default of the commit reminder (4) | — |
+| `files.visible_dot_dirs` | Dot-folders the file tree shows (`[.agents]`; names start with `.`, never `.git`) | — |
+| `gateways.<id>` | `kind`, `name`, `base_url`, `relay_upstream`, `api_key`, `models` (opencode's per-model config, passed through): `openrouter` (built-in kind; `z-ai/glm-5.3` with its zero-data-retention provider routing) and `ollama` (`openai-compatible`, base URL `http://ollama.internal:11434/v1`, `qwen2.5:3b` and `qwen3-vl:2b` with limits) | `local`: `ollama.relay_upstream: 192.168.5.2:11434` |
+
+**Load and validate** (`packages/settings`, plain TypeScript run with `tsx`, deps `yaml` and `zod`):
+
+| Module | Does |
+|---|---|
+| `schema.ts` | Strict zod schema (`settingsSchema`, unknown keys fail), `partialSettingsSchema` for environment files (every key optional at any depth, secret references whole), `crossFieldErrors`: `ai.gateway` names a gateway; `ai.model` / `ai.vision_model` are `<gateway>/<model>` and, unless the kind is built in (`openrouter`, `anthropic`, `openai`), listed under the gateway's `models`; `proxy.tls: dns` needs `proxy.dns.api_token`. |
+| `load.ts` | `environments(dir)`, `loadSettings(env, { dir, overlay })`: central file (complete) ← environment file (partial) ← local overlay (dev, prodtest; skipped with `overlay: false`; for other environments an error), merged map by map, validated complete again. Every error names the file (or `<env> (merged)`) and the YAML path. |
+| `secrets.ts` | `secretRefs(settings)`: every reference with its path, from all settings except gateways other than the chosen one. `resolveSecrets(settings, store)`: reads `<store>/<name>`, trims one trailing newline, fails listing every missing non-optional secret. |
+| `render.ts` | Pure functions, settings + resolved secrets in, file text out: `renderComposeEnv`, `renderOpencodeEnv`, `renderOpencodeProviders`, `renderBackendSettings`. |
+| `cli.ts` | `render <env> --out <dir> --secrets <dir> [--compose-dir <dir>]`, `show <env>` (effective settings, secrets as references), `get <env> <path>` (one value, e.g. CI's test models), `check` (every environment validates; in `just check` and CI), `--list-secrets <env>`; `--dir`, `--no-local`. `just settings …` runs it. |
+
+**Rendered files:**
+
+| File | Read by | Contents |
+|---|---|---|
+| `.env` (0600) | compose interpolation | `DOMAIN`, `TLS_MODE`, `DNS_PROVIDER`, `TZ`, `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (resolved), `GIT_REMOTE_BASE`, `DEFAULT_MODEL` (= `ai.model`), `OLLAMA_UPSTREAM` (only for a gateway with `relay_upstream`), `SETTINGS_DIR` (dev, prodtest: the rendered dir relative to `deploy/`). A superset of the old Ansible `env.j2`, so an older release's `compose.yml` still finds every name (rollback); a target appends its host facts. |
+| `opencode.env` (0600) | opencode (`env_file`) | The gateway's key under its provider's variable (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`; none for `openai-compatible`), `EXA_API_KEY` if set, `WEB_FETCH_CAP`, `WEB_SEARCH_CAP`, `OPENCODE_MODEL`, `OPENCODE_CONFIG_CONTENT` (`{ provider: { <gateway>: … } }`, merged after a vault's own config, see [opencode](#opencode-deployopencode)). Values compose's env-file parser reads back verbatim (`$` escaped). |
+| `settings.json` | backend (`SETTINGS_FILE`) | Only what the backend needs: `auth`, `git` (remote base, resolved author, token), `ai.model`, `ai.web_access`, `commit_reminder_threshold`, `files`. The compose secrets (`bearer_token`, `opencode_password`, `github_token`, `dns_api_token`) become `{ file: "/run/secrets/<name>" }`; any other reference is resolved inline. |
+
+**Compose.** `compose.yml` mounts `${SETTINGS_DIR:-.}/settings.json` read-only at `/etc/karpathy/settings.json`
+(`create_host_path: false`: a missing render fails instead of leaving a directory) and sets `SETTINGS_FILE`; opencode
+takes `env_file: ${SETTINGS_DIR:-.}/opencode.env` (optional, so `compose config` works without a render). On a target
+`SETTINGS_DIR` is unset and `shared/` is the project dir. No model or gateway literal is left in any compose file;
+`compose.dev.yml` / `compose.prodtest.yml` keep only stack plumbing (ports, builds, source mounts, the Ollama relay
+with `OLLAMA_UPSTREAM`, `NO_PROXY` for `ollama.internal`). A dev stack renders the settings of the checkout it is
+started in (main clone or worktree), with that checkout's overlay and secrets, so a branch that changes a setting runs
+with it and parallel stacks never read each other's.
+
+**Backend.** `settings.json` is parsed by the backend's own schema (`apps/backend/src/settings.ts`), not the
+package's: the rendered shape differs (secrets as files) and the image needs no YAML code; a test in
+`packages/settings` parses the renderer's output with it, so the two can't drift. Container wiring and build/deploy
+facts stay env ([Backend](#backend-appsbackend)).
+
+**Model default and override.** `ConfigStore.open(dir, { model, webAccess, commitReminderThreshold })` gets the
+settings' values as defaults; there is no model literal in the code (`DEFAULT_SETTINGS.model` is `''`). In
+`config.json` the model is stored only as `settings.modelOverride`, and only while it differs from the default:
+
+| Event | Stored | Effective model |
+|---|---|---|
+| Admin saves with the default model in the field (or `PATCH model: null`) | no `modelOverride` | the default |
+| Admin saves another model | `modelOverride` | the override |
+| Deployment changes `ai.model` | unchanged | the new default, unless overridden |
+| Old `config.json` with `settings.model` (before the settings) | on the next save: `modelOverride` only if ≠ the default | the stored model (an older Admin choice that differs from the new default stays in effect) |
+
+`GET /api/settings` returns the effective `model`, `defaultModel` and `modelOverridden`; `PATCH` still checks a new
+model against opencode's model list. The threshold and Web access keep "stored wins": the settings give their value
+until one is saved in the app.
+
+**Test environment.** `deploy/settings/test.yaml` names the integration tests' models: `apps/backend/test/opencode-container.ts`
+takes `LLM_MODEL` / `LLM_VISION_MODEL` from `loadSettings('test')` (`LLM_TEST_MODEL` / `LLM_VISION_MODEL` env override
+them for one run), and CI pulls those two into its Ollama volume with `settings get test ai.model` /
+`ai.vision_model`. Tests of the committed files use `overlay: false` / `--no-local`, so a developer's overlay never
+changes a result.
+
+**Ansible** renders a target's settings on the controller with the same CLI (`render-settings.sh`) and copies the
+result to `shared/`: [deployment.md](deployment.md#settings-on-a-target).
 
 ## Design decisions
 
@@ -1032,6 +1179,16 @@ The ones that shape the whole system:
   not raw socat: socat exposed the admin API, and since Ollama runs on the Mac, `/api/pull` from an "insecure"
   registry could have made the Mac request LAN or loopback addresses the egress proxy forbids. Cost: a host
   dependency (`brew install ollama`).
+- **One settings directory, rendered for each component** (#133): before it, the model alone sat in nine places
+  (compose defaults and overrides, `group_vars`, `env.j2`, `dev-ollama.json`, the config store) and a persisted Admin
+  choice silently pinned it. A central file plus sparse environment files shows what makes an environment different;
+  secrets are references because the repo is public and the targets need their vault anyway. Components that read
+  only their own formats (compose, opencode, Caddy; on a target a release's fixed `compose.yml`) get rendered files
+  from one TypeScript renderer that dev, CI and Ansible share, instead of Jinja templates repeating merge and
+  validation. Container wiring (`PORT`, `VAULTS_DIR`, …) stays env: fixed per image, never chosen per environment.
+  Policy (opencode permissions, egress rules, Caddy headers) stays baked into the images. The model default lives in
+  the settings and the Admin's choice is an override stored only while it differs, so a changed default reaches
+  every installation that didn't pick its own.
 - **Read-only git commands run with `GIT_OPTIONAL_LOCKS=0`**: status polling raced with Discard on `index.lock`.
 - **The AI shows notes through a server-side, check-only tool** (`open_note`), not a client-side function: the agent
   loop runs in opencode on the server, so the browser can't execute tools. The UI learns about it from the existing
@@ -1136,9 +1293,9 @@ The ones that shape the whole system:
   pasted URL, one constructed URL refused.
 - **`@llm` rules:** prompts name the tool explicitly; assertions check tool events and the file system, never answer
   text; a turn without any tool call fails as *inconclusive*, not as passed; at most one retry.
-- **Model in dev and CI:** Ollama `qwen2.5:3b` with `OLLAMA_CONTEXT_LENGTH=16384` and a matching context limit in the
-  opencode provider config. Ollama otherwise truncates opencode's prompt to about 2k tokens silently, and the model
-  then ignores `AGENTS.md` and misuses tools. The vision test uses `qwen3-vl:2b` (`LLM_VISION_MODEL`, declared with
+- **Model in dev and CI:** Ollama `qwen2.5:3b` (`deploy/settings/dev.yaml`, `test.yaml`) with
+  `OLLAMA_CONTEXT_LENGTH=16384` and a matching context limit in the `ollama` gateway's model config. Ollama otherwise truncates opencode's prompt to about 2k tokens silently, and the model
+  then ignores `AGENTS.md` and misuses tools. The vision test uses `qwen3-vl:2b` (`test.yaml` `ai.vision_model`, `LLM_VISION_MODEL` overrides it; declared with
   `modalities.input: [text, image]`); Ollama's `qwen2.5vl` has no tool support, so opencode refuses every turn with
   it. Both models must be where the tests' Ollama finds them (CI pulls both into `ollama-models`; the dev stacks use
   the native Ollama's `~/.ollama`, and `just dev up` pulls the dev model); a missing model fails the test
@@ -1158,6 +1315,17 @@ The ones that shape the whole system:
   The chat test sends a real prompt to the dev stack's model.
 - **Dev stack tests** (in `just check`): `deploy/stack.test.sh` (ports, owner from `compose ls` JSON, states,
   resolution order, claims, refusals) and `e2e/stack.unit.ts` (the e2e target resolution).
+- **Settings tests:** `packages/settings` units: merge, schema and cross-field errors with file and YAML path, secret
+  resolution, each renderer (golden strings: the old `dev-ollama.json` and OpenRouter block, a `.env` whose keys ⊇ the
+  old `env.j2`'s, `OLLAMA_UPSTREAM`, `settings.json` parsed by the backend's schema), the CLI, and the committed
+  files (five environments, today's effective values, environment files hold only differences, model literals only
+  in `deploy/settings/`). `just settings check` in `just check` and CI. `stack.test.sh`: compose config with a render
+  has no model literal and mounts the rendered files, `settings_render` and `settings_legacy_check` (and that `dev.sh`
+  and `just prodtest` call them), `render-settings.sh`, every secret a target uses has a source in role `app`, and
+  `compose.target.yml` has the Ollama relay only for the Ollama gateway. Backend: `settings.test.ts`
+  (`loadBackendSettings`), `config-store.test.ts` (override only while ≠ default, legacy model), `api.test.ts`
+  (`defaultModel`, `modelOverridden`, `PATCH model: null`); e2e `admin.spec.ts` (the Default line, override, Use
+  default, persisted after a reload).
 - **e2e:** Playwright against the checkout's own dev stack N (`e2e/stack.ts`), or the prod images via
   `E2E_BASE_URL` (`just prodtest e2e`); every test fails on a
   CSP violation (so the media specs prove the prod `media-src` only when run with `just prodtest e2e`; the dev proxy

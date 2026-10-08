@@ -83,6 +83,11 @@ button to the list.
   - **App:** commit reminder threshold (1–1000 changed files), the model (`provider/model`, server-wide; the
     server rejects models opencode doesn't offer) and the **Web access** switch (on by default, for all vaults: "Lets
     the AI search the web (via Exa) and read pages you or it found. Each search and page is shown in the chat.").
+  - **Model default:** below the model field a line "Default: `provider/model`" shows the deployment's default model
+    (from its settings, `deploy/settings/`); while the field holds another model, a **Use default** button puts the
+    default back into the field. Saving the default removes the override, so a later change of the deployment's
+    default applies again; saving another model keeps it as an override until then. The threshold and the switch
+    also start from the deployment's settings, but there a saved value keeps winning.
   - **Version:** server and PWA version, Built and Deployed.
 
 #### Checked attach
@@ -104,7 +109,7 @@ Not checked: changing repo, branch or root of an existing vault, and the structu
 #### GitHub token
 
 One token is used for every vault. It is set in Settings, so rotating an expired token needs no SSH and no restart; it
-applies to the next git operation. The deployment's `GITHUB_TOKEN` secret stays the fallback.
+applies to the next git operation. The deployment's `github_token` secret (setting `git.github_token`) stays the fallback.
 
 - **Field:** a password field. Its placeholder shows the state: "No token set", "Using the server’s token •••• abcd"
   (the secret) or "•••• abcd" (set in the app); the token itself is never shown again.
@@ -119,7 +124,7 @@ applies to the next git operation. The deployment's `GITHUB_TOKEN` secret stays 
 
 - **File tree:** folders first, collapsed by default, expansion remembered per vault; `.md` hidden in names;
   dot-entries never shown, except the `.agents/` folder (the vault's skills; dot-files and other dot-folders inside it stay
-  hidden). The whitelist is a constant in the backend for now; central-settings-yaml moves it to `files.visible_dot_dirs`. The open note's folders open and its row scrolls into view, unless a filter hides the note.
+  hidden). The whitelist is the deployment setting `files.visible_dot_dirs` (`[.agents]`; never `.git`). The open note's folders open and its row scrolls into view, unless a filter hides the note.
 - **Sort and filter the tree** (#122): two buttons in the *Notes* header, both remembered per browser for all vaults.
   - **Sort** (⇅): by **Name** (A → Z / Z → A) or by **Last changed** (Newest first / Oldest first). Picking a
     criterion sets its natural direction (A → Z, newest first). The menu stays open, so criterion and direction
@@ -467,7 +472,7 @@ sequenceDiagram
 | Clone, pull or open of a vault in Anthropic's layout | `AGENTS.md`, `.agents/skills/`, the skill link, a notice (uncommitted changes) |
 | Commit message | Commit on GitHub (or an unpushed commit), toast |
 | Conflict choice per file | Resolved file(s), possibly a `.conflict-<date>` copy |
-| Settings: reminder threshold, model, Web access | — |
+| Settings: reminder threshold, model (or Use default), Web access | A model override stored only while it differs from the deployment's default |
 | URLs in prompts and notes, web search queries (AI) | Web chips; pages and results in the chat only |
 | "Add a picture of X from <URL>" (AI) | A new media file or PDF in the vault (changed chip) and an embed in the note |
 
@@ -537,7 +542,7 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
   hand only. Note transclusion (`![[Other note]]`) and remote images aren't shown.
 - **Web access:** a URL the AI builds itself (e.g. adds a query) can't be fetched: the user pastes it. A link deep in a
   long, truncated page isn't known either. Without `EXA_API_KEY`, search uses Exa's rate-limited anonymous endpoint.
-  Changing the web caps needs an opencode restart or redeploy.
+  Changing the web caps (settings `ai.web.fetch_cap` / `search_cap`) needs a redeploy (or `just dev up` in dev).
 - **Media download:** the AI saves a file next to the note; it can't move a flat note into its own folder (the rule that
   uploads apply to a page with attachments), can't copy a chat attachment into the vault, and can't save SVG. Uploads by the
   user still allow only JPEG, PNG, GIF, WebP and PDF, while the AI may also save other image types, video and audio.

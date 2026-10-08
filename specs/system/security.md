@@ -38,15 +38,23 @@ flowchart LR
 
 | Secret | Goes only to | How |
 |---|---|---|
-| Bearer token | backend | compose secret (`BEARER_TOKEN_FILE`) |
+| Bearer token | backend | compose secret; `settings.json` names its file (`/run/secrets/bearer_token`) |
 | GitHub token | backend | set in the app (stored in `config.json`, wins) or the compose secret (fallback); sent per git command as an `http.https://github.com/.extraheader`, never written to `.git/config`, redacted from errors and logs ([below](#github-token)) |
 | DNS API token | proxy | compose secret (root-owned on a server) |
-| LLM provider keys, optional `EXA_API_KEY` | opencode | `opencode.env` (env file) |
-| opencode server password | backend, opencode | compose secret `opencode_password` (`OPENCODE_PASSWORD_FILE`; opencode's entrypoint exports it as `OPENCODE_SERVER_PASSWORD`); generated once per target, never in the vault or the AI's reach |
+| LLM provider key (the chosen gateway's only), optional `EXA_API_KEY` | opencode | rendered `opencode.env` (env file, 0600) |
+| opencode server password | backend, opencode | compose secret `opencode_password` (named in `settings.json`; opencode's entrypoint exports it as `OPENCODE_SERVER_PASSWORD`); generated once per target, never in the vault or the AI's reach |
+| Commit author on `hetzner` (personal data, not a credential) | backend | secret references resolved inline into `settings.json` and `.env` (both 0600) |
 
-In dev the secret files are gitignored. On a target they come from that target's encrypted Ansible Vault (password
-in the operator's Keychain) and are written 0600 by tasks that don't log. opencode never receives the GitHub or
-bearer token.
+**Secrets are references in the settings.** `deploy/settings/` is committed to a public repo, so a setting that is
+secret holds only `{ secret: <name> }`; the renderer reads the value from a secret store (one file per name). In
+dev the stores (`deploy/secrets/`, `tmp/prodtest/secrets/`) and the local overlays (`deploy/settings/*.local.yaml`)
+are gitignored. On a target the values come from that target's encrypted Ansible Vault (password in the operator's
+Keychain): role `app` passes them on stdin to `render-settings.sh` on the controller, which keeps them in a 0700
+temp store only while the renderer runs; the rendered files are removed from the controller in an `always:` block,
+and every task that handles them doesn't log. Compose secret files are written 0600. `just settings show` prints
+references, never values; the renderer never logs a value; the legacy check in `dev.sh` names keys of an old
+`deploy/.env` / `opencode.env`, not their values. `settings.json` holds no credential: only `/run/secrets/…` paths.
+opencode never receives the GitHub or bearer token.
 
 ## GitHub token
 
@@ -60,8 +68,8 @@ bearer token.
 - **Redaction:** the backend remembers every token value seen since startup (secret, stored, replaced, and tokens that
   were only tested, never saved) and replaces each with `***` in clone, preflight and access-check errors, logs and
   stored clone errors, so an old or merely tested token doesn't leak either.
-- **No probing:** the token test calls the GitHub API base and remote base from server env (`GITHUB_API_BASE`,
-  `GIT_REMOTE_BASE`), never a host from the request, so it can't be used to reach arbitrary hosts.
+- **No probing:** the token test calls the GitHub API base and remote base from the server (env `GITHUB_API_BASE`,
+  setting `git.remote_base`), never a host from the request, so it can't be used to reach arbitrary hosts.
 - **Validation:** 20–255 characters, no whitespace; a bad value is a 400.
 - Unchanged: the token is injected per git command, never written to `.git/config` or a repo, and never reaches opencode.
 - **Attach preflight** runs git with the token against the requested repo only (`owner/name` pattern, `--end-of-options`),
@@ -71,6 +79,11 @@ bearer token.
 
 - **Managed opencode config** merged last (`/etc/opencode/opencode.json`), so a vault can't override it; an empty
   tmpfs `HOME` means no global config either.
+- **Provider config after the vault's:** the gateway's provider config, including OpenRouter's zero-data-retention
+  routing (`zdr: true`, `data_collection: deny`, a fixed host list), comes from the settings as
+  `OPENCODE_CONFIG_CONTENT` in `opencode.env`, which opencode merges *after* a vault's own `opencode.json`. A vault
+  can't turn the routing off or point the gateway at another URL. Not as an `OPENCODE_CONFIG` file: that is merged
+  before the project config, and a vault's `zdr: false` won (found in the review of #133, checked on a dev stack).
 - **Denied tools:** `bash`, `task`, `question`, `external_directory`; `webfetch`, `websearch` and `save_url` are denied in the
   managed config too and switched on per turn only (see [Web access](#web-access)). No permission is ever "ask", so a
   turn never blocks on an approval (opencode's built-in defaults contain `ask` rules, each one is overridden). Reading
@@ -128,7 +141,7 @@ permission and it replaces earlier rules. Off = the model sees neither tool. `co
 | Risk | Guard | What remains |
 |---|---|---|
 | Vault data leaves in a **fetch URL** | **Known-URL provenance:** a plugin (`deploy/opencode/plugins/known-url.ts`, `tool.execute.before`) lets `webfetch` and `save_url` fetch only a URL that appears verbatim in what the model saw in this chat (user messages, tool outputs; truncated outputs count as their preview). Normalization: scheme and host lower-case, default port and fragment dropped; path and query exact. Otherwise the call fails "URL not in this chat: paste it into the chat first". | The AI can fetch an attacker URL that is already in a note or page, but without added data. |
-| Data in the **order of fetches** | **Web caps:** at most 20 fetches and 20 searches per turn (`WEB_FETCH_CAP`, `WEB_SEARCH_CAP` in `opencode.env`, read at start), counted from the stored messages; `webfetch` and `save_url` calls share the fetch cap | A slow leak of a few characters per turn. |
+| Data in the **order of fetches** | **Web caps:** at most 20 fetches and 20 searches per turn (settings `ai.web.fetch_cap` / `search_cap`, rendered as `WEB_FETCH_CAP`, `WEB_SEARCH_CAP` into `opencode.env`, read at start), counted from the stored messages; `webfetch` and `save_url` calls share the fetch cap | A slow leak of a few characters per turn. |
 | Data in a **search query** | Every query is a chip; the switch turns web access off | Exa receives the query text; the user sees it afterwards, not before. |
 | **SSRF / escape** (opencode API, backend, metadata, tailnet) | **Egress proxy** (Squid, `deploy/egress`): opencode is only on the `internal: true` network and reaches the internet through `HTTP(S)_PROXY`; the proxy refuses loopback, RFC 1918, link-local, CGNAT/tailnet, ULA and other special ranges after DNS resolution, on every request (so every redirect hop). | None known; the network tests check each target. |
 | **Loopback** (`NO_PROXY` names it, because opencode's plugin client must reach its own server directly) | **opencode server password:** HTTP Basic on every opencode route, health included. The backend sends it; the AI can't read it (`bash`, `external_directory` and `*.env` denied). | — |
@@ -218,7 +231,9 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   is the native Ollama, bound to `127.0.0.1:11434`. opencode reaches it only through the stack's Ollama relay
   (`ollama.internal`), which passes `/v1/*` (the OpenAI-compatible API) and answers 403 to everything else, so a
   prompt-injected AI can't use Ollama's admin API (pull, delete, create); a pull from an "insecure" registry would
-  otherwise make the Mac itself request LAN or loopback addresses the egress proxy forbids.
+  otherwise make the Mac itself request LAN or loopback addresses the egress proxy forbids. The `local` target's VM
+  uses the same relay (`ollama-relay`) to the same Ollama, reached at `192.168.5.2:11434` (Lima's forward to the
+  Mac's loopback), so Ollama never binds a LAN address.
 - **Production server:** reachable only over Tailscale. The Hetzner firewall blocks all inbound traffic; the app,
   Beszel and Gatus bind the tailnet IP. SSH takes keys only, no root login. The operator logs in as `ops` (sudo);
   uid 1000, the app's user, has no login, no sudo and no Docker access, so a container breakout doesn't reach root
@@ -248,4 +263,8 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   plain text or with a warning.
 - The Beszel agent mounts the Docker socket (root-equivalent on the host; accepted).
 - Gatus has no authentication on the tailnet; secrets appear briefly in process lists during a deployment.
+- During a deployment the target's secrets sit briefly on the controller (the Mac) in a 0700 temp dir, and the
+  rendered `.env` / `opencode.env` in an Ansible temp dir until the `always:` cleanup.
+- A `WEB_FETCH_CAP` / `WEB_SEARCH_CAP` left in a target's `vault_opencode_env` is ignored: the caps are settings
+  now (`ai.web`); no vault sets them today.
 - The GoDaddy API key can change every domain of the account and sits on the server.
