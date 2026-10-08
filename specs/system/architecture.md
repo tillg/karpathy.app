@@ -68,6 +68,11 @@ flowchart LR
   survive). The button is one absolutely positioned 44 px element on the divider (`right: 380px + inset`, the side
   column is always 380 px); the bar ends next to it get 32 px padding. The choice lives in the store (`chatMain`,
   localStorage `karpathy.chatMain`).
+- **Note graph** (`GraphDialog`, #130): a `Modal` opened by the sidebar graph button. It fetches
+  `GET /vaults/:id/graph` on open and renders it with `3d-force-graph` (three.js, WebGL), imported dynamically so the
+  main bundle stays without three.js; the chunk (~1.4 MB) stays under Workbox's 2 MiB precache limit, so the graph
+  works offline once loaded. Node labels are DOM elements with `textContent`, never HTML strings. Colours come from the
+  CSS tokens (`--tint`, `--orange` for the open note, `--paper`); a `ResizeObserver` keeps the canvas at the dialog size.
 - **Chat opens notes** (`lib/chat.ts`, `ChatPane` `useChat`): a pure open tracker per chat view (`seen`, `later`,
   `loaded`). The first history load only marks completed `open_note` calls as seen; later loads (reattach,
   visibility change) and live events open unseen completed calls. Outside the wide layout the last open of the turn
