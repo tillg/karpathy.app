@@ -30,8 +30,11 @@ export interface Frontmatter { from: number; to: number; text: string; props: Pr
 
 const SINGLE_LINE = new Set<string>(['PLAIN', 'QUOTE_SINGLE', 'QUOTE_DOUBLE']);
 
+/** The rule for `key`, never one inherited from `Object.prototype` (a key named `constructor`). */
+const ruleOf = (rules: Rules, key: string) => (Object.hasOwn(rules, key) ? rules[key] : undefined);
+
 /** The frontmatter text parsed: its CST tokens and the document composed from them (nodes keep `srcToken`). */
-export function parseFm(text: string) {
+function parseYaml(text: string) {
   const tokens = [...new Parser().parse(text)];
   const docs = [...new Composer({ keepSourceTokens: true }).compose(tokens)];
   const doc = docs[0] as Document.Parsed | undefined;
@@ -39,7 +42,13 @@ export function parseFm(text: string) {
   if (docs.length > 1) error = 'more than one document';
   else if (doc && (doc.errors.length || doc.warnings.length)) error = (doc.errors[0] ?? doc.warnings[0])!.message.split('\n')[0];
   else if (doc && doc.contents !== null && !isMap(doc.contents)) error = 'not a list of properties';
-  else if (doc) {
+  else if (doc && isMap(doc.contents)) {
+    // `1` and `"1"` are different YAML keys but the same name on screen: an edit by name could hit the wrong one.
+    const names = doc.contents.items.map((p) => (isScalar(p.key) ? String(p.key.value) : ''));
+    const dup = names.find((n, i) => names.indexOf(n) !== i);
+    if (dup !== undefined) error = `two properties are called “${dup}”`;
+  }
+  if (!error && doc) {
     // Composes without errors but can't be read (an alias without its anchor).
     try { doc.toJS(); } catch (e) { error = (e as Error).message; }
   }
@@ -47,11 +56,11 @@ export function parseFm(text: string) {
 }
 
 /** A scalar the form can edit: one line, plain or quoted, no anchor or tag. */
-export const simpleScalar = (n: unknown, text: string): n is Scalar =>
+const simpleScalar = (n: unknown, text: string): n is Scalar =>
   isScalar(n) && !n.anchor && !n.tag && SINGLE_LINE.has(n.type ?? '') && !!n.range && !text.slice(n.range[0], n.range[1]).includes('\n');
 
 /** The list's items, when every one is a simple scalar (else null). */
-export function simpleItems(n: Node, text: string): Scalar[] | null {
+function simpleItems(n: Node, text: string): Scalar[] | null {
   if (!isSeq(n) || n.anchor || n.tag) return null;
   if (!n.items.every((i) => simpleScalar(i, text))) return null;
   if (n.flow && text.slice(n.range![0], n.range![1]).includes('\n')) return null;
@@ -59,7 +68,16 @@ export function simpleItems(n: Node, text: string): Scalar[] | null {
 }
 
 /** 1-based line of offset `pos` in `text`. */
-export const lineOf = (text: string, pos: number) => text.slice(0, pos).split('\n').length;
+const lineOf = (text: string, pos: number) => text.slice(0, pos).split('\n').length;
+
+/** Offset of the last character of a pair: the value's end, or the key's for an empty value. */
+const pairEnd = (k: Node, v: Node | null) => (v?.range && v.range[1] > v.range[0] ? v.range[1] - 1 : k.range![1] - 1);
+
+/** A key the form can add: letters, digits, `_`, inner spaces and dashes (a plain YAML key). */
+export const isPropertyName = (key: string) => /^\w([\w -]*\w)?$/.test(key);
+
+/** Kinds whose value is a list. */
+export const isListKind = (kind: PropertyKind) => kind === 'list' || kind === 'links';
 
 function inferKind(value: unknown, n: Node | null, text: string): PropertyKind {
   if (n === null || value === null) return 'text';
@@ -85,7 +103,7 @@ export function readFrontmatter(note: string, rules: Rules = {}): Frontmatter | 
 
 /** The properties of a frontmatter text (between the `---` lines). */
 export function parseProps(fm: string, rules: Rules = {}): { props: Prop[]; error?: string } {
-  const { doc, error } = parseFm(fm);
+  const { doc, error } = parseYaml(fm);
   if (error) return { props: [], error };
   const props: Prop[] = [];
   if (doc && isMap(doc.contents)) {
@@ -94,12 +112,12 @@ export function parseProps(fm: string, rules: Rules = {}): { props: Prop[]; erro
       const v = (pair.value as Node | null) ?? null;
       const key = isScalar(k) ? String(k.value) : '';
       const value = v === null ? null : v.toJS(doc);
-      const end = v?.range && v.range[1] > v.range[0] ? v.range[1] - 1 : k.range![1] - 1;
+      const end = pairEnd(k, v);
       const keyOk = simpleScalar(k, fm);
       const editable = keyOk && (v === null || (isScalar(v) && v.value === null) || simpleScalar(v, fm) || !!simpleItems(v, fm));
-      const rule = rules[key];
+      const rule = ruleOf(rules, key);
       // A rule's kind applies when the value's shape fits it (a scalar `tags: foo` stays text; validation flags it).
-      const fits = rule && rule.kind !== 'raw' && (value === null || (rule.kind === 'list' || rule.kind === 'links') === Array.isArray(value));
+      const fits = rule && rule.kind !== 'raw' && (value === null || isListKind(rule.kind) === Array.isArray(value));
       const kind = !editable ? 'raw' : fits ? rule.kind : inferKind(value, v, fm);
       const prop: Prop = { key, value, kind, lines: [lineOf(fm, k.range![0]), lineOf(fm, end)], editable };
       if (v && isSeq(v)) prop.list = listStyle(value as unknown[], !!v.flow, rule);
@@ -132,37 +150,41 @@ const pairOf = (doc: Document.Parsed | undefined, key: string) =>
 
 /** The value of `key` after an edit, when `after` parses cleanly. */
 function readBack(after: string, key: string): { value: unknown } | null {
-  const { doc, error } = parseFm(after);
+  const { doc, error } = parseYaml(after);
   const p = pairOf(doc, key);
   return error || !p ? null : { value: p.value ? p.value.toJS(doc!) : null };
 }
 
 /** `value` as YAML: plain when that reads back as `value` (inside a flow list when `flow`), else double-quoted. */
-function fmt(value: string | number | boolean, flow = false): string {
+function yamlValue(value: string | number | boolean, flow = false): string {
   const plain = String(value);
   const back = (s: string) => { const r = readBack(`x: ${flow ? `[${s}]` : s}`, 'x'); return r && (flow ? (r.value as unknown[])[0] : r.value); };
   return plain && back(plain) === value && (!flow || (readBack(`x: [${plain}]`, 'x')?.value as unknown[]).length === 1) ? plain : JSON.stringify(plain);
 }
 
 /** `set` on an empty value (`key:`): the value is spliced in after the colon. */
-function setEmpty(text: string, v: Node | null, k: Node, value: string | number | boolean): EditResult {
+/** An empty value (`key:`), which has no token to edit. */
+const isEmpty = (v: Node | null): boolean => v === null || (isScalar(v) && v.value === null && !v.srcToken);
+
+/** `src` (YAML) spliced in after the colon of an empty value (`key:`); a comment after it stays. */
+function setEmpty(text: string, v: Node | null, k: Node, src: string): EditResult {
   const colon = text.indexOf(':', k.range![1]);
   const at = v?.range ? Math.max(colon + 1, v.range[0]) : colon + 1;
   if (colon < 0 || text.slice(colon + 1, at).trim()) return REFUSED;
   const rest = text.slice(colon + 1).replace(/^[ \t]*/, '');
-  return { text: `${text.slice(0, colon + 1)} ${fmt(value)}${rest.startsWith('#') ? ' ' : ''}${rest}` };
+  return { text: `${text.slice(0, colon + 1)} ${src}${rest.startsWith('#') ? ' ' : ''}${rest}` };
 }
 
 /** `set` on a scalar: the token's value is replaced, in its own style when that reads back as `value`, else double-quoted. */
 function setScalar(text: string, key: string, value: string | number | boolean): EditResult {
-  const cur = pairOf(parseFm(text).doc, key)?.value;
+  const cur = pairOf(parseYaml(text).doc, key)?.value;
   const types = [...new Set([isScalar(cur) ? cur.type : undefined, typeof value === 'string' ? 'QUOTE_DOUBLE' : 'PLAIN', 'QUOTE_DOUBLE'])];
   for (const type of types) {
-    const { tokens, doc } = parseFm(text);
+    const { tokens, doc } = parseYaml(text);
     const p = pairOf(doc, key);
     const v = p?.value ?? null;
-    if (p && (v === null || (isScalar(v) && v.value === null && !v.srcToken))) {
-      const r = setEmpty(text, v, p.key, value);
+    if (p && isEmpty(v)) {
+      const r = setEmpty(text, v, p.key, yamlValue(value));
       return 'text' in r && readBack(r.text, key)?.value === value ? r : REFUSED;
     }
     if (!simpleScalar(v, text) || !v.srcToken) return REFUSED;
@@ -173,19 +195,28 @@ function setScalar(text: string, key: string, value: string | number | boolean):
   return REFUSED;
 }
 
+/** The list item a note name becomes: `[[name]]` in a wikilink list, `name` (plus `.md` when the items carry it) in a bare one. */
+const itemValue = (list: NonNullable<Prop['list']>, item: string) =>
+  list.style === 'wikilink' ? `[[${item.replace(/^\[\[(.*)\]\]$/, '$1')}]]` : list.ext && !/\.md$/i.test(item) ? `${item}.md` : item;
+
 const lineStart = (text: string, pos: number) => text.lastIndexOf('\n', pos - 1) + 1;
 const lineEnd = (text: string, pos: number) => { const i = text.indexOf('\n', pos); return i < 0 ? text.length : i; };
 
 /** `add`: a note name becomes `"[[name]]"` in a wikilink list, `name` (plus `.md` when the items carry it) in a bare one. */
 function addItem(text: string, key: string, item: string, rules: Rules): EditResult {
-  const { doc } = parseFm(text);
+  const { doc } = parseYaml(text);
   const p = pairOf(doc, key);
-  const seq = p?.value;
+  const seq = p?.value ?? null;
+  if (p && isEmpty(seq)) {
+    // The first item of an empty value: a flow list after the colon.
+    const value = itemValue(listStyle([], true, ruleOf(rules, key)), item);
+    return setEmpty(text, seq, p.key, `[${value.startsWith('[[') ? JSON.stringify(value) : yamlValue(value, true)}]`);
+  }
   const items = seq ? simpleItems(seq, text) : null;
   if (!p || !seq || !isSeq(seq) || !items) return REFUSED;
-  const list = listStyle(seq.toJS(doc!) as unknown[], !!seq.flow, rules[key]);
-  const value = list.style === 'wikilink' ? `[[${item.replace(/^\[\[(.*)\]\]$/, '$1')}]]` : list.ext && !/\.md$/i.test(item) ? `${item}.md` : item;
-  const src = list.style === 'wikilink' ? JSON.stringify(value) : fmt(value, !!seq.flow);
+  const list = listStyle(seq.toJS(doc!) as unknown[], !!seq.flow, ruleOf(rules, key));
+  const value = itemValue(list, item);
+  const src = list.style === 'wikilink' ? JSON.stringify(value) : yamlValue(value, !!seq.flow);
   let after: string;
   if (seq.flow) {
     const at = items.length ? items.at(-1)!.range![1] : seq.range![0] + 1;
@@ -202,7 +233,7 @@ function addItem(text: string, key: string, item: string, rules: Rules): EditRes
 
 /** `remove`: a flow item with its separator; a block item with its whole line (and the comment on it). */
 function removeItem(text: string, key: string, index: number): EditResult {
-  const { doc } = parseFm(text);
+  const { doc } = parseYaml(text);
   const p = pairOf(doc, key);
   const seq = p?.value;
   const items = seq ? simpleItems(seq, text) : null;
@@ -230,8 +261,8 @@ function makeEdit(text: string, edit: Edit, rules: Rules): EditResult {
   if (edit.op === 'add') return addItem(text, edit.key, edit.item, rules);
   if (edit.op === 'remove') return removeItem(text, edit.key, edit.index);
   if (edit.op === 'set') return setScalar(text, edit.key, edit.value);
-  if (pairOf(parseFm(text).doc, edit.key) || !/^\w([\w -]*\w)?$/.test(edit.key)) return REFUSED;
-  const v = Array.isArray(edit.value) ? `[${edit.value.map((i) => fmt(i, true)).join(', ')}]` : fmt(edit.value);
+  if (pairOf(parseYaml(text).doc, edit.key) || !isPropertyName(edit.key)) return REFUSED;
+  const v = Array.isArray(edit.value) ? `[${edit.value.map((i) => yamlValue(i, true)).join(', ')}]` : yamlValue(edit.value);
   // After the last line with content: blank lines at the end stay at the end.
   const body = text.replace(/\n*$/, '');
   return { text: `${body}${body ? '\n' : ''}${edit.key}: ${v}${text.slice(body.length)}` };
@@ -239,7 +270,7 @@ function makeEdit(text: string, edit: Edit, rules: Rules): EditResult {
 
 /** The frontmatter text after `edit`, or why it was refused. Pure. `rules` give an empty link list its item style. */
 export function editFrontmatter(text: string, edit: Edit, rules: Rules = {}): EditResult {
-  if (parseFm(text).error) return REFUSED;
+  if (parseYaml(text).error) return REFUSED;
   const r = makeEdit(text, edit, rules);
   if ('refused' in r) return r;
   const why = checkEdit(text, r.text, edit, rules);
@@ -249,12 +280,11 @@ export function editFrontmatter(text: string, edit: Edit, rules: Rules = {}): Ed
 /** The value the edited key should read back as after `edit` on `before`. */
 function intended(before: string, edit: Edit, rules: Rules): unknown {
   if (edit.op === 'set' || edit.op === 'addKey') return edit.value;
-  const { doc } = parseFm(before);
+  const { doc } = parseYaml(before);
   const seq = pairOf(doc, edit.key)?.value;
   const items = (seq && isSeq(seq) ? seq.toJS(doc!) : []) as unknown[];
   if (edit.op === 'remove') return items.filter((_, i) => i !== edit.index);
-  const list = listStyle(items, !!(seq && isSeq(seq) && seq.flow), rules[edit.key]);
-  return [...items, list.style === 'wikilink' ? `[[${edit.item.replace(/^\[\[(.*)\]\]$/, '$1')}]]` : list.ext && !/\.md$/i.test(edit.item) ? `${edit.item}.md` : edit.item];
+  return [...items, itemValue(listStyle(items, !!(seq && isSeq(seq) && seq.flow), ruleOf(rules, edit.key)), edit.item)];
 }
 
 /**
@@ -263,8 +293,8 @@ function intended(before: string, edit: Edit, rules: Rules): unknown {
  * after them; for `addKey` one appended line), and the edited key reads back as intended.
  */
 export function checkEdit(before: string, after: string, edit: Edit, rules: Rules = {}): string | null {
-  const a = parseFm(before);
-  const b = parseFm(after);
+  const a = parseYaml(before);
+  const b = parseYaml(after);
   if (b.error) return `the result doesn't parse: ${b.error}`;
   const entries = (d: Document.Parsed | undefined) => (d && isMap(d.contents) ? (d.contents.items as Pair<Node, Node | null>[]).map((p) => [String((p.key as Scalar).value), p.value ? p.value.toJS(d) : null] as const) : []);
   const x = entries(a.doc).filter(([k]) => k !== edit.key);
@@ -282,8 +312,7 @@ export function checkEdit(before: string, after: string, edit: Edit, rules: Rule
   else {
     const p = pairOf(a.doc, edit.key);
     if (!p) return `${edit.key} isn't there`;
-    const v = p.value;
-    const end = v?.range && v.range[1] > v.range[0] ? v.range[1] - 1 : p.key.range![1] - 1;
+    const end = pairEnd(p.key, p.value);
     span = [lineOf(before, p.key.range![0]), lineOf(before, end) + 1];
   }
   let line = 1;

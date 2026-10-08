@@ -132,8 +132,10 @@ selection when text is selected. **Properties form**: in Write mode a note's fro
 (pickers, dates with a **Today** button, list and link chips with note suggestions) and its lines are hidden in
 the editor; a form edit changes only that property's lines and is one undo step, and an edit that can't keep
 every other byte is refused ("Edit this property in YAML"). The **YAML** button shows the raw lines again (the
-browser remembers it). On wiki pages (`Wiki/`) the form flags what doesn't fit the LLM-wiki schema (`type`,
-`tags`, `updated` required; `confidence` high/medium/low; wikilinks in lists need quotes) and never fixes it; a
+browser remembers it). **+ Property** adds a property: the schema's missing ones are offered, any plain name
+can be typed. On wiki pages (`Wiki/`) the form flags what doesn't fit the LLM-wiki schema (`type`, `tags`,
+`updated` required; `confidence` high/medium/low; a value of the wrong type; wikilinks in lists need quotes) and
+never fixes it; a
 vault can bring its own rules in `.karpathy/schema.json` (`{ "appliesTo": ["Wiki/"], "fields": { "type": {
 "kind": "enum", "values": […], "required": true } } }`), which replaces the default. How it works today: [`specs/system/`](specs/system/) (domain,
 functional, architecture, security, deployment); key decisions: [`docs/adr/`](docs/adr/). The

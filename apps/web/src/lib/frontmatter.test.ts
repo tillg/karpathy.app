@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import fc from 'fast-check';
 import { CST, Parser } from 'yaml';
 import { describe, expect, it } from 'vitest';
 import { checkEdit, editFrontmatter, readFrontmatter, type Rules } from './frontmatter';
@@ -12,7 +11,6 @@ describe('yaml', () => {
   it('yaml CST stringify is lossless', () => {
     const out = [...new Parser().parse(FM)].map((t) => CST.stringify(t)).join('');
     expect(out).toBe(FM);
-    fc.assert(fc.property(fc.string(), (s) => s === s));
   });
 });
 
@@ -162,4 +160,22 @@ describe('demo vault corpus', () => {
     }
     expect(edits).toBeGreaterThan(500);
   }, 60_000); // ~1,000 edits, each parsed several times
+});
+
+describe('review fixes', () => {
+  it('keys that print the same are unreadable, not edited by name', () => {
+    for (const fm of ['1: a\n"1": b', 'true: a\n"true": b', '? [a]\n: x\n? [b]\n: y']) {
+      expect(readFrontmatter(`---\n${fm}\n---\n`)!.error, fm).toBeTruthy();
+      expect(editFrontmatter(fm, { op: 'set', key: '1', value: 'c' })).toHaveProperty('refused');
+    }
+  });
+
+  it('an empty value takes its first list item', () => {
+    expect(ok(editFrontmatter('tags:\nx: 1', { op: 'add', key: 'tags', item: 'a' }))).toBe('tags: [a]\nx: 1');
+    expect(ok(editFrontmatter('related: # later', { op: 'add', key: 'related', item: 'x' }, { related: { kind: 'links' } }))).toBe('related: ["[[x]]"] # later');
+  });
+
+  it('keys named like Object members get no rule from the prototype', () => {
+    expect(readFrontmatter('---\ntoString: true\nconstructor: 3\n---\n', {})!.props.map((p) => p.kind)).toEqual(['boolean', 'number']);
+  });
 });

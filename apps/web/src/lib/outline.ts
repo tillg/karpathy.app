@@ -2,7 +2,7 @@
 // and Read mode list the same headings.
 import { commonmarkLanguage } from '@codemirror/lang-markdown';
 import type { Tree } from '@lezer/common';
-import { splitFrontmatter } from './markdown';
+import { commentRanges, frontmatterEndLine, inComment } from './markdown';
 import { parseWikilink, wikilinkLabel, WIKILINK_RE } from './wikilink';
 
 export interface OutlineItem { level: 1 | 2 | 3 | 4 | 5 | 6; text: string; line: number }
@@ -17,23 +17,6 @@ const display = (raw: string) =>
   raw.replace(WIKILINK_RE, (_m, inner: string) => wikilinkLabel(parseWikilink(inner)))
     .replace(/\*\*|__|==|[*_`]/g, '')
     .replace(/\s+/g, ' ').trim() || '(untitled)';
-
-/** Last frontmatter line (0 when the note has none): the closing `---` of a `---` block at the very start. */
-export function frontmatterEndLine(text: string): number {
-  const fm = splitFrontmatter(text.slice(0, 20_000)).frontmatter;
-  return fm === null ? 0 : fm.split('\n').length + 2;
-}
-
-/** The `%%comment%%` ranges Read mode hides: from after an opening `%%` to after its closing one (or the end). */
-export function commentRanges(text: string): [number, number][] {
-  const marks = [...text.matchAll(/%%/g)].map((m) => m.index + 2);
-  const out: [number, number][] = [];
-  for (let i = 0; i < marks.length; i += 2) out.push([marks[i]!, marks[i + 1] ?? Infinity]);
-  return out;
-}
-
-/** True when `pos` lies inside one of `ranges` (from `commentRanges`). */
-export const inComment = (ranges: [number, number][], pos: number) => ranges.some(([from, to]) => pos >= from && pos < to);
 
 /**
  * Headings of a parsed note; `slice(from, to)` reads the text, `lineAt(pos)` maps to 1-based lines. Headings in
@@ -63,7 +46,7 @@ export function collectHeadings(tree: Tree, slice: (from: number, to: number) =>
   return out;
 }
 
-/** Read mode: the outline of a note's text. */
+/** The outline of a note's text (both modes). */
 export function outlineOfText(text: string): OutlineItem[] {
   const tree = commonmarkLanguage.parser.parse(text);
   const starts = [0];

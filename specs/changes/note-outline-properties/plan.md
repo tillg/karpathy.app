@@ -300,4 +300,29 @@ text. Phase 2 (#82) can be split into its own change at any step boundary withou
     released.
   - Verify: `rtk grep -n "Properties" ~/git/karpathy_demo_wiki/"Karpathy Demo.md"` → a match.
 
+## Review follow-ups
+
+From `/spec:adversarial-code-review` (2026-10-08) and the user's decisions on it.
+
+- [x] Typing stays fast with the outline open: Write mode reads the headings from the editor's syntax tree,
+  and the outline and note info refresh after a pause, not per keystroke
+  - Test first: `e2e/outline.spec.ts` › "typing in a long note with the outline open stays fast". A note of
+    5,000 headings and 100,000 words; typing 40 characters with the outline open takes less than twice as
+    long as with it closed, and the outline then lists the new heading. Fails today: every keystroke
+    re-parses and re-counts the whole note.
+  - Verify: `just e2e e2e/outline.spec.ts` → green; `just check` → green.
+
+- [x] `validate` flags a value of the wrong kind
+  - Test first: `schema.test.ts` › "wrong kind". With rules `n: number`, `b: boolean`, `t: text`: `n: high` →
+    "should be a number", `b: yes` → "should be true or false", `t: [a]` → "should be a single value";
+    `n: 3`, `b: true`, `t: x` → nothing. Fails today: no such check.
+  - Verify: `npm test -w apps/web -- schema` → green; `just check` → green.
+
+- [x] "+ Property" adds a missing schema key or a free key
+  - Test first: `e2e/properties.spec.ts` › "+ Property". On `wiki/p.md` without `tags` and `confidence`:
+    `props-add` offers `tags` and `confidence` (not `type`); picking `tags` writes `tags: []` as the last
+    frontmatter line and its "required" flag goes away; a free key `rating` writes `rating: ""`; an
+    invalid key (`a: b`) is refused with a toast, nothing written. Fails today: no `props-add`.
+  - Verify: `just e2e e2e/properties.spec.ts` → green; `just check` → green.
+
 System docs are updated at `/spec:archive`.

@@ -35,7 +35,9 @@ const value = fc.oneof(
 );
 const gap = fc.constantFrom('', '', '', '\n', '\n# a comment', '\n\n');
 
-const frontmatter = fc.uniqueArray(fc.stringMatching(/^[a-z][a-z_]{0,6}$/), { minLength: 1, maxLength: 6 }).chain((keys) =>
+// Plain keys, and keys that read as numbers, booleans or quoted strings.
+const key = fc.oneof(fc.stringMatching(/^[a-z][a-z_]{0,6}$/), fc.constantFrom('1', '"2"', 'true', "'q'", '"a b"'));
+const frontmatter = fc.uniqueArray(key, { minLength: 1, maxLength: 6 }).chain((keys) =>
   fc.tuple(fc.constantFrom('', '# head\n'), ...keys.map((k) => fc.tuple(value, gap, fc.constantFrom(' ', '   ')).map(([v, g, sp]) => `${k}:${v && !v.startsWith('\n') ? sp : ''}${v}${g}`)))
     .map(([head, ...pairs]) => head + pairs.join('\n')))
   .filter((fm) => { const r = readFrontmatter(`---\n${fm}\n---\n`); return !!r && !r.error; });
@@ -78,6 +80,19 @@ describe('frontmatter edits (property-based)', () => {
       expect(checkEdit(fm, r.text, e)).toBeNull();
       const others = (t: string) => props(t).filter((p) => p.key !== e.key).map((p) => [p.key, p.value]);
       expect(others(r.text)).toEqual(others(fm));
+      // Independently of checkEdit: every line outside the edited pair is byte-identical.
+      const a = fm.split('\n'), b = r.text.split('\n');
+      const p = props(fm).find((x) => x.key === e.key);
+      if (!p) {
+        const body = fm.replace(/\n*$/, '').split('\n');
+        expect(b.slice(0, body.length)).toEqual(body);
+        expect(b.length).toBe(a.length + 1);
+        return;
+      }
+      const [first, last] = p.lines;
+      expect(b.slice(0, first - 1)).toEqual(a.slice(0, first - 1));
+      const tail = a.slice(last);
+      expect(b.slice(b.length - tail.length)).toEqual(tail);
     }), RUNS);
   }, SLOW);
 
@@ -101,7 +116,8 @@ describe('frontmatter edits (property-based)', () => {
   }, SLOW);
 
   it('refusals stay under 5 % of edits on editable values', () => {
-    const cases = fc.sample(withEdit, 1000);
+    // Edits of existing values (a new key is never refused, so it would only water the rate down).
+    const cases = fc.sample(withEdit.filter(({ e }) => e.op !== 'addKey'), 1000);
     const refused = cases.filter(({ fm, e }) => 'refused' in editFrontmatter(fm, e));
     expect(refused.length / cases.length, JSON.stringify(refused.slice(0, 3))).toBeLessThan(0.05);
   }, SLOW);

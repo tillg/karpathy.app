@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { OutlineItem } from '../lib/outline';
 
 /** Words, characters and reading time of the body, or of the selection. */
@@ -11,7 +11,6 @@ const n = (x: number) => x.toLocaleString();
  * otherwise. Escape closes it; the sheet also on a scrim or grabber tap, the panel on a tap outside when
  * `closeOutside` (tablet).
  */
-
 export function OutlinePanel({ variant, items, info, current, closeOutside, onJump, onClose }: {
   variant: 'sheet' | 'panel';
   items: OutlineItem[];
@@ -27,6 +26,8 @@ export function OutlinePanel({ variant, items, info, current, closeOutside, onJu
   const list = useRef<HTMLOListElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
+  const jump = useRef(onJump);
+  jump.current = onJump;
 
   // The current item stays in view inside the list (only the list scrolls, never the panes around it).
   useEffect(() => {
@@ -48,29 +49,32 @@ export function OutlinePanel({ variant, items, info, current, closeOutside, onJu
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); close.current(); } };
     const down = (e: PointerEvent) => {
       const t = e.target as Element;
-      if (!box.current?.contains(t) && !t.closest?.('[data-testid="outline-button"]')) close.current();
+      if (!box.current?.contains(t) && !t.closest?.('#outline-button')) close.current();
     };
     document.addEventListener('keydown', key);
     if (closeOutside) document.addEventListener('pointerdown', down);
     return () => { document.removeEventListener('keydown', key); document.removeEventListener('pointerdown', down); };
   }, [closeOutside]);
 
+  // A long note has thousands of headings: the list re-renders only when they or the current one change.
+  const listed = useMemo(() => (items.length ? (
+    <ol className="outline-list" ref={list}>
+      {items.map((it, i) => (
+        <li key={`${it.line}`}>
+          <button className="outline-item" data-testid="outline-item" data-line={it.line} data-level={it.level}
+            aria-current={i === current ? 'location' : undefined}
+            style={{ paddingLeft: 16 + 12 * Math.min(5, it.level - min) }} onClick={() => jump.current(it.line)}>{it.text}</button>
+        </li>
+      ))}
+    </ol>
+  ) : <p className="empty">No headings</p>), [items, current, min]);
+
   return (
     <>
       {variant === 'sheet' && <div className="outline-scrim" data-testid="outline-scrim" onClick={onClose} />}
       <div ref={box} className={`outline ${variant}`} role="dialog" aria-modal={variant === 'sheet'} aria-label="Outline" data-testid="outline">
         {variant === 'sheet' && <button className="grabber" aria-label="Close outline" onClick={onClose}><span /></button>}
-        {items.length ? (
-          <ol className="outline-list" ref={list}>
-            {items.map((it, i) => (
-              <li key={`${it.line}`}>
-                <button className="outline-item" data-testid="outline-item" data-line={it.line} data-level={it.level}
-                  aria-current={i === current ? 'location' : undefined}
-                  style={{ paddingLeft: 16 + 12 * Math.min(5, it.level - min) }} onClick={() => onJump(it.line)}>{it.text}</button>
-              </li>
-            ))}
-          </ol>
-        ) : <p className="empty">No headings</p>}
+        {listed}
         <p className="note-info" data-testid="note-info">
           {info.selection
             ? `Selection: ${n(info.words)} words · ${n(info.chars)} characters`

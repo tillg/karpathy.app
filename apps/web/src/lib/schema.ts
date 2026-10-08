@@ -1,6 +1,6 @@
 // The wiki schema (#82): the rules a wiki page's properties should follow. Built in (the LLM-wiki schema), or
 // the vault's own `.karpathy/schema.json`, which replaces it as a whole.
-import type { Frontmatter, LinkStyle, PropertyKind } from './frontmatter';
+import { isListKind, type Frontmatter, type LinkStyle, type PropertyKind } from './frontmatter';
 
 export interface FieldRule { kind: PropertyKind; values?: string[]; required?: boolean; linkStyle?: LinkStyle }
 /** `appliesTo`: vault-root folder prefixes the rules hold for (case-insensitive). */
@@ -45,7 +45,13 @@ export function parseSchema(json: string): Schema | { error: string } {
 
 /** Whether the schema's rules hold for the note at `path`. */
 export const applies = (schema: Schema, path: string) =>
-  schema.appliesTo.some((f) => path.toLowerCase().startsWith(f.toLowerCase().replace(/\/?$/, '/')));
+  schema.appliesTo.some((f) => {
+    const dir = f.replace(/^\/+|\/+$/g, '').toLowerCase(); // '' or '/' = the whole vault
+    return !dir || path.toLowerCase().startsWith(`${dir}/`);
+  });
+
+/** `[[a]]` without quotes in a list reads as a list inside the list (`[["a"]]`), not as a link. */
+const unquotedWikilink = (item: unknown) => Array.isArray(item) && item.length === 1 && Array.isArray(item[0]) && item[0].length === 1 && typeof item[0][0] === 'string';
 
 const isDate = (v: unknown) => {
   if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
@@ -55,7 +61,7 @@ const isDate = (v: unknown) => {
 const either = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} or ${xs.at(-1)}` : xs[0] ?? '');
 
 /** The schema violations of a note's properties; none outside the schema's folders. Never changes `fm`. */
-export function validate(fm: Frontmatter, schema: Schema, path: string): Violation[] {
+export function validate(fm: Pick<Frontmatter, 'props' | 'error'>, schema: Schema, path: string): Violation[] {
   if (!applies(schema, path)) return [];
   if (fm.error) return [{ key: '', message: fm.error }];
   const out: Violation[] = [];
@@ -66,12 +72,16 @@ export function validate(fm: Frontmatter, schema: Schema, path: string): Violati
       if (rule.required) out.push({ key, message: 'required on wiki pages' });
       continue;
     }
-    if (rule.kind === 'list' || rule.kind === 'links') {
-      if (!Array.isArray(v)) { out.push({ key, message: 'should be a list' }); continue; }
-      // `[[a]]` without quotes reads as a list inside the list, not as a link.
-      v.forEach((item, index) => { if (Array.isArray(item)) out.push({ key, index, message: 'wikilinks in lists need quotes' }); });
-    } else if (rule.kind === 'enum' && rule.values && !rule.values.includes(String(v))) out.push({ key, message: `must be ${either(rule.values)}` });
+    if (isListKind(rule.kind)) {
+      if (!Array.isArray(v)) out.push({ key, message: 'should be a list' });
+    } else if (rule.kind === 'number' && typeof v !== 'number') out.push({ key, message: 'should be a number' });
+    else if (rule.kind === 'boolean' && typeof v !== 'boolean') out.push({ key, message: 'should be true or false' });
+    else if (rule.kind !== 'raw' && typeof v === 'object') out.push({ key, message: 'should be a single value' });
+    else if (rule.kind === 'enum' && rule.values && !rule.values.includes(String(v))) out.push({ key, message: `must be ${either(rule.values)}` });
     else if (rule.kind === 'date' && !isDate(v)) out.push({ key, message: 'not a date (YYYY-MM-DD)' });
+  }
+  for (const p of fm.props) {
+    if (Array.isArray(p.value)) p.value.forEach((item, index) => { if (unquotedWikilink(item)) out.push({ key: p.key, index, message: 'wikilinks in lists need quotes' }); });
   }
   return out;
 }

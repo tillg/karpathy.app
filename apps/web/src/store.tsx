@@ -746,14 +746,22 @@ function useAppState() {
   }, [refreshFiles]);
   // The wiki schema of the active vault (#82): its `.karpathy/schema.json` when present and valid, else the default.
   const [schema, setSchema] = useState<{ vault: string; schema: Schema } | null>(null);
+  /** The schema file problem last reported per vault: the same one is reported once. */
+  const schemaReported = useRef(new Map<string, string>());
   const loadSchema = useCallback(async (vault: string) => {
     let next = DEFAULT_SCHEMA;
     try {
       const r = parseSchema((await api.file(vault, SCHEMA_PATH)).content);
-      if ('error' in r) toast(`Schema file ignored: ${r.error}`);
-      else next = r;
+      if ('error' in r) {
+        if (schemaReported.current.get(vault) !== r.error) toast(`Schema file ignored: ${r.error}`);
+        schemaReported.current.set(vault, r.error);
+      } else {
+        next = r;
+        schemaReported.current.delete(vault);
+      }
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 404)) return; // offline or failing: keep what we have
+      schemaReported.current.delete(vault);
     }
     if (activeRef.current === vault) setSchema({ vault, schema: next });
   }, [toast]);

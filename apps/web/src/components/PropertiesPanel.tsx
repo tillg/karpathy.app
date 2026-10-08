@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { Edit, Frontmatter, Prop } from '../lib/frontmatter';
+import { isListKind, isPropertyName, type Edit, type Frontmatter, type Prop } from '../lib/frontmatter';
 import type { FieldRule, Violation } from '../lib/schema';
 import type { PropsView } from '../store';
 import { Icon } from './Icon';
-import { Linked } from './NotePane';
+import { Linked } from './Linked';
 
 /** Today in the user's time zone, as YYYY-MM-DD. */
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -92,7 +92,7 @@ function Field({ p, rule, names, disabled, describedBy, onEdit, onYaml }: {
       return <input type="checkbox" className="switch" checked={v === true} disabled={disabled} aria-label={label} aria-describedby={describedBy} onChange={() => set(v !== true)} />;
     case 'number':
       return <TextField value={v === null ? '' : String(v)} numeric disabled={disabled} label={label} describedBy={describedBy}
-        onCommit={(x) => set(x.trim() !== '' && Number.isFinite(Number(x)) ? Number(x) : x)} />;
+        onCommit={(x) => set(String(Number(x.trim())) === x.trim() ? Number(x.trim()) : x)} />; // `007`, `1.10` stay as typed
     case 'list':
     case 'links': {
       const items = Array.isArray(v) ? v : [];
@@ -113,8 +113,36 @@ function Field({ p, rule, names, disabled, describedBy, onEdit, onYaml }: {
   }
 }
 
+/** "+ Property": the schema's missing keys are offered, any other plain key can be typed. */
+function AddProperty({ fm, rules, offered, disabled, onEdit, toast }: {
+  fm: Pick<Frontmatter, 'props'>; rules: Record<string, FieldRule>; offered: string[]; disabled: boolean; onEdit(e: Edit): void; toast(text: string): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [key, setKey] = useState('');
+  const add = () => {
+    const k = key.trim();
+    if (!k) return;
+    if (!isPropertyName(k)) { toast(`“${k}” can’t be a property name: letters, digits, spaces, - and _ only`); return; }
+    if (fm.props.some((p) => p.key === k)) { toast(`“${k}” is already there`); return; }
+    // A starting value by the rule's kind; an enum gets none (the app never picks a value).
+    const kind = rules[k]?.kind;
+    onEdit({ op: 'addKey', key: k, value: kind && isListKind(kind) ? [] : kind === 'date' ? today() : '' });
+    setKey('');
+    setOpen(false);
+  };
+  if (!open) return <button className="props-addbtn" data-testid="props-add" disabled={disabled} onClick={() => setOpen(true)}>+ Property</button>;
+  return (
+    <div className="props-row props-addrow">
+      <input type="text" className="props-input" data-testid="props-add-key" list="props-add-keys" value={key} autoFocus placeholder="Property name" aria-label="New property" {...KEYS}
+        onChange={(e) => setKey(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } if (e.key === 'Escape') setOpen(false); }} />
+      <datalist id="props-add-keys">{offered.map((k) => <option key={k} value={k} />)}</datalist>
+      <button className="props-btn" onClick={add}>Add</button>
+    </div>
+  );
+}
+
 /** The note's properties as a form (#82), in Write mode between the title and the text. */
-export function PropertiesPanel({ fm, rules, names, violations, view, disabled, onView, onEdit, onYaml }: {
+export function PropertiesPanel({ fm, rules, names, violations, view, disabled, onView, onEdit, onYaml, toast }: {
   fm: Pick<Frontmatter, 'props' | 'error'>;
   rules: Record<string, FieldRule>;
   /** The vault's note names, for link suggestions. */
@@ -126,6 +154,7 @@ export function PropertiesPanel({ fm, rules, names, violations, view, disabled, 
   onEdit(e: Edit): void;
   /** Show the YAML lines for this note only. */
   onYaml(): void;
+  toast(text: string): void;
 }) {
   const open = view === 'open';
   return (
@@ -154,11 +183,13 @@ export function PropertiesPanel({ fm, rules, names, violations, view, disabled, 
         );
       })}
       {open && violations.filter((x) => !fm.props.some((p) => p.key === x.key)).map((x) => (
-        <div className="props-row" key={`missing-${x.key}`}>
+        <div className="props-row" data-testid="props-missing" data-key={x.key} key={`missing-${x.key}`}>
           <span className="props-key">{x.key}</span>
           <span className="props-violation" role="status" data-testid="props-violation">{x.message}</span>
         </div>
       ))}
+      {open && <AddProperty fm={fm} rules={rules} offered={Object.keys(rules).filter((k) => !fm.props.some((p) => p.key === k))}
+        disabled={disabled} onEdit={onEdit} toast={toast} />}
     </section>
   );
 }

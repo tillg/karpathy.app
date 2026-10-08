@@ -581,3 +581,6 @@ a.tc { text-decoration: none; cursor: pointer; }
 /* Selects: no native look (WebKit ignores their height otherwise), a chevron instead. */
 .props-form select.props-input { -webkit-appearance: none; appearance: none; padding-right: 28px;
   background: var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a8e' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 10px center; }
+.props-addbtn { min-height: 40px; padding: 0 12px; margin: 2px 4px 4px; border-radius: 8px; color: var(--tint); font-weight: 600; font-size: 14px; }
+.props-addbtn:hover:not(:disabled) { background: var(--fill2); }
+.props-addrow { grid-template-columns: 1fr auto; }

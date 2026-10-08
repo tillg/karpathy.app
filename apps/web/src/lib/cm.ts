@@ -2,11 +2,11 @@
 // document itself is never rewritten (lossless round-trip, mvp §2.2).
 import { markdown } from '@codemirror/lang-markdown';
 import { HighlightStyle, ensureSyntaxTree, syntaxHighlighting, syntaxTree } from '@codemirror/language';
-import { type EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { EditorSelection, EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { mountEmbed, type EmbedCtx } from './embed';
-import { commentRanges, frontmatterEndLine, inComment } from './outline';
+import { commentRanges, frontmatterEndLine, inComment } from './markdown';
 import { EMBED_RE, knownNatural, mdEmbed, wikiEmbed, type Embed, type Resolved } from './media';
 import { WIKILINK_RE } from './wikilink';
 
@@ -173,11 +173,41 @@ const hiddenFrontmatter = (state: EditorState) => {
   const end = frontmatterEnd(state);
   return end ? Decoration.set(Decoration.replace({ block: true }).range(0, state.doc.line(end).to)) : Decoration.none;
 };
-export const hideFrontmatter = StateField.define<DecorationSet>({
+const hiddenField = StateField.define<DecorationSet>({
   create: hiddenFrontmatter,
   update: (v, tr) => (tr.docChanged ? hiddenFrontmatter(tr.state) : v),
   provide: (f) => [EditorView.decorations.from(f), EditorView.atomicRanges.of((view) => view.state.field(f))],
 });
+
+/**
+ * Keeps typing and the cursor out of the hidden lines: a cursor move or select-all stops at the body, and a
+ * typed or deleted change that would reach them (Backspace at the start of the body, typing in a note without
+ * body) is dropped and `onBlocked` shows them. Loads, undo and form edits pass.
+ */
+export const hideFrontmatter = (onBlocked: () => void): Extension => [
+  hiddenField,
+  EditorState.transactionFilter.of((tr) => {
+    const end = frontmatterEnd(tr.startState);
+    if (!end) return tr;
+    const doc = tr.startState.doc;
+    const typed = (tr.isUserEvent('input') && !tr.isUserEvent('input.properties')) || tr.isUserEvent('delete') || tr.isUserEvent('move');
+    if (tr.docChanged && typed) {
+      // Up to and including the line break after the closing `---`.
+      const guard = doc.line(end).to + 1;
+      let reaches = false;
+      tr.changes.iterChangedRanges((from) => { if (from < guard) reaches = true; });
+      if (reaches) { queueMicrotask(onBlocked); return []; }
+      return tr;
+    }
+    if (!tr.docChanged && tr.selection && tr.isUserEvent('select') && !tr.isUserEvent('select.search')) {
+      const body = end < doc.lines ? doc.line(end + 1).from : doc.length;
+      const sel = tr.selection;
+      if (sel.ranges.every((r) => r.from >= body)) return tr;
+      return { selection: EditorSelection.create(sel.ranges.map((r) => EditorSelection.range(Math.max(r.anchor, body), Math.max(r.head, body))), sel.mainIndex), scrollIntoView: tr.scrollIntoView };
+    }
+    return tr;
+  }),
+];
 
 /**
  * Block widgets must come from state, not a view plugin. An edit only rebuilds the lines it touched (the

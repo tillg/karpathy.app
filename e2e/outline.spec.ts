@@ -266,3 +266,29 @@ test('selection-aware', async ({ page, api, vault }) => {
 test('@iphone selection-aware: the selection is read before the tap', async ({ page, api, vault }) => {
   await selectionAware(page, api, vault, true);
 });
+
+test('typing in a long note with the outline open stays fast', async ({ page, api, vault }) => {
+  test.setTimeout(240_000);
+  const sections = Array.from({ length: 5000 }, (_, i) => `## Heading ${i + 1}\n\n${'word '.repeat(20).trim()}\n`);
+  await api.write(vault.id, 'Huge.md', `# Huge\n\n${sections.join('\n')}`);
+  await openApp(page, vault.id);
+  await openNote(page, 'Huge.md');
+  await page.getByTestId('outline-button').click();
+  const info = page.getByTestId('note-info');
+  await expect(info).toContainText('words');
+  const before = await info.textContent();
+  // The outline and the note info walk the whole note (a 100–200 ms freeze here): never while typing.
+  await info.evaluate((el) => {
+    const w = window as unknown as { infoChanges: number };
+    w.infoChanges = 0;
+    new MutationObserver(() => { w.infoChanges++; }).observe(el, { childList: true, characterData: true, subtree: true });
+  });
+  await page.locator('.cm-content').focus();
+  await page.keyboard.press('ControlOrMeta+End');
+  await page.keyboard.type(' typing eighty characters to check that the outline never freezes the editor', { delay: 40 });
+  expect(await page.evaluate(() => (window as unknown as { infoChanges: number }).infoChanges)).toBe(0);
+  // After a pause they follow the text.
+  await expect(info).not.toHaveText(before!);
+  await page.keyboard.type('\n\n## Zebra');
+  await expect(page.getByTestId('outline-item').last()).toHaveText('Zebra');
+});

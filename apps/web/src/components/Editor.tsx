@@ -2,8 +2,11 @@ import { defaultKeymap, history, historyKeymap, isolateHistory } from '@codemirr
 import { openSearchPanel, search, searchKeymap } from '@codemirror/search';
 import { Annotation, Compartment, EditorState, Transaction } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
+import { ensureSyntaxTree } from '@codemirror/language';
 import { frontmatterEnd, frontmatterRange, hideFrontmatter, liveMarkdown, refreshLinks } from '../lib/cm';
+import { commentRanges } from '../lib/markdown';
+import { collectHeadings, type OutlineItem } from '../lib/outline';
 import { minimalChange } from '../lib/diff';
 import { editorText, eolExtension } from '../lib/eol';
 import type { Embed, Resolved } from '../lib/media';
@@ -29,6 +32,8 @@ export interface EditorHandle {
    * frontmatter is still `expect`: false and nothing written when the AI or a pull changed it meanwhile.
    */
   applyChange(change: { from: number; to: number; insert: string }, expect: FrontmatterText): boolean;
+  /** The outline from the editor's syntax tree; null when the tree isn't complete in time (a very long note). */
+  outline(): OutlineItem[] | null;
 }
 
 export interface TrackedPos {
@@ -82,12 +87,14 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
   const hide = useRef(new Compartment());
   /** Whether the frontmatter lines are hidden now. */
   const hidden = useRef(false);
+  /** Hides the frontmatter lines; a typed change that would reach them shows them instead. */
+  const hideLines = useMemo(() => hideFrontmatter(() => latest.current.onRevealFrontmatter?.()), []);
   /** The frontmatter text last reported through `onFrontmatter`. */
-  const fmText = useRef<string | null | undefined>(undefined);
+  const reportedFm = useRef<string | null | undefined>(undefined);
   const reportFrontmatter = (state: EditorState) => {
     const fm = frontmatterRange(state);
-    if ((fm?.text ?? null) === fmText.current) return;
-    fmText.current = fm?.text ?? null;
+    if ((fm?.text ?? null) === reportedFm.current) return;
+    reportedFm.current = fm?.text ?? null;
     latest.current.onFrontmatter?.(fm);
   };
   /** Positions handed out by `track`, mapped through every change. */
@@ -108,7 +115,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
           epoch: () => latest.current.mediaEpoch,
         }),
         ro.current.of([EditorState.readOnly.of(props.readOnly), EditorView.editable.of(!props.readOnly)]),
-        hide.current.of(props.hideFrontmatter ? hideFrontmatter : []),
+        hide.current.of(props.hideFrontmatter ? hideLines : []),
         // A file from the device is uploaded and embedded where it was dropped; text drags stay CodeMirror's.
         EditorView.domEventHandlers({
           dragover: (e, v) => {
@@ -136,14 +143,14 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
           if (u.docChanged && !u.transactions.some((t) => t.annotation(External))) latest.current.onChange(editorText(u.state));
           if (u.selectionSet) latest.current.onSelection?.();
           // A match of find-in-note inside the hidden lines (search selections are user `select` events).
-          if (hidden.current && u.transactions.some((t) => t.isUserEvent('select')) && inFrontmatter(u.view, u.state.selection.main.head)) latest.current.onRevealFrontmatter?.();
+          if (hidden.current && u.transactions.some((t) => t.isUserEvent('select.search')) && inFrontmatter(u.view, u.state.selection.main.head)) latest.current.onRevealFrontmatter?.();
           if (u.docChanged) reportFrontmatter(u.state);
         }),
       ],
     });
     const v = new EditorView({ state, parent: host.current! });
     view.current = v;
-    fmText.current = undefined;
+    reportedFm.current = undefined;
     reportFrontmatter(state);
     return () => {
       v.destroy();
@@ -174,14 +181,14 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
     const v = view.current;
     if (!v) return;
     hidden.current = !!props.hideFrontmatter;
-    v.dispatch({ effects: hide.current.reconfigure(props.hideFrontmatter ? hideFrontmatter : []) });
+    v.dispatch({ effects: hide.current.reconfigure(props.hideFrontmatter ? hideLines : []) });
     const head = v.state.selection.main.head;
     if (!inFrontmatter(v, head)) return;
     if (!props.hideFrontmatter) { v.dispatch({ effects: EditorView.scrollIntoView(head, { y: 'center' }) }); return; }
     // A cursor in the lines being hidden moves below them (a hit there reveals them instead, in `gotoLine`).
     const end = frontmatterEnd(v.state);
     v.dispatch({ selection: { anchor: end < v.state.doc.lines ? v.state.doc.line(end + 1).from : v.state.doc.length } });
-  }, [props.hideFrontmatter]);
+  }, [props.hideFrontmatter, hideLines]);
 
   // A new file list or dropped media bytes: missing-link marks and embeds follow (#55).
   useEffect(() => { view.current?.dispatch({ effects: refreshLinks.of(null) }); }, [props.exists, props.mediaEpoch]);
@@ -252,6 +259,14 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
       if (!v || v.state.doc.sliceString(expect.from, expect.to) !== expect.text) return false;
       v.dispatch({ changes: change, annotations: [isolateHistory.of('full'), Transaction.userEvent.of('input.properties')] });
       return true;
+    },
+    outline: () => {
+      const v = view.current;
+      const tree = v && ensureSyntaxTree(v.state, v.state.doc.length, 50);
+      if (!v || !tree) return null;
+      const doc = v.state.doc;
+      return collectHeadings(tree, (from, to) => doc.sliceString(from, to), (pos) => doc.lineAt(pos).number,
+        { fmEnd: frontmatterEnd(v.state), comments: commentRanges(doc.toString()) });
     },
     selectionText: () => {
       const v = view.current;

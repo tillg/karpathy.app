@@ -59,3 +59,29 @@ describe('validate', () => {
     expect(f).toEqual(copy);
   });
 });
+
+describe('review fixes', () => {
+  const fm = (text: string) => readFrontmatter(`---\n${text}\n---\n`, DEFAULT_SCHEMA.fields)!;
+  const base = 'type: concept\ntags: [a]\nupdated: 2026-10-02';
+  it('only an unquoted [[…]] is flagged, in any list', () => {
+    expect(validate(fm(`${base}\nsee_also: [[[x]], y]`), DEFAULT_SCHEMA, 'Wiki/x.md')).toEqual([{ key: 'see_also', index: 0, message: 'wikilinks in lists need quotes' }]);
+    expect(validate(fm(`${base}\nrelated:\n  - [a, b]`), DEFAULT_SCHEMA, 'Wiki/x.md')).toEqual([]);
+  });
+  it('appliesTo "" or "/" is the whole vault', () => {
+    expect(applies({ appliesTo: [''], fields: {} }, 'a.md')).toBe(true);
+    expect(applies({ appliesTo: ['/'], fields: {} }, 'x/a.md')).toBe(true);
+  });
+});
+
+describe('wrong kind', () => {
+  it('wrong kind', () => {
+    const schema = { appliesTo: [''], fields: { n: { kind: 'number' as const }, b: { kind: 'boolean' as const }, t: { kind: 'text' as const } } };
+    const flags = (text: string) => validate(readFrontmatter(`---\n${text}\n---\n`, schema.fields)!, schema, 'a.md');
+    expect(flags('n: high\nb: yes\nt: [a]')).toEqual([
+      { key: 'n', message: 'should be a number' },
+      { key: 'b', message: 'should be true or false' },
+      { key: 't', message: 'should be a single value' },
+    ]);
+    expect(flags('n: 3\nb: true\nt: x')).toEqual([]);
+  });
+});

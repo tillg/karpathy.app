@@ -4,7 +4,7 @@ title: "Architecture: note outline, note info and a properties editor"
 status: applied
 order: 3
 created: 2026-10-04
-edited: 2026-10-04
+edited: 2026-10-08
 ---
 
 # Architecture: note outline, note info and a properties editor
@@ -79,8 +79,11 @@ function currentHeading(items: OutlineItem[], topLine: number): number;
   `data-line` for that block.
 - **Write mode** calls `collectHeadings` on `ensureSyntaxTree(state, state.doc.length, 100)`; if that
   isn't done in time (very long note), it falls back to `outlineOfText(doc.toString())`.
-  `EditorHandle.outline()` returns the list.
+  `EditorHandle.outline()` returns the list. CodeMirror keeps that tree up to date incrementally, so no
+  keystroke re-parses the note.
 - **Read mode** calls `outlineOfText(s.currentText())`, memoized on the text.
+- **While typing** the outline and the note info are refreshed after a 300 ms pause, not per keystroke:
+  both walk the whole note.
 
 ### Jumping
 
@@ -317,7 +320,9 @@ interface Violation { key: string; message: string }
   value outside `values` ("must be high, medium or low"), `date` not a valid calendar date ("not a date
   (YYYY-MM-DD)"), `list`/`links` given as a scalar ("should be a list"), a list item that parsed as a
   nested list from an unquoted `[[…]]` (found by `[[` at the item's range; "wikilinks in lists need
-  quotes"), a frontmatter parse error (one violation on the panel).
+  quotes"), a frontmatter parse error (one violation on the panel), a value of the wrong kind (`number`
+  rule, not a number: "should be a number"; `boolean`: "should be true or false"; `text`, `enum` or `date`
+  given a list or map: "should be a single value").
 
 ### Store
 
@@ -394,7 +399,9 @@ sequenceDiagram
   Text edits commit on blur and on Enter, not per keystroke, so one change = one edit = one undo step.
 - Link chips use `Linked` from `NotePane` (same resolution and missing-page marking as Read mode);
   suggestions are the 8 best note-name matches from `paths` (basename prefix first, then substring).
-- **Add property:** a "+ Property" row offers the schema's keys that are missing, then a free key.
+- **Add property:** a "+ Property" row offers the schema's keys that are missing, then a free key. The new
+  line is `addKey` with a starting value by the rule's kind: `[]` for `list`/`links`, today for `date`,
+  `""` otherwise (an enum is then flagged until a value is picked; the app never picks one).
 - Disabled when `readOnly` or the note is deleted.
 - Test ids: `props`, `props-row` (`data-key`), `props-yaml`, `props-violation`, `props-add`.
 

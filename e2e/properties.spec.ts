@@ -260,3 +260,102 @@ test('read-only in conflict', async ({ page, api, vault }) => {
   expect(await controls.count()).toBeGreaterThan(5);
   expect(await controls.evaluateAll((els) => els.filter((e) => !(e as HTMLInputElement).disabled).map((e) => e.outerHTML.slice(0, 60)))).toEqual([]);
 });
+
+test('the hidden frontmatter is safe from editing keys', async ({ page, api, vault }) => {
+  const note = '---\ntitle: x\n---\n# H\n\nBody.\n';
+  await openProps(page, api, vault, 'Guard.md', note);
+  const doc = () => page.locator('.cm-content').evaluate((e) => (e as unknown as { cmTile: { view: { state: { doc: { toString(): string } } } } }).cmTile.view.state.doc.toString());
+  const head = () => page.locator('.cm-content').evaluate((e) => (e as unknown as { cmTile: { view: { state: { selection: { main: { head: number } } } } } }).cmTile.view.state.selection.main.head);
+  const bodyStart = note.indexOf('# H');
+
+  // ArrowUp from the first body line stays below the hidden lines.
+  await page.locator('.cm-line', { hasText: '# H' }).click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowUp');
+  expect(await head()).toBeGreaterThanOrEqual(bodyStart);
+  await expect(page.locator('.cm-fm')).toHaveCount(0);
+
+  // Backspace at the start of the body would join it to the closing `---`: refused, and the lines are shown.
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Backspace');
+  await expect(page.locator('.cm-fm').first()).toBeVisible();
+  expect(await doc()).toBe(note);
+
+  // Select all, then type: in the form view the properties aren't part of the selection.
+  await page.getByTestId('props-form').click();
+  await expect(page.locator('.cm-fm')).toHaveCount(0);
+  await page.locator('.cm-line', { hasText: 'Body.' }).click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('New');
+  expect(await doc()).toBe('---\ntitle: x\n---\nNew');
+});
+
+test('a broken schema file is reported once', async ({ page, api, vault }) => {
+  const other = await api.createVault('schema-other');
+  try {
+    await openProps(page, api, vault, 'wiki/p.md', '---\ntype: concept\n---\n# p\n');
+    const toast = page.getByTestId('toast');
+    await api.write(vault.id, '.karpathy/schema.json', '{ not json');
+    await expect(toast).toContainText('Schema file ignored');
+    await expect(toast).not.toHaveClass(/\bon\b/, { timeout: 10_000 });
+    // Away to another vault and back: the same broken file is not reported again.
+    await toast.evaluate((el) => {
+      const w = window as unknown as { shown: string[] };
+      w.shown = [];
+      new MutationObserver(() => { if (el.classList.contains('on')) w.shown.push(el.textContent ?? ''); }).observe(el, { attributes: true, childList: true, characterData: true, subtree: true });
+    });
+    for (const id of [other.id, vault.id]) {
+      await page.getByTestId('vault-switcher').first().click();
+      await page.locator(`[data-testid="vault-option"][data-vault="${id}"]`).click();
+      await expect(page.getByTestId('vault-switcher').first()).toContainText(id);
+    }
+    await page.waitForTimeout(2500);
+    expect((await page.evaluate(() => (window as unknown as { shown: string[] }).shown)).filter((t) => t.includes('Schema file ignored'))).toEqual([]);
+  } finally {
+    await api.removeVault(other.id);
+  }
+});
+
+test('a number field writes what was typed', async ({ page, api, vault }) => {
+  await openProps(page, api, vault, 'Num.md', '---\nsummit_m: 3606\n---\n# n\n');
+  const input = row(page, 'summit_m').locator('input');
+  await input.fill('3607');
+  await input.press('Enter');
+  await expect.poll(async () => (await api.file(vault.id, 'Num.md'))!.content.split('\n')[1]).toBe('summit_m: 3607');
+  // Not a plain number as typed: kept as text, not rewritten as 7.
+  await input.fill('007');
+  await input.press('Enter');
+  await expect.poll(async () => (await api.file(vault.id, 'Num.md'))!.content.split('\n')[1]).toBe('summit_m: "007"');
+});
+
+test('+ Property', async ({ page, api, vault }) => {
+  await openProps(page, api, vault, 'wiki/p.md', '---\ntype: concept\nupdated: 2026-10-02\n---\n# p\n');
+  const fmLines = async () => (await api.file(vault.id, 'wiki/p.md'))!.content.split('\n---\n')[0]!.split('\n');
+  const missing = (k: string) => page.locator(`[data-testid="props-missing"][data-key="${k}"]`);
+  await expect(missing('tags').getByTestId('props-violation')).toHaveText('required on wiki pages');
+
+  await page.getByTestId('props-add').click();
+  const key = page.getByTestId('props-add-key');
+  const offered = await page.locator('#props-add-keys option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+  expect(offered).toEqual(expect.arrayContaining(['tags', 'confidence']));
+  expect(offered).not.toContain('type');
+
+  await key.fill('tags');
+  await key.press('Enter');
+  await expect.poll(async () => (await fmLines()).at(-1)).toBe('tags: []');
+  await expect(missing('tags')).toHaveCount(0);
+  await expect(row(page, 'tags').getByTestId('props-violation')).toHaveCount(0);
+
+  await page.getByTestId('props-add').click();
+  await key.fill('rating');
+  await key.press('Enter');
+  await expect.poll(async () => (await fmLines()).at(-1)).toBe('rating: ""');
+
+  const before = (await api.file(vault.id, 'wiki/p.md'))!.content;
+  await page.getByTestId('props-add').click();
+  await key.fill('a: b');
+  await key.press('Enter');
+  await expect(page.getByTestId('toast')).toContainText('a: b');
+  await page.waitForTimeout(500);
+  expect((await api.file(vault.id, 'wiki/p.md'))!.content).toBe(before);
+});

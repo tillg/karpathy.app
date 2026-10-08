@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { frontmatterFields, renderMarkdown, splitFrontmatter, type FieldValue, type RenderCtx } from '../lib/markdown';
+import { frontmatterFields, renderMarkdown, splitFrontmatter, type FieldValue } from '../lib/markdown';
 import { isPdf, isUploadable } from '@karpathy/shared';
 import { mountEmbed, mountEmbeds, type Mounted } from '../lib/embed';
-import { mediaKind, resolveEmbed } from '../lib/media';
+import { mediaKind } from '../lib/media';
 import { editFrontmatter, parseProps, type Edit } from '../lib/frontmatter';
 import { minimalChange } from '../lib/diff';
 import { countText, readingMinutes } from '../lib/noteinfo';
@@ -10,8 +10,7 @@ import { applies, validate } from '../lib/schema';
 import { currentHeading, outlineOfText } from '../lib/outline';
 import { scrollToLine, topBlockLine } from '../lib/place';
 import { incomingView } from '../lib/incoming';
-import { formatRoute } from '../lib/route';
-import { parseWikilink, resolveRelativeLink, resolveWikilink, wikilinkLabel, WIKILINK_RE } from '../lib/wikilink';
+import { parseWikilink, resolveWikilink } from '../lib/wikilink';
 import { useApp } from '../store';
 import { AttachButton } from './AttachButton';
 import { Editor, type EditorHandle, type FrontmatterText } from './Editor';
@@ -19,25 +18,8 @@ import { GitPill } from './GitPill';
 import { Icon } from './Icon';
 import { OutlinePanel } from './OutlinePanel';
 import { PropertiesPanel } from './PropertiesPanel';
+import { Linked, plainClick, useRenderCtx } from './Linked';
 import { PullLink } from './PullLink';
-
-/** A plain left click is handled in-app; modified clicks (new tab, window, download) go to the browser (#109). */
-const plainClick = (e: React.MouseEvent) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
-
-/** What rendering needs in the open note: where links point, which files exist and what embeds show. `base`: see `Markdown`. */
-function useRenderCtx(base?: string): Required<RenderCtx> {
-  const { activeId, paths, note, exists } = useApp();
-  const from = base ?? note?.path;
-  return useMemo(() => {
-    const route = (p: string) => formatRoute(activeId, p);
-    return {
-      exists,
-      href: (target) => { const p = resolveWikilink(target, paths, from); return p ? route(p) : null; },
-      relative: (href) => { const p = from !== undefined && resolveRelativeLink(href, from, paths); return p ? { path: p, href: route(p) } : null; },
-      resolveEmbed: (e) => resolveEmbed(e, from || null, paths),
-    };
-  }, [activeId, paths, from, exists]);
-}
 
 /** Rendered Read mode; `[[wikilinks]]` and relative links to vault notes are clickable. `base`: file path relative links resolve from (default the open note; '' = vault root, for chat). */
 export function Markdown({ text, className, base, startLine }: { text: string; className?: string; base?: string; startLine?: number }) {
@@ -85,35 +67,6 @@ export function Markdown({ text, className, base, startLine }: { text: string; c
         }
       }} />
   );
-}
-
-/**
- * Text with its `[[wikilinks]]` as links, resolved like the body's (#58). `bare`: a value without
- * `[[ ]]` that names an existing note (slug or file name) links too (#108).
- */
-export function Linked({ text, bare }: { text: string; bare?: boolean }) {
-  const { exists, followLink } = useApp();
-  const ctx = useRenderCtx();
-  const out: React.ReactNode[] = [];
-  let last = 0;
-  const link = (key: number, inner: string) => {
-    const l = parseWikilink(inner);
-    out.push(
-      <a key={key} href={(l.target && ctx.href(l.target)) || '#'} className={!l.target || exists(l.target) ? 'wl' : 'wl miss'} data-target={inner}
-        onClick={(e) => { if (plainClick(e)) { e.preventDefault(); followLink(inner); } }}>{wikilinkLabel(l)}</a>,
-    );
-  };
-  if (bare && !text.includes('[[') && text.trim() && exists(text.trim())) {
-    link(0, text.trim());
-    return <>{out}</>;
-  }
-  for (const m of text.matchAll(WIKILINK_RE)) {
-    out.push(text.slice(last, m.index));
-    link(m.index, m[1]!);
-    last = m.index + m[0].length;
-  }
-  out.push(text.slice(last));
-  return <>{out}</>;
 }
 
 /** Frontmatter keys whose list items are note references. */
@@ -266,12 +219,14 @@ export function NotePane({ inert }: { inert?: boolean }) {
   }, []);
 
   // Properties form (#82): built from the editor's frontmatter text, so its positions are the editor's.
-  const [fmText, setFmText] = useState<FrontmatterText | null>(null);
+  // Per note: what the editor reported for another note never shows (e.g. right after Read → other note → Write).
+  const [fmFor, setFmFor] = useState<{ key: string; fm: FrontmatterText | null } | null>(null);
+  const fmText = fmFor && fmFor.key === noteKey ? fmFor.fm : null;
   const { schema } = s;
   // Outside the schema's folders the kinds come from the values.
   const rules = useMemo(() => (note && applies(schema, note.path) ? schema.fields : {}), [schema, note]);
   const fm = useMemo(() => (fmText ? parseProps(fmText.text, rules) : null), [fmText, rules]);
-  const violations = useMemo(() => (fm && note ? validate({ ...fmText!, ...fm }, schema, note.path) : []), [fm, fmText, schema, note]);
+  const violations = useMemo(() => (fm && note ? validate(fm, schema, note.path) : []), [fm, schema, note]);
   // The YAML lines for this note only (a refused edit, "Edit in YAML"), without changing the preference.
   const [yamlFor, setYamlFor] = useState<string | null>(null);
   useEffect(() => setYamlFor(null), [noteKey]);
@@ -281,14 +236,35 @@ export function NotePane({ inert }: { inert?: boolean }) {
     const r = editFrontmatter(fmText.text, e, rules);
     if ('refused' in r) { s.toast(r.refused); setYamlFor(note!.path); return; }
     const c = minimalChange(fmText.text, r.text);
-    if (c) editor.current?.applyChange({ from: fmText.from + c.from, to: fmText.from + c.to, insert: c.insert }, fmText);
+    // False when the text changed under the form (AI, pull): nothing written, the form shows the new text.
+    if (c && editor.current && !editor.current.applyChange({ from: fmText.from + c.from, to: fmText.from + c.to, insert: c.insert }, fmText))
+      s.toast('The properties changed meanwhile — try again');
   };
   const names = useMemo(() => [...new Set(s.paths.filter((p) => /\.md$/i.test(p)).map((p) => p.split('/').pop()!.replace(/\.md$/i, '')))].sort(), [s.paths]);
   const showForm = mode === 'write' && !!note && !note.binary && !!fm && !fm.error && s.propsView !== 'yaml' && yamlFor !== note.path;
 
   const [outlineOpen, setOutlineOpen] = useState(false);
   const text = note && !note.binary ? s.currentText() : '';
-  const outline = useMemo(() => (outlineOpen ? outlineOfText(text) : []), [outlineOpen, text]);
+  // Both walk the whole note: they follow the text once typing has paused for 300 ms, never per keystroke.
+  const [settled, setSettled] = useState(text);
+  const lastEdit = useRef(0);
+  const settleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const settleSoon = () => {
+    clearTimeout(settleTimer.current);
+    const tick = () => {
+      const wait = 300 - (performance.now() - lastEdit.current);
+      if (wait > 0) settleTimer.current = setTimeout(tick, wait);
+      else setSettled(s.currentText());
+    };
+    settleTimer.current = setTimeout(tick, 300);
+  };
+  useEffect(() => () => clearTimeout(settleTimer.current), []);
+  // A reload or a pull changes the text without typing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (outlineOpen && settled !== text) settleSoon(); }, [outlineOpen, text, settled]);
+  const openOutline = (open: boolean) => { if (open) setSettled(text); setOutlineOpen(open); };
+  // Write mode: from the editor's syntax tree, which CodeMirror keeps up to date as you type.
+  const outline = useMemo(() => (!outlineOpen ? [] : (mode === 'write' && editor.current?.outline()) || outlineOfText(settled)), [outlineOpen, settled, mode]);
   // Note info: the selection when there is one, else the body; never the frontmatter. Read mode only counts
   // a selection inside the rendered note (the properties table is outside `.rd`).
   const [sel, setSel] = useState<string | null>(null);
@@ -310,9 +286,9 @@ export function NotePane({ inert }: { inert?: boolean }) {
   }, [outlineOpen, mode, text]);
   const info = useMemo(() => {
     if (!outlineOpen) return null;
-    const c = countText(sel ?? splitFrontmatter(text).body);
+    const c = countText(sel ?? splitFrontmatter(settled).body);
     return { ...c, minutes: readingMinutes(c.words), selection: sel !== null };
-  }, [outlineOpen, text, sel]);
+  }, [outlineOpen, settled, sel]);
   // The current section: the heading whose section holds the line at the top of the pane, while the outline is open.
   const [current, setCurrent] = useState(-1);
   useEffect(() => {
@@ -330,7 +306,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
     return () => { sc.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf); };
   }, [outlineOpen, outline, mode, s.scrollRef]);
 
-  // Phone and tablet close the outline on a note change; wide keeps it as a table of contents.
+  // Phone and tablet close the outline on a note change; wide keeps it open while reading on.
   useEffect(() => { if (!wide) setOutlineOpen(false); }, [noteKey, wide]);
 
   /** A jump is not a navigation: no history entry, the cursor stays, the phone keyboard stays closed. */
@@ -357,8 +333,8 @@ export function NotePane({ inert }: { inert?: boolean }) {
         {!wide && !phone && <GitPill small />}
         {note && (
           <>
-            {!note.binary && <button className={`ib${outlineOpen ? ' on' : ''}`} title="Outline" aria-expanded={outlineOpen} data-testid="outline-button"
-              onPointerDown={() => setSel(readSelection())} onClick={() => setOutlineOpen(!outlineOpen)}><Icon n="list_bullet" /></button>}
+            {!note.binary && <button id="outline-button" className={`ib${outlineOpen ? ' on' : ''}`} title="Outline" aria-expanded={outlineOpen} data-testid="outline-button"
+              onPointerDown={() => setSel(readSelection())} onClick={() => openOutline(!outlineOpen)}><Icon n="list_bullet" /></button>}
             {!note.binary && (
               <div className="seg" role="group" aria-label="Mode" data-testid="mode-toggle">
                 <button className={mode === 'write' ? 'on' : ''} aria-pressed={mode === 'write'} data-testid="mode-write" onClick={() => switchMode('write')}>Write</button>
@@ -399,17 +375,17 @@ export function NotePane({ inert }: { inert?: boolean }) {
             <h2 className="note-title">{title}</h2>
             {mode === 'write' && fm && (showForm
               ? <PropertiesPanel fm={fm} rules={rules} names={names} violations={violations} view={s.propsView === 'closed' ? 'closed' : 'open'}
-                  disabled={readOnly || !!note.deleted} onView={s.setPropsView} onEdit={editProp} onYaml={() => setYamlFor(note.path)} />
+                  disabled={readOnly || !!note.deleted} onView={s.setPropsView} onEdit={editProp} onYaml={() => setYamlFor(note.path)} toast={s.toast} />
               : fm.error
                 ? <div className="props-bar" data-testid="props-unreadable">Can’t read these properties: {fm.error}</div>
                 : <div className="props-bar"><button className="link" data-testid="props-form" onClick={() => { setYamlFor(null); if (s.propsView === 'yaml') s.setPropsView('open'); }}>Properties form</button></div>)}
             {mode === 'write'
               ? <Editor key={noteKey} ref={editor} doc={editorDoc} docNonce={note.loadNonce} readOnly={readOnly || !!note.deleted}
-                  onChange={s.editDraft} exists={s.exists} onWikilink={s.followLink} resolveEmbed={rctx.resolveEmbed}
+                  onChange={(t) => { s.editDraft(t); lastEdit.current = performance.now(); if (outlineOpen) settleSoon(); }} exists={s.exists} onWikilink={s.followLink} resolveEmbed={rctx.resolveEmbed}
                   embedCtx={() => ({ vault: s.activeId!, toast: s.toast, onOpen: (p) => void s.openNote(p) })} mediaEpoch={s.mediaEpoch}
                   onDropFiles={canAttach ? (files, pos) => attach(files, false, pos) : undefined}
                   onSelection={() => { if (outlineOpen) setSel(readSelection()); }}
-                  hideFrontmatter={showForm} onFrontmatter={setFmText} onRevealFrontmatter={() => setYamlFor(note.path)} />
+                  hideFrontmatter={showForm} onFrontmatter={(f) => setFmFor({ key: noteKey!, fm: f })} onRevealFrontmatter={() => setYamlFor(note.path)} />
               : <ReadView text={s.currentText()} />}
             <div className="dfoot" data-testid="save-state">
               {note.uploading ? 'Uploading…' : note.saving ? 'Saving…' : note.dirty ? '● Unsaved changes' : 'Saved'}{readOnly ? ' · read-only' : ''}
