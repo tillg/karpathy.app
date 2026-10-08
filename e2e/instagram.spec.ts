@@ -12,7 +12,7 @@ test('Admin › Instagram: wrong password, then connect with a code, then discon
   const dialog = page.getByTestId('settings-dialog');
   await expect(dialog.getByTestId('ig-status')).toHaveText(/Not connected/);
 
-  await dialog.getByTestId('ig-username').fill('twofa-e2e');
+  await dialog.getByTestId('ig-username').fill('twofa_e2e');
   await dialog.getByTestId('ig-password').fill('wrong');
   await dialog.getByTestId('ig-connect').click();
   await expect(dialog.getByTestId('ig-error')).toHaveText(/Wrong username or password/);
@@ -23,7 +23,7 @@ test('Admin › Instagram: wrong password, then connect with a code, then discon
   await expect(dialog.getByTestId('ig-code-hint')).toHaveText('Code sent by SMS');
   await dialog.getByTestId('ig-code').fill('000000');
   await dialog.getByTestId('ig-verify').click();
-  await expect(dialog.getByTestId('ig-status')).toHaveText(/Connected as @twofa-e2e/);
+  await expect(dialog.getByTestId('ig-status')).toHaveText(/Connected as @twofa_e2e/);
 
   await dialog.getByTestId('ig-disconnect').click();
   await expect(dialog.getByTestId('ig-status')).toHaveText(/Not connected/);
