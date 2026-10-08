@@ -23,6 +23,8 @@ check:
     npm run typecheck
     npm test
     bash deploy/stack.test.sh
+    bash deploy/ingest/run.test.sh
+    bash deploy/ingest/compose.test.sh
     node --experimental-strip-types --test e2e/stack.unit.ts
 
 # The dev LLM, native on this Mac (Metal GPU) and shared by all dev stacks: `just ollama install|uninstall|status`
@@ -86,9 +88,12 @@ prodtest action="up" *args:
         mkdir -p tmp/prodtest/secrets
         [ -s tmp/prodtest/secrets/bearer_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/bearer_token
         [ -s tmp/prodtest/secrets/opencode_password ] || openssl rand -hex 24 > tmp/prodtest/secrets/opencode_password
+        [ -s tmp/prodtest/secrets/gog_keyring_password ] || openssl rand -hex 24 > tmp/prodtest/secrets/gog_keyring_password
+        [ -s tmp/prodtest/secrets/ingest_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/ingest_token
         touch tmp/prodtest/secrets/github_token tmp/prodtest/secrets/dns_api_token
         echo "$n" > tmp/prodtest/stack
-        prodtest_compose up -d --build
+        # The ingest image installs the private ingest-email repo.
+        GH_TOKEN="${GH_TOKEN:-$(gh auth token)}" prodtest_compose up -d --build
         echo "App: https://localhost:$PRODTEST_PORT  token: $(cat tmp/prodtest/secrets/bearer_token)"
         ;;
       down) prodtest_compose down -v && rm -f tmp/prodtest/stack ;;
@@ -160,6 +165,10 @@ deploy-e2e target *args:
 # Copy a target's access token to the clipboard; `--qr` also prints a login QR code for a phone/iPad
 token target *flag:
     deploy/ansible/token.sh {{target}} {{flag}}
+
+# Give a target's ingest service Gmail access: this Mac's gog OAuth client + the account's refresh token (`dev` = this checkout's dev stack)
+ingest-auth target email:
+    deploy/ansible/ingest-auth.sh {{target}} {{email}}
 
 # Copy an ntfy topic to the clipboard (subscribe to it in the ntfy app): a target's alert topic, or `dev` for dev progress (Keychain karpathy-ntfy-dev)
 ntfy-topic target:

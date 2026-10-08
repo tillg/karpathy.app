@@ -46,6 +46,14 @@ services:
   egress:
     image: !reset null
 
+  # No profiles: the loop idles (dev stacks never read a real Gmail label).
+  ingest:
+    image: !reset null
+    volumes:
+      - ingest-state:/state
+      - ./ingest/config.none.json:/etc/ingest/config.json:ro
+      - vaults:/vaults
+
   # The dev LLM is the native Ollama on the Mac (`just ollama install`), shared by all stacks. This relay
   # (proxy/Caddyfile.ollama-relay) is opencode's only route to it, and passes only the /v1 API.
   ollama:

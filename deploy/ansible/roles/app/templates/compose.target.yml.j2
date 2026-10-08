@@ -1,6 +1,8 @@
 # Rendered by Ansible (role app): what is specific to target {{ target }}.
-{% if git_remote_base is defined %}
+{% if git_remote_base is defined or app_ingest_vaults %}
 services:
+{% endif %}
+{% if git_remote_base is defined %}
   # Local bare repos instead of GitHub (the e2e suite's remotes).
   backend:
     environment:
@@ -11,6 +13,15 @@ services:
       GIT_CONFIG_VALUE_0: /remotes/*
     volumes:
       - {{ remotes_dir }}:/remotes
+{% endif %}
+{% if app_ingest_vaults %}
+  # Only what the ingest service needs: Input/ to write, Sources/ to look up duplicates.
+  ingest:
+    volumes:
+{% for v in app_ingest_vaults %}
+      - {{ vaults_fs_mount }}/{{ v }}/Input:/vaults/{{ v }}/Input
+      - {{ vaults_fs_mount }}/{{ v }}/Sources:/vaults/{{ v }}/Sources:ro
+{% endfor %}
 {% endif %}
 
 volumes:

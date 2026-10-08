@@ -46,7 +46,7 @@ jobs:
     needs: [check, guard]
     strategy:
       matrix:
-        image: [proxy, backend, opencode, egress]
+        image: [proxy, backend, opencode, egress, ingest]
         arch: [amd64, arm64]
         include:
           - { arch: amd64, runner: ubuntu-24.04 }
@@ -68,6 +68,9 @@ jobs:
           build-args: |
             APP_VERSION=${{ needs.guard.outputs.version }}
             BUILT_AT=${{ needs.guard.outputs.built }}
+          # The ingest image installs the private ingest-email repo (a token with read access to it).
+          secrets: |
+            gh_token=${{ secrets.INGEST_EMAIL_TOKEN }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ needs.guard.outputs.version }}
@@ -84,7 +87,7 @@ jobs:
     permissions: { contents: read, packages: write }
     strategy:
       matrix:
-        image: [proxy, backend, opencode, egress]
+        image: [proxy, backend, opencode, egress, ingest]
     steps:
       - uses: actions/download-artifact@v4
         with: { pattern: 'digest-${{ matrix.image }}-*', merge-multiple: true, path: digests }

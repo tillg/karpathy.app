@@ -100,6 +100,43 @@ services:
       egress: { condition: service_healthy }
     networks: [internal]
 
+  # Fetches mail and resolves the links in it into the vaults' Input/ (deploy/ingest). Parses untrusted mail and
+  # web pages, so it is confined like opencode: internal network, egress proxy only, no app secrets. The deploy adds
+  # the mounts of the configured vaults (Input/ rw, Sources/ ro); dev and prodtest mount the whole volume.
+  ingest:
+    image: ghcr.io/tillg/karpathy.app-ingest:${APP_VERSION:-dev}
+    # ingest-email is a private repo: building needs GH_TOKEN (`gh auth token`).
+    build: { context: .., dockerfile: deploy/ingest/Dockerfile, secrets: [gh_token] }
+    restart: unless-stopped
+    init: true
+    user: *app-user
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logs
+    environment:
+      HTTP_PROXY: http://egress:3128
+      HTTPS_PROXY: http://egress:3128
+      NO_PROXY: localhost,127.0.0.1
+      # gog (Gmail): token store in the file keyring under /state, its password from the secret (run.sh).
+      GOG_HOME: /state/gog
+      GOG_KEYRING_BACKEND: file
+      # instascraper keeps its session and activity ledger under ~/.config/instascraper.
+      HOME: /state/home
+    secrets: [gog_keyring_password, ingest_token]
+    volumes:
+      - ingest-state:/state
+      - ./ingest/config.json:/etc/ingest/config.json:ro
+    # run.sh touches the heartbeat after every round (≤ 1 min, plus Instagram pacing); 20 min without one = stuck.
+    healthcheck:
+      test: ["CMD-SHELL", "test -n \"$$(find /state/last-run -mmin -20 2>/dev/null)\""]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      egress: { condition: service_healthy }
+    networks: [internal]
+
   # The only way from opencode to the internet: public destinations only (no loopback, private,
   # link-local or tailnet addresses, also after redirects), so the AI's web fetches can't reach
   # the backend, other containers or the cloud metadata service.
@@ -129,9 +166,14 @@ volumes:
   config: {}
   opencode-data: {}
   caddy-data: {}
+  ingest-state: {}
 
 secrets:
   bearer_token: { file: ./secrets/bearer_token }
   opencode_password: { file: ./secrets/opencode_password }
   github_token: { file: ./secrets/github_token }
   dns_api_token: { file: ./secrets/dns_api_token }
+  gog_keyring_password: { file: ./secrets/gog_keyring_password }
+  ingest_token: { file: ./secrets/ingest_token }
+  # Build only (the ingest image installs the private ingest-email repo).
+  gh_token: { environment: GH_TOKEN }

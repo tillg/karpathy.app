@@ -1,0 +1,8 @@
+{
+  "_comment": "Rendered by Ansible (role app) to deploy/ingest/config.json. vault = the backend vault id whose Input/ the profile fills; label = the Gmail label, with <label>/processed, /failed and /rejected beside it. Everything else is ingest-email config.",
+  "defaults": { "max_per_poll": 20, "resolve_max_urls_per_mail": 5, "run_interval_s": 900 },
+  "profiles": {
+    "mylife": { "vault": "mylife", "label": "MyLife", "allowed_senders": ["someone@example.com"] },
+    "frechen": { "vault": "frechen", "label": "FrechenHelper", "max_per_poll": 50, "allowed_senders": ["someone@example.com"] }
+  }
+}

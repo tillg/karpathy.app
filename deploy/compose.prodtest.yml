@@ -31,6 +31,13 @@ services:
     volumes:
       - ./opencode/dev-ollama.json:/etc/opencode-dev/ollama.json:ro
 
+  # No profiles: the loop idles (prodtest never reads a real Gmail label).
+  ingest:
+    volumes:
+      - ingest-state:/state
+      - ./ingest/config.none.json:/etc/ingest/config.json:ro
+      - vaults:/vaults
+
   # ollama.internal:11434 (on this project's internal network) → the native Ollama on the Mac, /v1 API only.
   ollama-bridge:
     image: caddy:2.10-alpine
@@ -44,3 +51,5 @@ secrets:
   opencode_password: { file: ../tmp/prodtest/secrets/opencode_password }
   github_token: { file: ../tmp/prodtest/secrets/github_token }
   dns_api_token: { file: ../tmp/prodtest/secrets/dns_api_token }
+  gog_keyring_password: { file: ../tmp/prodtest/secrets/gog_keyring_password }
+  ingest_token: { file: ../tmp/prodtest/secrets/ingest_token }

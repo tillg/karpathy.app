@@ -22,7 +22,11 @@ jobs:
       - run: docker build --progress=plain -t kai-test-opencode -f deploy/opencode/Dockerfile .
         timeout-minutes: 10
       - run: docker build -q -t kai-test-egress-img -f deploy/egress/Dockerfile .
+      # The ingest image installs the private ingest-email repo (a token with read access to it).
+      - run: docker build -q --secret id=gh_token,env=GH_TOKEN -t kai-test-ingest -f deploy/ingest/Dockerfile .
+        env: { GH_TOKEN: '${{ secrets.INGEST_EMAIL_TOKEN }}' }
       - run: npm test
+        env: { GH_TOKEN: '${{ secrets.INGEST_EMAIL_TOKEN }}' }
       - run: npm run build -w apps/web
       # Dev stacks take their ports from deploy/stack.sh (`just dev up`); render stack 1.
       - run: docker compose -f deploy/compose.yml -f deploy/compose.dev.yml config -q

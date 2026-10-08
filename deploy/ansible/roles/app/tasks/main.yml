@@ -107,6 +107,51 @@
     dest: "{{ app_root }}/shared/.env"
     mode: "0644"
 
+# Older releases have no ingest service: nothing of it is rendered for them.
+- name: The release has the ingest service
+  ansible.builtin.set_fact:
+    app_ingest: "{{ 'ingest' in app_release_images }}"
+
+# Only cloned vaults get mounts: an Input/ created where the backend hasn't cloned yet would make the clone fail.
+- name: Clones of the ingest profiles' vaults
+  ansible.builtin.stat:
+    path: "{{ vaults_fs_mount }}/{{ item.value.vault }}/.git"
+  loop: "{{ app_ingest_profiles | dict2items }}"
+  loop_control: { label: "{{ item.key }} → {{ item.value.vault }}" }
+  register: app_ingest_clones
+  when: app_ingest
+
+- name: Vaults the ingest service writes to
+  ansible.builtin.set_fact:
+    app_ingest_vaults: >-
+      {{ (app_ingest_clones.results | default([])) | selectattr('stat', 'defined') | selectattr('stat.exists')
+         | map(attribute='item.value.vault') | unique | list }}
+
+# Bind-mount sources must exist before the container starts; an empty Input/ is not a git change.
+- name: Input/ and Sources/ in each ingest vault
+  ansible.builtin.file:
+    path: "{{ vaults_fs_mount }}/{{ item.0 }}/{{ item.1 }}"
+    state: directory
+    owner: "{{ deploy_uid }}"
+    group: "{{ deploy_gid }}"
+    mode: "0755"
+  loop: "{{ app_ingest_vaults | product(['Input', 'Sources']) | list }}"
+
+- name: Ingest config directory
+  ansible.builtin.file:
+    path: "{{ app_root }}/shared/ingest"
+    state: directory
+    mode: "0755"
+  when: app_ingest
+
+- name: Ingest config (profile → vault)
+  ansible.builtin.copy:
+    dest: "{{ app_root }}/shared/ingest/config.json"
+    content: "{{ {'defaults': app_ingest_defaults, 'profiles': app_ingest_profiles} | to_nice_json }}\n"
+    mode: "0644"
+  register: app_ingest_config
+  when: app_ingest
+
 - name: Target-specific compose file
   ansible.builtin.template:
     src: compose.target.yml.j2
@@ -152,6 +197,20 @@
   register: app_opencode_password
   no_log: true
 
+# The ingest service's secrets, generated once on the target like opencode_password: the gog token store's
+# keyring password (only the ingest container reads it) and the token of its internal endpoint (backend + ingest).
+- name: Ingest secrets
+  ansible.builtin.copy:
+    dest: "{{ app_root }}/shared/secrets/{{ item }}"
+    content: "{{ lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=48') }}"
+    force: false
+    owner: "{{ deploy_uid }}"
+    group: "{{ deploy_gid }}"
+    mode: "0600"
+  loop: [gog_keyring_password, ingest_token]
+  register: app_ingest_secrets
+  no_log: true
+
 - name: Provider keys (opencode.env)
   ansible.builtin.copy:
     dest: "{{ app_root }}/shared/opencode.env"
@@ -190,7 +249,9 @@
     pull: missing
     build: never
     # Containers read secrets and env files at start: a rotated one needs a recreate.
-    recreate: "{{ 'always' if app_secrets is changed or app_opencode_password is changed or app_provider_keys is changed else 'auto' }}"
+    recreate: >-
+      {{ 'always' if app_secrets is changed or app_opencode_password is changed or app_provider_keys is changed
+         or app_ingest_secrets is changed or app_ingest_config is changed else 'auto' }}
     remove_orphans: true
     wait: true
     wait_timeout: 300

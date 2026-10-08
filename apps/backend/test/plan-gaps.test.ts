@@ -140,8 +140,9 @@ describe('P1/§2.5 compose topology (deploy/compose.yml)', () => {
   }));
   const svc = compose.services as Record<string, { ports?: unknown[]; user?: string; secrets?: { source: string }[]; environment?: Record<string, string>; volumes?: { source: string; target: string }[] }>;
 
-  it('four services (with the egress proxy); only the proxy publishes ports', () => {
-    expect(Object.keys(svc).sort()).toEqual(['backend', 'egress', 'opencode', 'proxy']);
+  it('five services (with the egress proxy and the ingest service); only the proxy publishes ports', () => {
+    expect(Object.keys(svc).sort()).toEqual(['backend', 'egress', 'ingest', 'opencode', 'proxy']);
+    expect(svc.ingest!.ports ?? []).toEqual([]);
     expect(svc.egress!.ports ?? []).toEqual([]);
     expect(svc.proxy!.ports?.length).toBeGreaterThan(0);
     expect(svc.backend!.ports ?? []).toEqual([]);

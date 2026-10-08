@@ -28,10 +28,13 @@ case "${1:-up}" in
     mkdir -p secrets ../tmp/dev/remotes
     [ -s secrets/bearer_token ] || openssl rand -hex 24 > secrets/bearer_token
     [ -s secrets/opencode_password ] || openssl rand -hex 24 > secrets/opencode_password
+    [ -s secrets/gog_keyring_password ] || openssl rand -hex 24 > secrets/gog_keyring_password
+    [ -s secrets/ingest_token ] || openssl rand -hex 24 > secrets/ingest_token
     touch secrets/github_token secrets/dns_api_token
     # The dev model (~2 GB) lives with the native Ollama, pulled once for all stacks.
     ollama show qwen2.5:3b >/dev/null 2>&1 || ollama pull qwen2.5:3b
-    compose up -d --build
+    # The ingest image installs the private ingest-email repo.
+    GH_TOKEN="${GH_TOKEN:-$(gh auth token)}" compose up -d --build
     echo "Stack $n: https://localhost:$PROXY_PORT  token: $(cat secrets/bearer_token)"
     ;;
   down|logs|ps)

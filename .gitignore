@@ -11,6 +11,8 @@ tmp/
 
 # deploy secrets / local env
 deploy/secrets/
+# rendered by Ansible on the server (example: deploy/ingest/config.example.json)
+deploy/ingest/config.json
 deploy/.env
 deploy/opencode.env
 node_modules/

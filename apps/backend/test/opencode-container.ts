@@ -199,6 +199,39 @@ export async function startOpencode(vaultsDir: string, env: Record<string, strin
   };
 }
 
+/** The ingest image (deploy/ingest), per checkout like IMAGE. */
+export const INGEST_IMAGE = `kai-test-ingest-${createHash('sha1').update(REPO).digest('hex').slice(0, 8)}`;
+/** Internal network like compose's `internal`: no route out, only the egress proxy (also on NET) reaches the internet. */
+const INGEST_NET = 'kai-test-ingest-net';
+
+/**
+ * Starts the ingest container on INGEST_NET with compose's proxy env. Building needs a token for the private
+ * ingest-email repo: GH_TOKEN, else `gh auth token`.
+ */
+export async function startIngest() {
+  ensureEgress();
+  let token = process.env.GH_TOKEN;
+  if (!token) try { token = execFileSync('gh', ['auth', 'token'], { encoding: 'utf8' }).trim(); } catch { /* none: the build fails if the repo is private */ }
+  try {
+    execFileSync('docker', ['build', '-q', '--secret', 'id=gh_token,env=GH_TOKEN', '-t', INGEST_IMAGE, '-f', join(REPO, 'deploy/ingest/Dockerfile'), REPO],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GH_TOKEN: token ?? '' } });
+  } catch (e) {
+    if (!String((e as { stderr?: string }).stderr).includes('already exists')) throw e;
+  }
+  try { docker('network', 'create', '--internal', INGEST_NET); } catch (e) {
+    if (!String((e as { stderr?: string }).stderr).includes('already exists')) throw e;
+  }
+  try { docker('network', 'connect', INGEST_NET, EGRESS); } catch (e) {
+    if (!String((e as { stderr?: string }).stderr).includes('already exists')) throw e;
+  }
+  const name = `kai-test-ingest-${randomBytes(4).toString('hex')}`;
+  const proxy = `http://${EGRESS}:3128`;
+  // The loop idles without a config; the tests only exec into the container.
+  docker('run', '-d', '--name', name, '--network', INGEST_NET, '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
+    '-e', `HTTP_PROXY=${proxy}`, '-e', `HTTPS_PROXY=${proxy}`, '-e', 'NO_PROXY=localhost,127.0.0.1', INGEST_IMAGE, 'sleep', 'infinity');
+  return { name, stop: () => void docker('rm', '-f', name) };
+}
+
 /**
  * A free host port outside the OS's ephemeral range (49152+ on macOS). Ephemeral ports go to the tests'
  * own servers (supertest); a container port forwarded on one of them answered their requests with
