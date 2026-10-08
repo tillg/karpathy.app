@@ -246,6 +246,12 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   (the user's messages, notes it read, earlier results); any other URL fails with "URL not in this chat: paste it into
   the chat first", and the turn goes on. At most 20 searches and 20 fetches per turn. Fetched pages stay in the chat;
   they reach the vault only if the AI writes about them. With Web access off, the AI has neither tool.
+- **Add a picture, video, audio or PDF from the web** (Web access on, not in conflict): "add a picture of X from <URL> to
+  this note" makes the AI save the file as a **new** vault file next to the note (`save_url`, a changed chip, stamped as AI
+  work, listed in Changes) and edit the note to embed it as `![[name]]`. Only a URL that already appears in the chat works
+  (same rule as web fetch), and the download counts as a fetch against the cap. It never overwrites a file (the AI picks
+  another name), refuses a file over 50 MB, a page that isn't the file (wrong Content-Type), SVG and any hidden or outside
+  path; the failure comes back as a tool error and the turn goes on.
 - **Commands:** typing `/` in the composer opens the **command palette**: the vault's skills (`query`, `lint`, `ingest`, …)
   with their descriptions, filtered as you type. Two groups, "This vault" (tag `vault`: the vault's own skills, in
   `.agents/skills/`) and "karpathy.app" (tag `app`: skills that ship with the app, today `research`). A vault skill with the
@@ -415,8 +421,9 @@ sequenceDiagram
 | Conflict choice per file | Resolved file(s), possibly a `.conflict-<date>` copy |
 | Settings: reminder threshold, model, Web access | — |
 | URLs in prompts and notes, web search queries (AI) | Web chips; pages and results in the chat only |
+| "Add a picture of X from <URL>" (AI) | A new media file or PDF in the vault (changed chip) and an embed in the note |
 
-No pasting of images, no video or audio uploads, no exports, e-mail or push notifications.
+No pasting of images, no video or audio uploads by the user (the AI may save them from a URL), no exports, e-mail or push notifications.
 
 ## States and transitions
 
@@ -478,6 +485,9 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
 - **Web access:** a URL the AI builds itself (e.g. adds a query) can't be fetched: the user pastes it. A link deep in a
   long, truncated page isn't known either. Without `EXA_API_KEY`, search uses Exa's rate-limited anonymous endpoint.
   Changing the web caps needs an opencode restart or redeploy.
+- **Media download:** the AI saves a file next to the note; it can't move a flat note into its own folder (the rule that
+  uploads apply to a page with attachments), can't copy a chat attachment into the vault, and can't save SVG. Uploads by the
+  user still allow only JPEG, PNG, GIF, WebP and PDF, while the AI may also save other image types, video and audio.
 - **Commands and the move:**
   - Only skills are commands: no variables like `{activeNote}`, no argument hints, no command files (opencode reads them only
     from `.opencode/`, which disables chat); a user prompt becomes a small skill instead.

@@ -72,6 +72,13 @@ describe('mapping edge cases', () => {
     expect(writtenPaths(part, '/vaults/a')).toEqual(['x.md', 'y.md', 'z.md']);
   });
 
+  it('save_url writes its filePath and keeps its url', () => {
+    const part = { id: 's1', tool: 'save_url', state: { status: 'completed', input: { url: 'https://a.com/c.png', filePath: 'notes/c.png' }, output: 'saved notes/c.png (1 KB).' } };
+    expect(mapToolPart(part, '/vaults/a')).toMatchObject({ tool: 'save_url', path: 'notes/c.png', url: 'https://a.com/c.png', writes: true, opens: false });
+    expect(writtenPaths(part, '/vaults/a')).toEqual(['notes/c.png']);
+    expect(writtenPaths({ ...part, state: { ...part.state, status: 'error' } }, '/vaults/a')).toEqual([]);
+  });
+
   it('real captured websearch and webfetch parts map to query / url', () => {
     const tools = events.flatMap((e) => (e.type === 'part' && e.part.type === 'tool' ? [e.part.call] : []));
     expect(tools.find((t) => t.tool === 'websearch')).toMatchObject({ status: 'completed', query: expect.any(String), writes: false });
