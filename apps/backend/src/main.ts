@@ -45,7 +45,8 @@ vaults.beforeRemove = (id) => chat.deleteAllChats(id);
 void chat.init().catch((e) => console.warn('chat init:', (e as Error).message));
 const commitMessages = new OpencodeCommitMessages(vaults, store, harness, (id) => chat.dir(id));
 
-const app = createApp({ token: env.token, vaults, store, githubToken, chat, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), version: env.version, built: env.built, deployed: env.deployed });
+const app = createApp({ token: env.token, vaults, store, githubToken, chat, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), version: env.version, built: env.built, deployed: env.deployed,
+  ...(process.env.INGEST_URL && secret('INGEST_TOKEN') ? { ingest: { url: process.env.INGEST_URL, token: secret('INGEST_TOKEN')! } } : {}) });
 const server = app.listen(env.port, () => console.log(`backend listening on :${env.port}`));
 
 const shutdown = () => {

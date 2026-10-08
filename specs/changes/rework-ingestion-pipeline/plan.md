@@ -143,7 +143,7 @@ before `/spec:apply` writes them. The real login is checked once by hand on the 
     after 5 min → `expired-code`; status never calls login; while pending, the resolver sees `no-session`. Fails today:
     no `server.py`.
   - Verify: `docker run --rm karpathy-ingest:test pytest /opt/ingest/test_server.py` → all green
-- [ ] Backend routes `GET /ingest/instagram`, `POST /ingest/instagram/login|code|disconnect`
+- [x] Backend routes `GET /ingest/instagram`, `POST /ingest/instagram/login|code|disconnect`
   - Depends on: 13
   - Test first: `apps/backend/test/ingest-routes.test.ts` › bearer required; bodies validated (zod); forwards with
     `ingest_token` to a real local HTTP server standing in for the ingest service; `503` "Ingest service not running"

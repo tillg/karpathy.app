@@ -7,6 +7,7 @@ import { fallbackMessage, type CommitMessages } from './commit-message.js';
 import type { ConfigStore } from './config-store.js';
 import type { GitHubToken } from './github-token.js';
 import { PathError } from './paths.js';
+import { callIngest, type IngestEndpoint } from './ingest.js';
 import { HttpError, type Vaults } from './vaults.js';
 
 export interface AppDeps {
@@ -25,6 +26,8 @@ export interface AppDeps {
   built?: string;
   /** When the running release was deployed (DEPLOYED_AT, ISO 8601, written by Ansible); unset outside a deployment. */
   deployed?: string;
+  /** The ingest service's internal endpoint (Admin › Instagram); unset = not running. */
+  ingest?: IngestEndpoint;
 }
 
 // Branch names reach git as arguments: only plain ref names (git check-ref-format rules),
@@ -63,6 +66,8 @@ const promptBody = z
   .object({ text: z.string().trim().max(100_000), attachments: z.array(z.string().min(1).max(1000)).max(MAX_ATTACHMENTS, { error: `At most ${MAX_ATTACHMENTS} files per message` }).optional() })
   .refine((b) => b.text.length > 0 || (b.attachments?.length ?? 0) > 0, { error: 'Write a prompt or attach a file' });
 
+const instagramLogin = z.object({ username: z.string().trim().min(1).max(100), password: z.string().min(1).max(200) }).strict();
+const instagramCode = z.object({ code: z.string().trim().min(1).max(20) }).strict();
 const githubTokenBody = z.object({
   token: z.string().trim().min(20, { error: 'GitHub token: that is too short to be a token' }).max(255).regex(/^\S+$/, { error: 'GitHub token: must not contain spaces' }),
 });
@@ -312,6 +317,20 @@ export function createApp(d: AppDeps) {
   api.post('/vaults/:id/chats/:chatId/abort', async (req, res) => {
     await chat().abort(req.params.id!, req.params.chatId!);
     res.status(204).end();
+  });
+
+  // Admin › Instagram: the ingest service logs in; the password passes through once (src/ingest.ts).
+  api.get('/ingest/instagram', async (_req, res) => {
+    res.json(await callIngest(d.ingest, 'GET', '/instagram/status'));
+  });
+  api.post('/ingest/instagram/login', async (req, res) => {
+    res.json(await callIngest(d.ingest, 'POST', '/instagram/login', instagramLogin.parse(req.body ?? {})));
+  });
+  api.post('/ingest/instagram/code', async (req, res) => {
+    res.json(await callIngest(d.ingest, 'POST', '/instagram/code', instagramCode.parse(req.body ?? {})));
+  });
+  api.post('/ingest/instagram/disconnect', async (_req, res) => {
+    res.json(await callIngest(d.ingest, 'POST', '/instagram/disconnect', {}));
   });
 
   api.use((_req, res) => {
