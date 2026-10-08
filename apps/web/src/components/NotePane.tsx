@@ -15,6 +15,7 @@ import { useApp } from '../store';
 import { AttachButton } from './AttachButton';
 import { Editor, type EditorHandle, type FrontmatterText } from './Editor';
 import { GitPill } from './GitPill';
+import { GraphPane } from './GraphPane';
 import { Icon } from './Icon';
 import { OutlinePanel } from './OutlinePanel';
 import { PropertiesPanel } from './PropertiesPanel';
@@ -325,7 +326,8 @@ export function NotePane({ inert }: { inert?: boolean }) {
 
   return (
     <main className="pane always" id="detail" inert={inert} aria-label="Note">
-      <header className="bar">
+      {/* The note stays as it is under the graph (drafts, cursor, scroll), out of reach while the graph is shown. */}
+      <header className="bar" inert={s.graphOpen}>
         {!phone && <button className="ib" title="Toggle sidebar" data-testid="sidebar-toggle" onClick={() => s.setSidebarOpen(!s.sidebarOpen)}><Icon n="sidebar_left" /></button>}
         {phone && <button className="ib back" data-testid="back" onClick={() => s.setPhoneNote(false)}><Icon n="chevron_left" size={24} /><span>{s.phoneTab === 'search' ? 'Search' : s.phoneTab === 'changes' ? 'Changes' : 'Files'}</span></button>}
         {note && !phone && <span className="crumb">{note.path.split('/').join(' › ')}</span>}
@@ -349,9 +351,9 @@ export function NotePane({ inert }: { inert?: boolean }) {
         <button className={`ib${s.chatOpen && !phone ? ' on' : ''}`} title="AI chat" data-testid="chat-toggle"
           onClick={() => (phone ? s.setPhoneTab('chat') : s.setChatOpen(!s.chatOpen))}><Icon n="sparkles" /></button>
       </header>
-      {outlineOpen && note && !note.binary && <OutlinePanel variant={phone ? 'sheet' : 'panel'} items={outline} info={info!} current={current} closeOutside={!phone && !wide}
+      {outlineOpen && note && !note.binary && !s.graphOpen && <OutlinePanel variant={phone ? 'sheet' : 'panel'} items={outline} info={info!} current={current} closeOutside={!phone && !wide}
         onJump={jumpTo} onClose={() => setOutlineOpen(false)} />}
-      <div className="scroll" ref={s.scrollRef}>
+      <div className="scroll" ref={s.scrollRef} inert={s.graphOpen}>
         {!online && <div className="banner warn" data-testid="offline-banner">Offline — showing cached notes, read-only.</div>}
         {note?.deleted && (
           <div className="banner warn" data-testid="deleted-banner">
@@ -405,6 +407,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
           </div>
         )}
       </div>
+      <GraphPane />
     </main>
   );
 }

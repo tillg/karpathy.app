@@ -117,9 +117,9 @@ export interface SearchHit {
   text: string;
 }
 
-/** `GET /vaults/:id/graph`: the notes (`.md` files) and the links between them. */
+/** `GET /vaults/:id/graph`: the notes (`.md` files, with their frontmatter `type` if set) and the links between them. */
 export interface GraphData {
-  nodes: { path: string }[];
+  nodes: { path: string; type?: string }[];
   links: { source: string; target: string }[];
 }
 

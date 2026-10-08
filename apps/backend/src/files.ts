@@ -118,11 +118,21 @@ export async function search(root: string, q: string): Promise<{ hits: SearchHit
 export async function graph(root: string): Promise<GraphData> {
   const paths = (await listTree(root)).filter((f) => f.type === 'file').map((f) => f.path);
   const notes = paths.filter((p) => /\.md$/i.test(p));
+  const nodes: GraphData['nodes'] = [];
   const links: GraphData['links'] = [];
   for (const source of notes) {
     // The AI or a pull may delete it between the listing and this read: then it has no links.
     const text = await readFile(join(root, source), 'utf8').catch(() => '');
+    const type = noteType(text);
+    nodes.push(type ? { path: source, type } : { path: source });
     for (const target of noteLinks(text, source, paths)) links.push({ source, target });
   }
-  return { nodes: notes.map((path) => ({ path })), links };
+  return { nodes, links };
+}
+
+/** The top-level `type:` of a note's frontmatter (a scalar, quotes and comment dropped), if any. */
+function noteType(text: string): string | undefined {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---\s*(?:\n|$)/.exec(text)?.[1];
+  const v = fm && /^type:[ \t]*(.*)$/m.exec(fm)?.[1]!.replace(/\s+#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2');
+  return v || undefined;
 }

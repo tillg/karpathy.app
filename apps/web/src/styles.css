@@ -5,6 +5,7 @@
   --sep: rgba(60,60,67,.2); --fill: rgba(120,120,128,.12); --fill2: rgba(120,120,128,.07);
   --tint: #1f4db8; --tint-soft: rgba(31,77,184,.12); --on-tint: #fff; --brand: #0f1e33; --sel: #0f1e33; --sel-ink: #fff;
   --mat: rgba(249,249,251,.78); --green: #28a745; --red: #e5484d; --orange: #f59e0b; --purple: #8e44ad;
+  --graph-1: #28a745; --graph-2: #8e44ad; --graph-3: #d6336c; --graph-4: #0c8599; --graph-5: #b08900; --graph-6: #8d6e63;
   /* Text tones of the status colours (≥4.5:1 on their tinted backgrounds, issue #40); the base ones stay for dots/icons. */
   --green-ink: #146c33; --red-ink: #b91c1c; --orange-ink: #8f5200; --badge: #c9302c;
   --add: rgba(40,167,69,.12); --del: rgba(229,72,77,.12); --warn: rgba(245,158,11,.14);
@@ -21,6 +22,7 @@
     --sep: rgba(84,84,88,.55); --fill: rgba(120,120,128,.26); --fill2: rgba(120,120,128,.14);
     --tint: #86abff; --tint-soft: rgba(134,171,255,.16); --on-tint: #0b1530; --brand: #dbe6ff; --sel: #2b4a86; --sel-ink: #fff;
     --mat: rgba(28,28,30,.74); --green: #3ddc84; --red: #ff7a7a; --purple: #c792ea;
+    --graph-1: #3ddc84; --graph-2: #c792ea; --graph-3: #ff7eb6; --graph-4: #3bc9db; --graph-5: #ffd43b; --graph-6: #bcaaa4;
     --green-ink: #3ddc84; --red-ink: #ff7a7a; --orange-ink: #f59e0b;
     --add: rgba(61,220,132,.14); --del: rgba(255,107,107,.14); --shadow: 0 12px 40px rgba(0,0,0,.6);
     color-scheme: dark;
@@ -191,11 +193,24 @@ mark { background: rgba(245,158,11,.35); color: var(--label); border-radius: 3px
 .conflict > .btn.wide { margin-bottom: 8px; }
 .modal.compare { width: min(1100px, 100%); height: min(900px, 100%); }
 .modal.compare .cdiff { font-size: 13px; }
-.modal.graph { width: min(1100px, 100%); height: min(900px, 100%); }
-.modal.graph .modal-body { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
-.graph-host { flex: 1; min-height: 0; background: var(--paper); }
-.modal.graph .form-error { margin: 16px; }
-.graph-hint { flex: none; margin: 0 !important; padding: 8px 16px; font-size: 13px; color: var(--label2); border-top: .5px solid var(--sep); }
+.graph-pane { position: absolute; inset: 0; z-index: 7; display: flex; flex-direction: column; padding-top: 52px; background: var(--paper); }
+.graph-pane[hidden] { display: none; }
+.graph-pane .form-error { margin: 16px; }
+.graph-stage { position: relative; flex: 1; min-height: 0; }
+.graph-host { position: absolute; inset: 0; background: var(--paper); }
+.graph-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: var(--paper); color: var(--label2); font-size: 14px; }
+.breathing { width: 140px; height: 140px; overflow: visible; animation: breathe 3.2s ease-in-out infinite; }
+.breathing line { stroke: var(--label3); stroke-width: 1.2; opacity: .5; }
+.breathing circle { fill: var(--tint); animation: glow 1.6s ease-in-out infinite alternate; }
+@keyframes breathe { 0%, 100% { transform: scale(.82) rotate(-4deg); } 50% { transform: scale(1.06) rotate(4deg); } }
+@keyframes glow { from { opacity: .35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .breathing { animation-duration: 8s; } .breathing circle { animation: none; } }
+.graph-hint { flex: none; padding: 8px 16px; font-size: 13px; color: var(--label2); border-top: .5px solid var(--sep); }
+.graph-hint p { margin: 0; }
+.graph-legend { list-style: none; margin: 0 0 2px -4px; padding: 0; display: flex; flex-wrap: wrap; gap: 0 4px; }
+.graph-legend label { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 6px 0 4px; cursor: pointer; }
+.graph-legend input { width: 16px; height: 16px; margin: 0; flex: none; }
+.graph-legend label:has(input:not(:checked)) { color: var(--label3); }
 .cf-controls { position: sticky; bottom: -20px; margin: 0 -20px -20px; padding: 12px 20px 20px; background: var(--bg); border-top: .5px solid var(--sep); display: flex; flex-direction: column; gap: 8px; }
 /* Paths: the file name is never cut off (it wraps), the folder is secondary text below it. */
 .plabel { display: flex; flex-direction: column; min-width: 0; padding: 3px 0; }
@@ -445,13 +460,13 @@ a.tc { text-decoration: none; cursor: pointer; }
   box-shadow: 0 0 0 .5px var(--sep), var(--shadow); }
 #main-swap .f7-icons { position: relative; }
 /* Keep the bar buttons next to the divider out from under the swap button's tap box. */
-#app.wide.insp #detail > .bar { padding-right: 32px; }
+#app.wide.insp #detail > .bar, #app.wide.insp .graph-pane > .bar { padding-right: 32px; }
 #app.wide.insp #chat > .bar { padding-left: 32px; }
 /* Chat in main: the chat takes the main column, the note the 380 px side column. CSS only, so no DOM
    node moves (a running turn, typed text, focus, scroll and undo history all stay). */
 #app.wide.insp.chatmain #chat { order: 1; flex: 1 1 0; border-left: none; }
 #app.wide.insp.chatmain #detail { order: 2; flex: 0 0 380px; border-left: .5px solid var(--sep); }
-#app.wide.insp.chatmain #detail > .bar { padding-right: 8px; padding-left: 32px; }
+#app.wide.insp.chatmain #detail > .bar, #app.wide.insp.chatmain .graph-pane > .bar { padding-right: 8px; padding-left: 32px; }
 #app.wide.insp.chatmain #chat > .bar { padding-left: 8px; padding-right: 32px; }
 
 /* ===== tablet (700–1023): editor + overlay sidebar + slide-over chat ===== */
@@ -482,7 +497,6 @@ a.tc { text-decoration: none; cursor: pointer; }
 @media (max-width: 699px) {
   .modal-scrim { padding: 0; align-items: flex-end; }
   .modal, .modal.wide { width: 100%; height: auto; max-height: calc(100% - 20px); border-radius: 14px 14px 0 0; }
-  .modal.graph { height: calc(100% - 20px); }
   .modal.wide { height: calc(100% - 20px); }
   .sides { grid-template-columns: 1fr; }
   #toast { bottom: calc(var(--tabh) + 16px); }

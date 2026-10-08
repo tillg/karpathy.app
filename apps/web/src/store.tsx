@@ -524,6 +524,8 @@ function useAppState() {
   const setAdminOpen = useCallback((open: false | 'vaults' | 'settings', vault?: string) =>
     setAdminOpenState(open === false ? false : open === 'settings' ? { view: 'settings' } : { view: 'vaults', vault }), []);
   const [commitOpen, setCommitOpen] = useState(false);
+  /** The graph is shown in the note pane, over the open note (which stays as it was); opening a note closes it. */
+  const [graphOpen, setGraphOpenState] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
 
   /** The pane's scroll element, set by NotePane; read when a note is left, to remember its place. */
@@ -534,6 +536,24 @@ function useAppState() {
   const placeNow = useRef<(() => { top: number; line?: number }) | null>(null);
   /** Set by the Back/Forward handler: the next opened note returns to its remembered place. */
   const restorePlace = useRef(false);
+
+  /** Brings the note pane forward: pushed on the phone, the overlays closed on the tablet. */
+  const showDetail = useCallback(() => {
+    if (phone) {
+      const tab = phoneTab === 'chat' ? 'files' : phoneTab;
+      setPhoneTab(tab);
+      setNoteTab(tab);
+    } else if (!wide) {
+      setSidebarOpen(false);
+      setChatOpen(false);
+    }
+  }, [phone, wide, phoneTab]);
+  const setGraphOpen = useCallback((open: boolean) => {
+    setGraphOpenState(open);
+    if (open) showDetail();
+    // Phone: the graph is opened from a tab root (the sidebar), so closing it goes back there.
+    else if (phone) setNoteTab(null);
+  }, [showDetail, phone]);
 
   const openNote = useCallback(async (path: string, line?: number, heading?: string) => {
     const cur = noteRef.current;
@@ -547,15 +567,9 @@ function useAppState() {
       const place = restorePlace.current ? places.current.get(`${activeId}\0${path}`) : undefined;
       if (place && place.mode === modeRef.current) setNote((v) => v && { ...v, restore: { top: place.top, line: place.line, nonce: Date.now() } });
     }
-    if (phone) {
-      const tab = phoneTab === 'chat' ? 'files' : phoneTab;
-      setPhoneTab(tab);
-      setNoteTab(tab);
-    } else if (!wide) {
-      setSidebarOpen(false);
-      setChatOpen(false);
-    }
-  }, [leave, load, phone, wide, phoneTab, activeId]);
+    setGraphOpenState(false);
+    showDetail();
+  }, [leave, load, activeId, showDetail]);
 
   /** The user is editing (checked when an AI open would switch the note): editor focused or unsaved text. */
   const isEditing = useCallback(() => {
@@ -829,7 +843,7 @@ function useAppState() {
     followLink, exists, readOnly, conflict,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain,
     schema: schema?.vault === activeId ? schema.schema : DEFAULT_SCHEMA,
-    sidebarOpen, setSidebarOpen, mode, setMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, adminOpen, setAdminOpen, commitOpen, setCommitOpen, chatId, setChatId,
+    sidebarOpen, setSidebarOpen, mode, setMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, adminOpen, setAdminOpen, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
   };
 }
 

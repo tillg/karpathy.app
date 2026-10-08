@@ -68,11 +68,18 @@ flowchart LR
   survive). The button is one absolutely positioned 44 px element on the divider (`right: 380px + inset`, the side
   column is always 380 px); the bar ends next to it get 32 px padding. The choice lives in the store (`chatMain`,
   localStorage `karpathy.chatMain`).
-- **Note graph** (`GraphDialog`, #130): a `Modal` opened by the sidebar graph button. It fetches
-  `GET /vaults/:id/graph` on open and renders it with `3d-force-graph` (three.js, WebGL), imported dynamically so the
-  main bundle stays without three.js; the chunk (~1.4 MB) stays under Workbox's 2 MiB precache limit. The graph data
-  is not cached: offline the dialog shows the fetch error. Node labels are DOM elements with `textContent`, never HTML strings. Colours come from the
-  CSS tokens (`--tint`, `--orange` for the open note, `--paper`); a `ResizeObserver` keeps the canvas at the dialog size.
+- **Note graph** (`GraphPane`, #130): a layer inside `#detail` (absolute, over the note), shown while the store's
+  `graphOpen` is set (sidebar graph button; `openNote` clears it). The note underneath stays mounted and `inert`, so
+  drafts, cursor and scroll survive. It fetches `GET /vaults/:id/graph` on the first open per vault and keeps the
+  result in a module-level `Map` for the session (Refresh drops it); the `3d-force-graph` instance is built once per
+  data and only paused while hidden, so reopening is instant. three.js is imported dynamically so the main bundle
+  stays without it; the chunk (~1.4 MB) stays under Workbox's 2 MiB precache limit. Offline, a first open shows the
+  fetch error. `lib/graph.ts` decides what is shown (`shownGraph`: the `Wiki` folder, any case, unless "Show all" or
+  the vault has none) and the colours (`typeColors`: the node's frontmatter `type`, read by the backend; `entity` =
+  `--tint`, untyped = `--label3`, other types `--graph-1…6` by name; `withoutTypes` drops the types unchecked in the
+  legend, kept in localStorage `karpathy.graphHiddenTypes`). The same node objects feed both views, so
+  toggling keeps the layout. A CSS-only "breathing graph" shows until the first engine tick. Node labels are DOM
+  elements with `textContent`, never HTML strings; a `ResizeObserver` keeps the canvas at the pane size.
 - **Chat opens notes** (`lib/chat.ts`, `ChatPane` `useChat`): a pure open tracker per chat view (`seen`, `later`,
   `loaded`). The first history load only marks completed `open_note` calls as seen; later loads (reattach,
   visibility change) and live events open unseen completed calls. Outside the wide layout the last open of the turn

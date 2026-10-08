@@ -234,11 +234,16 @@ order (#99).
 
 ### Graph
 
-The graph button (sidebar header) opens a 3D graph of the vault's notes (#130): one dot per `.md` file, a line per
-link between two notes (wikilinks, embeds and relative Markdown links, resolved like in the editor; links in code
-don't count). A dot grows with its number of links; the open note is orange. Drag rotates, pinch or scroll zooms,
-hovering shows the note's name, a click opens the note and closes the graph. The graph is read when opened (no live
-updates); three.js loads on first open only.
+The graph button (sidebar header) shows a 3D graph of the vault's notes in the note pane, in place of the note
+(#130): one dot per `.md` file, a line per link between two notes (wikilinks, embeds and relative Markdown links,
+resolved like in the editor; links in code don't count). By default only the notes in the `Wiki` folder are shown;
+"Show all" adds the rest (no toggle when the vault has no `Wiki` folder). A dot grows with its number of links; its
+colour is its frontmatter `type` (`entity` blue, one colour per other type, grey without a type); the legend below the graph
+has a checkbox per type to hide or show its notes, remembered in this browser. The open note is orange. Drag rotates, pinch or scroll zooms, hovering shows the note's name, a click opens
+the note. Close (✕ or Escape) returns to the note as it was; on the phone, Back returns to the tab the graph was opened
+from. While the graph loads, a breathing
+graph animation shows. The graph is read on its first open per vault and kept for the session, so reopening is
+instant; Refresh reads it again (no live updates). three.js loads on first open only.
 
 ### Changes and commits
 

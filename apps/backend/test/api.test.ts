@@ -705,6 +705,11 @@ describe('files', () => {
     });
   });
 
+  it('graph nodes carry the frontmatter type', async () => {
+    const t = await vaultApp({ 'Wiki/a.md': '---\ntags: [x]\ntype: entity\n---\n# A\n', 'Wiki/b.md': '---\ntype: "concept"  # note\n---\n', 'c.md': 'type: entity\n' });
+    expect((await t.api.get(`/vaults/${t.id}/graph`)).body.nodes).toEqual([{ path: 'c.md' }, { path: 'Wiki/a.md', type: 'entity' }, { path: 'Wiki/b.md', type: 'concept' }]);
+  });
+
   it('search finds content and file names', async () => {
     const t = await vaultApp();
     const hits = (await t.api.get(`/vaults/${t.id}/search?q=ALPHA`)).body;
