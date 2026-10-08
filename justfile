@@ -1,7 +1,5 @@
 # karpathy.app development commands. `just` lists them.
 
-prodtest_compose := "docker compose -p karpathy-app-prodtest -f deploy/compose.yml -f deploy/compose.prodtest.yml"
-
 # List all recipes
 default:
     @just --list
@@ -10,9 +8,9 @@ default:
 install:
     npm install
 
-# Dev stack on https://localhost:8443: `just dev` starts it; `just dev down|logs|ps|token`
-dev action="up":
-    deploy/dev.sh {{action}}
+# Dev stack N on https://localhost:80N0: `just dev up [N]` (default: this checkout's stack, else the first free); `just dev down|logs|ps|token|stacks`
+dev action="up" *args:
+    deploy/dev.sh {{action}} {{args}}
 
 # Build the website into _site/ and preview it on http://localhost:<port> (default 8099)
 site port="8099":
@@ -24,30 +22,77 @@ check:
     npm run lint
     npm run typecheck
     npm test
+    bash deploy/stack.test.sh
+    node --experimental-strip-types --test e2e/stack.unit.ts
+
+# The dev LLM, native on this Mac (Metal GPU) and shared by all dev stacks: `just ollama install|uninstall|status`
+ollama action:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    label=app.karpathy.ollama
+    plist=~/Library/LaunchAgents/$label.plist
+    case "{{action}}" in
+      install)
+        bin=$(brew --prefix ollama 2>/dev/null || true)/bin/ollama
+        [ -x "$bin" ] || { echo "Ollama missing: brew install ollama" >&2; exit 1; }
+        launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+        # Another server on 11434 (Ollama.app, brew services) would answer instead, without the context length below.
+        ! curl -sf -m 2 http://127.0.0.1:11434/api/version >/dev/null \
+          || { echo "something else already serves 127.0.0.1:11434 (Ollama.app? brew services stop ollama): stop it first" >&2; exit 1; }
+        mkdir -p ~/Library/LaunchAgents ~/Library/Logs
+        # Loopback only; containers reach it via host.docker.internal. Ollama's default context
+        # (a few k tokens) silently cuts opencode's system prompt (#57).
+        printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+          '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+          '<plist version="1.0"><dict>' \
+          "<key>Label</key><string>$label</string>" \
+          "<key>ProgramArguments</key><array><string>$bin</string><string>serve</string></array>" \
+          '<key>EnvironmentVariables</key><dict>' \
+          '<key>OLLAMA_HOST</key><string>127.0.0.1:11434</string>' \
+          '<key>OLLAMA_CONTEXT_LENGTH</key><string>16384</string>' \
+          '</dict>' \
+          '<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>' \
+          "<key>StandardOutPath</key><string>$HOME/Library/Logs/ollama.log</string>" \
+          "<key>StandardErrorPath</key><string>$HOME/Library/Logs/ollama.log</string>" \
+          '</dict></plist>' > "$plist"
+        launchctl bootstrap "gui/$(id -u)" "$plist"
+        for _ in $(seq 50); do curl -sf http://127.0.0.1:11434/api/version >/dev/null && break; sleep 0.2; done
+        curl -sf http://127.0.0.1:11434/api/version >/dev/null || { echo "Ollama did not start: see ~/Library/Logs/ollama.log" >&2; exit 1; }
+        echo "installed: Ollama on 127.0.0.1:11434, log ~/Library/Logs/ollama.log" ;;
+      uninstall) launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true; rm -f "$plist"; echo uninstalled ;;
+      status) curl -sf http://127.0.0.1:11434/api/version >/dev/null && echo "running ($(ollama list | tail -n +2 | awk '{print $1}' | paste -sd ' ' -))" || { echo "not running: just ollama install" >&2; exit 1; } ;;
+      *) echo "usage: just ollama install|uninstall|status" >&2; exit 1 ;;
+    esac
 
 # Unit + integration tests (needs Docker); extra args go to the test runner
 test *args:
     npm test -- {{args}}
 
-# Playwright e2e against the running dev stack; extra args go to Playwright
+# Playwright e2e against this checkout's dev stack; extra args go to Playwright
 e2e *args:
     npx playwright test {{args}}
 
-# Prod images on https://localhost:9443, next to the dev stack: `just prodtest` starts it; `just prodtest down`; `just prodtest e2e [playwright args]`
+# Prod images on https://localhost:80N5, paired with this checkout's dev stack N: `just prodtest` starts it; `just prodtest down`; `just prodtest e2e [playwright args]`
 prodtest action="up" *args:
     #!/usr/bin/env bash
     set -euo pipefail
+    source deploy/stack.sh
+    # A running prodtest remembers its stack (tmp/prodtest/stack), so e2e and down find it after `just dev down`.
+    n=$(cat tmp/prodtest/stack 2>/dev/null || stack_resolve "")
+    stack_ports "$n"
+    prodtest_compose() { docker compose -p "$STACK_PROJECT-prodtest" -f deploy/compose.yml -f deploy/compose.prodtest.yml "$@"; }
     case "{{action}}" in
       up)
         mkdir -p tmp/prodtest/secrets
         [ -s tmp/prodtest/secrets/bearer_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/bearer_token
         [ -s tmp/prodtest/secrets/opencode_password ] || openssl rand -hex 24 > tmp/prodtest/secrets/opencode_password
         touch tmp/prodtest/secrets/github_token tmp/prodtest/secrets/dns_api_token
-        {{prodtest_compose}} up -d --build
-        echo "App: https://localhost:9443  token: $(cat tmp/prodtest/secrets/bearer_token)"
+        echo "$n" > tmp/prodtest/stack
+        prodtest_compose up -d --build
+        echo "App: https://localhost:$PRODTEST_PORT  token: $(cat tmp/prodtest/secrets/bearer_token)"
         ;;
-      down) {{prodtest_compose}} down -v ;;
-      e2e) E2E_BASE_URL=https://localhost:9443 E2E_TOKEN_FILE=tmp/prodtest/secrets/bearer_token E2E_BACKEND_CONTAINER=karpathy-app-prodtest-backend-1 npx playwright test {{args}} ;;
+      down) prodtest_compose down -v && rm -f tmp/prodtest/stack ;;
+      e2e) E2E_BASE_URL=https://localhost:$PRODTEST_PORT E2E_TOKEN_FILE=tmp/prodtest/secrets/bearer_token E2E_BACKEND_CONTAINER=$STACK_PROJECT-prodtest-backend-1 npx playwright test {{args}} ;;
       *) echo "usage: just prodtest [up|down|e2e]" >&2; exit 1 ;;
     esac
 

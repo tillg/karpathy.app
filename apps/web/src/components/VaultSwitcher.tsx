@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useApp } from '../store';
+import { brandName } from '../lib/brand';
 import { Icon } from './Icon';
 
 /** Brand + active vault; opens a menu to switch vaults or manage them (ARIA menu button, issue #43). */
@@ -54,7 +55,7 @@ export function VaultSwitcher({ compact }: { compact?: boolean }) {
         aria-haspopup="menu" aria-expanded={open}>
         {!compact && <img src="/icon-192.png" alt="" />}
         <div>
-          {!compact && <b>karpathy.app</b>}
+          {!compact && <b>{brandName(import.meta.env.VITE_STACK)}</b>}
           <small>{active ? `${active.name} · ${active.branch}` : 'No vault'} <Icon n="chevron_down" size={11} /></small>
         </div>
       </button>

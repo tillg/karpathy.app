@@ -1,10 +1,10 @@
-# Dev override: `docker compose -f compose.yml -f compose.dev.yml up`.
-# Same stack, sources bind-mounted for hot reload; https://localhost:8443 with Caddy's internal CA.
+# Dev override for numbered dev stacks: start one with `just dev up [N]` (deploy/dev.sh, deploy/stack.sh).
+# Same stack, sources bind-mounted for hot reload; stack N on https://localhost:80N0 with Caddy's internal CA.
 services:
   proxy:
     build: !reset null
     image: caddy:2.10-alpine
-    ports: !override ["8443:443"]
+    ports: !override ["${PROXY_PORT:?start dev stacks with just dev up}:443"]
     environment: !reset {}
     secrets: !reset []
     volumes:
@@ -15,9 +15,11 @@ services:
       web: { condition: service_started }
 
   backend:
-    # Own image name: the dev target must never share a tag with the prodtest build (ghcr…:dev).
-    image: karpathy-app-dev/backend
+    # No image name: compose names it <project>-backend, so stacks (and prodtest's ghcr…:dev) never share a tag.
+    image: !reset null
     build: { context: .., dockerfile: deploy/backend/Dockerfile, target: dev }
+    # Debugging: the API without TLS, loopback only.
+    ports: ["127.0.0.1:${BACKEND_PORT:?start dev stacks with just dev up}:8787"]
     environment:
       GIT_REMOTE_BASE: ${GIT_REMOTE_BASE:-https://github.com/}
       GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-Dev User}
@@ -30,27 +32,29 @@ services:
       - ../tmp/dev/remotes:/remotes
 
   opencode:
-    image: karpathy-app-dev/opencode
+    image: !reset null
     # Dev LLM: local Ollama (no provider key needed). Provider config only; the managed
     # config /etc/opencode/opencode.json still wins.
     environment:
       OPENCODE_MODEL: ${DEFAULT_MODEL:-ollama/qwen2.5:3b}
       OPENCODE_CONFIG: /etc/opencode-dev/ollama.json
       # Ollama sits on a private IP, which the egress proxy refuses: reach it direct.
-      NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama
+      NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama.internal
     volumes:
       - ./opencode/dev-ollama.json:/etc/opencode-dev/ollama.json:ro
 
+  egress:
+    image: !reset null
+
+  # The dev LLM is the native Ollama on the Mac (`just ollama install`), shared by all stacks. This relay
+  # (proxy/Caddyfile.ollama-relay) is opencode's only route to it, and passes only the /v1 API.
   ollama:
-    image: ollama/ollama
+    image: caddy:2.10-alpine
     restart: unless-stopped
-    # Ollama's default context (a few k tokens) silently cuts opencode's system prompt,
-    # which drops the vault's AGENTS.md (#57).
-    environment:
-      OLLAMA_CONTEXT_LENGTH: "16384"
-    volumes: [ollama:/root/.ollama]
-    # egress: `ollama pull` needs the internet.
-    networks: [internal, egress]
+    volumes: ["./proxy/Caddyfile.ollama-relay:/etc/caddy/Caddyfile:ro"]
+    networks:
+      internal: { aliases: [ollama.internal] }
+      egress: {}
 
   web:
     build: { context: .., dockerfile: deploy/web/Dockerfile.dev }
@@ -58,7 +62,9 @@ services:
     user: "${APP_UID:-1000}:${APP_GID:-1000}"
     environment:
       API_URL: http://backend:8787
-      HMR_CLIENT_PORT: "8443"
+      HMR_CLIENT_PORT: "${PROXY_PORT:?start dev stacks with just dev up}"
+      # Header brand "karpathy #N".
+      VITE_STACK: "${STACK:?start dev stacks with just dev up}"
     volumes:
       - ../apps/web/src:/app/apps/web/src:ro
       - ../packages/shared/src:/app/packages/shared/src:ro
@@ -68,5 +74,3 @@ services:
       - ../assets:/app/assets:ro
     networks: [internal]
 
-volumes:
-  ollama: {}

@@ -64,7 +64,7 @@ export default defineConfig(({ command }) => ({
     strictPort: true,
     // In the dev container, inotify events from macOS bind mounts don't arrive: poll.
     ...(process.env.HMR_CLIENT_PORT ? { watch: { usePolling: true, interval: 300 } } : {}),
-    // Behind the dev proxy (https://localhost:8443) the HMR socket goes through Caddy.
+    // Behind the dev proxy (https://localhost:80N0) the HMR socket goes through Caddy.
     ...(process.env.HMR_CLIENT_PORT ? { hmr: { clientPort: Number(process.env.HMR_CLIENT_PORT), protocol: 'wss' } } : {}),
     // http-proxy pipes chunked responses through, so NDJSON streams aren't buffered.
     proxy: { '/api': { target: process.env.API_URL ?? 'http://localhost:8788', changeOrigin: true } },

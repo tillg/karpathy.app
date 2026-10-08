@@ -1,22 +1,17 @@
 # Local smoke test of the PROD images (proxy with the built PWA, backend prod target, opencode),
-# side by side with the dev stack. Test-only; never use for a real deployment.
+# paired with this checkout's dev stack N (deploy/stack.sh). Test-only; never use for a real deployment.
 #
-#   mkdir -p tmp/prodtest/secrets && openssl rand -hex 24 > tmp/prodtest/secrets/bearer_token
-#   openssl rand -hex 24 > tmp/prodtest/secrets/opencode_password
-#   touch tmp/prodtest/secrets/{github_token,dns_api_token}
-#   docker compose -p karpathy-app-prodtest -f deploy/compose.yml -f deploy/compose.prodtest.yml up -d --build
-#   E2E_BASE_URL=https://localhost:9443 E2E_TOKEN_FILE=tmp/prodtest/secrets/bearer_token E2E_BACKEND_CONTAINER=karpathy-app-prodtest-backend-1 npx playwright test
-#   docker compose -p karpathy-app-prodtest -f deploy/compose.yml -f deploy/compose.prodtest.yml down -v
+#   just prodtest            # project karpathy-app-N-prodtest on https://localhost:80N5
+#   just prodtest e2e [playwright args]
+#   just prodtest down
 #
-# Differences from prod: https://localhost:9443 with Caddy's internal CA (TLS_MODE=internal selects
+# Differences from prod: https://localhost:80N5 with Caddy's internal CA (TLS_MODE=internal selects
 # the tls-internal snippet in the prod Caddyfile instead of DNS-01), local bare repos from
-# tmp/dev/remotes instead of GitHub, throwaway secrets, and the dev stack's Ollama as the model
-# (reached through a socat bridge, so nothing of this project joins the dev network under a
-# service name the dev stack uses). Requires the dev stack (project karpathy-app) to be running
-# for chat; everything else works without it.
+# tmp/dev/remotes instead of GitHub, throwaway secrets, and the native Ollama on the Mac as the
+# model (`just ollama install`, reached through a socat relay).
 services:
   proxy:
-    ports: !override ["9443:443"]
+    ports: !override ["${PRODTEST_PORT:?start prodtest with just prodtest}:443"]
     environment:
       DOMAIN: localhost
       TLS_MODE: internal
@@ -32,20 +27,17 @@ services:
     environment:
       OPENCODE_MODEL: ollama/qwen2.5:3b
       OPENCODE_CONFIG: /etc/opencode-dev/ollama.json
-      NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama
+      NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama.internal
     volumes:
       - ./opencode/dev-ollama.json:/etc/opencode-dev/ollama.json:ro
 
-  # Forwards ollama:11434 (on this project's internal network) to the dev stack's Ollama.
+  # ollama.internal:11434 (on this project's internal network) → the native Ollama on the Mac, /v1 API only.
   ollama-bridge:
-    image: alpine/socat
-    command: ["TCP-LISTEN:11434,fork,reuseaddr", "TCP:karpathy-app-ollama-1:11434"]
+    image: caddy:2.10-alpine
+    volumes: ["./proxy/Caddyfile.ollama-relay:/etc/caddy/Caddyfile:ro"]
     networks:
-      internal: { aliases: [ollama] }
-      dev-internal: {}
-
-networks:
-  dev-internal: { external: true, name: karpathy-app_internal }
+      internal: { aliases: [ollama.internal] }
+      egress: {}
 
 secrets:
   bearer_token: { file: ../tmp/prodtest/secrets/bearer_token }
