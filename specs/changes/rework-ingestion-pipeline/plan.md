@@ -160,7 +160,7 @@ before `/spec:apply` writes them. The real login is checked once by hand on the 
 
 ## End to end and docs
 
-- [ ] e2e: an item in `Input/` shows the badge; Ingest sends `/ingest` in a new chat; Instagram connect flow
+- [x] e2e: an item in `Input/` shows the badge; Ingest sends `/ingest` in a new chat; Instagram connect flow
   - Depends on: 3, 7, 15
   - Test first: `e2e/ingest.spec.ts` (deterministic, no model behaviour asserted) › write
     `Input/mail-2026-10-08-test/index.md` into the e2e vault (fixture vault has a stub `.agents/skills/ingest`) → badge
@@ -170,7 +170,7 @@ before `/spec:apply` writes them. The real login is checked once by hand on the 
     connect → code → "Connected as @test" against the ingest service with the fake login (see the note above). Fails
     today: no badge, no button, no Instagram section.
   - Verify: `just e2e e2e/ingest.spec.ts` → green; `just e2e` → all green
-- [ ] Docs: README (Input folder, ingest service, `just ingest-auth`, Admin › Instagram), demo run book chapter "Ingest
+- [x] Docs: README (Input folder, ingest service, `just ingest-auth`, Admin › Instagram), demo run book chapter "Ingest
       from the inbox"
   - Depends on: 16
   - Test first: none — docs only.

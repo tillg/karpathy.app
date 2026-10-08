@@ -18,6 +18,7 @@ flowchart TB
       backend[backend: Node<br/>vaults, git, chat API]
       opencode[opencode<br/>AI agent loop]
       egress[egress: Squid<br/>public destinations only]
+      ingest[ingest: ingest-email<br/>mail + links into Input/]
     end
     subgraph Mon["compose project karpathy-monitoring"]
       hub[Beszel hub<br/>tailnet IP :8090]
@@ -38,6 +39,8 @@ flowchart TB
   opencode --> vaults
   backend -->|clone, pull, push| GitHub
   opencode --> egress
+  ingest --> vaults
+  ingest --> egress
   egress -->|model calls, web search and fetch| LLM
   agent --> hub
   gatus -->|checks HTTPS + cert| proxy
@@ -64,8 +67,9 @@ when the whole box is gone.
                                        starts the stack, runs the smoke check
 ```
 
-- **A release** is a tag `vX.Y.Z` (or a pre-release `vX.Y.Z-rc.N`). CI builds the four images
-  (`ghcr.io/tillg/karpathy.app-{proxy,backend,opencode,egress}:X.Y.Z`, public) and attaches
+- **A release** is a tag `vX.Y.Z` (or a pre-release `vX.Y.Z-rc.N`). CI builds the five images
+  (`ghcr.io/tillg/karpathy.app-{proxy,backend,opencode,egress,ingest}:X.Y.Z`, public; the ingest image's build checks
+  out the private `tillg/ingest_email` with a read-only deploy key, repo secret `INGEST_EMAIL_DEPLOY_KEY`) and attaches
   `compose.yml` to the GitHub release. Nothing is ever built on a server, and the server holds no
   copy of the source.
 - **A deployment** is one `just deploy <target> [version]`. The playbook brings the host to the
@@ -134,6 +138,7 @@ managed by Ansible.
 | `just secrets <target>` | Fills the target's encrypted vault interactively: asks for what only you have (hidden input, Enter keeps the current value) and generates the rest once (access token, Beszel secrets, ntfy topic). Run it in your own terminal. |
 | `just token <target>` | Copies the target's access token to the clipboard. |
 | `just token <target> --qr` | Also prints a QR code of the login link `<app url>/#token=…`: scan it on the iPad or phone and the app opens, logged in. The QR code is a credential: don't screenshot or share it. |
+| `just ingest-auth <target> <email>` | Gives the target's ingest service Gmail access: pipes this Mac's gog OAuth client (`gog auth credentials`) and the account's refresh token (Keychain, from `gog auth add <email>`) into its container. Nothing is printed or stored on the way. `dev` = this checkout's dev stack. |
 | `just ntfy-topic <target>` | Copies the target's ntfy alert topic to the clipboard, to subscribe to it in the ntfy app (and in healthchecks.io's ntfy integration). `dev` copies the dev-progress topic (`karpathy-development-…`, Keychain item `karpathy-ntfy-dev`; agents post progress there, never on the alert topics). |
 
 **Operations**

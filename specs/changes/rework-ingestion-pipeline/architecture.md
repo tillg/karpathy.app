@@ -227,7 +227,7 @@ and need its own invalidation. Cost: a vault whose tree is huge re-lists on each
 
 ## 3. Ingest button
 
-- Rendered in the `Input` row next to the badge (and in the phone Files tab header) when `inputCount > 0` **and** the
+- Rendered in the `Input` row next to the badge (also in the phone Files tab, which shows the same tree) when `inputCount > 0` **and** the
   vault's command list (`GET /vaults/:id/commands`) contains `ingest`. Without the skill: no button; the badge's tooltip
   says "Add an `ingest` skill to `.agents/skills/` to ingest from here".
 - Tap → store `ingestNow()`: `POST /vaults/:id/chats` (new chat), switch to it, then the same send path a typed message
@@ -319,26 +319,31 @@ sequenceDiagram
 - **Ingest service endpoint:** a small HTTP server (`deploy/ingest/server.py`, stdlib `http.server`, port 8090) next to
   the loop, on the `internal` network only, every request needs the `ingest_token` compose secret (opencode shares that
   network; its web tools can't reach it through the egress proxy, the token is the second wall). Routes:
-  `GET /instagram/status`, `POST /instagram/login`, `POST /instagram/code`, `POST /instagram/disconnect`.
-- **Pending login:** the login runs in a worker thread; instagrapi's code handler (`challenge_code_handler`, the
-  `TwoFactorRequired` retry) blocks on a queue that `POST /instagram/code` fills. One pending login at a time, dropped
-  after 5 min or on a new login. Needs instascraper to accept a code callback instead of `input()` (prerequisite).
-- **No clash with the loop:** login and resolve take instascraper's per-account lock; while a login is pending the
-  resolver treats Instagram as `no-session` (waits).
-- **Status:** `connected` / `expired` come from the last real use: instascraper's "session expired or rejected" error
-  writes `/state/instagram-status.json`; a successful fetch clears it. `GET /instagram/status` never logs in (a login
-  is a flag-risk event; instascraper never logs in speculatively).
+  `GET /instagram/status`, `POST /instagram/login`, `POST /instagram/code`, `POST /instagram/disconnect`. `run.sh`
+  starts it and restarts it when it dies.
+- **Pending login:** the login runs in a worker thread through instascraper's `login_interactive_free(username,
+  password, code)` (instascraper ≥ 1.1.0): when Instagram asks for a 2FA or challenge code, `code(via)` blocks on a
+  queue that `POST /instagram/code` fills. One pending login at a time, dropped after 5 min (`expired-code`) or on a
+  new login. Errors: `wrong-password` (400), `expired-code` (400), `login-failed` (502, the exception type only).
+- **No clash with the loop:** the login writes its session to a staging dir under `/state` and moves it into place
+  (`~/.config/instascraper/session-<user>.json`, 0600) only on success, then sets `IG_USERNAME` in instascraper's
+  config so the resolver's `get_client` uses it. A pending login never touches a working session.
+- **Status:** read from the vaults, not from a status file (ingest_email stays as it is): Instagram links in an
+  `Input/` item's `unresolved_links` with reason `no-session` are "waiting"; a session in place plus waiting links is
+  `expired`; no session is `not-connected`. `GET /instagram/status` never logs in (a login is a flag-risk event).
+- **Dev and e2e:** compose.dev.yml sets `INGEST_FAKE_INSTAGRAM_LOGIN=1`: a built-in fake login (password `wrong`
+  fails, user `twofa…` asks for code 000000 by SMS). Prod and prodtest never set it (`compose.test.sh`).
 - **Password:** passed through to instagrapi once, never written to disk or logs (request bodies are not logged); the
   session file holds cookies and device ids only.
 - **Backend:** `GET /ingest/instagram`, `POST /ingest/instagram/login|code|disconnect` (bearer-guarded like every route;
-  zod-validated; proxied to `http://ingest:8090` with the token). `503` with "Ingest service not running" when the
-  service is absent (dev without profiles).
-- **Web:** Admin gets an **Instagram** section: status line, a form (username, password → Connect; then code → Verify),
-  Disconnect. When the status is `expired`, the vault list shows a notice "Instagram disconnected — N links waiting"
-  with a link to the section.
-- **Waiting links:** `ingest_email` changes `no-session` from a counted attempt to "wait": the link stays in
-  `unresolved_links` and is retried on the next loop after a connect. Today 5 polls without a session give the link up
-  for good.
+  zod-validated; proxied to `INGEST_URL` = `http://ingest:8090` with `ingest_token`, `apps/backend/src/ingest.ts`). The
+  service's errors keep their status as `{ error, code }`; `503` "Ingest service not running" (`ingest-down`) when it
+  can't be reached or isn't configured.
+- **Web:** the Settings dialog gets an **Instagram** section (`InstagramSettings.tsx`): status line, a form (username,
+  password → Connect, Reconnect when expired; then "Code sent by SMS" + code → Verify), Disconnect. When the status is
+  `expired`, the Vaults list shows a notice "Instagram disconnected — N links waiting" with a link to Settings.
+- **Waiting links (prerequisite, open):** `ingest_email` should change `no-session` from a counted attempt to "wait".
+  At the pinned commit, 5 polls without a session still give the link up for good.
 
 ## 7. Cutover
 
