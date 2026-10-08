@@ -219,7 +219,7 @@ done
   out=$(mktemp -d)
   tpl=${TARGET_TEMPLATE:-$here/ansible/roles/app/templates/compose.target.yml.j2}
   ANSIBLE_LOCALHOST_WARNING=False ansible localhost -m template -a "src=$tpl dest=$out/local.yml" \
-    -e '{"target":"local","remotes_dir":"/remotes","vaults_fs_mount":"/srv/vaults","app_settings_env":{"OLLAMA_UPSTREAM":"192.168.5.2:11434"}}' >/dev/null 2>&1
+    -e '{"target":"local","remotes_dir":"/remotes","vaults_fs_mount":"/srv/vaults","app_settings_env":{"OLLAMA_UPSTREAM":"192.168.5.2:11434","GIT_REMOTE_BASE":"file:///remotes/"}}' >/dev/null 2>&1
   ANSIBLE_LOCALHOST_WARNING=False ansible localhost -m template -a "src=$tpl dest=$out/hetzner.yml" \
     -e '{"target":"hetzner","vaults_fs_mount":"/srv/vaults","app_settings_env":{}}' >/dev/null 2>&1
   for t in local hetzner; do
@@ -228,6 +228,7 @@ done
     has=$(node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8")); const r=c.services["ollama-relay"]; console.log(r ? `${r.environment.OLLAMA_UPSTREAM} ${c.services.opencode.environment.NO_PROXY}` : "none")' <<<"$cfg")
     if [ "$t" = local ]; then
       eq "local: relay to the Mac's Ollama, opencode reaches it direct" "$has" "192.168.5.2:11434 localhost,127.0.0.1,0.0.0.0,ollama.internal"
+      eq "local: older releases still get GIT_REMOTE_BASE (rollback)" "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).services.backend.environment.GIT_REMOTE_BASE)' <<<"$cfg")" file:///remotes/
     else
       eq "hetzner: no relay" "$has" none
     fi
