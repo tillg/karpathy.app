@@ -15,8 +15,11 @@ export type HarnessEvent =
   | { type: 'file-edited'; path: string };
 
 const DENIED_PREFIX = 'The user has specified a rule which prevents you from using this specific tool call';
-/** File-writing tools; save_url (deploy/opencode/tools) downloads a media file or PDF into the vault. */
-const WRITE_TOOLS = new Set(['edit', 'write', 'apply_patch', 'patch', 'multiedit', 'save_url']);
+/**
+ * File-writing tools; save_url (deploy/opencode/tools) downloads a media file or PDF into the vault,
+ * move_to_sources moves an input item to Sources/ and lists the moved files in its metadata.
+ */
+const WRITE_TOOLS = new Set(['edit', 'write', 'apply_patch', 'patch', 'multiedit', 'save_url', 'move_to_sources']);
 /** Tools that ask the UI to show a note (deploy/opencode/tools). */
 const OPEN_TOOLS = new Set(['open_note']);
 
@@ -44,7 +47,8 @@ export function mapToolPart(part: Json, root: string): ToolCall {
   const error = str(state.error);
   if (status === 'error' && error?.startsWith(DENIED_PREFIX)) status = 'denied';
   const patchFile = Array.isArray(meta.files) ? str(obj(meta.files[0]).filePath) : undefined;
-  const rawPath = str(input.filePath) ?? patchFile ?? str(input.path);
+  const moved = tool === 'move_to_sources' && str(input.name) ? `Sources/${str(input.name)}` : undefined;
+  const rawPath = str(input.filePath) ?? moved ?? patchFile ?? str(input.path);
   const path = rawPath ? toVaultPath(rawPath, root) : '';
   return {
     id: str(part.id) ?? str(part.callID) ?? '',
