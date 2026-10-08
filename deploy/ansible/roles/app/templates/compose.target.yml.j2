@@ -1,12 +1,11 @@
 # Rendered by Ansible (role app): what is specific to target {{ target }}.
-{% if git_remote_base is defined or app_ingest_vaults %}
 services:
-{% endif %}
-{% if git_remote_base is defined %}
-  # Local bare repos instead of GitHub (the e2e suite's remotes).
+{% if remotes_dir is defined %}
+  # Local bare repos instead of GitHub (the e2e suite's remotes; deploy/settings/ sets git.remote_base).
   backend:
     environment:
-      GIT_REMOTE_BASE: {{ git_remote_base }}
+      # Read by releases from before deploy/settings/ (rollback); newer backends take it from settings.json.
+      GIT_REMOTE_BASE: {{ app_settings_env.GIT_REMOTE_BASE }}
       # The VM's /remotes share belongs to the Mac's uid: git refuses it as "dubious ownership".
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: safe.directory
@@ -22,6 +21,25 @@ services:
       - {{ vaults_fs_mount }}/{{ v }}/Input:/vaults/{{ v }}/Input
       - {{ vaults_fs_mount }}/{{ v }}/Sources:/vaults/{{ v }}/Sources:ro
 {% endfor %}
+{% endif %}
+{% if app_settings_env.OLLAMA_UPSTREAM is defined %}
+  # The gateway is the Mac's native Ollama (deploy/settings/): opencode reaches it through this /v1-only relay.
+  opencode:
+    environment:
+      # Ollama sits on a private IP, which the egress proxy refuses: reach it direct.
+      NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama.internal
+  ollama-relay:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      OLLAMA_UPSTREAM: ${OLLAMA_UPSTREAM}
+    volumes: ["./Caddyfile.ollama-relay:/etc/caddy/Caddyfile:ro"]
+    networks:
+      internal: { aliases: [ollama.internal] }
+      egress: {}
+{% endif %}
+{% if remotes_dir is not defined and app_settings_env.OLLAMA_UPSTREAM is not defined and not app_ingest_vaults %}
+  {}
 {% endif %}
 
 volumes:

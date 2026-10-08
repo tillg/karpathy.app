@@ -1,0 +1,3 @@
+# Prod images on the Mac (`just prodtest`): like dev, with the prod author defaults.
+ai: { gateway: ollama, model: ollama/qwen2.5:3b }
+git: { remote_base: file:///remotes/ }

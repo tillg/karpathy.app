@@ -7,9 +7,9 @@ import { ConfigStore } from '../src/config-store.js';
 const dir = () => mkdtemp(join(tmpdir(), 'cfg-'));
 
 describe('ConfigStore', () => {
-  it('starts with default settings (threshold 4, Claude Sonnet 5, web access on)', async () => {
+  it('starts with default settings (threshold 4, no model without the deployment default, web access on)', async () => {
     const s = await ConfigStore.open(await dir());
-    expect(s.get().settings).toEqual({ commitReminderThreshold: 4, model: 'anthropic/claude-sonnet-5', webAccess: true });
+    expect(s.get().settings).toEqual({ commitReminderThreshold: 4, model: '', webAccess: true });
     expect(s.get().vaults).toEqual([]);
   });
 
@@ -48,6 +48,41 @@ describe('ConfigStore', () => {
     expect(s.get().settings.model).toBe('openai/gpt-5-mini');
     await s.update((c) => { c.settings.model = 'x/y'; });
     expect((await ConfigStore.open(d, { model: 'openai/gpt-5-mini' })).get().settings.model).toBe('x/y');
+  });
+
+  it('model override only while it differs from the default', async () => {
+    const d = await dir();
+    const raw = async () => JSON.parse(await readFile(join(d, 'config.json'), 'utf8')).settings;
+    // (a) no file: the default, nothing persisted as an override
+    const a = await ConfigStore.open(d, { model: 'd/1' });
+    expect(a.get().settings.model).toBe('d/1');
+    await a.update((c) => { c.settings.commitReminderThreshold = 5; });
+    expect(await raw()).not.toHaveProperty('modelOverride');
+    expect(await raw()).not.toHaveProperty('model');
+    // (b) an override survives a new default
+    await a.update((c) => { c.settings.model = 'm/2'; });
+    expect((await raw()).modelOverride).toBe('m/2');
+    const b = await ConfigStore.open(d, { model: 'd/3' });
+    expect(b.get().settings.model).toBe('m/2');
+    expect(b.defaultModel).toBe('d/3');
+    // (c) picking the default removes the override
+    await b.update((c) => { c.settings.model = 'd/3'; });
+    expect(await raw()).not.toHaveProperty('modelOverride');
+    // (d) so the next default applies
+    expect((await ConfigStore.open(d, { model: 'd/4' })).get().settings.model).toBe('d/4');
+  });
+
+  it('a legacy persisted model becomes an override only if it differs from the default', async () => {
+    const d = await dir();
+    await writeFile(join(d, 'config.json'), JSON.stringify({ vaults: [], settings: { commitReminderThreshold: 4, model: 'd/1', webAccess: true } }));
+    expect((await ConfigStore.open(d, { model: 'd/1' })).get().settings.model).toBe('d/1');
+    // differs from the new default: it was the Admin's choice, kept as an override
+    expect((await ConfigStore.open(d, { model: 'd/9' })).get().settings.model).toBe('d/1');
+    await writeFile(join(d, 'config.json'), JSON.stringify({ vaults: [], settings: { commitReminderThreshold: 4, model: 'm/2', webAccess: true } }));
+    const s = await ConfigStore.open(d, { model: 'd/1' });
+    expect(s.get().settings.model).toBe('m/2');
+    await s.update((c) => { c.settings.webAccess = false; });
+    expect(JSON.parse(await readFile(join(d, 'config.json'), 'utf8')).settings).toEqual({ commitReminderThreshold: 4, webAccess: false, modelOverride: 'm/2' });
   });
 
   it('one failed write does not poison later updates', async () => {

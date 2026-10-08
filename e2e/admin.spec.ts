@@ -141,6 +141,41 @@ test.describe('admin area', () => {
     }
   });
 
+  test('model: shows the default, an override, and goes back to the default', async ({ page, api }) => {
+    const cur = await api.settings();
+    // Another model the gateway offers: the refusal of an unknown one lists them.
+    const refusal = await (await api.ctx.fetch('/api/settings', { method: 'PATCH', data: { model: 'nope/none' } })).json();
+    const other = String(refusal.error).replace(/.*Available: /, '').split(', ').find((m) => m !== cur.defaultModel)!;
+    expect(other).toBeTruthy();
+    try {
+      await openApp(page);
+      await openSettings(page);
+      const model = page.getByTestId('settings-model');
+      const hint = page.getByTestId('settings-model-default');
+      await expect(hint).toHaveText(`Default: ${cur.defaultModel}`);
+      await expect(hint).toHaveAttribute('data-overridden', String(cur.modelOverridden));
+      await model.fill(other);
+      await page.getByTestId('settings-save').click();
+      await expect(page.getByTestId('settings-saved')).toBeVisible();
+      await expect(hint).toHaveAttribute('data-overridden', 'true');
+      expect(await api.settings()).toMatchObject({ model: other, modelOverridden: true });
+      // The override survives a reload.
+      await page.reload();
+      await openSettings(page);
+      await expect(model).toHaveValue(other);
+      await expect(hint).toHaveAttribute('data-overridden', 'true');
+      await page.getByTestId('settings-model-reset').click();
+      await expect(model).toHaveValue(cur.defaultModel);
+      await page.getByTestId('settings-save').click();
+      await expect(hint).toHaveAttribute('data-overridden', 'false');
+      await expect(page.getByTestId('settings-model-reset')).toHaveCount(0);
+      await page.getByTestId('settings-dialog').screenshot({ path: 'tmp/settings-yaml/model-default.png' });
+      expect(await api.settings()).toMatchObject({ model: cur.defaultModel, modelOverridden: false });
+    } finally {
+      await api.ctx.fetch('/api/settings', { method: 'PATCH', data: { model: cur.modelOverridden ? cur.model : null } });
+    }
+  });
+
   test('"What is a vault?" explains Sources and Wiki', async ({ page }) => {
     await openApp(page);
     await openVaults(page);

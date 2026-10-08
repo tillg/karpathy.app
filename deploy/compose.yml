@@ -46,13 +46,9 @@ services:
     security_opt: [no-new-privileges:true]
     logging: *logs
     environment:
-      BEARER_TOKEN_FILE: /run/secrets/bearer_token
-      OPENCODE_PASSWORD_FILE: /run/secrets/opencode_password
-      GITHUB_TOKEN_FILE: /run/secrets/github_token
-      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-karpathy.app user}
-      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-user@karpathy.app}
+      # The settings rendered from deploy/settings/ (`just settings render`); secrets stay compose secrets.
+      SETTINGS_FILE: /etc/karpathy/settings.json
       OPENCODE_URL: http://opencode:4096
-      DEFAULT_MODEL: ${DEFAULT_MODEL:-anthropic/claude-sonnet-5}
       OPENCODE_VAULTS_DIR: /vaults
       # The ingest service's internal endpoint (Admin › Instagram), token-guarded.
       INGEST_URL: http://ingest:8090
@@ -65,6 +61,9 @@ services:
     volumes:
       - vaults:/vaults
       - config:/config
+      # SETTINGS_DIR: the rendered settings, relative to this file; unset on a target (shared/ is the project dir).
+      # Not created when missing (a directory would block every later render): render first.
+      - { type: bind, source: "${SETTINGS_DIR:-.}/settings.json", target: /etc/karpathy/settings.json, read_only: true, bind: { create_host_path: false } }
     depends_on:
       opencode: { condition: service_healthy }
     # egress: the backend itself needs GitHub.
@@ -80,9 +79,11 @@ services:
     # opencode as PID 1 ignores SIGTERM (every stop was a SIGKILL after 10 s, #38).
     init: true
     user: *app-user
-    env_file: [{ path: ./opencode.env, required: false }]
+    # The gateway's API key and provider config (OPENCODE_CONFIG_CONTENT: merged after a vault's own
+    # opencode.json; /etc/opencode/opencode.json still wins), Exa, the web caps and OPENCODE_MODEL, rendered from
+    # deploy/settings/.
+    env_file: [{ path: "${SETTINGS_DIR:-.}/opencode.env", required: false }]
     environment:
-      OPENCODE_MODEL: ${DEFAULT_MODEL:-anthropic/claude-sonnet-5}
       # All outbound HTTP (LLM provider, Exa, webfetch) goes through the egress proxy; loopback stays direct
       # (the plugin client talks to 0.0.0.0:4096). Dev and prodtest add the Ollama host to NO_PROXY.
       HTTP_PROXY: http://egress:3128

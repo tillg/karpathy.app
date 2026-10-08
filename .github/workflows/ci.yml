@@ -29,6 +29,8 @@ jobs:
         with: { repository: tillg/ingest_email, ref: '${{ steps.ie.outputs.ref }}', ssh-key: '${{ secrets.INGEST_EMAIL_DEPLOY_KEY }}', path: tmp/ingest_email-src, persist-credentials: false }
       - run: docker build -q --build-context ingest_email=tmp/ingest_email-src -t kai-test-ingest -f deploy/ingest/Dockerfile .
       - run: npm test
+      # Every environment in deploy/settings/ validates.
+      - run: node_modules/.bin/tsx packages/settings/src/cli.ts check
       - run: bash deploy/ingest/run.test.sh && bash deploy/ingest/server.test.sh
       - run: npm run build -w apps/web
       # Dev stacks take their ports from deploy/stack.sh (`just dev up`); render stack 1.
@@ -67,6 +69,6 @@ jobs:
       - run: |
           docker volume create ollama-models
           docker run -d --name pull -v ollama-models:/root/.ollama ollama/ollama
-          sleep 3 && docker exec pull ollama pull qwen2.5:3b && docker exec pull ollama pull qwen3-vl:2b && docker rm -f pull
+          sleep 3 && docker exec pull ollama pull "$(node_modules/.bin/tsx packages/settings/src/cli.ts get test ai.model | sed 's|^ollama/||')" && docker exec pull ollama pull "$(node_modules/.bin/tsx packages/settings/src/cli.ts get test ai.vision_model | sed 's|^ollama/||')" && docker rm -f pull
       - run: npm run test:llm
         env: { OLLAMA_VOLUME: ollama-models }

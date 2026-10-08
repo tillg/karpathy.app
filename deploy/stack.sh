@@ -74,3 +74,35 @@ stack_first_free() {
 stack_ollama_ready() { curl -sf -m 3 "$1/api/version" >/dev/null; }
 
 stack_remember() { mkdir -p "$(stack_root)/tmp/dev" && echo "$1" > "$(stack_root)/tmp/dev/stack"; }
+
+# This checkout's repo, from this file (stack.sh is sourced from deploy/ and from the repo root).
+STACK_REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+
+# Renders deploy/settings/ for ENV with the secrets in STORE into OUT (default tmp/settings/ENV), for compose
+# run from deploy/ (`--env-file OUT/.env`; SETTINGS_DIR in it points the mounts there). Fails on a missing secret.
+# Further arguments go to the CLI (e.g. --no-local).
+settings_render() {
+  local env=$1 store=$2 out=${3:-$STACK_REPO/tmp/settings/$1}
+  "$STACK_REPO/node_modules/.bin/tsx" "$STACK_REPO/packages/settings/src/cli.ts" render "$env" \
+    --out "$out" --secrets "$store" --compose-dir "$STACK_REPO/deploy" "${@:4}"
+}
+
+# The hand-edited deploy/.env and deploy/opencode.env from before deploy/settings/ (#133): stop and say where
+# each key goes now. Prints key names only, never values.
+settings_legacy_check() {
+  local root f found=0
+  root=$(stack_root) || return 1
+  for f in deploy/.env deploy/opencode.env; do
+    [ -f "$root/$f" ] || continue
+    found=1
+    echo "$f is no longer read (settings moved to deploy/settings/, #133). Its keys:" >&2
+    sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/  \1/p' "$root/$f" >&2
+  done
+  [ "$found" = 0 ] && return 0
+  cat >&2 <<'MSG'
+Move model and gateway choices to deploy/settings/dev.local.yaml (e.g. `ai: { gateway: openrouter,
+model: openrouter/<model> }`) and each key to deploy/secrets/<name> (OPENROUTER_API_KEY →
+deploy/secrets/openrouter_api_key, EXA_API_KEY → exa_api_key), then delete these files.
+MSG
+  return 1
+}

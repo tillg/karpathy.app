@@ -1,0 +1,58 @@
+# Central app settings (specs/system/…, issue #133). Every environment starts from these values;
+# <env>.yaml lists only what that environment changes, <env>.local.yaml (gitignored, dev and prodtest)
+# is a developer's own override on top. Secrets are references ({ secret: name }), never values: the
+# value is the file deploy/secrets/<name> in dev, the target's Ansible Vault on a server.
+# `just settings show <env>` prints the merged result.
+
+ai:
+  gateway: openrouter            # a key of `gateways`
+  model: openrouter/z-ai/glm-5.3 # the default model; Admin may override it per installation
+  web:
+    access: true                 # default of the Admin "web access" switch
+    fetch_cap: 20                # per-turn limits on the AI's web calls
+    search_cap: 20
+    exa_api_key: { secret: exa_api_key, optional: true }
+
+auth:
+  bearer_token: { secret: bearer_token }
+  opencode_password: { secret: opencode_password }
+
+git:
+  remote_base: https://github.com/
+  author: { name: karpathy.app user, email: user@karpathy.app }
+  # The deployment's token; a token set in the app's settings wins.
+  github_token: { secret: github_token, optional: true }
+
+proxy:
+  domain: localhost
+  tls: internal                  # internal (Caddy's own CA) | dns (Let's Encrypt via DNS-01)
+  dns: { provider: godaddy, api_token: { secret: dns_api_token, optional: true } }
+
+timezone: Etc/UTC                # commit and log times
+commit_reminder_threshold: 4
+
+files:
+  visible_dot_dirs: [.agents]    # dot-dirs the file tree shows (never .git)
+
+# Ways to reach LLMs; ai.gateway picks one. The key is opencode's provider id.
+gateways:
+  openrouter:
+    kind: openrouter
+    api_key: { secret: openrouter_api_key }
+    models:
+      z-ai/glm-5.3:
+        options:
+          provider:
+            order: [mistral/zdr, mistral, fireworks, together, parasail]
+            only: [mistral/zdr, mistral, fireworks, together, parasail]
+            zdr: true
+            data_collection: deny
+  # The native Ollama on the Mac (`just ollama install`), reached through a /v1-only relay.
+  ollama:
+    kind: openai-compatible
+    name: Ollama (dev)
+    base_url: http://ollama.internal:11434/v1   # the relay on the stack's internal network
+    relay_upstream: host.docker.internal:11434  # where the relay finds Ollama
+    models:
+      qwen2.5:3b: { name: qwen2.5:3b, tool_call: true, limit: { context: 16384, output: 4096 } }
+      qwen3-vl:2b: { name: qwen3-vl:2b, tool_call: true, limit: { context: 16384, output: 4096 }, modalities: { input: [text, image], output: [text] } }

@@ -20,7 +20,7 @@ export interface Vault extends VaultConfig {
 
 export interface Settings {
   commitReminderThreshold: number;
-  /** `provider/model`, e.g. `anthropic/claude-sonnet-5`. */
+  /** `provider/model`; the default comes from deploy/settings/ (`ai.model`). */
   model: string;
   /** The AI may search the web and read pages (opencode websearch/webfetch), in every vault. */
   webAccess: boolean;
@@ -34,6 +34,10 @@ export interface ModelInput {
 
 /** `GET /settings`: the settings plus the GitHub token's state — never the token itself. */
 export interface SettingsView extends Settings {
+  /** The deployment's default model (deploy/settings/ `ai.model`). */
+  defaultModel: string;
+  /** `model` is the Admin's choice, not the default. */
+  modelOverridden: boolean;
   githubToken: { source: 'settings' | 'secret' | 'none'; last4: string | null };
   /** What the current model reads; null when opencode is down or doesn't list the model. */
   modelInput: ModelInput | null;

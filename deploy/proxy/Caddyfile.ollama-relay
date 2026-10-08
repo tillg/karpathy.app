@@ -1,13 +1,15 @@
 # Relay from a stack's internal network to the native Ollama on the Mac (`just ollama install`), used by
 # compose.dev.yml (`ollama`) and compose.prodtest.yml (`ollama-bridge`). Only the OpenAI-compatible API that
 # opencode calls passes; Ollama's admin API (pull, delete, create, …) stays out of the AI's reach.
+# OLLAMA_UPSTREAM: where Ollama answers (deploy/settings/ `gateways.ollama.relay_upstream`): the Mac as
+# Docker Desktop/Rancher (host.docker.internal) or the Lima VM (192.168.5.2) sees it.
 {
 	admin off
 	auto_https off
 }
 :11434 {
 	handle /v1/* {
-		reverse_proxy host.docker.internal:11434 {
+		reverse_proxy {$OLLAMA_UPSTREAM} {
 			# A loopback-bound Ollama answers 403 to any Host but localhost (DNS-rebinding guard).
 			header_up Host localhost:11434
 			flush_interval -1

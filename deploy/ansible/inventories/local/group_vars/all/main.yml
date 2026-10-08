@@ -1,4 +1,5 @@
-# Target settings for `local` (specs/system/deployment.md). Secrets: vault.yml (vault_*), mapped here.
+# Host settings for `local` (specs/system/deployment.md). The app's settings are deploy/settings/local.yaml;
+# secrets: vault.yml (vault_*), mapped here or read by role app (roles/app/vars/main.yml).
 target: local
 tailscale_enabled: false
 timezone: Europe/Berlin
@@ -9,21 +10,16 @@ bind_ip: 0.0.0.0
 https_port: 443
 # The app as the operator's devices reach it (`just token local --qr`).
 app_url: https://localhost:9444
+# Must equal proxy.domain in deploy/settings/ (role app checks); the monitoring role reads it too.
 domain: localhost
-tls_mode: internal
 gatus_enabled: false
-# The Mac's tmp/dev/remotes, mounted into the VM at /remotes (e2e bare repos).
-git_remote_base: file:///remotes/
+# The Mac's tmp/dev/remotes, mounted into the VM at /remotes (e2e bare repos; deploy/settings/local.yaml
+# points git.remote_base at file:///remotes/).
 remotes_dir: /remotes
-git_author_name: karpathy.app local
-git_author_email: local@karpathy.app
-default_model: ollama/qwen2.5:3b
 
 bearer_token: "{{ vault_bearer_token }}"
 github_token: "{{ vault_github_token }}"
 dns_api_token: "{{ vault_dns_api_token }}"
-# Provider API keys for opencode, e.g. { OPENROUTER_API_KEY: … }; empty = no hosted model.
-opencode_env: "{{ vault_opencode_env }}"
 ntfy_topic: "{{ vault_ntfy_topic }}"
 heartbeat_url: "{{ vault_heartbeat_url }}"
 beszel_password: "{{ vault_beszel_password }}"

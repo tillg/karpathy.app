@@ -22,11 +22,16 @@ check:
     npm run lint
     npm run typecheck
     npm test
+    just settings check
     bash deploy/stack.test.sh
     bash deploy/ingest/run.test.sh
     bash deploy/ingest/compose.test.sh
     bash deploy/ingest/server.test.sh
     node --experimental-strip-types --test e2e/stack.unit.ts
+
+# App settings (deploy/settings/): `just settings show <env>|check|render <env> --out <dir> --secrets <dir>`
+settings *args:
+    @node_modules/.bin/tsx packages/settings/src/cli.ts {{args}}
 
 # The dev LLM, native on this Mac (Metal GPU) and shared by all dev stacks: `just ollama install|uninstall|status`
 ollama action:
@@ -83,7 +88,7 @@ prodtest action="up" *args:
     # A running prodtest remembers its stack (tmp/prodtest/stack), so e2e and down find it after `just dev down`.
     n=$(cat tmp/prodtest/stack 2>/dev/null || stack_resolve "")
     stack_ports "$n"
-    prodtest_compose() { docker compose -p "$STACK_PROJECT-prodtest" -f deploy/compose.yml -f deploy/compose.prodtest.yml "$@"; }
+    prodtest_compose() { docker compose -p "$STACK_PROJECT-prodtest" -f deploy/compose.yml -f deploy/compose.prodtest.yml $([ -f tmp/settings/prodtest/.env ] && echo --env-file tmp/settings/prodtest/.env) "$@"; }
     case "{{action}}" in
       up)
         mkdir -p tmp/prodtest/secrets
@@ -92,6 +97,10 @@ prodtest action="up" *args:
         [ -s tmp/prodtest/secrets/gog_keyring_password ] || openssl rand -hex 24 > tmp/prodtest/secrets/gog_keyring_password
         [ -s tmp/prodtest/secrets/ingest_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/ingest_token
         touch tmp/prodtest/secrets/github_token tmp/prodtest/secrets/dns_api_token
+        # Provider keys of a hosted gateway (deploy/settings/prodtest.local.yaml) come from the dev secrets.
+        for k in deploy/secrets/*_api_key; do [ -e "$k" ] && cp "$k" tmp/prodtest/secrets/; done
+        settings_legacy_check
+        settings_render prodtest tmp/prodtest/secrets
         echo "$n" > tmp/prodtest/stack
         # The ingest image's build context for the private ingest-email repo.
         deploy/ingest/fetch-source.sh >/dev/null

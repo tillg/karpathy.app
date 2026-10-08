@@ -12,24 +12,14 @@
 services:
   proxy:
     ports: !override ["${PRODTEST_PORT:?start prodtest with just prodtest}:443"]
-    environment:
-      DOMAIN: localhost
-      TLS_MODE: internal
 
   backend:
-    environment:
-      GIT_REMOTE_BASE: file:///remotes/
-      DEFAULT_MODEL: ollama/qwen2.5:3b
     volumes:
       - ../tmp/dev/remotes:/remotes
 
   opencode:
     environment:
-      OPENCODE_MODEL: ollama/qwen2.5:3b
-      OPENCODE_CONFIG: /etc/opencode-dev/ollama.json
       NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama.internal
-    volumes:
-      - ./opencode/dev-ollama.json:/etc/opencode-dev/ollama.json:ro
 
   # No profiles: the loop idles (prodtest never reads a real Gmail label).
   ingest:
@@ -41,6 +31,8 @@ services:
   # ollama.internal:11434 (on this project's internal network) → the native Ollama on the Mac, /v1 API only.
   ollama-bridge:
     image: caddy:2.10-alpine
+    environment:
+      OLLAMA_UPSTREAM: ${OLLAMA_UPSTREAM:-host.docker.internal:11434}
     volumes: ["./proxy/Caddyfile.ollama-relay:/etc/caddy/Caddyfile:ro"]
     networks:
       internal: { aliases: [ollama.internal] }

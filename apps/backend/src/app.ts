@@ -56,7 +56,8 @@ const patchVault = z.object({
 const THRESHOLD_MSG = 'Commit reminder: enter a whole number between 1 and 1000';
 const patchSettings = z.object({
   commitReminderThreshold: z.number({ error: THRESHOLD_MSG }).int({ error: THRESHOLD_MSG }).min(1, { error: THRESHOLD_MSG }).max(1000, { error: THRESHOLD_MSG }).optional(),
-  model: z.string().trim().regex(/^[^/\s]+\/\S+$/, { error: 'Model: use the form provider/model, e.g. anthropic/claude-sonnet-5' }).optional(),
+  /** null: back to the deployment's default model. */
+  model: z.string().trim().regex(/^[^/\s]+\/\S+$/, { error: 'Model: use the form provider/model' }).nullable().optional(),
   webAccess: z.boolean({ error: 'Web access: must be true or false' }).optional(),
 });
 const putFile = z.object({ content: z.string(), version: z.string().nullable(), force: z.boolean().optional() });
@@ -124,7 +125,8 @@ export function createApp(d: AppDeps) {
     const settings = d.store.get().settings;
     const list = await models();
     const modelInput = list?.find((m) => m.id === settings.model)?.input ?? null;
-    return { ...settings, githubToken: { source: d.githubToken?.source() ?? 'none', last4: t ? t.slice(-4) : null }, modelInput };
+    const defaultModel = d.store.defaultModel;
+    return { ...settings, defaultModel, modelOverridden: settings.model !== defaultModel, githubToken: { source: d.githubToken?.source() ?? 'none', last4: t ? t.slice(-4) : null }, modelInput };
   };
   api.get('/settings', async (_req, res) => {
     res.json(await settingsView());
@@ -149,14 +151,14 @@ export function createApp(d: AppDeps) {
     res.status(204).end();
   });
   api.patch('/settings', async (req, res) => {
-    const body = patchSettings.parse(req.body);
-    if (body.model && body.model !== d.store.get().settings.model) {
+    const { model, ...body } = patchSettings.parse(req.body);
+    if (model && model !== d.store.get().settings.model) {
       const ids = (await models())?.map((m) => m.id);
-      if (ids && !ids.includes(body.model))
-        throw new HttpError(400, `Model ${body.model} is not available. Available: ${ids.join(', ') || 'none (no provider configured)'}`, 'unknown-model');
+      if (ids && !ids.includes(model))
+        throw new HttpError(400, `Model ${model} is not available. Available: ${ids.join(', ') || 'none (no provider configured)'}`, 'unknown-model');
     }
     await d.store.update((c) => {
-      c.settings = { ...c.settings, ...body } as Settings;
+      c.settings = { ...c.settings, ...body, ...(model !== undefined ? { model: model ?? d.store.defaultModel } : {}) } as Settings;
     });
     res.json(await settingsView());
   });

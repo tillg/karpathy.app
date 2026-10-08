@@ -9,8 +9,10 @@ tmp/
 .Spotlight-V100
 .Trashes
 
-# deploy secrets / local env
+# deploy secrets / local settings overrides (deploy/settings/<env>.local.yaml)
 deploy/secrets/
+deploy/settings/*.local.yaml
+# from before deploy/settings/ (#133); dev.sh refuses to start while they exist
 # rendered by Ansible on the server (example: deploy/ingest/config.example.json)
 deploy/ingest/config.json
 deploy/.env

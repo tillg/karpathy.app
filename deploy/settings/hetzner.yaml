@@ -1,0 +1,9 @@
+# Production: https://app.karpathy.app on the Hetzner server. The commit author is in the vault
+# (no personal data in this public repo).
+proxy:
+  domain: app.karpathy.app
+  tls: dns
+  dns: { api_token: { secret: dns_api_token } }
+git:
+  author: { name: { secret: git_author_name }, email: { secret: git_author_email } }
+timezone: Europe/Berlin

@@ -6,7 +6,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./stack.sh
-compose() { docker compose -p "$STACK_PROJECT" -f compose.yml -f compose.dev.yml "$@"; }
+# The rendered settings (settings_render); a stack started before deploy/settings/ can still go down without them.
+compose() { docker compose -p "$STACK_PROJECT" -f compose.yml -f compose.dev.yml ${SETTINGS_ENV:+--env-file "$SETTINGS_ENV"} "$@"; }
+[ -f ../tmp/settings/dev/.env ] && SETTINGS_ENV=../tmp/settings/dev/.env
 
 case "${1:-up}" in
   up)
@@ -24,15 +26,20 @@ case "${1:-up}" in
       echo "this checkout holds stack $old: just dev down first" >&2; exit 1
     fi
     stack_ollama_ready http://127.0.0.1:11434 || { echo "no Ollama on 127.0.0.1:11434: just ollama install" >&2; exit 1; }
-    stack_remember "$n"
+    settings_legacy_check || exit 1
     mkdir -p secrets ../tmp/dev/remotes
     [ -s secrets/bearer_token ] || openssl rand -hex 24 > secrets/bearer_token
     [ -s secrets/opencode_password ] || openssl rand -hex 24 > secrets/opencode_password
     [ -s secrets/gog_keyring_password ] || openssl rand -hex 24 > secrets/gog_keyring_password
     [ -s secrets/ingest_token ] || openssl rand -hex 24 > secrets/ingest_token
     touch secrets/github_token secrets/dns_api_token
-    # The dev model (~2 GB) lives with the native Ollama, pulled once for all stacks.
-    ollama show qwen2.5:3b >/dev/null 2>&1 || ollama pull qwen2.5:3b
+    # deploy/settings/ (dev.yaml, your dev.local.yaml) → tmp/settings/dev/, which compose reads.
+    settings_render dev secrets || exit 1
+    SETTINGS_ENV=../tmp/settings/dev/.env
+    stack_remember "$n"
+    # An Ollama model (~2 GB) lives with the native Ollama, pulled once for all stacks.
+    model=$(sed -n 's/^DEFAULT_MODEL=//p' ../tmp/settings/dev/.env)
+    case "$model" in ollama/*) ollama show "${model#ollama/}" >/dev/null 2>&1 || ollama pull "${model#ollama/}" ;; esac
     # The ingest image's build context for the private ingest-email repo.
     ingest/fetch-source.sh >/dev/null
     compose up -d --build

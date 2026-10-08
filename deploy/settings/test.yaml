@@ -1,0 +1,2 @@
+# CI and the backend's integration tests (LLM_TEST_MODEL / LLM_VISION_MODEL override these).
+ai: { gateway: ollama, model: ollama/qwen2.5:3b, vision_model: ollama/qwen3-vl:2b }

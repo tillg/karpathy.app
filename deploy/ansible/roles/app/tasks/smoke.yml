@@ -5,7 +5,7 @@
 - name: GET /api/health through the proxy
   ansible.builtin.shell: |
     set -o pipefail
-    curl -sf {{ '-k' if tls_mode == 'internal' else '' }} \
+    curl -sf {{ '-k' if app_settings_env.TLS_MODE == 'internal' else '' }} \
       --resolve {{ domain }}:{{ https_port }}:{{ '127.0.0.1' if bind_ip == '0.0.0.0' else bind_ip }} \
       -H @- https://{{ domain }}:{{ https_port }}/api/health <<< "Authorization: Bearer {{ bearer_token }}"
   args:

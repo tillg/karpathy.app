@@ -17,15 +17,18 @@ export interface MakeAppOptions {
   dirs?: { config: string; vaults: string };
   githubSecret?: string;
   env?: Partial<VaultsEnv>;
+  /** The deployment's default model (settings `ai.model`). */
+  defaultModel?: string;
 }
 
-export async function makeApp(remoteBase: string, { deps = {}, dirs, githubSecret, env = {} }: MakeAppOptions = {}) {
+export async function makeApp(remoteBase: string, { deps = {}, dirs, githubSecret, env = {}, defaultModel }: MakeAppOptions = {}) {
   const base = dirs ? null : await mkdtemp(join(tmpdir(), 'kai-app-'));
   const configDir = dirs?.config ?? join(base!, 'config');
   const vaultsDir = dirs?.vaults ?? join(base!, 'vaults');
-  const store = await ConfigStore.open(configDir);
+  const store = await ConfigStore.open(configDir, defaultModel ? { model: defaultModel } : {});
   const githubToken = new GitHubToken(store, githubSecret);
-  const vaults = new Vaults(store, { vaultsDir, remoteBase, identity, githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), ...env });
+  // visibleDotDirs as deploy/settings/settings.yaml sets it.
+  const vaults = new Vaults(store, { vaultsDir, remoteBase, identity, visibleDotDirs: ['.agents'], githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), ...env });
   await vaults.init();
   const app = createApp({ token: TOKEN, vaults, store, githubToken, ...deps });
   const auth = { Authorization: `Bearer ${TOKEN}` };

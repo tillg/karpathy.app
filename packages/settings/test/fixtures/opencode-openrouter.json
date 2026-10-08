@@ -1,0 +1,30 @@
+{
+  "provider": {
+    "openrouter": {
+      "models": {
+        "z-ai/glm-5.3": {
+          "options": {
+            "provider": {
+              "order": [
+                "mistral/zdr",
+                "mistral",
+                "fireworks",
+                "together",
+                "parasail"
+              ],
+              "only": [
+                "mistral/zdr",
+                "mistral",
+                "fireworks",
+                "together",
+                "parasail"
+              ],
+              "zdr": true,
+              "data_collection": "deny"
+            }
+          }
+        }
+      }
+    }
+  }
+}

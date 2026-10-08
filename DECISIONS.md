@@ -93,6 +93,20 @@ edited: 2026-10-08
   - [13:46 — Treat the backend auth test failure as flaky, not as a red baseline](#run-2026-10-05-1346-3)
   - [14:20 — No link from a token error in the Vaults dialog to Settings](#run-2026-10-05-1346-4)
   - [14:50 — Archive on the 14:12 test run and my own commit messages](#run-2026-10-05-1346-5)
+- [2026-10-08 18:39 — Build central-settings-yaml (#133), merge, release and deploy to prod](#run-2026-10-08-1839)
+  - [18:39 — Merge to main, push, release and deploy to prod, as the task asks](#run-2026-10-08-1839-1)
+  - [18:45 — Commit closely related plan steps together](#run-2026-10-08-1839-2)
+  - [18:45 — Treat openrouter as a built-in gateway kind: any model id is valid](#run-2026-10-08-1839-3)
+  - [18:45 — The backend parses settings.json with its own small schema](#run-2026-10-08-1839-4)
+  - [19:05 — Treat the two backend failures of the baseline as flaky](#run-2026-10-08-1839-5)
+  - [19:20 — Admin model: a "Default: …" line and a "Use default" button, not a picker entry](#run-2026-10-08-1839-6)
+  - [19:20 — No built-in model fallback in the backend; one existing test updated](#run-2026-10-08-1839-7)
+  - [19:30 — Test dev.sh's render and legacy check as stack.sh functions, not with a fake docker](#run-2026-10-08-1839-8)
+  - [19:40 — Tests read the committed settings files, never the developer's overlay](#run-2026-10-08-1839-9)
+  - [19:40 — Migrate this Mac's deploy/.env and opencode.env into dev.local.yaml and a secret file](#run-2026-10-08-1839-10)
+  - [19:55 — Keep the targets' vault layout; role app maps vault values to secret names](#run-2026-10-08-1839-11)
+  - [19:55 — Keep `domain` in the inventory, checked against the settings](#run-2026-10-08-1839-12)
+  - [20:30 — Act on the review: providers via OPENCODE_CONFIG_CONTENT, and which findings stay open](#run-2026-10-08-1839-13)
 - [2026-10-08 18:58 — Finish rework-ingestion-pipeline, commit, push, deploy to prod](#run-2026-10-08-1858)
   - [18:58 — Push to main, release and deploy to prod, as the task asks](#run-2026-10-08-1858-1)
   - [18:58 — Commit this session's uncommitted work for the change](#run-2026-10-08-1858-2)
@@ -1222,6 +1236,198 @@ edited: 2026-10-08
 - **Why:** no app code changed since the green run; the user asked for the archive without being asked back.
 - **Alternatives:** a second full e2e run before archiving.
 - **Consequences:** two commits: system description update, then "- cleaned from change".
+
+# 2026-10-08 18:39 — Build central-settings-yaml (#133), merge, release and deploy to prod {#run-2026-10-08-1839}
+
+- **Started by:** `/autonomous` (driving `/spec:apply central-settings-yaml`)
+- **Task, as given:**
+
+  > and then merge, commit and push and deploy it to PROD. Keep me updated via ntfy
+
+## 18:39 — Merge to main, push, release and deploy to prod, as the task asks {#run-2026-10-08-1839-1}
+
+- **Status:** open
+- **Overrides:** `/autonomous` — deploy only to non-production unless the task names production; CLAUDE.md
+  — never create or switch branches without permission (the task asks to merge into `main`).
+- **Context:** `central-settings-yaml`; the task names merge, push and a prod deploy explicitly.
+- **Question:** how far to take the change without the user?
+- **Decision:** implement on `central-settings-yaml`, push it after each green unit, then fast-forward or
+  merge `main`, cut a release with `just release`, deploy with `just deploy local` first and then
+  `just deploy hetzner`. Progress goes to the dev ntfy topic.
+- **Why:** the task says so; `local` first because this change rewrites the deploy path (rollback test).
+- **Alternatives:** stop before prod and leave the release to the user.
+- **Consequences:** rollback = `just deploy hetzner <previous version> --only app` (the rendered `.env`
+  keeps every key older releases read).
+
+## 18:45 — Commit closely related plan steps together {#run-2026-10-08-1839-2}
+
+- **Status:** open
+- **Overrides:** `/spec:apply` (inside `/autonomous`) — commit each ticked step.
+- **Context:** `central-settings-yaml` plan steps 1–6 (loader, schema, secrets) share one module and
+  were written test-first as one red → green round.
+- **Question:** one commit per step, or per group of steps?
+- **Decision:** one commit per small group of steps that touch the same files, each group green.
+- **Why:** per-step commits of a module that doesn't exist yet would be noise; every commit is still green.
+- **Alternatives:** strict one commit per step.
+- **Consequences:** commit messages name the step numbers they cover.
+
+## 18:45 — Treat openrouter as a built-in gateway kind: any model id is valid {#run-2026-10-08-1839-3}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 5 (cross-field rules); `architecture.md` names only
+  `anthropic` and `openai` as kinds with built-in models.
+- **Question:** must an openrouter model be listed under the gateway's `models`?
+- **Decision:** no. `openrouter`, `anthropic` and `openai` are built-in kinds; `models` only adds options.
+- **Why:** opencode knows OpenRouter's catalogue; the only listed model is there for its ZDR routing
+  options. Requiring a list would block picking another OpenRouter model for no gain.
+- **Alternatives:** require every openrouter model to be listed (stricter typo check).
+- **Consequences:** `architecture.md` updated to match.
+
+## 18:45 — The backend parses settings.json with its own small schema {#run-2026-10-08-1839-4}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 13; `architecture.md` says the shared schema is "exported to
+  the backend".
+- **Question:** make the backend image depend on `packages/settings`, or give it its own schema of the
+  rendered `settings.json`?
+- **Decision:** own schema in `apps/backend/src/settings.ts`; a test in `packages/settings` parses the
+  rendered file with it, so the two can't drift.
+- **Why:** the rendered file is a different shape (secrets as `{ file }`), and the backend Dockerfile then
+  needs no new package (dev bind mounts, prod copies).
+- **Alternatives:** the shared package in the image (one schema, but YAML + loader code in the image).
+- **Consequences:** none beyond the cross-package test.
+
+## 19:05 — Treat the two backend failures of the baseline as flaky {#run-2026-10-08-1839-5}
+
+- **Status:** open
+- **Context:** `central-settings-yaml`; the baseline `just check` before any change had 2 failures:
+  `api.test.ts` › new file name "Neue Notiz?.md" → 400 and `chat.test.ts` › deleting a chat removes it.
+- **Question:** a red baseline (commit on "no new failures") or flaky tests?
+- **Decision:** flaky: the api test passes alone, and the next full runs were green (351/351).
+- **Why:** both are timing-sensitive under the full parallel load (opencode containers).
+- **Alternatives:** record a red baseline and accept those two failures in every commit.
+- **Consequences:** a later run where they fail again is not counted as new; worth an issue if they keep
+  flaking.
+  19:57: other `api.test.ts` cases (branch names `x/`, `x^`, conflict 405/409) failed once each in full runs
+  under load (load average 9–10: a busy native Ollama, Sophos scans); every one passed when `api.test.ts`
+  ran alone, twice. Counted as the same flakiness.
+
+## 19:20 — Admin model: a "Default: …" line and a "Use default" button, not a picker entry {#run-2026-10-08-1839-6}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 17; the spec says the picker's first entry is
+  `Default (model)`, but the Admin's model field is a free-text input, not a picker.
+- **Question:** turn the field into a picker, or keep the text field?
+- **Decision:** keep the text field; below it a `Default: <model>` line (`data-overridden`) and, when the
+  field differs from the default, a "Use default" button. Saving the default removes the override.
+- **Why:** there is no endpoint listing the models, and a free field keeps every model of a gateway
+  reachable; the existing `fix-16` e2e test stays valid.
+- **Alternatives:** a select fed by a new models endpoint (more code, fewer models reachable).
+- **Consequences:** `architecture.md` text about the picker is read as this design.
+
+## 19:20 — No built-in model fallback in the backend; one existing test updated {#run-2026-10-08-1839-7}
+
+- **Status:** open
+- **Overrides:** CLAUDE.md — never make tests pass by changing them without permission.
+- **Context:** `central-settings-yaml` step 15; `config-store.ts` had `anthropic/claude-sonnet-5` as its
+  default, and `config-store.test.ts` › "starts with default settings" asserted it. The plan's last step
+  requires that literal to be gone.
+- **Question:** keep a code default, or let the settings files be the only source?
+- **Decision:** the code default is now `''`; the deployment always passes `ai.model`. The test asserts
+  `model: ''` instead of the old literal.
+- **Why:** the spec makes the settings files the one source of the default; the test followed the old
+  behaviour, not a weakened check.
+- **Alternatives:** keep the literal as a dead fallback.
+- **Consequences:** a backend started without settings has no model (it can't start without
+  settings.json anyway).
+
+## 19:30 — Test dev.sh's render and legacy check as stack.sh functions, not with a fake docker {#run-2026-10-08-1839-8}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 19 planned a fake `docker` on `PATH` running `dev.sh up`.
+  `dev.sh up` claims a real stack in this checkout's `tmp/dev/stack`, so a fake run would disturb it.
+- **Question:** how to test "dev up renders first and refuses legacy files"?
+- **Decision:** `settings_render` and `settings_legacy_check` live in `stack.sh`; `stack.test.sh` tests
+  them directly and checks that `dev.sh` and `just prodtest` call them; the real `just dev up` is the
+  end-to-end check.
+- **Why:** no side effects on a real stack; the logic is in the functions.
+- **Alternatives:** the fake-docker run in a throwaway checkout copy.
+- **Consequences:** none.
+
+## 19:40 — Tests read the committed settings files, never the developer's overlay {#run-2026-10-08-1839-9}
+
+- **Status:** open
+- **Context:** `central-settings-yaml`; once this Mac had a `deploy/settings/dev.local.yaml`, the tests of
+  the real `dev` settings saw OpenRouter instead of Ollama.
+- **Question:** how do tests ignore a developer's overlay?
+- **Decision:** `loadSettings(env, { local: false })` and the CLI flag `--no-local`; every test of the
+  committed files uses them.
+- **Why:** the overlay is per machine by design; tests must give the same result everywhere.
+- **Alternatives:** tests on a copy of the directory without overlays.
+- **Consequences:** none.
+
+## 19:40 — Migrate this Mac's deploy/.env and opencode.env into dev.local.yaml and a secret file {#run-2026-10-08-1839-10}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 20; this checkout's gitignored `deploy/.env` chose
+  `openrouter/z-ai/glm-5.3` for dev and `deploy/opencode.env` held the OpenRouter key.
+- **Question:** keep the user's dev choice, or fall back to the committed Ollama default?
+- **Decision:** keep it: `deploy/settings/dev.local.yaml` selects the OpenRouter gateway and the key is
+  now `deploy/secrets/openrouter_api_key`. The old files moved to `tmp/legacy-env-backup/`.
+- **Why:** it was the user's own choice for dev; `dev.sh` refuses to start while the old files exist.
+- **Alternatives:** delete the old files and run dev on Ollama.
+- **Consequences:** delete `tmp/legacy-env-backup/` once happy; `rm deploy/settings/dev.local.yaml`
+  switches dev back to Ollama.
+
+## 19:55 — Keep the targets' vault layout; role app maps vault values to secret names {#run-2026-10-08-1839-11}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 25 planned one vault entry per secret name and a new
+  `fill_vault.py`. The prod vault is encrypted with a Keychain password and holds only
+  `vault_opencode_env: { OPENROUTER_API_KEY }` besides the existing entries.
+- **Question:** re-encrypt and restructure both vaults during an unattended prod deploy, or map?
+- **Decision:** keep the vaults as they are. `roles/app/vars/main.yml` builds the secret store from them
+  (`bearer_token`, `github_token`, `dns_api_token`, `vault_git_author_*`, and each `vault_opencode_env` key
+  lower-cased: `OPENROUTER_API_KEY` → `openrouter_api_key`). A stack test checks that every secret a
+  target's settings use has a source.
+- **Why:** no risky rewrite of the prod vault while the user is away; the settings files still name
+  every secret; `fill_vault.py` keeps working unchanged.
+- **Alternatives:** one vault entry per secret name (cleaner, but a vault migration on both targets).
+- **Consequences:** `plan.md` step 25 rewritten to the mapping; a vault restructure can follow later.
+
+## 19:55 — Keep `domain` in the inventory, checked against the settings {#run-2026-10-08-1839-12}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 26; the monitoring role (Gatus) and the smoke check read
+  `domain`, and `just deploy --only monitoring` runs without role app.
+- **Question:** drop `domain` from `group_vars` (it repeats `proxy.domain`)?
+- **Decision:** keep it; role app asserts it equals the rendered `DOMAIN` and stops on a mismatch.
+- **Why:** host provisioning stays in Ansible (decided in review); the check prevents drift.
+- **Alternatives:** have the monitoring role render the settings too.
+- **Consequences:** one value in two places, enforced equal at every deploy.
+
+## 20:30 — Act on the review: providers via OPENCODE_CONFIG_CONTENT, and which findings stay open {#run-2026-10-08-1839-13}
+
+- **Status:** open
+- **Context:** `central-settings-yaml`, `/spec:adversarial-code-review` over `ee26a7a..HEAD` (Defects,
+  Standards, Spec). The HIGH finding: moving the OpenRouter ZDR routing from the managed `opencode.json` into
+  an `OPENCODE_CONFIG` file let a vault's own `opencode.json` override it. Checked on the dev stack: a
+  project file set `zdr: false` and won.
+- **Question:** which findings to fix before the prod release?
+- **Decision:** fixed: the providers go in `OPENCODE_CONFIG_CONTENT` (in `opencode.env`), which opencode
+  merges after project files (checked: `zdr` stays `true` against the same vault file), no providers file
+  any more; compose's `--env-file` only when rendered (old stacks can still go down); `$` escaped in
+  double-quoted env values; the `settings.json` bind mount doesn't create a missing source; the Ollama
+  relay config change recreates the stack; `settings.json` group = `deploy_gid`; the e2e test reloads to
+  show the override persists; renames (`withOverride`, `overlay: false`); architecture text updated.
+  Left open: `commit_reminder_threshold` / `ai.web.access` stay "stored wins" like before (only the
+  model got override semantics, as the spec says); a legacy stored model ≠ the new default is kept as
+  an override (prod checked after deploy); rollback to releases older than the egress proxy on `local`;
+  web caps in the vault (none are set); the test that greps `opencode-container.ts`.
+- **Why:** the HIGH one is a security regression; the rest are cheap or would widen the scope.
+- **Alternatives:** keep the routing block in the managed `opencode.json` (policy in the image, but the
+  model name twice and the gateway no longer from the settings).
+- **Consequences:** release `0.0.16-rc.2` carries the fixes; rc.1 (built before them) is not deployed.
 
 # 2026-10-08 18:58 — Finish rework-ingestion-pipeline, commit, push, deploy to prod {#run-2026-10-08-1858}
 
