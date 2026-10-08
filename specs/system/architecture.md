@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-06
+edited: 2026-10-08
 ---
 
 # Architecture: karpathy.app

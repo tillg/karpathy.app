@@ -87,6 +87,10 @@ _Avoid_: Rename (there is no general rename)
 **Path-form link**:
 A link that names a folder on the way to its target (`[[serien/foo]]`, `[Foo](../serien/foo.md)`), as opposed to a bare link (`[[foo]]`). A move into the own folder rewrites the path-form links to the page; bare links keep resolving by name.
 
+**Note graph**:
+The vault's notes (`.md` files) and the links between them (wikilinks, embeds, relative Markdown links; not in code), shown in 3D by the graph dialog. A view only: it edits nothing.
+_Avoid_: Graph view (Obsidian's plugin), knowledge graph
+
 **Chat attachment**:
 A vault file sent with a prompt, so the model receives its content (image or PDF), not only its path. It is uploaded first, into a new `Sources/upload-…/` folder per message.
 _Avoid_: Attachment for a file in general
