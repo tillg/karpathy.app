@@ -7,7 +7,7 @@ t=$(mktemp -d)
 trap 'kill $pid 2>/dev/null || true; rm -rf "$t"' EXIT
 fail() { echo "FAIL: $*" >&2; echo "--- calls:" >&2; cat "$t/calls" >&2; echo "--- run.sh output:" >&2; cat "$t/out" >&2 || true; exit 1; }
 
-mkdir -p "$t/bin" "$t/state" "$t/vaults/mylife/Sources" "$t/vaults/mylife/Input/.tmp-abc" "$t/vaults/mylife/Input/mail-keep"
+mkdir -p "$t/bin" "$t/state" "$t/vaults/mylife/Sources" "$t/vaults/mylife/Input/.tmp-abc" "$t/vaults/mylife/Input/mail-keep" "$t/vaults/sub/wiki"
 cat > "$t/bin/ingest-email" <<'FAKE'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE_LOG"
@@ -23,7 +23,7 @@ start() { # $1 = config json
 }
 
 # 1. Profiles: one cloned vault, one not cloned.
-start '{"defaults":{"max_per_poll":20},"profiles":{"mylife":{"vault":"mylife","label":"MyLife","allowed_senders":["a@b.c"]},"gone":{"vault":"gone","label":"Gone","allowed_senders":["a@b.c"]}}}'
+start '{"defaults":{"max_per_poll":20},"profiles":{"mylife":{"vault":"mylife","label":"MyLife","account":"me@gmail.com","allowed_senders":["a@b.c"]},"gone":{"vault":"gone","label":"Gone","account":"me@gmail.com","allowed_senders":["a@b.c"]},"sub":{"vault":"sub","root":"wiki","label":"Sub","account":"me@gmail.com","allowed_senders":["a@b.c"]}}}'
 sleep 4.5
 kill $pid; wait $pid 2>/dev/null || true
 
@@ -37,7 +37,8 @@ grep -q 'vault gone not cloned' "$t/out" || fail "missing log line for the skipp
 [ ! -e "$t/vaults/mylife/Input/.tmp-abc" ] || fail "leftover Input/.tmp-* not removed at start"
 [ -d "$t/vaults/mylife/Input/mail-keep" ] || fail "a real item was removed"
 [ -f "$t/state/last-run" ] || fail "no heartbeat"
-age=$(( $(date +%s) - $(stat -f %m "$t/state/last-run" 2>/dev/null || stat -c %Y "$t/state/last-run") ))
+mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }   # GNU first: GNU `stat -f` means file-system status
+age=$(( $(date +%s) - $(mtime "$t/state/last-run") ))
 [ "$age" -le 3 ] || fail "heartbeat is $age s old"
 
 python3 - "$t" <<'PY' || fail "rendered ingest-email config is wrong"
@@ -48,12 +49,28 @@ p = c["profiles"]["mylife"]
 assert p["target_dir"] == f"{t}/vaults/mylife/Input", p
 assert p["archive_dirs"] == [f"{t}/vaults/mylife/Sources"], p
 assert (p["label_incoming"], p["label_processed"], p["label_failed"], p["label_rejected"]) == ("MyLife", "MyLife/processed", "MyLife/failed", "MyLife/rejected"), p
-assert p["allowed_senders"] == ["a@b.c"] and "vault" not in p and "label" not in p, p
+assert p["allowed_senders"] == ["a@b.c"] and p["account"] == "me@gmail.com", p
+assert "vault" not in p and "label" not in p and "root" not in p, p
+sub = c["profiles"]["sub"]
+assert sub["target_dir"] == f"{t}/vaults/sub/wiki/Input" and sub["archive_dirs"] == [f"{t}/vaults/sub/wiki/Sources"], sub
 assert "gone" not in c["profiles"], c
 assert c["defaults"]["max_per_poll"] == 20, c
 PY
 
-# 2. No profiles: idles with a fresh heartbeat, calls nothing.
+# 2. A long ingest-email call (Instagram pacing) keeps the heartbeat fresh: it is touched around every call.
+cat > "$t/bin/ingest-email" <<'FAKE'
+#!/usr/bin/env bash
+echo "$*" >> "$FAKE_LOG"
+[ "$1" = resolve ] && sleep 3
+true
+FAKE
+rm -f "$t/state/last-run"
+start '{"defaults":{},"profiles":{"mylife":{"vault":"mylife","label":"MyLife","account":"me@gmail.com","allowed_senders":["a@b.c"]}}}'
+sleep 1.5
+[ -f "$t/state/last-run" ] || fail "no heartbeat while the first round is still running"
+kill $pid; wait $pid 2>/dev/null || true
+
+# 3. No profiles: idles with a fresh heartbeat, calls nothing.
 rm -f "$t/state/last-run"
 start '{"defaults":{},"profiles":{}}'
 sleep 2.5

@@ -10,10 +10,10 @@ export interface IngestEndpoint {
   token: string;
 }
 
-const down = () => new HttpError(503, 'Ingest service not running', 'ingest-down');
+const notRunning = () => new HttpError(503, 'Ingest service not running', 'ingest-down');
 
 export async function callIngest(ep: IngestEndpoint | undefined, method: 'GET' | 'POST', path: string, body?: object): Promise<unknown> {
-  if (!ep) throw down();
+  if (!ep) throw notRunning();
   let res: Response;
   try {
     res = await fetch(`${ep.url}${path}`, {
@@ -24,10 +24,12 @@ export async function callIngest(ep: IngestEndpoint | undefined, method: 'GET' |
       signal: AbortSignal.timeout(120_000),
     });
   } catch {
-    throw down();
+    throw notRunning();
   }
   const out = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (res.ok) return out;
+  // The ingest token didn't match: a deploy problem, never the user's login (a 401 would log the app out).
+  if (res.status === 401 || res.status === 403) throw new HttpError(502, 'The ingest service refused the backend (ingest token mismatch)', 'ingest-auth');
   const code = typeof out.error === 'string' ? out.error : 'ingest-error';
   throw new HttpError(res.status, typeof out.message === 'string' ? out.message : `Ingest service: ${code}`, code);
 }

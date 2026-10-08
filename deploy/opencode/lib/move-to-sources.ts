@@ -18,17 +18,22 @@ async function dirAt(path: string, label: string): Promise<boolean | null> {
   return st.isDirectory();
 }
 
-/** True if the item's `index.md` frontmatter still lists `unresolved_links` (the ingest service is fetching them). */
+/**
+ * True if the item's `index.md` frontmatter still lists `unresolved_links` (the ingest service is fetching them).
+ * A small reader for this one key (the lib stays import-free): the key, quoted or not, then either an inline value
+ * or the block list below it; blank and comment lines in between are skipped.
+ */
 function hasOpenLinks(index: string): boolean {
   const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(index)?.[1];
   if (!fm) return false;
   const lines = fm.split(/\r?\n/);
-  const i = lines.findIndex((l) => /^unresolved_links:/.test(l));
+  const key = /^(["']?)unresolved_links\1\s*:(.*)$/;
+  const i = lines.findIndex((l) => key.test(l));
   if (i < 0) return false;
-  const inline = lines[i]!.slice('unresolved_links:'.length).trim();
+  const inline = key.exec(lines[i]!)![2]!.replace(/\s+#.*$/, '').trim();
   if (inline) return !/^\[\s*\]$/.test(inline) && inline !== 'null' && inline !== '~';
-  // Block list: the indented `- …` lines that follow.
-  return /^\s*-\s/.test(lines[i + 1] ?? '');
+  const next = lines.slice(i + 1).find((l) => l.trim() !== '' && !/^\s*#/.test(l));
+  return next !== undefined && /^\s*-(\s|$)/.test(next);
 }
 
 /** A moved file, vault-relative: where it was and where it is now (the shape apply_patch reports too). */
@@ -47,7 +52,10 @@ export async function moveToSources(dir: string, name: string): Promise<{ output
   const index = await readFile(join(dir, 'Input', name, 'index.md'), 'utf8').catch(() => '');
   if (hasOpenLinks(index)) throw new Error(`Input/${name} is still being processed (unresolved_links): leave it for the next ingest`);
   if (sources === null) await mkdir(join(dir, 'Sources'));
-  if ((await lstat(join(dir, 'Sources', name)).catch(() => null)) !== null) throw new Error(`Sources/${name} exists: rename or merge by hand`);
+  // Claim the target with mkdir (fails if anything is there); rename then replaces only this empty folder of ours.
+  await mkdir(join(dir, 'Sources', name)).catch((e: NodeJS.ErrnoException) => {
+    throw e.code === 'EEXIST' ? new Error(`Sources/${name} exists: rename or merge by hand`) : e;
+  });
   const from = join(dir, 'Input', name);
   const rels = (await readdir(from, { recursive: true, withFileTypes: true }))
     .filter((e) => !e.isDirectory())

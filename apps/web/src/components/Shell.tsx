@@ -22,7 +22,7 @@ export function Shell() {
   const s = useApp();
   const { phone, wide, phoneTab, phoneNote, status } = s;
   const inc = incomingView(status, s.pulling);
-  const waiting = useMemo(() => inputCount(buildTree(s.files)), [s.files]);
+  const queued = useMemo(() => inputCount(buildTree(s.files)), [s.files]);
   const cls = [
     phone ? 'phone' : wide ? 'wide' : 'tablet',
     s.chatOpen && !phone ? 'insp' : '',
@@ -95,8 +95,8 @@ export function Shell() {
                     ? <span className="tab-badge" data-testid="changes-badge-tab">{[status?.changedCount || '', inc.show ? '↓' : ''].filter(Boolean).join(' ')}</span>
                     : null}
                   {t.id === 'changes' && inc.show && <span className="sr-only"> · {inc.count} incoming</span>}
-                  {t.id === 'files' && waiting > 0 && (
-                    <span className="tab-badge" data-testid="input-badge-tab" aria-label={`${waiting} sources waiting to be ingested`}>{waiting}</span>
+                  {t.id === 'files' && queued > 0 && (
+                    <span className="tab-badge" data-testid="input-badge-tab" aria-label={`${queued} sources waiting to be ingested`}>{queued}</span>
                   )}
                 </span>
                 {t.label}

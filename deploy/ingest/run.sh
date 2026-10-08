@@ -26,8 +26,10 @@ profiles = {}
 for name, p in (raw.get("profiles") or {}).items():
     p = dict(p)
     vault, label = p.pop("vault"), p.pop("label")
-    root = os.path.join(vaults, vault)
-    if not os.path.isdir(root):
+    clone = os.path.join(vaults, vault)
+    # A vault in a subfolder of its repo (the app's vault root) keeps Input/ and Sources/ there.
+    root = os.path.normpath(os.path.join(clone, p.pop("root", "") or "."))
+    if not os.path.isdir(clone):
         print(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), f"vault {vault} not cloned: profile {name} skipped", file=sys.stderr)
         continue
     # An empty Input/ is not a git change; ingest-email needs the target dir to exist.
@@ -66,10 +68,12 @@ while :; do
   now=$(date +%s)
   fetch=$(( now - last_fetch >= FETCH_S ))
   [ "$fetch" = 1 ] && last_fetch=$now
-  for p in $profiles; do
-    [ "$fetch" = 1 ] && { ingest-email ingest "$p" --config "$RENDERED" || log "ingest $p failed ($?)"; }
-    ingest-email resolve "$p" --config "$RENDERED" || log "resolve $p failed ($?)"
-  done
+  # The heartbeat is touched around every call: a long resolve (Instagram pacing) is not a stuck loop.
   touch "$STATE/last-run"
+  for p in $profiles; do
+    [ "$fetch" = 1 ] && { ingest-email ingest "$p" --config "$RENDERED" || log "ingest $p failed ($?)"; touch "$STATE/last-run"; }
+    ingest-email resolve "$p" --config "$RENDERED" || log "resolve $p failed ($?)"
+    touch "$STATE/last-run"
+  done
   sleep "$LOOP_S"
 done

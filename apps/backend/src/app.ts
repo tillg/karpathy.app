@@ -66,7 +66,11 @@ const promptBody = z
   .object({ text: z.string().trim().max(100_000), attachments: z.array(z.string().min(1).max(1000)).max(MAX_ATTACHMENTS, { error: `At most ${MAX_ATTACHMENTS} files per message` }).optional() })
   .refine((b) => b.text.length > 0 || (b.attachments?.length ?? 0) > 0, { error: 'Write a prompt or attach a file' });
 
-const instagramLogin = z.object({ username: z.string().trim().min(1).max(100), password: z.string().min(1).max(200) }).strict();
+// An Instagram username (letters, digits, `.` and `_`, at most 30), never a path: the ingest service uses it in file names.
+const instagramLogin = z.object({
+  username: z.string().trim().transform((u) => u.replace(/^@/, '')).pipe(z.string().regex(/^[A-Za-z0-9._]{1,30}$/, 'not an Instagram username').refine((u) => !/^\.+$/.test(u), 'not an Instagram username')),
+  password: z.string().min(1).max(200),
+}).strict();
 const instagramCode = z.object({ code: z.string().trim().min(1).max(20) }).strict();
 const githubTokenBody = z.object({
   token: z.string().trim().min(20, { error: 'GitHub token: that is too short to be a token' }).max(255).regex(/^\S+$/, { error: 'GitHub token: must not contain spaces' }),

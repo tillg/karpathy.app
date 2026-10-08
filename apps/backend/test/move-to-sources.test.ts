@@ -42,7 +42,7 @@ describe('moveToSources', () => {
     expect(await exists('Sources/web-a/index.md')).toBe(true);
   });
 
-  it('never overwrites an existing Sources/<name>', async () => {
+  it('never overwrites an existing Sources/<name>, not even an empty folder', async () => {
     await item('dup');
     await mkdir(join(vault, 'Sources/dup'), { recursive: true });
     await expect(moveToSources(vault, 'dup')).rejects.toThrow('Sources/dup exists: rename or merge by hand');
@@ -82,6 +82,11 @@ describe('moveToSources', () => {
     await expect(moveToSources(vault, 'insta-a')).rejects.toThrow('Input/insta-a is still being processed');
     await item('insta-b', "unresolved_links: ['https://www.instagram.com/p/abc/']");
     await expect(moveToSources(vault, 'insta-b')).rejects.toThrow('still being processed');
+    // A blank line or a comment between the key and its list, a quoted key.
+    await item('insta-c', 'unresolved_links:\n\n  # pending\n  - url: https://www.instagram.com/p/c/');
+    await expect(moveToSources(vault, 'insta-c')).rejects.toThrow('still being processed');
+    await item('insta-d', '"unresolved_links":\n  - url: https://www.instagram.com/p/d/');
+    await expect(moveToSources(vault, 'insta-d')).rejects.toThrow('still being processed');
     expect(await exists('Input/insta-a/index.md')).toBe(true);
   });
 });

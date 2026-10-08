@@ -107,6 +107,8 @@ edited: 2026-10-08
   - [19:55 — e2e: skill via push + pull, @llm and Instagram cases in one project](#run-2026-10-08-1858-11)
   - [20:20 — Count fix-124's @llm failure as baseline, not as a new failure](#run-2026-10-08-1858-12)
   - [20:20 — Run-book chapter left uncommitted in the demo vault](#run-2026-10-08-1858-13)
+  - [20:30 — Release after the central-settings-yaml release, separately](#run-2026-10-08-1858-14)
+  - [21:00 — Fix the review's high and medium findings; leave four for follow-up](#run-2026-10-08-1858-15)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1406,3 +1408,35 @@ edited: 2026-10-08
 - **Why:** `/autonomous` never commits a file that was dirty before the run.
 - **Alternatives:** commit both agents' chapters together (mixes foreign work into my commit).
 - **Consequences:** the user commits `Karpathy Demo.md` (both chapters) and pushes it.
+
+## 20:30 — Release after the central-settings-yaml release, separately {#run-2026-10-08-1858-14}
+
+- **Status:** open
+- **Context:** another session (karpathy_app, change `central-settings-yaml`, #133) tagged `v0.0.16-rc.1` while this run
+  was about to; both changes use the `local` VM and `hetzner`. That change moves all settings to `deploy/settings/`.
+- **Question:** one release for both, or one after the other?
+- **Decision:** that session asked for separate releases: it ships `v0.0.16` first; this run then merges `main` into
+  `rework-ingestion-pipeline`, moves the ingest settings into `deploy/settings/` where they fit, and ships `v0.0.17`.
+- **Why:** no two agents deploying over each other; each release testable on its own and rollback-able.
+- **Alternatives:** one combined release (bigger blast radius, two agents debugging one deploy).
+- **Consequences:** this run waits for that session's "done" message (ETA 21:40).
+
+## 21:00 — Fix the review's high and medium findings; leave four for follow-up {#run-2026-10-08-1858-15}
+
+- **Status:** open
+- **Context:** `/spec:adversarial-code-review` of `ee26a7a..HEAD` (three axes).
+- **Question:** which findings to fix before release?
+- **Decision:** fixed, test-first: Instagram username as a path (rmtree traversal), an ingest-side 401 logging the
+  user out (now 502 `ingest-auth`), `run.test.sh` on Linux, the pull's stash removing `Input/` under the bind mount
+  (stash and dirty check exclude `Input/`), vault `root` in profiles, a false "expired" right after a connect,
+  per-attempt staging and install under the lock, a 504 cancelling the login, stale events before a code, a heartbeat
+  around every `ingest-email` call, the `account` key in the example config, the `unresolved_links` reader (blank and
+  comment lines, quoted key), `move_to_sources` claiming its target with `mkdir`, negative `Content-Length`,
+  `compare_digest`, `InstagramStatus` without the `code` answer, the name `queued` for the input count, the
+  disabled-while-running assertion. Left open: Cancel in the code step only resets the UI (the server's pending login
+  times out after 5 min); the ingest service shares the `internal` network with backend and opencode (a separate
+  network would narrow it); CI on fork PRs has no deploy key; the Ansible mounts ignore a vault `root` (the settings
+  move redoes that part).
+- **Why:** the fixed ones break data, security or CI; the open ones are low-risk or need a design change.
+- **Alternatives:** fix everything now (delays the release; the network split touches the egress design).
+- **Consequences:** issue to file for the four open items.

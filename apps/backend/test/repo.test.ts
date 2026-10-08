@@ -1,4 +1,4 @@
-import { readFile, rename, writeFile, rm } from 'node:fs/promises';
+import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AI_TRAILER, Repo } from '../src/repo.js';
@@ -123,6 +123,34 @@ describe('Repo pull', () => {
     expect(await read('a.md')).toBe('unpushed\n');
     expect(await read('b.md')).toBe('remote\n');
     expect(await repo.changes()).toEqual([{ path: 'a.md', kind: 'modified' }]);
+  });
+});
+
+describe('Repo pull leaves the ingest queue alone', () => {
+  it('Input/ stays the same directory with its items while other changes are stashed and re-applied', async () => {
+    const { remote, repo, write, read } = await setup();
+    await write('Input/mail-1/index.md', 'item\n');
+    await write('a.md', 'local\n');
+    const ino = (await stat(join(repo.rootDir, 'Input'))).ino;
+    await remote.obsidianPush({ 'b.md': 'remote\n' });
+    expect(await repo.pull()).toEqual({ kind: 'ok', pushed: false });
+    expect((await stat(join(repo.rootDir, 'Input'))).ino).toBe(ino);
+    expect(await read('Input/mail-1/index.md')).toBe('item\n');
+    expect(await read('a.md')).toBe('local\n');
+    expect(await read('b.md')).toBe('remote\n');
+    expect(sh(repo.dir, 'stash', 'list')).toBe('');
+  });
+
+  it('only Input/ changed: nothing is stashed, and no older stash is popped', async () => {
+    const { remote, repo, write, read } = await setup();
+    await write('a.md', 'older stash\n');
+    sh(repo.dir, 'stash', 'push', '-q', '-m', 'someone else');
+    await write('Input/web-1/index.md', 'item\n');
+    await remote.obsidianPush({ 'b.md': 'remote\n' });
+    expect(await repo.pull()).toEqual({ kind: 'ok', pushed: false });
+    expect(await read('a.md')).toBe('a\n');
+    expect(await read('Input/web-1/index.md')).toBe('item\n');
+    expect(sh(repo.dir, 'stash', 'list')).toContain('someone else');
   });
 });
 

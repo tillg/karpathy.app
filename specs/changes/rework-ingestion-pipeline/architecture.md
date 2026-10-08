@@ -166,6 +166,11 @@ writer wins; the editor's version check then shows the stale-file conflict it sh
 in the app as today). A pull that brings a new `Input/` folder from the Mac is just a new item: the next resolve picks
 it up. Commit stays safe: it refuses when the changed set differs from what the user reviewed (Key decisions).
 
+**Pull keeps `Input/` in place:** the pull procedure stashes uncommitted changes with `--include-untracked`, which removes
+and later recreates untracked folders. That would break the service's bind mount of `Input/` (new mail lands in a
+detached folder) and race its writes. So the pull's dirty check and stash leave `Input/` out
+(`:(exclude)<root>/Input`); waiting items stay where they are while the pull fast-forwards around them.
+
 **Commit reminder:** `VaultStatus` gains `inputChangedCount` (changed paths under `Input/`, computed with
 `changedCount`); the reminder uses `changedCount - inputChangedCount`. The Changes list itself still shows everything.
 
@@ -329,16 +334,21 @@ sequenceDiagram
   (`~/.config/instascraper/session-<user>.json`, 0600) only on success, then sets `IG_USERNAME` in instascraper's
   config so the resolver's `get_client` uses it. A pending login never touches a working session.
 - **Status:** read from the vaults, not from a status file (ingest_email stays as it is): Instagram links in an
-  `Input/` item's `unresolved_links` with reason `no-session` are "waiting"; a session in place plus waiting links is
-  `expired`; no session is `not-connected`. `GET /instagram/status` never logs in (a login is a flag-risk event).
+  `Input/` item's `unresolved_links` with reason `no-session` are "waiting"; `expired` = a session is in place and an
+  item was rewritten by the resolver *after* that session file with such a link still in it (a fresh connect reads
+  `connected` until the resolver tried again); no session is `not-connected`. `GET /instagram/status` never logs in.
+- **Username:** an Instagram username (`^[A-Za-z0-9._]{1,30}$`, not only dots), checked in the backend's zod schema and
+  again in the service; each login attempt gets its own `mkdtemp` staging dir; the session is installed under the
+  service lock, so a superseded login never installs. A login that doesn't answer within 90 s (504) is cancelled.
 - **Dev and e2e:** compose.dev.yml sets `INGEST_FAKE_INSTAGRAM_LOGIN=1`: a built-in fake login (password `wrong`
   fails, user `twofa…` asks for code 000000 by SMS). Prod and prodtest never set it (`compose.test.sh`).
 - **Password:** passed through to instagrapi once, never written to disk or logs (request bodies are not logged); the
   session file holds cookies and device ids only.
 - **Backend:** `GET /ingest/instagram`, `POST /ingest/instagram/login|code|disconnect` (bearer-guarded like every route;
   zod-validated; proxied to `INGEST_URL` = `http://ingest:8090` with `ingest_token`, `apps/backend/src/ingest.ts`). The
-  service's errors keep their status as `{ error, code }`; `503` "Ingest service not running" (`ingest-down`) when it
-  can't be reached or isn't configured.
+  service's errors keep their status as `{ error, code }`, except a 401/403 from the service (token mismatch), which
+  becomes `502` `ingest-auth`: the web app treats every 401 as "log out". `503` "Ingest service not running"
+  (`ingest-down`) when it can't be reached or isn't configured.
 - **Web:** the Settings dialog gets an **Instagram** section (`InstagramSettings.tsx`): status line, a form (username,
   password → Connect, Reconnect when expired; then "Code sent by SMS" + code → Verify), Disconnect. When the status is
   `expired`, the Vaults list shows a notice "Instagram disconnected — N links waiting" with a link to Settings.

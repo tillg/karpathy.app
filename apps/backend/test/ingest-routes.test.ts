@@ -66,6 +66,23 @@ describe('ingest routes', () => {
     expect(r.body).toEqual({ error: 'Wrong username or password', code: 'wrong-password' });
   });
 
+  it('an ingest-side 401 is a 502, never a 401 (which would log the user out of the app)', async () => {
+    const t = await makeApp('file:///nowhere/', { deps: { ingest: { url, token: 'not-the-ingest-token' } } });
+    const r = await t.api.get('/ingest/instagram');
+    expect(r.status).toBe(502);
+    expect(r.body).toMatchObject({ code: 'ingest-auth' });
+  });
+
+  it('usernames are Instagram usernames: no paths, no spaces', async () => {
+    const t = await makeApp('file:///nowhere/', { deps: { ingest: { url, token: INGEST_TOKEN } } });
+    seen.length = 0;
+    for (const username of ['../../vaults/x/Input', 'a/b', 'a b', '..', 'x'.repeat(31)])
+      expect((await t.api.post('/ingest/instagram/login', { username, password: 'p' })).status, username).toBe(400);
+    expect(seen).toEqual([]);
+    expect((await t.api.post('/ingest/instagram/login', { username: '@till.g_1', password: 'p' })).status).toBe(200);
+    expect(JSON.parse(seen[0]!.body).username).toBe('till.g_1');
+  });
+
   it('validates bodies', async () => {
     const t = await makeApp('file:///nowhere/', { deps: { ingest: { url, token: INGEST_TOKEN } } });
     seen.length = 0;

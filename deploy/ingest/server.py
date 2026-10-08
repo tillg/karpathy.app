@@ -16,10 +16,13 @@ at a time: a new one replaces it. The session is written to a staging dir and mo
 pending login never touches a working session. The password is passed to the login once and never stored or logged.
 """
 
+import hmac
 import json
 import os
 import queue
+import re
 import shutil
+import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,6 +30,11 @@ from pathlib import Path
 import yaml
 
 FIRST_ANSWER_S = 90  # how long POST /login waits for the login to connect or ask for a code
+# An Instagram username, never a path: it becomes part of file names.
+USERNAME = re.compile(r"^(?!\.+$)[A-Za-z0-9._]{1,30}$")
+
+
+EXPIRED_CODE = (400, {"error": "expired-code", "message": "The code request expired: connect again"})
 
 
 class _Superseded(Exception):
@@ -58,22 +66,26 @@ class _Login:
 
     def _run(self, svc, password):
         self._timeout = svc.code_timeout
-        staging = svc.state_dir / "instagram-login" / self.username
-        shutil.rmtree(staging, ignore_errors=True)
-        staging.mkdir(parents=True, mode=0o700)
+        # Its own staging dir per attempt: a retried login of the same account never shares it.
+        root = svc.state_dir / "instagram-login"
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        staging = Path(tempfile.mkdtemp(dir=root))
         # The existing session's device ids stay stable across a reconnect.
         old = svc.session_dir / f"session-{self.username}.json"
         if old.exists():
             shutil.copy2(old, staging / old.name)
         try:
             account = svc.login(self.username, password, self._code, session_dir=staging)
-            if self.cancelled:
-                raise _Superseded()
-            svc.session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-            src = staging / f"session-{account}.json"
-            os.chmod(src, 0o600)
-            os.replace(src, svc.session_dir / src.name)
-            svc.remember_account(account)
+            if not USERNAME.match(account):
+                raise ValueError("unexpected account name")
+            with svc.lock:
+                if self.cancelled:
+                    raise _Superseded()
+                svc.session_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+                src = staging / f"session-{account}.json"
+                os.chmod(src, 0o600)
+                os.replace(src, svc.session_dir / src.name)
+                svc.remember_account(account)
             self.events.put(("connected", account))
         except Exception as exc:  # noqa: BLE001 — every outcome goes back to the waiting request
             self.events.put(("error", exc))
@@ -111,11 +123,14 @@ class Service:
         env.write_text("\n".join([*lines, f"IG_USERNAME={account}"]) + "\n")
         os.chmod(env, 0o600)
 
-    def waiting_links(self):
-        """Instagram links the resolver couldn't fetch for want of a session."""
+    def waiting_links(self, since=None):
+        """Instagram links the resolver couldn't fetch for want of a session; with `since`, only those it reported
+        after that time (an item is rewritten on every resolve attempt)."""
         n = 0
         for index in self.vaults_dir.glob("*/Input/*/index.md"):
             try:
+                if since is not None and index.stat().st_mtime <= since:
+                    continue
                 text = index.read_text(encoding="utf-8")
                 if not text.startswith("---"):
                     continue
@@ -136,14 +151,22 @@ class Service:
         account = self.account()
         if not account:
             return {"state": "not-connected", "waitingLinks": waiting}
-        return {"state": "expired" if waiting else "connected", "account": account, "waitingLinks": waiting}
+        # Expired: the resolver tried after this session was put in place and still had none.
+        since = (self.session_dir / f"session-{account}.json").stat().st_mtime
+        rejected = waiting and self.waiting_links(since) > 0
+        return {"state": "expired" if rejected else "connected", "account": account, "waitingLinks": waiting}
 
     # ---- actions: (http status, body) ----
     def _answer(self, login: _Login):
         try:
             kind, value = login.events.get(timeout=FIRST_ANSWER_S)
         except queue.Empty:
-            return 504, {"error": "login-timeout", "message": "Instagram did not answer in time"}
+            with self.lock:
+                if self.pending is login:
+                    login.cancelled = True
+                    login.codes.put(None)
+                    self.pending = None
+            return 504, {"error": "login-timeout", "message": "Instagram did not answer in time: connect again"}
         if kind == "code":
             return 200, {"state": "code", "via": value}
         with self.lock:
@@ -160,7 +183,7 @@ class Service:
             return 400, {"error": "wrong-password", "message": "Wrong username or password"}
         if isinstance(exc, (CodeTimeout, TimeoutError)):
             self.last_error = "expired-code"
-            return 400, {"error": "expired-code", "message": "The code request expired: connect again"}
+            return EXPIRED_CODE
         return 502, {"error": "login-failed", "message": f"Instagram login failed: {type(exc).__name__}"}
 
     def start_login(self, username, password):
@@ -186,8 +209,11 @@ class Service:
                 if kind == "error":
                     return self._error(value)
             if self.last_error == "expired-code":
-                return 400, {"error": "expired-code", "message": "The code request expired: connect again"}
+                return EXPIRED_CODE
             return 409, {"error": "no-pending-login", "message": "No login is waiting for a code: connect again"}
+        # Only answers to this code count: drop anything a timed-out request left behind.
+        while not login.events.empty():
+            login.events.get_nowait()
         login.codes.put(code)
         return self._answer(login)
 
@@ -216,7 +242,7 @@ def _handler(svc: Service):
             self.wfile.write(data)
 
         def _authorized(self):
-            if self.headers.get("Authorization", "") == f"Bearer {svc.token}" and svc.token:
+            if svc.token and hmac.compare_digest(self.headers.get("Authorization", "").encode(), f"Bearer {svc.token}".encode()):
                 return True
             self._send(401, {"error": "unauthorized"})
             return False
@@ -224,7 +250,7 @@ def _handler(svc: Service):
         def _body(self):
             try:
                 n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n) or b"{}") if n <= 10_000 else None
+                body = json.loads(self.rfile.read(n) or b"{}") if 0 <= n <= 10_000 else None
                 return body if isinstance(body, dict) else None
             except ValueError:
                 return None
@@ -245,9 +271,12 @@ def _handler(svc: Service):
             text = lambda k: body.get(k) if isinstance(body.get(k), str) and body.get(k).strip() else None  # noqa: E731
             if self.path == "/instagram/login":
                 user, pw = text("username"), text("password")
+                user = user.strip().removeprefix("@") if user else None
                 if not user or not pw:
                     return self._send(400, {"error": "bad-request", "message": "username and password are required"})
-                return self._send(*svc.start_login(user.strip().lstrip("@"), pw))
+                if not USERNAME.match(user):
+                    return self._send(400, {"error": "bad-request", "message": "not an Instagram username"})
+                return self._send(*svc.start_login(user, pw))
             if self.path == "/instagram/code":
                 code = text("code")
                 if not code:

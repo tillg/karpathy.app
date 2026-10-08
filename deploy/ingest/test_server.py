@@ -72,7 +72,7 @@ def svc(tmp_path):
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read() or b"{}")
 
-    yield type("Svc", (), {"call": staticmethod(call), "fake": fake, "state": state, "home": home, "vaults": vaults, "tmp": tmp_path})
+    yield type("Svc", (), {"call": staticmethod(call), "base": base, "fake": fake, "state": state, "home": home, "vaults": vaults, "tmp": tmp_path})
     srv.shutdown()
 
 
@@ -146,20 +146,59 @@ def test_bad_bodies(svc):
     assert svc.call("GET", "/nope")[0] == 404
 
 
+def write_item(svc, name, reasons):
+    item = svc.vaults / "mylife" / "Input" / name
+    item.mkdir(parents=True, exist_ok=True)
+    links = "".join(f"- url: {url}\n  attempts: 1\n  reason: {reason}\n" for url, reason in reasons)
+    (item / "index.md").write_text(f"---\ntitle: a\nunresolved_links:\n{links}---\n# a\n")
+    return item / "index.md"
+
+
 def test_waiting_links_and_expired(svc):
-    item = svc.vaults / "mylife" / "Input" / "mail-2026-10-08-a"
-    item.mkdir(parents=True)
-    (item / "index.md").write_text(
-        "---\ntitle: a\nunresolved_links:\n"
-        "- url: https://www.instagram.com/p/abc/\n  attempts: 1\n  reason: no-session\n"
-        "- url: https://www.instagram.com/reel/def/\n  attempts: 2\n  reason: night-block\n"
-        "- url: https://example.com/x\n  attempts: 1\n  reason: no-session\n"
-        "---\n# a\n"
-    )
+    write_item(svc, "mail-a", [
+        ("https://www.instagram.com/p/abc/", "no-session"),
+        ("https://www.instagram.com/reel/def/", "night-block"),
+        ("https://example.com/x", "no-session"),
+    ])
     assert svc.call("GET", "/instagram/status")[1] == {"state": "not-connected", "waitingLinks": 1}
     svc.call("POST", "/instagram/login", {"username": "tillg", "password": PASSWORD})
-    # A session exists, but the resolver still reports no-session: Instagram rejected it.
+    # The no-session reason is older than the new session: the resolver hasn't tried it yet.
+    assert svc.call("GET", "/instagram/status")[1] == {"state": "connected", "account": "tillg", "waitingLinks": 1}
+    # The resolver tried again after the connect and still had no session: Instagram rejected it.
+    index = write_item(svc, "mail-a", [("https://www.instagram.com/p/abc/", "no-session")])
+    later = time.time() + 5
+    os.utime(index, (later, later))
     assert svc.call("GET", "/instagram/status")[1] == {"state": "expired", "account": "tillg", "waitingLinks": 1}
+
+
+def test_the_resolver_finds_the_account(svc):
+    from instascraper.config import load_config
+
+    svc.call("POST", "/instagram/login", {"username": "tillg", "password": PASSWORD})
+    assert load_config(svc.home / ".config" / "instascraper" / ".env")["IG_USERNAME"] == "tillg"
+
+
+def test_usernames_that_are_paths_are_refused(svc):
+    victim = svc.state / "keep"
+    victim.mkdir()
+    (victim / "f").write_text("x")
+    for name in ["../keep", "../../state/keep", "a/b", "..", ".", "x" * 31, "a b"]:
+        status, body = svc.call("POST", "/instagram/login", {"username": name, "password": PASSWORD})
+        assert status == 400, name
+    assert svc.fake.calls == 0
+    assert (victim / "f").exists()
+
+
+def test_a_negative_content_length_is_refused(svc):
+    import http.client
+
+    host, port = svc.base.split("//")[1].split(":")
+    c = http.client.HTTPConnection(host, int(port), timeout=5)
+    c.putrequest("POST", "/instagram/code")
+    c.putheader("Authorization", f"Bearer {TOKEN}")
+    c.putheader("Content-Length", "-1")
+    c.endheaders()
+    assert c.getresponse().status == 400
 
 
 def test_disconnect(svc):

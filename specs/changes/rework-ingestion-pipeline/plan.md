@@ -165,8 +165,8 @@ before `/spec:apply` writes them. The real login is checked once by hand on the 
   - Test first: `e2e/ingest.spec.ts` (deterministic, no model behaviour asserted) › write
     `Input/mail-2026-10-08-test/index.md` into the e2e vault (fixture vault has a stub `.agents/skills/ingest`) → badge
     shows 1 within a few seconds → tap Ingest → a new chat shows `/ingest`, the button is disabled while the turn runs.
-    An extra case tagged `@llm` asserts the full move (badge gone, `Sources/mail-…/index.md` exists, Changes lists both
-    paths); the move itself is already proven without a model in step 6. `e2e/instagram.spec.ts` › Admin › Instagram →
+    An extra case tagged `@llm` asserts the full move (badge gone, `Sources/mail-…/index.md` exists, Changes lists it;
+    an item never committed in `Input/` shows no removal there); the move itself is already proven without a model in step 6. `e2e/instagram.spec.ts` › Admin › Instagram →
     connect → code → "Connected as @test" against the ingest service with the fake login (see the note above). Fails
     today: no badge, no button, no Instagram section.
   - Verify: `just e2e e2e/ingest.spec.ts` → green; `just e2e` → all green

@@ -55,16 +55,18 @@ export interface TokenTest {
 export type Busy = 'none' | 'turn' | 'sync';
 
 /**
- * Admin › Instagram (`GET /ingest/instagram`, and the answers of login/code/disconnect): the ingest service's Instagram
- * session. `code` answers a login that waits for a 2FA/challenge code (`via`: "SMS", "email", …); `waitingLinks` counts
- * Instagram links in the vaults' Input/ that wait for a session.
+ * Admin › Instagram (`GET /ingest/instagram`, disconnect): the ingest service's Instagram session. `waitingLinks`
+ * counts Instagram links in the vaults' Input/ that wait for a session; `via` says where a pending login's code went.
  */
 export interface InstagramStatus {
-  state: 'not-connected' | 'waiting-for-code' | 'connected' | 'expired' | 'code';
+  state: 'not-connected' | 'waiting-for-code' | 'connected' | 'expired';
   account?: string;
   via?: string;
   waitingLinks?: number;
 }
+
+/** The answer to a login or a code: connected, or Instagram wants a 2FA/challenge code (`via`: "SMS", "email", …). */
+export type InstagramLoginAnswer = { state: 'connected'; account: string } | { state: 'code'; via: string };
 
 /** The ingest queue: `Input/` in the vault root, one sub-folder per source not yet ingested. */
 export const INPUT_DIR = 'Input';

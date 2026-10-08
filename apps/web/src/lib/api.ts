@@ -1,5 +1,5 @@
 import type {
-  ChatDetail, ChatSummary, Change, Command, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData,
+  ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData,
   SearchHit, Settings, SettingsView, TokenTest, UploadResult, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
@@ -70,8 +70,8 @@ export const api = {
   testGithubToken: (token?: string) => json<TokenTest>('POST', '/settings/github-token/test', token ? { token } : {}),
 
   instagram: () => json<InstagramStatus>('GET', '/ingest/instagram'),
-  instagramLogin: (username: string, password: string) => json<InstagramStatus>('POST', '/ingest/instagram/login', { username, password }),
-  instagramCode: (code: string) => json<InstagramStatus>('POST', '/ingest/instagram/code', { code }),
+  instagramLogin: (username: string, password: string) => json<InstagramLoginAnswer>('POST', '/ingest/instagram/login', { username, password }),
+  instagramCode: (code: string) => json<InstagramLoginAnswer>('POST', '/ingest/instagram/code', { code }),
   instagramDisconnect: () => json<InstagramStatus>('POST', '/ingest/instagram/disconnect'),
 
   vaults: () => json<Vault[]>('GET', '/vaults'),

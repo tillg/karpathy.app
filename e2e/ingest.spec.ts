@@ -45,9 +45,12 @@ test('an item written into Input/ shows the badge; Ingest sends /ingest in a new
   await expect(ingest).toBeEnabled();
   await ingest.click();
   await expect(page.locator('.msgs .u').first()).toContainText('/ingest');
-  // The turn runs (or the dev model already ended it): stop it, the queue stays.
+  // While the turn runs the button is disabled (the dev model may end it first); stop it, the queue stays.
   const stop = page.getByTestId('chat-stop');
-  if (await stop.waitFor({ timeout: 10_000 }).then(() => true, () => false)) await stop.click().catch(() => undefined);
+  if (await stop.waitFor({ timeout: 10_000 }).then(() => true, () => false)) {
+    await expect(ingest).toBeDisabled();
+    await stop.click().catch(() => undefined);
+  }
   await expect(page.getByTestId('chat-send')).toBeVisible({ timeout: 30_000 });
 });
 

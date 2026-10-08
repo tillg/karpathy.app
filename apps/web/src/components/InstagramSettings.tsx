@@ -1,14 +1,17 @@
-import type { InstagramStatus } from '@karpathy/shared';
+import type { InstagramLoginAnswer, InstagramStatus } from '@karpathy/shared';
 import { useEffect, useState } from 'react';
 import { api, ApiError, errorText } from '../lib/api';
 
+/** "N links waiting": Instagram links in the vaults' Input/ that wait for a session. */
+const linksWaiting = (n = 0) => `${n} link${n === 1 ? '' : 's'} waiting`;
+
 /** The status line: who is connected, or why not; plus the Instagram links that wait for a session. */
 function statusText(s: InstagramStatus): string {
-  const waiting = s.waitingLinks ? ` — ${s.waitingLinks} link${s.waitingLinks === 1 ? '' : 's'} waiting` : '';
+  const waiting = s.waitingLinks ? ` — ${linksWaiting(s.waitingLinks)}` : '';
   switch (s.state) {
     case 'connected': return `Connected as @${s.account}${waiting}`;
     case 'expired': return `Expired: Instagram rejected the session of @${s.account}${waiting}`;
-    case 'waiting-for-code': case 'code': return 'Waiting for the code';
+    case 'waiting-for-code': return 'Waiting for the code';
     default: return `Not connected${waiting}`;
   }
 }
@@ -44,7 +47,7 @@ export function InstagramSettings() {
     setError(null);
     try { await fn(); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   };
-  const answered = async (r: InstagramStatus) => {
+  const answered = async (r: InstagramLoginAnswer) => {
     if (r.state === 'code') { setVia(r.via ?? null); return; }
     setVia(null);
     setCode('');
@@ -105,7 +108,7 @@ export function InstagramNotice({ open }: { open(): void }) {
   if (s?.state !== 'expired') return null;
   return (
     <div className="banner warn" data-testid="ig-notice">
-      Instagram disconnected — {s.waitingLinks ?? 0} link{s.waitingLinks === 1 ? '' : 's'} waiting.{' '}
+      Instagram disconnected — {linksWaiting(s.waitingLinks)}.{' '}
       <button className="link" data-testid="ig-notice-open" onClick={open}>Reconnect in Settings</button>
     </div>
   );
