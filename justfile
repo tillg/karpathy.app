@@ -85,13 +85,17 @@ prodtest action="up" *args:
     # A running prodtest remembers its stack (tmp/prodtest/stack), so e2e and down find it after `just dev down`.
     n=$(cat tmp/prodtest/stack 2>/dev/null || stack_resolve "")
     stack_ports "$n"
-    prodtest_compose() { docker compose -p "$STACK_PROJECT-prodtest" -f deploy/compose.yml -f deploy/compose.prodtest.yml "$@"; }
+    prodtest_compose() { docker compose -p "$STACK_PROJECT-prodtest" -f deploy/compose.yml -f deploy/compose.prodtest.yml --env-file tmp/settings/prodtest/.env "$@"; }
     case "{{action}}" in
       up)
         mkdir -p tmp/prodtest/secrets
         [ -s tmp/prodtest/secrets/bearer_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/bearer_token
         [ -s tmp/prodtest/secrets/opencode_password ] || openssl rand -hex 24 > tmp/prodtest/secrets/opencode_password
         touch tmp/prodtest/secrets/github_token tmp/prodtest/secrets/dns_api_token
+        # Provider keys of a hosted gateway (deploy/settings/prodtest.local.yaml) come from the dev secrets.
+        for k in deploy/secrets/*_api_key; do [ -e "$k" ] && cp "$k" tmp/prodtest/secrets/; done
+        settings_legacy_check
+        settings_render prodtest tmp/prodtest/secrets
         echo "$n" > tmp/prodtest/stack
         prodtest_compose up -d --build
         echo "App: https://localhost:$PRODTEST_PORT  token: $(cat tmp/prodtest/secrets/bearer_token)"

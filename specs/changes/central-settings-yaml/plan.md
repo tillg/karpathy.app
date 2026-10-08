@@ -120,14 +120,14 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
 
 ## Phase 3: backend
 
-- [ ] `loadBackendSettings` reads `settings.json` and its secret files
+- [x] `loadBackendSettings` reads `settings.json` and its secret files
   - Test first: `apps/backend/test/settings.test.ts` › "loads settings.json". Temp dir with a rendered
     `settings.json` whose secret refs point at temp files; returns token, remote base, identity, default
     model, opencode password, `files.visible_dot_dirs`; a missing file or invalid JSON throws with the path; `visible_dot_dirs`
     containing `.git` or a name without a leading `.` is a schema error. Fails today: function missing.
   - Verify: `npm test -w apps/backend -- settings` → green.
 
-- [ ] `main.ts` takes its settings from `SETTINGS_FILE`, not env
+- [x] `main.ts` takes its settings from `SETTINGS_FILE`, not env
   - Test first: none for `main.ts` itself (process entry, no harness); the previous step covers
     `loadBackendSettings`. Existing `api.test.ts`, `config-store.test.ts`, `git.test.ts` pass before and
     after.
@@ -137,7 +137,7 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
   - Verify: `rtk grep -n "GIT_REMOTE_BASE\|GIT_AUTHOR\|DEFAULT_MODEL\|BEARER_TOKEN\|GITHUB_TOKEN\|OPENCODE_PASSWORD\|DEFAULT_VISIBLE_DOT_DIRS" apps/backend/src`
     → no match; `just check` → green.
 
-- [ ] Model default vs. override in `ConfigStore`
+- [x] Model default vs. override in `ConfigStore`
   - Test first: `apps/backend/test/config-store.test.ts` › "override only while it differs".
     (a) open with default `d1`, no file → model `d1`, no `modelOverride` persisted; (b) set override `m2`,
     reopen with default `d3` → `m2`; (c) set model back to default → `modelOverride` removed from the file;
@@ -146,14 +146,14 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
     legacy model is kept as `model`.
   - Verify: `npm test -w apps/backend -- config-store` → green; `just check` → green.
 
-- [ ] Settings API: `defaultModel`, `modelOverridden`, `model: null` resets
+- [x] Settings API: `defaultModel`, `modelOverridden`, `model: null` resets
   - Test first: `apps/backend/test/api.test.ts` › "settings model default and override". `GET
     /api/settings` → `{ model: d, defaultModel: d, modelOverridden: false }`; `PATCH { model: m2 }` →
     overridden; `PATCH { model: null }` → back to `d`; `PATCH` with an unknown model still 400. Fails
     today: fields and `null` not accepted.
   - Verify: `npm test -w apps/backend -- api` → green; `just check` → green.
 
-- [ ] Admin model picker: "Default (model)" entry and reset
+- [x] Admin model picker: "Default (model)" entry and reset
   - Test first: `e2e/admin.spec.ts` › "model picker shows the default and resets an override". Opens
     Admin, sees `Default (ollama/qwen2.5:3b)` selected; picks another listed model, saves, reloads → that
     model, marked as override; picks the default entry, saves → no override (asserted via `GET
@@ -163,7 +163,7 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
 
 ## Phase 4: dev, prodtest and tests render from the file
 
-- [ ] Compose reads the rendered directory; no model or gateway literal left in compose files or
+- [x] Compose reads the rendered directory; no model or gateway literal left in compose files or
   `opencode.json` (its `provider` block moves to the `openrouter` gateway)
   - Test first: `deploy/stack.test.sh` › "compose uses rendered settings". Renders `dev` into a temp dir
     with a test store, runs `docker compose -f compose.yml -f compose.dev.yml --env-file <tmp>/.env config`:
@@ -172,7 +172,7 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
     with a `#` in it survives verbatim. Same for prodtest. Fails today: compose has no `SETTINGS_DIR`.
   - Verify: `bash deploy/stack.test.sh` → all ok; `rtk grep -n "qwen\|claude-sonnet\|glm-5" deploy/*.yml` → no match.
 
-- [ ] `dev.sh up` and `just prodtest up` render first; legacy files stop them
+- [x] `dev.sh up` and `just prodtest up` render first; legacy files stop them
   - Test first: `stack.test.sh` › "dev up renders and guards legacy files". With a fake `docker` on
     `PATH` recording its args: `dev.sh up` calls the renderer, then compose with
     `--env-file ../tmp/settings/dev/.env`; with a `deploy/.env` present it exits 1 and the message names
@@ -181,14 +181,14 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
   - Verify: `bash deploy/stack.test.sh` → all ok; `just dev up` → stack starts; `just e2e
     e2e/chat.spec.ts` → green (chat answers with the Ollama model from the file).
 
-- [ ] Delete `dev-ollama.json`, `.env.example`, `opencode.env.example`; migrate this Mac's dev files
+- [x] Delete `dev-ollama.json`, `.env.example`, `opencode.env.example`; migrate this Mac's dev files
   - Test first: none — file removal and a one-time manual migration (the current `deploy/.env` model goes
     to `deploy/settings/dev.local.yaml`, the key in `deploy/opencode.env` to `deploy/secrets/openrouter_api_key`).
   - Verify: `rtk grep -rn "dev-ollama\|opencode.env.example\|\.env\.example" deploy justfile README.md specs/system` →
     no match; `.gitignore` has `deploy/settings/*.local.yaml` and `tmp/` (already); `just dev up` → green; `just
     prodtest && just prodtest e2e e2e/version.spec.ts` → green.
 
-- [ ] Integration tests take their default models from the `test` environment
+- [x] Integration tests take their default models from the `test` environment
   - Test first: `apps/backend/test/opencode-container.test.ts` › "default test models come from
     deploy/settings/test.yaml" asserts the exported defaults equal `loadSettings('test').ai.model` / `.vision_model`
     and that `LLM_TEST_MODEL` still overrides. Fails today: defaults are literals.
@@ -198,13 +198,13 @@ the stacks; phase 5 Ansible. Each phase leaves `just check` green and the dev st
 
 ## Phase 5: Ansible renders from the file
 
-- [ ] Prove a container in the Lima VM reaches the Mac's Ollama
+- [x] Prove a container in the Lima VM reaches the Mac's Ollama
   - Test first: none — a reachability probe, no code yet. It decides `relay_upstream` in `local.yaml`.
   - Verify: `limactl shell karpathy-vm -- docker run --rm curlimages/curl -sf -H 'Host: localhost:11434' http://192.168.5.2:11434/api/version`
     → prints Ollama's version. If it fails, find the address that works (Lima docs for `vmType: vz`),
     put it in `deploy/settings/local.yaml` and the architecture, and re-run.
 
-- [ ] The Ollama relay takes its upstream from the settings
+- [x] The Ollama relay takes its upstream from the settings
   - Test first: `render.test.ts` › "OLLAMA_UPSTREAM": `.env` for dev has
     `OLLAMA_UPSTREAM=host.docker.internal:11434`, for local the `relay_upstream` from `local.yaml`, for
     hetzner (openrouter gateway) no such line. `stack.test.sh` › "relay upstream": `docker compose config`

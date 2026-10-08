@@ -43,7 +43,7 @@ export function loadBackendSettings(path: string): BackendSettings {
     s = backendSettingsSchema.parse(JSON.parse(readFileSync(path, 'utf8')));
   } catch (e) {
     const msg = e instanceof z.ZodError ? e.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') : (e as Error).message;
-    throw new Error(`settings ${path}: ${msg}`);
+    throw new Error(`settings ${path}: ${msg}`, { cause: e });
   }
   return {
     token: secret(s.auth.bearer_token) ?? '',

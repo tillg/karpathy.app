@@ -30,11 +30,19 @@ export interface ConfigData {
   githubToken?: string;
 }
 
+/** Fallbacks below the deployment's settings (deploy/settings/, passed to `open`). */
 export const DEFAULT_SETTINGS: Settings = {
   commitReminderThreshold: 4,
-  model: 'anthropic/claude-sonnet-5',
+  model: '',
   webAccess: true,
 };
+
+/** `settings` as stored: the model only as an override of the deployment's default. */
+interface StoredSettings extends Partial<Omit<Settings, 'model'>> {
+  modelOverride?: string;
+  /** Before the model default moved to the settings files, the model itself was stored. */
+  model?: string;
+}
 
 /**
  * The backend-only config store: one JSON file on the config volume. Writes go to a temp
@@ -44,19 +52,24 @@ export class ConfigStore {
   private data!: ConfigData;
   private writing: Promise<void> = Promise.resolve();
 
-  private constructor(private readonly file: string) {}
+  private constructor(
+    private readonly file: string,
+    /** The deployment's default model (settings `ai.model`); the Admin's choice is stored only if it differs. */
+    readonly defaultModel: string,
+  ) {}
 
   static async open(dir: string, defaults: Partial<Settings> = {}): Promise<ConfigStore> {
-    const store = new ConfigStore(join(dir, 'config.json'));
-    let raw: Partial<ConfigData> = {};
+    const base = { ...DEFAULT_SETTINGS, ...defaults };
+    const store = new ConfigStore(join(dir, 'config.json'), base.model);
+    let raw: Partial<Omit<ConfigData, 'settings'>> & { settings?: StoredSettings } = {};
     try {
-      raw = JSON.parse(await readFile(store.file, 'utf8')) as Partial<ConfigData>;
+      raw = JSON.parse(await readFile(store.file, 'utf8')) as typeof raw;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
     }
     store.data = {
       vaults: raw.vaults ?? [],
-      settings: { ...DEFAULT_SETTINGS, ...defaults, ...raw.settings },
+      settings: store.effective(raw.settings ?? {}, base),
       aiTouched: raw.aiTouched ?? {},
       editStamps: raw.editStamps ?? {},
       conflicts: raw.conflicts ?? {},
@@ -64,6 +77,16 @@ export class ConfigStore {
       ...(raw.githubToken ? { githubToken: raw.githubToken } : {}),
     };
     return store;
+  }
+
+  /** Stored settings over the defaults; the model is the override, else the default. */
+  private effective({ modelOverride, model, ...rest }: StoredSettings, base: Settings): Settings {
+    return { ...base, ...rest, model: modelOverride ?? model ?? base.model };
+  }
+
+  /** What goes to disk: the model only while it differs from the default. */
+  private stored({ model, ...rest }: Settings): StoredSettings {
+    return { ...rest, ...(model !== this.defaultModel ? { modelOverride: model } : {}) };
   }
 
   get(): Readonly<ConfigData> {
@@ -76,7 +99,7 @@ export class ConfigStore {
     fn(next);
     // Applied in memory right away so concurrent updates build on each other.
     this.data = next;
-    const snapshot = JSON.stringify(next, null, 2);
+    const snapshot = JSON.stringify({ ...next, settings: this.stored(next.settings) }, null, 2);
     // Serialize writes; a failed one must not reject every later update.
     const write = this.writing.catch(() => undefined).then(() => this.write(snapshot));
     this.writing = write;

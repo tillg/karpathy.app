@@ -154,7 +154,7 @@ function SettingsForm() {
     setSaved(false);
     const n = Number(threshold);
     if (!/^\d+$/.test(threshold.trim()) || n < 1 || n > 1000) return setError('Commit reminder: enter a whole number between 1 and 1000.');
-    if (!model.trim()) return setError('Model: enter provider/model, e.g. anthropic/claude-sonnet-5.');
+    if (!model.trim()) return setError('Model: enter provider/model, or use the default.');
     setBusy(true);
     try {
       setSettings(await api.patchSettings({ commitReminderThreshold: n, model: model.trim(), webAccess }));
@@ -169,6 +169,14 @@ function SettingsForm() {
         <input data-testid="settings-threshold" type="number" min={1} max={1000} step={1} value={threshold} onChange={edit(setThreshold)} /></label>
       <label className="field"><span>Model (server-wide, provider/model)</span>
         <input data-testid="settings-model" value={model} autoCapitalize="off" spellCheck={false} onChange={edit(setModel)} /></label>
+      {settings && (
+        <div className="model-default">
+          <span className="muted" data-testid="settings-model-default" data-overridden={String(settings.modelOverridden)}>Default: {settings.defaultModel}</span>
+          {model.trim() !== settings.defaultModel && (
+            <button type="button" className="btn g sm" data-testid="settings-model-reset" onClick={() => { setModel(settings.defaultModel); setSaved(false); }}>Use default</button>
+          )}
+        </div>
+      )}
       <div className="switch-row">
         <div>
           <label htmlFor="settings-web-access">Web access</label>

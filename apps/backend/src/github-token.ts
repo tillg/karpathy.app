@@ -3,7 +3,7 @@ import type { ConfigStore } from './config-store.js';
 
 /**
  * The one server-wide GitHub token: the one set in the app (config store) wins over the
- * deployment's `GITHUB_TOKEN` secret, which stays the fallback.
+ * deployment's `github_token` secret (settings `git.github_token`), which stays the fallback.
  */
 export class GitHubToken {
   /** Every value used since startup, so errors never leak an old token either. */

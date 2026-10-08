@@ -98,6 +98,12 @@ edited: 2026-10-08
   - [18:45 — Commit closely related plan steps together](#run-2026-10-08-1839-2)
   - [18:45 — Treat openrouter as a built-in gateway kind: any model id is valid](#run-2026-10-08-1839-3)
   - [18:45 — The backend parses settings.json with its own small schema](#run-2026-10-08-1839-4)
+  - [19:05 — Treat the two backend failures of the baseline as flaky](#run-2026-10-08-1839-5)
+  - [19:20 — Admin model: a "Default: …" line and a "Use default" button, not a picker entry](#run-2026-10-08-1839-6)
+  - [19:20 — No built-in model fallback in the backend; one existing test updated](#run-2026-10-08-1839-7)
+  - [19:30 — Test dev.sh's render and legacy check as stack.sh functions, not with a fake docker](#run-2026-10-08-1839-8)
+  - [19:40 — Tests read the committed settings files, never the developer's overlay](#run-2026-10-08-1839-9)
+  - [19:40 — Migrate this Mac's deploy/.env and opencode.env into dev.local.yaml and a secret file](#run-2026-10-08-1839-10)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1270,3 +1276,82 @@ edited: 2026-10-08
   needs no new package (dev bind mounts, prod copies).
 - **Alternatives:** the shared package in the image (one schema, but YAML + loader code in the image).
 - **Consequences:** none beyond the cross-package test.
+
+## 19:05 — Treat the two backend failures of the baseline as flaky {#run-2026-10-08-1839-5}
+
+- **Status:** open
+- **Context:** `central-settings-yaml`; the baseline `just check` before any change had 2 failures:
+  `api.test.ts` › new file name "Neue Notiz?.md" → 400 and `chat.test.ts` › deleting a chat removes it.
+- **Question:** a red baseline (commit on "no new failures") or flaky tests?
+- **Decision:** flaky: the api test passes alone, and the next full runs were green (351/351).
+- **Why:** both are timing-sensitive under the full parallel load (opencode containers).
+- **Alternatives:** record a red baseline and accept those two failures in every commit.
+- **Consequences:** a later run where they fail again is not counted as new; worth an issue if they keep
+  flaking.
+
+## 19:20 — Admin model: a "Default: …" line and a "Use default" button, not a picker entry {#run-2026-10-08-1839-6}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 17; the spec says the picker's first entry is
+  `Default (model)`, but the Admin's model field is a free-text input, not a picker.
+- **Question:** turn the field into a picker, or keep the text field?
+- **Decision:** keep the text field; below it a `Default: <model>` line (`data-overridden`) and, when the
+  field differs from the default, a "Use default" button. Saving the default removes the override.
+- **Why:** there is no endpoint listing the models, and a free field keeps every model of a gateway
+  reachable; the existing `fix-16` e2e test stays valid.
+- **Alternatives:** a select fed by a new models endpoint (more code, fewer models reachable).
+- **Consequences:** `architecture.md` text about the picker is read as this design.
+
+## 19:20 — No built-in model fallback in the backend; one existing test updated {#run-2026-10-08-1839-7}
+
+- **Status:** open
+- **Overrides:** CLAUDE.md — never make tests pass by changing them without permission.
+- **Context:** `central-settings-yaml` step 15; `config-store.ts` had `anthropic/claude-sonnet-5` as its
+  default, and `config-store.test.ts` › "starts with default settings" asserted it. The plan's last step
+  requires that literal to be gone.
+- **Question:** keep a code default, or let the settings files be the only source?
+- **Decision:** the code default is now `''`; the deployment always passes `ai.model`. The test asserts
+  `model: ''` instead of the old literal.
+- **Why:** the spec makes the settings files the one source of the default; the test followed the old
+  behaviour, not a weakened check.
+- **Alternatives:** keep the literal as a dead fallback.
+- **Consequences:** a backend started without settings has no model (it can't start without
+  settings.json anyway).
+
+## 19:30 — Test dev.sh's render and legacy check as stack.sh functions, not with a fake docker {#run-2026-10-08-1839-8}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 19 planned a fake `docker` on `PATH` running `dev.sh up`.
+  `dev.sh up` claims a real stack in this checkout's `tmp/dev/stack`, so a fake run would disturb it.
+- **Question:** how to test "dev up renders first and refuses legacy files"?
+- **Decision:** `settings_render` and `settings_legacy_check` live in `stack.sh`; `stack.test.sh` tests
+  them directly and checks that `dev.sh` and `just prodtest` call them; the real `just dev up` is the
+  end-to-end check.
+- **Why:** no side effects on a real stack; the logic is in the functions.
+- **Alternatives:** the fake-docker run in a throwaway checkout copy.
+- **Consequences:** none.
+
+## 19:40 — Tests read the committed settings files, never the developer's overlay {#run-2026-10-08-1839-9}
+
+- **Status:** open
+- **Context:** `central-settings-yaml`; once this Mac had a `deploy/settings/dev.local.yaml`, the tests of
+  the real `dev` settings saw OpenRouter instead of Ollama.
+- **Question:** how do tests ignore a developer's overlay?
+- **Decision:** `loadSettings(env, { local: false })` and the CLI flag `--no-local`; every test of the
+  committed files uses them.
+- **Why:** the overlay is per machine by design; tests must give the same result everywhere.
+- **Alternatives:** tests on a copy of the directory without overlays.
+- **Consequences:** none.
+
+## 19:40 — Migrate this Mac's deploy/.env and opencode.env into dev.local.yaml and a secret file {#run-2026-10-08-1839-10}
+
+- **Status:** open
+- **Context:** `central-settings-yaml` step 20; this checkout's gitignored `deploy/.env` chose
+  `openrouter/z-ai/glm-5.3` for dev and `deploy/opencode.env` held the OpenRouter key.
+- **Question:** keep the user's dev choice, or fall back to the committed Ollama default?
+- **Decision:** keep it: `deploy/settings/dev.local.yaml` selects the OpenRouter gateway and the key is
+  now `deploy/secrets/openrouter_api_key`. The old files moved to `tmp/legacy-env-backup/`.
+- **Why:** it was the user's own choice for dev; `dev.sh` refuses to start while the old files exist.
+- **Alternatives:** delete the old files and run dev on Ollama.
+- **Consequences:** delete `tmp/legacy-env-backup/` once happy; `rm deploy/settings/dev.local.yaml`
+  switches dev back to Ollama.

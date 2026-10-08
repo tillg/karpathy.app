@@ -121,6 +121,65 @@ checkout() { local d; d=$(mktemp -d); git -C "$d" init -q; echo "$d"; }
   exit "$fails"
 ) || fails=$((fails + 1))
 
+# Compose reads the settings rendered from deploy/settings/ (just settings render), for dev and prodtest.
+(
+  fails=0
+  dir=$(mktemp -d); out=$(mktemp -d); store=$(mktemp -d)
+  cp "$here"/settings/*.yaml "$dir"/ && rm -f "$dir"/*.local.yaml
+  # A key with characters an env file could mangle.
+  printf 'ai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3 }\n' | tee "$dir/dev.local.yaml" > "$dir/prodtest.local.yaml"
+  printf 't' > "$store/bearer_token"; printf 'p' > "$store/opencode_password"; printf '%s' 'sk-or-#1 "x" $y' > "$store/openrouter_api_key"
+  for env in dev prodtest; do
+    "$here/../node_modules/.bin/tsx" "$here/../packages/settings/src/cli.ts" render "$env" --dir "$dir" --out "$out/$env" --secrets "$store" --compose-dir "$here" \
+      || { bad "render $env" "failed"; continue; }
+    f=$([ "$env" = dev ] && echo compose.dev.yml || echo compose.prodtest.yml)
+    cfg=$(cd "$here" && STACK=1 PROXY_PORT=8010 BACKEND_PORT=8011 PRODTEST_PORT=8015 \
+      docker compose -f compose.yml -f "$f" --env-file "$out/$env/.env" config --format json 2>&1) || { bad "compose config $env" "$cfg"; continue; }
+    get() { node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8")); const v=(new Function("c","return "+process.argv[1]))(c); console.log(typeof v==="string"?v:JSON.stringify(v))' "$1" <<<"$cfg"; }
+    eq "$env: backend has SETTINGS_FILE" "$(get 'c.services.backend.environment.SETTINGS_FILE')" /etc/karpathy/settings.json
+    eq "$env: backend mounts the rendered settings.json" "$(get 'c.services.backend.volumes.find(v=>v.target==="/etc/karpathy/settings.json").source')" "$out/$env/settings.json"
+    eq "$env: opencode reads the rendered providers" "$(get 'c.services.opencode.environment.OPENCODE_CONFIG')" /etc/opencode-providers.json
+    eq "$env: … mounted from the render" "$(get 'c.services.opencode.volumes.find(v=>v.target==="/etc/opencode-providers.json").source')" "$out/$env/opencode-providers.json"
+    # Compared, never printed: a wrong compose file could hand over a real key. `config` prints $ as $$ (the
+    # container gets $y).
+    eq "$env: opencode.env key survives verbatim" "$(get 'c.services.opencode.environment.OPENROUTER_API_KEY===`sk-or-#1 "x" $$y`')" true
+    eq "$env: model from the settings" "$(get 'c.services.opencode.environment.OPENCODE_MODEL')" openrouter/z-ai/glm-5.3
+    relay=$([ "$env" = dev ] && echo ollama || echo ollama-bridge)
+    eq "$env: the Ollama relay's upstream from the settings" "$(get "c.services[\"$relay\"].environment.OLLAMA_UPSTREAM")" host.docker.internal:11434
+  done
+  rm -rf "$dir" "$out" "$store"
+  exit "$fails"
+) || fails=$((fails + 1))
+if grep -nE 'qwen|claude-sonnet|glm-5' "$here"/compose*.yml; then bad "no model literal in compose files" "found"; else ok "no model literal in compose files"; fi
+
+# dev.sh and `just prodtest` render the settings first and refuse the pre-settings deploy/.env and opencode.env.
+(
+  fails=0
+  source "$here/stack.sh"
+  c=$(checkout); cd "$c" || exit 1
+  mkdir -p deploy && printf 'DEFAULT_MODEL=x/y\n# a comment\nGIT_AUTHOR_NAME=Secret Name\n' > deploy/.env
+  printf 'OPENROUTER_API_KEY=sk-SECRET\n' > deploy/opencode.env
+  out=$(settings_legacy_check 2>&1); rc=$?
+  eq "legacy deploy/.env and opencode.env stop the start" "$rc" 1
+  [[ "$out" == *DEFAULT_MODEL* && "$out" == *OPENROUTER_API_KEY* && "$out" == *settings/dev.local.yaml* ]] \
+    && ok "… naming each key and where it goes" || bad "… naming each key and where it goes" "$out"
+  [[ "$out" != *SECRET* && "$out" != *x/y* ]] && ok "… never their values" || bad "… never their values" "leaked"
+  rm deploy/.env deploy/opencode.env
+  settings_legacy_check >/dev/null 2>&1 && ok "no legacy files → go" || bad "no legacy files → go" "refused"
+  cd / && rm -rf "$c"
+  store=$(mktemp -d); out=$(mktemp -d)
+  settings_render dev "$store" "$out/dev" --no-local >/dev/null 2>&1; rc=$?
+  eq "render without the required secrets fails" "$rc" 1
+  printf 't' > "$store/bearer_token"; printf 'p' > "$store/opencode_password"
+  settings_render dev "$store" "$out/dev" --no-local >/dev/null 2>&1 && [ -s "$out/dev/settings.json" ] \
+    && ok "render writes the settings" || bad "render writes the settings" "no settings.json"
+  rm -rf "$store" "$out"
+  exit "$fails"
+) || fails=$((fails + 1))
+grep -q 'settings_render dev' "$here/dev.sh" && grep -q 'settings_legacy_check' "$here/dev.sh" \
+  && ok "dev.sh up renders and checks for legacy files" || bad "dev.sh up renders and checks for legacy files" "missing"
+grep -q 'settings_render prodtest' "$here/../justfile" && ok "just prodtest renders" || bad "just prodtest renders" "missing"
+
 # deploy/dev.sh against the real Docker daemon.
 out=$("$here/dev.sh" stacks 2>&1)
 eq "dev.sh stacks prints 9 lines" "$(grep -c 'https://localhost:80[1-9]0' <<<"$out")" 9

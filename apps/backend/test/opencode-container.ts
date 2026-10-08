@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
+import { loadSettings } from '@karpathy/settings';
 import { basicAuth } from '../src/harness/opencode.js';
 
 // Real opencode container for integration tests (no mocks). The vaults dir must be under the
@@ -16,11 +17,13 @@ const REPO = resolve(import.meta.dirname, '../../..');
 export const IMAGE = `kai-test-opencode-${createHash('sha1').update(REPO).digest('hex').slice(0, 8)}`;
 const NET = 'kai-test-net';
 const OLLAMA = 'kai-test-ollama';
-/** Volume that holds the Ollama models (qwen2.5:3b pulled once). */
+/** Volume that holds the Ollama models (the test models, pulled once). */
 const OLLAMA_VOLUME = process.env.OLLAMA_VOLUME ?? 'kai-spike-ollama';
-export const LLM_MODEL = process.env.LLM_TEST_MODEL ?? 'ollama/qwen2.5:3b';
+/** The test models: deploy/settings/test.yaml, overridable per run. */
+const TEST_AI = loadSettings('test').ai;
+export const LLM_MODEL = process.env.LLM_TEST_MODEL ?? TEST_AI.model;
 /** A model that reads images (pulled once into the Ollama volume, like LLM_MODEL). */
-export const LLM_VISION_MODEL = process.env.LLM_VISION_MODEL ?? 'ollama/qwen3-vl:2b';
+export const LLM_VISION_MODEL = process.env.LLM_VISION_MODEL ?? TEST_AI.vision_model!;
 /** Declared to opencode but not pulled in Ollama: every turn fails fast with a non-retryable 404. */
 export const DEAD_MODEL = 'ollama/kai-no-such-model';
 /** A second declared-but-not-pulled model, to observe a model switch without an LLM. */

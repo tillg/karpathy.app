@@ -3,7 +3,7 @@ import type { RequestHandler } from 'express';
 
 /** Single-user bearer token check in front of every /api route (mvp §3.2), constant time. */
 export function bearerAuth(secret: string): RequestHandler {
-  if (!secret) throw new Error('BEARER_TOKEN must be set');
+  if (!secret) throw new Error('auth.bearer_token (settings) must be set');
   const want = createHash('sha256').update(secret).digest();
   return (req, res, next) => {
     const h = req.headers.authorization ?? '';

@@ -19,9 +19,6 @@ export async function versionOfFile(abs: string): Promise<string | null> {
   }
 }
 
-/** Dot-folders the file tree shows (central-settings-yaml will move this to `files.visible_dot_dirs`). */
-export const DEFAULT_VISIBLE_DOT_DIRS = ['.agents'];
-
 /**
  * Recursive listing of the vault root; dot-entries (.git, .obsidian, .claude, …) are hidden, except folders
  * named in `visibleDotDirs` (e.g. `.agents`).

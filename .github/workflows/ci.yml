@@ -62,6 +62,6 @@ jobs:
       - run: |
           docker volume create ollama-models
           docker run -d --name pull -v ollama-models:/root/.ollama ollama/ollama
-          sleep 3 && docker exec pull ollama pull qwen2.5:3b && docker exec pull ollama pull qwen3-vl:2b && docker rm -f pull
+          sleep 3 && docker exec pull ollama pull "$(node_modules/.bin/tsx packages/settings/src/cli.ts get test ai.model | sed 's|^ollama/||')" && docker exec pull ollama pull "$(node_modules/.bin/tsx packages/settings/src/cli.ts get test ai.vision_model | sed 's|^ollama/||')" && docker rm -f pull
       - run: npm run test:llm
         env: { OLLAMA_VOLUME: ollama-models }

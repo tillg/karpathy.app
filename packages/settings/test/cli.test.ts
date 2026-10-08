@@ -6,7 +6,8 @@ import { tempDir } from './helpers.js';
 
 const root = new URL('../../../', import.meta.url).pathname;
 const cli = (...args: string[]) => {
-  const r = spawnSync(join(root, 'node_modules/.bin/tsx'), [join(root, 'packages/settings/src/cli.ts'), ...args], { encoding: 'utf8' });
+  // --no-local: the committed files, whatever this machine's dev.local.yaml says.
+  const r = spawnSync(join(root, 'node_modules/.bin/tsx'), [join(root, 'packages/settings/src/cli.ts'), '--no-local', ...args], { encoding: 'utf8' });
   return { code: r.status, out: r.stdout, err: r.stderr };
 };
 
@@ -34,6 +35,11 @@ describe('settings CLI', () => {
     expect(r.code).toBe(0);
     expect(r.out).toContain('bearer_token: { secret: bearer_token }');
     expect(r.out).toContain('model: openrouter/z-ai/glm-5.3');
+  });
+
+  it('get prints one value', () => {
+    expect(cli('get', 'test', 'ai.vision_model').out.trim()).toBe('ollama/qwen3-vl:2b');
+    expect(cli('get', 'test', 'ai.nope').code).toBe(1);
   });
 
   it('check validates every environment', () => {

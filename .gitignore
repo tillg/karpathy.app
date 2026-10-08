@@ -9,8 +9,10 @@ tmp/
 .Spotlight-V100
 .Trashes
 
-# deploy secrets / local env
+# deploy secrets / local settings overrides (deploy/settings/<env>.local.yaml)
 deploy/secrets/
+deploy/settings/*.local.yaml
+# from before deploy/settings/ (#133); dev.sh refuses to start while they exist
 deploy/.env
 deploy/opencode.env
 node_modules/

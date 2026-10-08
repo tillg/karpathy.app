@@ -21,7 +21,7 @@ describe('deploy/settings', () => {
   });
 
   it("today's effective values", () => {
-    const hetzner = loadSettings('hetzner');
+    const hetzner = loadSettings('hetzner', { local: false });
     expect(hetzner.ai).toMatchObject({ gateway: 'openrouter', model: 'openrouter/z-ai/glm-5.3' });
     expect(hetzner.proxy).toMatchObject({ domain: 'app.karpathy.app', tls: 'dns', dns: { provider: 'godaddy', api_token: { secret: 'dns_api_token' } } });
     expect(hetzner.timezone).toBe('Europe/Berlin');
@@ -29,21 +29,21 @@ describe('deploy/settings', () => {
     expect(hetzner.git.author).toEqual({ name: { secret: 'git_author_name' }, email: { secret: 'git_author_email' } });
     expect(hetzner.ai.web).toMatchObject({ access: true, fetch_cap: 20, search_cap: 20 });
 
-    const local = loadSettings('local');
+    const local = loadSettings('local', { local: false });
     expect(local.ai).toMatchObject({ gateway: 'ollama', model: 'ollama/qwen2.5:3b' });
     expect(local.git).toMatchObject({ remote_base: 'file:///remotes/', author: { name: 'karpathy.app local', email: 'local@karpathy.app' } });
     expect(local.proxy).toMatchObject({ domain: 'localhost', tls: 'internal' });
     expect(local.timezone).toBe('Europe/Berlin');
 
     for (const env of ['dev', 'prodtest']) {
-      const s = loadSettings(env, { dir: SETTINGS_DIR });
+      const s = loadSettings(env, { local: false });
       expect(s.git.remote_base).toBe('file:///remotes/');
       expect(s.proxy.tls).toBe('internal');
     }
-    expect(loadSettings('dev').git.author).toEqual({ name: 'Dev User', email: 'dev@example.com' });
-    expect(loadSettings('prodtest').git.author).toEqual({ name: 'karpathy.app user', email: 'user@karpathy.app' });
+    expect(loadSettings('dev', { local: false }).git.author).toEqual({ name: 'Dev User', email: 'dev@example.com' });
+    expect(loadSettings('prodtest', { local: false }).git.author).toEqual({ name: 'karpathy.app user', email: 'user@karpathy.app' });
 
-    const test = loadSettings('test');
+    const test = loadSettings('test', { local: false });
     expect(test.ai).toMatchObject({ gateway: 'ollama', model: 'ollama/qwen2.5:3b', vision_model: 'ollama/qwen3-vl:2b' });
   });
 
