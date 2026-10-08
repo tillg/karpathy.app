@@ -124,7 +124,20 @@ changes**: while the app is open, the backend fetches the vault from GitHub ever
 switch back to the app; files pushed from elsewhere (e.g. Obsidian) show as "· N incoming" next to the git
 status pill (on a phone, a "↓" on the Changes tab), are listed in Changes, and the open note says "Changed on
 GitHub · Pull" when it is one of them. One tap pulls them in (the same pull as before a commit; nothing is
-pulled automatically). How it works today: [`specs/system/`](specs/system/) (domain,
+pulled automatically). **Outline and note info**: the list button in the note header opens the note's
+headings (a bottom sheet on the phone, a panel at the top right on iPad and desktop); a tap jumps there in
+Write and Read mode without moving the cursor, and the current section is marked while you scroll. Below the
+list: words, characters and reading time (~220 words a minute) of the note without its frontmatter, or of the
+selection when text is selected. **Properties form**: in Write mode a note's frontmatter shows as a form
+(pickers, dates with a **Today** button, list and link chips with note suggestions) and its lines are hidden in
+the editor; a form edit changes only that property's lines and is one undo step, and an edit that can't keep
+every other byte is refused ("Edit this property in YAML"). The **YAML** button shows the raw lines again (the
+browser remembers it). **+ Property** adds a property: the schema's missing ones are offered, any plain name
+can be typed. On wiki pages (`Wiki/`) the form flags what doesn't fit the LLM-wiki schema (`type`, `tags`,
+`updated` required; `confidence` high/medium/low; a value of the wrong type; wikilinks in lists need quotes) and
+never fixes it; a
+vault can bring its own rules in `.karpathy/schema.json` (`{ "appliesTo": ["Wiki/"], "fields": { "type": {
+"kind": "enum", "values": […], "required": true } } }`), which replaces the default. How it works today: [`specs/system/`](specs/system/) (domain,
 functional, architecture, security, deployment); key decisions: [`docs/adr/`](docs/adr/). The
 original MVP spec, plan, opencode spike and implementation log are in git history
 ([`specs/01_mvp/` at 9c25f72](https://github.com/tillg/karpathy.app/tree/9c25f7242ad08a53ac6d57ec57180036a4c9a14e/specs/01_mvp)).

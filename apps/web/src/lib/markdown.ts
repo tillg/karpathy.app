@@ -11,6 +11,23 @@ export function splitFrontmatter(md: string): { frontmatter: string | null; body
   return m ? { frontmatter: m[1]!, body: md.slice(m[0].length) } : { frontmatter: null, body: md };
 }
 
+/** Last frontmatter line (0 when the note has none): the closing `---` of a `---` block at the very start. */
+export function frontmatterEndLine(text: string): number {
+  const fm = splitFrontmatter(text.slice(0, 20_000)).frontmatter;
+  return fm === null ? 0 : fm.split('\n').length + 2;
+}
+
+/** The `%%comment%%` ranges Read mode hides: from after an opening `%%` to after its closing one (or the end). */
+export function commentRanges(text: string): [number, number][] {
+  const marks = [...text.matchAll(/%%/g)].map((m) => m.index + 2);
+  const out: [number, number][] = [];
+  for (let i = 0; i < marks.length; i += 2) out.push([marks[i]!, marks[i + 1] ?? Infinity]);
+  return out;
+}
+
+/** True when `pos` lies inside one of `ranges` (from `commentRanges`). */
+export const inComment = (ranges: [number, number][], pos: number) => ranges.some(([from, to]) => pos >= from && pos < to);
+
 /** A display value: a scalar (quotes removed), a list, or raw text for shapes this reader doesn't know. */
 export type FieldValue = string | string[];
 

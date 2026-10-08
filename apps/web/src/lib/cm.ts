@@ -2,11 +2,11 @@
 // document itself is never rewritten (lossless round-trip, mvp §2.2).
 import { markdown } from '@codemirror/lang-markdown';
 import { HighlightStyle, ensureSyntaxTree, syntaxHighlighting, syntaxTree } from '@codemirror/language';
-import { type EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { EditorSelection, EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { mountEmbed, type EmbedCtx } from './embed';
-import { splitFrontmatter } from './markdown';
+import { commentRanges, frontmatterEndLine, inComment } from './markdown';
 import { EMBED_RE, knownNatural, mdEmbed, wikiEmbed, type Embed, type Resolved } from './media';
 import { WIKILINK_RE } from './wikilink';
 
@@ -35,13 +35,7 @@ const lines = ViewPlugin.fromClass(class {
     const doc = view.state.doc;
     const b = new RangeSetBuilder<Decoration>();
     // Frontmatter: only when the note starts with `---` and a closing `---` exists.
-    let fmEnd = 0;
-    if (doc.line(1).text.trimEnd() === '---') {
-      const head = doc.sliceString(0, Math.min(doc.length, 20_000));
-      if (splitFrontmatter(head).frontmatter !== null) {
-        for (let n = 2; n <= doc.lines; n++) if (doc.line(n).text.trimEnd() === '---') { fmEnd = n; break; }
-      }
-    }
+    const fmEnd = frontmatterEnd(view.state);
     const deco = new Map<number, string>();
     for (let n = 1; n <= fmEnd; n++) deco.set(doc.line(n).from, n === 1 ? 'cm-fm cm-fm-top' : n === fmEnd ? 'cm-fm cm-fm-bot' : 'cm-fm');
     const fmTo = fmEnd ? doc.line(fmEnd).to : -1;
@@ -158,16 +152,62 @@ class EmbedWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
-/** Last frontmatter line (0 when the note has none), like the `lines` plugin. */
-function frontmatterEnd(state: EditorState): number {
-  const doc = state.doc;
-  if (doc.line(1).text.trimEnd() !== '---' || splitFrontmatter(doc.sliceString(0, Math.min(doc.length, 20_000))).frontmatter === null) return 0;
-  for (let n = 2; n <= doc.lines; n++) if (doc.line(n).text.trimEnd() === '---') return n;
-  return 0;
+/** Last frontmatter line (0 when the note has none). */
+export const frontmatterEnd = (state: EditorState) => frontmatterEndLine(state.doc.sliceString(0, Math.min(state.doc.length, 20_000)));
+
+/** The frontmatter text between the `---` lines, in the editor's coordinates; null when the note has none. */
+export function frontmatterRange(state: EditorState): { from: number; to: number; text: string } | null {
+  const end = frontmatterEnd(state);
+  if (!end) return null;
+  const from = state.doc.line(2).from;
+  const to = Math.max(from, state.doc.line(end - 1).to);
+  return { from, to, text: state.doc.sliceString(from, to) };
 }
 
-/** True when `pos` is inside a `%%comment%%` (an odd number of `%%` before it): Read mode hides those, so no embed here. */
-const inComment = (state: EditorState, pos: number) => ((state.doc.sliceString(0, pos).match(/%%/g) ?? []).length % 2) === 1;
+/**
+ * Hides the frontmatter lines (the properties form shows them, #82): one block replace over the whole
+ * block, from state (block decorations can't come from a view plugin), and atomic, so the cursor skips it.
+ * The text stays in the document.
+ */
+const hiddenFrontmatter = (state: EditorState) => {
+  const end = frontmatterEnd(state);
+  return end ? Decoration.set(Decoration.replace({ block: true }).range(0, state.doc.line(end).to)) : Decoration.none;
+};
+const hiddenField = StateField.define<DecorationSet>({
+  create: hiddenFrontmatter,
+  update: (v, tr) => (tr.docChanged ? hiddenFrontmatter(tr.state) : v),
+  provide: (f) => [EditorView.decorations.from(f), EditorView.atomicRanges.of((view) => view.state.field(f))],
+});
+
+/**
+ * Keeps typing and the cursor out of the hidden lines: a cursor move or select-all stops at the body, and a
+ * typed or deleted change that would reach them (Backspace at the start of the body, typing in a note without
+ * body) is dropped and `onBlocked` shows them. Loads, undo and form edits pass.
+ */
+export const hideFrontmatter = (onBlocked: () => void): Extension => [
+  hiddenField,
+  EditorState.transactionFilter.of((tr) => {
+    const end = frontmatterEnd(tr.startState);
+    if (!end) return tr;
+    const doc = tr.startState.doc;
+    const typed = (tr.isUserEvent('input') && !tr.isUserEvent('input.properties')) || tr.isUserEvent('delete') || tr.isUserEvent('move');
+    if (tr.docChanged && typed) {
+      // Up to and including the line break after the closing `---`.
+      const guard = doc.line(end).to + 1;
+      let reaches = false;
+      tr.changes.iterChangedRanges((from) => { if (from < guard) reaches = true; });
+      if (reaches) { queueMicrotask(onBlocked); return []; }
+      return tr;
+    }
+    if (!tr.docChanged && tr.selection && tr.isUserEvent('select') && !tr.isUserEvent('select.search')) {
+      const body = end < doc.lines ? doc.line(end + 1).from : doc.length;
+      const sel = tr.selection;
+      if (sel.ranges.every((r) => r.from >= body)) return tr;
+      return { selection: EditorSelection.create(sel.ranges.map((r) => EditorSelection.range(Math.max(r.anchor, body), Math.max(r.head, body))), sel.mainIndex), scrollIntoView: tr.scrollIntoView };
+    }
+    return tr;
+  }),
+];
 
 /**
  * Block widgets must come from state, not a view plugin. An edit only rebuilds the lines it touched (the
@@ -181,6 +221,8 @@ function embeds(hooks: EmbedHooks): Extension {
     const tree = full ? (ensureSyntaxTree(state, state.doc.length, 50) ?? syntaxTree(state)) : syntaxTree(state);
     const fmEnd = frontmatterEnd(state);
     const epoch = hooks.epoch();
+    // Read mode hides `%%comments%%`, so no embed there.
+    let comments: [number, number][] | null = null;
     for (let n = Math.max(fromLine, fmEnd + 1); n <= toLine; n++) {
       const line = state.doc.line(n);
       if (!line.text.includes('![')) continue;
@@ -190,7 +232,7 @@ function embeds(hooks: EmbedHooks): Extension {
         for (let node: { name: string; parent: unknown } | null = tree.resolveInner(line.from + m.index, 1); node; node = node.parent as typeof node) {
           if (/Code/.test(node.name)) code = true;
         }
-        if (code || inComment(state, line.from + m.index)) continue;
+        if (code || inComment(comments ??= commentRanges(state.doc.toString()), line.from + m.index)) continue;
         const r = hooks.resolve(m[1] !== undefined ? wikiEmbed(m[1]) : mdEmbed(m[3]!, m[2]));
         if (r.state === 'media' || r.state === 'file' || r.state === 'missing') items.push(r);
       }

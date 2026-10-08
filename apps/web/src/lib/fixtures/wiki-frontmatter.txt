@@ -1,0 +1,1696 @@
+type: concept
+tags: [mountains, safety, emergency]
+updated: 2026-10-02
+sources: [2026-10-02-dav-emergency-numbers-alps.md, 2026-10-02-dav-how-an-emergency-call-works.md, 2026-10-02-dav-ten-ski-touring-recommendations.md]
+related: [avalanche-safety-kit, tour-planning-3x3, deutscher-alpenverein]
+<<<<< next page >>>>>
+type: concept
+tags: [mountains, snow]
+updated: 2026-10-02
+sources: [2025-03-05-article-spring-snow.md]
+related: [spring-snow]
+<<<<< next page >>>>>
+type: concept
+tags: [mountains, safety]
+updated: 2026-10-02
+sources: [2025-03-08-avalanche-course-handout.md]
+related: [spring-snow]
+<<<<< next page >>>>>
+type: concept
+tags: [ski-touring, safety, avalanche]
+updated: 2026-10-02
+sources: [2026-10-02-dav-decisions-in-avalanche-terrain.md, 2026-10-02-dav-ten-ski-touring-recommendations.md]
+related: [avalanche-danger-scale, tour-planning-3x3, avalanche-safety-kit, aspect, spring-snow]
+<<<<< next page >>>>>
+type: concept
+tags: [ski-touring, safety, gear]
+updated: 2026-10-04
+sources: [2026-10-02-dav-ten-ski-touring-recommendations.md, 2025-03-08-avalanche-course-handout.md]
+related: [avalanche-decision-making, glacier-travel, alpine-emergency, tour-planning-3x3]
+<<<<< next page >>>>>
+type: concept
+tags: [coffee, brewing]
+updated: 2026-10-04
+sources: [2026-10-02-gold-cup-standard-guide.md, 2026-10-02-hario-v60-guide.md, 2026-10-02-wikipedia-coffee-preparation.md]
+related: [extraction, grind-size, v60, chemex, french-press]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-surface-topology.md, 2026-10-02-wikipedia-euler-characteristic.md]
+related: [manifold, euler-characteristic, compactness, poincare-conjecture, coffee-mug-and-donut]
+<<<<< next page >>>>>
+type: concept
+tags: [coffee, processing]
+updated: 2026-10-02
+sources: [2026-10-02-honey-process-guide.md, 2026-10-02-wikipedia-coffee-bean.md, 2026-10-02-sucafina-kenya-kagurumai.md, 2026-10-02-wikipedia-coffee-brazil.md]
+related: [coffee-kenya, coffee-brazil, coffee-ethiopia, roast-levels, cupping]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-notes-topology-study-log.md, 2026-10-02-wikipedia-brouwer-fixed-point-theorem.md]
+related: [open-set, continuity, brouwer-fixed-point-theorem, topological-invariants-overview, classification-of-surfaces]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-notes-topology-study-log.md]
+related: [open-set, continuity, homeomorphism, topological-invariants-overview]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-topological-space.md, 2026-10-02-wikipedia-topology.md]
+related: [open-set, homeomorphism, homotopy, topological-space]
+<<<<< next page >>>>>
+type: concept
+tags: [mountains, snow]
+updated: 2026-10-02
+sources: [2025-03-05-article-spring-snow.md]
+related: [spring-snow]
+<<<<< next page >>>>>
+type: concept
+tags: [coffee, tasting]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-coffee-cupping.md, 2026-10-02-wcr-sensory-lexicon.md]
+related: [roast-levels, coffee-processing, coffee-ethiopia, geisha, coffee]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-euler-characteristic.md, 2026-10-02-mactutor-history-of-topology.md, 2026-10-02-wikipedia-surface-topology.md]
+related: [leonhard-euler, classification-of-surfaces, hairy-ball-theorem, topological-invariants-overview, emmy-noether]
+<<<<< next page >>>>>
+type: concept
+tags: [coffee, brewing]
+updated: 2026-10-02
+sources: [2026-10-02-gold-cup-standard-guide.md, 2026-10-02-hario-v60-guide.md, 2026-10-02-wikipedia-coffee-preparation.md]
+related: [brew-ratio, grind-size, water-for-coffee, roast-levels, v60, french-press]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology, algebraic-topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-fundamental-group.md, 2026-10-02-mactutor-history-of-topology.md, 2026-10-02-notes-topology-who-is-who.md]
+related: [homotopy, poincare-conjecture, topological-invariants-overview, henri-poincare, euler-characteristic]
+<<<<< next page >>>>>
+type: concept
+tags: [mountains, safety]
+updated: 2026-10-02
+sources: [2025-03-08-avalanche-course-handout.md, 2025-02-03-excerpt-oetztal-ski-tours.md]
+related: [spring-snow]
+<<<<< next page >>>>>
+type: concept
+tags: [coffee, brewing]
+updated: 2026-10-02
+sources: [2026-10-02-gold-cup-standard-guide.md, 2026-10-02-hario-v60-guide.md, 2026-10-02-wikipedia-coffee-preparation.md]
+related: [extraction, brew-ratio, espresso-machine, v60, french-press]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology]
+updated: 2026-10-04
+sources: [2026-10-02-wikipedia-topological-space.md, 2026-10-02-wikipedia-topology.md, 2026-10-02-notes-topology-study-log.md]
+related: [continuity, homotopy, coffee-mug-and-donut, topological-invariants-overview, knot]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-notes-topology-study-log.md, 2026-10-02-wikipedia-fundamental-group.md]
+related: [fundamental-group, continuity, homeomorphism, henri-poincare]
+<<<<< next page >>>>>
+type: concept
+tags: [mountains, huts]
+updated: 2026-10-02
+sources: [2026-10-02-dav-staying-at-alpine-club-huts.md]
+related: [deutscher-alpenverein, wiesbadener-hut, martin-busch-hut, vernagt-hut, rifugio-pizzini]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology, knot-theory]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-knot-theory.md]
+related: [homeomorphism, topological-invariants-overview, manifold]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-notes-topology-study-log.md, 2026-10-02-wikipedia-surface-topology.md, 2026-10-02-notes-topology-who-is-who.md]
+related: [classification-of-surfaces, poincare-conjecture, bernhard-riemann, homeomorphism]
+<<<<< next page >>>>>
+type: concept
+tags: [hiking, grades]
+updated: 2026-10-02
+sources: [2026-10-02-dav-mountain-trail-grades.md]
+related: [via-ferrata-grades, deutscher-alpenverein, tour-planning-3x3]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-topological-space.md, 2026-10-02-notes-topology-study-log.md]
+related: [topological-space, continuity, connectedness, compactness]
+<<<<< next page >>>>>
+type: concept
+tags: [coffee, roasting]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-coffee-roasting.md]
+related: [coffee-processing, extraction, cupping, coffee-ethiopia, espresso-machine]
+<<<<< next page >>>>>
+type: concept
+tags: [mountains, snow]
+updated: 2026-10-02
+sources: [2025-03-05-article-spring-snow.md, 2025-03-08-avalanche-course-handout.md]
+related: [corn-snow, aspect, avalanche-danger-scale, glacier-travel]
+<<<<< next page >>>>>
+type: concept
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-topological-space.md, 2026-10-02-wikipedia-topology.md]
+related: [open-set, continuity, homeomorphism, felix-hausdorff, topology]
+<<<<< next page >>>>>
+type: concept
+tags: [mountains, planning, safety]
+updated: 2026-10-02
+sources: [2026-10-02-dav-tour-planning-basics.md, 2026-10-02-dav-decisions-in-avalanche-terrain.md, 2026-10-02-dav-ten-ski-touring-recommendations.md]
+related: [avalanche-decision-making, avalanche-danger-scale, avalanche-safety-kit, deutscher-alpenverein, aspect, spring-snow]
+<<<<< next page >>>>>
+type: concept
+tags: [hiking, grades, via-ferrata]
+updated: 2026-10-02
+sources: [2026-10-02-dav-via-ferrata-grades.md]
+related: [mountain-trail-grades, deutscher-alpenverein]
+<<<<< next page >>>>>
+type: concept
+tags: [coffee, brewing, water]
+updated: 2026-10-02
+sources: [2026-10-02-sca-water-standards-glossary.md, 2026-10-02-gold-cup-standard-guide.md]
+related: [extraction, espresso-machine, brew-ratio]
+<<<<< next page >>>>>
+type: concept
+tags: [ski-touring, nature]
+updated: 2026-10-02
+sources: [2026-10-02-dav-natuerlich-auf-tour.md, 2026-10-02-dav-ten-ski-touring-recommendations.md]
+related: [deutscher-alpenverein, bavarian-prealps, hirschberg, brecherspitz, tour-planning-3x3]
+<<<<< next page >>>>>
+type: entity
+kind: brewer
+tags: [coffee, brewer]
+updated: 2026-10-02
+method: immersion + pressure
+filter: paper or mesh
+grind: null
+ratio: null
+brew_time: "~30 s press"
+sources: [2026-10-02-wikipedia-coffee-preparation.md]
+related: [french-press, moka-pot, espresso-machine, which-brewer-for-which-bean]
+<<<<< next page >>>>>
+type: entity
+kind: brewer
+tags: [coffee, brewer, pour-over]
+updated: 2026-10-02
+method: pour-over
+filter: thick bonded paper
+grind: null
+ratio: "~1:18 (Gold Cup default)"
+brew_time: "3–4 min (pour-over default)"
+designed: 1941, Peter Schlumbohm
+sources: [2026-10-02-wikipedia-chemex.md, 2026-10-02-gold-cup-standard-guide.md]
+related: [v60, extraction, brew-ratio, which-brewer-for-which-bean]
+<<<<< next page >>>>>
+type: entity
+kind: brewer
+tags: [coffee, brewer, espresso]
+updated: 2026-10-02
+method: pressure
+filter: metal basket
+grind: fine
+pressure_bar: [8, 18]
+water_c: [91, 95]
+yield_ml: [30, 60]
+ratio: null
+sources: [2026-10-02-wikipedia-coffee-preparation.md]
+related: [moka-pot, aeropress, grind-size, roast-levels, which-brewer-for-which-bean]
+<<<<< next page >>>>>
+type: entity
+kind: brewer
+tags: [coffee, brewer, immersion]
+updated: 2026-10-02
+method: immersion
+filter: metal or nylon mesh
+grind: coarse
+ratio: "~1:18 (Gold Cup default)"
+brew_time: "4 min (4–7 min range)"
+sources: [2026-10-02-wikipedia-coffee-preparation.md, 2026-10-02-gold-cup-standard-guide.md]
+related: [aeropress, chemex, grind-size, extraction, which-brewer-for-which-bean]
+<<<<< next page >>>>>
+type: entity
+kind: brewer
+tags: [coffee, brewer, stovetop]
+updated: 2026-10-02
+method: pressure (steam)
+filter: metal basket
+grind: null
+pressure_bar: 1
+ratio: null
+sources: [2026-10-02-wikipedia-coffee-preparation.md]
+related: [espresso-machine, aeropress, which-brewer-for-which-bean]
+<<<<< next page >>>>>
+type: entity
+kind: brewer
+tags: [coffee, brewer, pour-over]
+updated: 2026-10-02
+method: pour-over
+filter: paper
+grind: medium-fine
+ratio: "1:15–1:17"
+dose_g: 21
+water_c: [90, 96]
+brew_time: "~4:00 incl. 30–40 s bloom"
+sources: [2026-10-02-hario-v60-guide.md, 2026-10-02-gold-cup-standard-guide.md]
+related: [chemex, grind-size, brew-ratio, extraction, which-brewer-for-which-bean]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2026-09-16-clip-becherhaus.md]
+related: [stubai-alps, becher]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, austria]
+updated: 2026-10-02
+sources: [2026-09-15-clip-hochtennbodensteig.md]
+related: [stubai-alps, hochtennbodensteig]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2026-09-01-clip-bivacco-fiamme-gialle.md]
+related: [dolomites]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, germany]
+updated: 2026-10-02
+sources: [2026-08-04-clip-mittenwalder-hoehenweg.md]
+related: [karwendel, mittenwalder-hoehenweg]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, switzerland]
+updated: 2026-10-02
+sources: [2026-09-11-clip-cabane-de-moiry.md, 2026-09-01-clip-swiss-mountain-huts.md]
+related: [pennine-alps, lac-de-moiry]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, austria]
+updated: 2026-10-02
+sources: [2026-08-12-clip-luenersee.md]
+related: [raetikon, luenersee]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, austria]
+updated: 2026-10-02
+sources: [2026-08-28-clip-rotspitze.md]
+related: [rofan, rotspitze]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2026-08-11-clip-jimmi-hut.md]
+related: [dolomites]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut]
+updated: 2026-10-02
+sources: [2025-02-03-excerpt-oetztal-ski-tours.md]
+related: [oetztal-alps, similaun]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, austria]
+updated: 2026-10-02
+sources: [2026-09-16-clip-stubai-summit.md]
+related: [stubai-alps, wilder-freiger]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, switzerland]
+updated: 2026-10-02
+sources: [2026-09-20-clip-oberaletsch-hut.md]
+related: [bernese-alps, oberaletsch]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2026-08-06-clip-fellaria-glacier.md]
+related: [valmalenco, fellaria-glacier]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2026-09-02-clip-rifugio-del-grande-camerini.md]
+related: [valmalenco]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2026-08-24-clip-rifugio-nuvolau.md, 2026-09-01-clip-three-dolomites-huts.md]
+related: [dolomites, monte-nuvolau]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2026-09-18-clip-rifugio-passo-santner.md, 2026-09-01-clip-three-dolomites-huts.md]
+related: [dolomites]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2025-03-02-blog-cevedale-from-pizzini.md]
+related: [ortler-alps, cevedale]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2026-09-17-clip-rifugio-torre-di-pisa.md]
+related: [dolomites, latemar-torre-di-pisa]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2026-09-05-clip-rifugio-vicenza.md, 2026-08-31-clip-sassolungo.md]
+related: [dolomites, langkofelkar]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, austria]
+updated: 2026-10-02
+sources: [2026-09-16-clip-stubai-summit.md]
+related: [stubai-alps, wilder-freiger]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut]
+updated: 2026-10-02
+sources: [2025-02-03-excerpt-oetztal-ski-tours.md]
+related: [oetztal-alps, fluchtkogel]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, switzerland]
+updated: 2026-10-02
+sources: [2026-09-20-clip-jegihorn-details.md]
+related: [pennine-alps, jegihorn]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut]
+updated: 2026-10-02
+sources: [2025-02-10-excerpt-silvretta-ski-tours.md, 2024-04-21-trip-report-piz-buin.md]
+related: [silvretta, piz-buin, dreilaenderspitze]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, hut, italy]
+updated: 2026-10-02
+sources: [2026-09-13-clip-alpinisteig.md]
+related: [dolomites, alpinisteig]
+<<<<< next page >>>>>
+type: entity
+kind: person
+tags: [mathematics, topology, mathematician]
+updated: 2026-10-02
+born: 1826-09-17
+died: 1866-07-20
+known_for: [Riemann surfaces, concept of a manifold, 1854 habilitation lecture]
+sources: [2026-10-02-notes-topology-who-is-who.md, 2026-10-02-mactutor-history-of-topology.md]
+related: [manifold, classification-of-surfaces, topology]
+<<<<< next page >>>>>
+type: entity
+kind: person
+tags: [mathematics, topology, algebra, mathematician]
+updated: 2026-10-02
+born: 1882-03-23
+died: 1935-04-14
+known_for: [abstract algebra, Noether's theorem, homology groups instead of Betti numbers]
+sources: [2026-10-02-notes-topology-who-is-who.md]
+related: [euler-characteristic, fundamental-group, topology]
+<<<<< next page >>>>>
+type: entity
+kind: person
+tags: [mathematics, topology, mathematician]
+updated: 2026-10-02
+born: 1868-11-08
+died: 1942-01-26
+known_for: [definition of a topological space, Grundzüge der Mengenlehre, Hausdorff dimension]
+sources: [2026-10-02-notes-topology-who-is-who.md, 2026-10-02-wikipedia-topological-space.md, 2026-10-02-wikipedia-topology.md]
+related: [topological-space, open-set, topology]
+<<<<< next page >>>>>
+type: entity
+kind: person
+tags: [mathematics, topology, mathematician]
+updated: 2026-10-02
+born: 1966-06-13
+died: null
+known_for: [proof of the Poincaré conjecture, Ricci flow with surgery]
+sources: [2026-10-02-notes-topology-who-is-who.md, 2026-10-02-wikipedia-poincare-conjecture.md]
+related: [poincare-conjecture, manifold, henri-poincare]
+<<<<< next page >>>>>
+type: entity
+kind: person
+tags: [mathematics, topology, mathematician]
+updated: 2026-10-02
+born: 1854-04-29
+died: 1912-07-17
+known_for: [Analysis situs, fundamental group, homology, Poincaré conjecture, hairy ball theorem]
+sources: [2026-10-02-notes-topology-who-is-who.md, 2026-10-02-mactutor-history-of-topology.md, 2026-10-02-wikipedia-fundamental-group.md, 2026-10-02-wikipedia-poincare-conjecture.md, 2026-10-02-notes-topology-study-log.md]
+related: [fundamental-group, homotopy, poincare-conjecture, hairy-ball-theorem, topology]
+<<<<< next page >>>>>
+type: entity
+kind: person
+tags: [mathematics, topology, mathematician]
+updated: 2026-10-02
+born: 1707-04-15
+died: 1783-09-18
+known_for: [Seven Bridges of Königsberg, polyhedron formula, Euler characteristic]
+sources: [2026-10-02-notes-topology-who-is-who.md, 2026-10-02-mactutor-history-of-topology.md, 2026-10-02-wikipedia-topology.md, 2026-10-02-wikipedia-euler-characteristic.md]
+related: [euler-characteristic, topology, classification-of-surfaces]
+<<<<< next page >>>>>
+type: entity
+kind: person
+tags: [mathematics, topology, mathematician]
+updated: 2026-10-02
+born: 1881-02-27
+died: 1966-12-02
+known_for: [Brouwer fixed-point theorem, invariance of dimension, hairy ball theorem in higher dimensions, intuitionism]
+sources: [2026-10-02-notes-topology-who-is-who.md, 2026-10-02-wikipedia-brouwer-fixed-point-theorem.md, 2026-10-02-mactutor-history-of-topology.md, 2026-10-02-notes-topology-study-log.md]
+related: [brouwer-fixed-point-theorem, hairy-ball-theorem, topology]
+<<<<< next page >>>>>
+type: entity
+kind: organization
+tags: [mountains, organization]
+updated: 2026-10-02
+sources: [2026-10-02-dav-structure.md, 2026-10-02-dav-ten-ski-touring-recommendations.md, 2026-10-02-dav-natuerlich-auf-tour.md, 2026-10-02-dav-staying-at-alpine-club-huts.md, 2026-10-02-dav-tour-planning-basics.md, 2026-10-02-dav-decisions-in-avalanche-terrain.md, 2026-10-02-dav-emergency-numbers-alps.md, 2026-10-02-dav-how-an-emergency-call-works.md, 2026-10-02-dav-mountain-trail-grades.md, 2026-10-02-dav-via-ferrata-grades.md]
+related: [eaws, tour-planning-3x3, avalanche-safety-kit, avalanche-decision-making, wildlife-friendly-touring, hut-etiquette, alpine-emergency, mountain-trail-grades, via-ferrata-grades]
+<<<<< next page >>>>>
+type: entity
+kind: organization
+tags: [mountains, organization, avalanche]
+updated: 2026-10-02
+sources: [2026-10-02-eaws-avalanche-danger-scale.md]
+related: [avalanche-danger-scale, avalanche-decision-making, deutscher-alpenverein]
+<<<<< next page >>>>>
+type: entity
+kind: origin
+tags: [coffee, origin, south-america]
+updated: 2026-10-02
+country: Brazil
+species: [arabica (~70 %), robusta (~30 %)]
+altitude_m: null
+harvest_months: [Jun, Jul, Aug, Sep]
+regions: [Minas Gerais, São Paulo, Espírito Santo, Bahia, Rondônia, Paraná]
+typical_flavours: null
+processing: [natural]
+sources: [2026-10-02-wikipedia-coffee-brazil.md, 2026-10-02-wikipedia-coffee-production.md, 2026-10-02-wcr-bourbon.md]
+related: [coffee, bourbon, coffee-processing, which-brewer-for-which-bean]
+<<<<< next page >>>>>
+type: entity
+kind: origin
+tags: [coffee, origin, africa]
+updated: 2026-10-02
+country: Ethiopia
+species: arabica
+altitude_m: [1400, 2200]
+harvest_months: null
+regions: [Sidama, Yirgacheffe, Harar, Limu, Guji]
+typical_flavours: [citrus, lemon, berry, floral, wine-like (Harar)]
+processing: [washed, natural]
+sources: [2026-10-02-wikipedia-coffee-ethiopia.md, 2026-10-02-wikipedia-coffee-production.md, 2026-10-02-wcr-geisha.md, 2026-10-02-wcr-typica.md, 2026-10-02-wikipedia-coffee-bean.md]
+related: [coffee, geisha, typica, coffee-processing, coffee-kenya, cupping]
+<<<<< next page >>>>>
+type: entity
+kind: origin
+tags: [coffee, origin, africa]
+updated: 2026-10-02
+country: Kenya
+species: arabica
+altitude_m: [1500, 1630]
+harvest_months: [May, Jun, Jul, Oct, Nov, Dec]
+regions: [Murang'a (Central Kenya)]
+varieties: [SL28, SL34, Batian, Ruiru 11]
+typical_flavours: null
+processing: [washed]
+sources: [2026-10-02-sucafina-kenya-kagurumai.md, 2026-10-02-wcr-sl28.md]
+related: [coffee, sl28, bourbon, coffee-processing, coffee-ethiopia]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, germany]
+updated: 2026-10-02
+sources: [2025-01-19-trip-report-hirschberg.md, 2025-03-05-article-spring-snow.md]
+related: [hirschberg, brecherspitz]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, switzerland]
+updated: 2026-10-02
+sources: [2026-07-14-clip-eiger-rotstock.md, 2026-09-20-clip-oberaletsch-hut.md]
+related: [eiger-rotstock, oberaletsch, oberaletsch-hut]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, italy]
+updated: 2026-10-02
+sources: [2025-05-20-notes-alta-via-1.md]
+related: [alta-via-1]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, germany, austria]
+updated: 2026-10-02
+sources: [2026-08-04-clip-mittenwalder-hoehenweg.md]
+related: [mittenwalder-hoehenweg, brunnstein-hut, rofan]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, austria]
+updated: 2026-10-02
+sources: [2025-02-03-excerpt-oetztal-ski-tours.md]
+related: [wildspitze, similaun, fluchtkogel, vernagt-hut, martin-busch-hut]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, italy]
+updated: 2026-10-02
+sources: [2025-03-02-blog-cevedale-from-pizzini.md]
+related: [cevedale, rifugio-pizzini]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, switzerland]
+updated: 2026-10-02
+sources: [2026-08-30-clip-jegihorn.md, 2026-09-11-clip-cabane-de-moiry.md]
+related: [jegihorn, lac-de-moiry, cabane-de-moiry, weissmies-hut]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, austria, switzerland]
+updated: 2026-10-02
+sources: [2026-08-12-clip-luenersee.md]
+related: [luenersee, douglass-hut]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, austria]
+updated: 2026-10-02
+sources: [2026-08-28-clip-rotspitze.md]
+related: [rotspitze, erfurter-hut, karwendel]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, austria, switzerland]
+updated: 2026-10-02
+sources: [2025-02-10-excerpt-silvretta-ski-tours.md]
+related: [piz-buin, dreilaenderspitze, wiesbadener-hut]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, austria]
+updated: 2026-10-02
+sources: [2025-02-14-excerpt-stubai-zuckerhuetl.md]
+related: [zuckerhuetl]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, switzerland]
+updated: 2026-10-02
+sources: [2026-08-24-clip-surenenpass.md]
+related: [surenenpass]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, italy]
+updated: 2026-10-02
+sources: [2026-08-06-clip-fellaria-glacier.md, 2026-09-02-clip-rifugio-del-grande-camerini.md]
+related: [fellaria-glacier, rifugio-bignami, rifugio-del-grande-camerini]
+<<<<< next page >>>>>
+type: entity
+tags: [mountains, region, germany]
+updated: 2026-10-02
+sources: [2023-08-16-trip-report-zugspitze-reintal.md]
+related: [zugspitze-reintal]
+<<<<< next page >>>>>
+type: entity
+kind: theorem
+tags: [mathematics, topology, theorem]
+updated: 2026-10-02
+field: algebraic topology
+proved_by: [luitzen-brouwer]
+year: 1910
+statement: Every continuous map from a closed disk (or closed ball, in any finite dimension) to itself leaves at least one point where it was.
+sources: [2026-10-02-wikipedia-brouwer-fixed-point-theorem.md]
+related: [luitzen-brouwer, continuity, compactness, hairy-ball-theorem]
+<<<<< next page >>>>>
+type: entity
+kind: theorem
+tags: [mathematics, topology, theorem]
+updated: 2026-10-02
+field: algebraic topology
+proved_by: [henri-poincare, luitzen-brouwer]
+year: 1885
+statement: You cannot comb a hairy ball flat — every continuous field of tangent arrows on a sphere is zero somewhere.
+sources: [2026-10-02-notes-topology-study-log.md, 2026-10-02-wikipedia-euler-characteristic.md]
+related: [euler-characteristic, henri-poincare, luitzen-brouwer, brouwer-fixed-point-theorem]
+<<<<< next page >>>>>
+type: entity
+kind: theorem
+tags: [mathematics, topology, theorem]
+updated: 2026-10-02
+field: geometric topology
+proved_by: [grigori-perelman]
+year: 2003
+statement: A closed three-dimensional space in which every loop can be shrunk to a point is (topologically) the three-dimensional sphere.
+sources: [2026-10-02-wikipedia-poincare-conjecture.md, 2026-10-02-notes-topology-who-is-who.md]
+related: [henri-poincare, grigori-perelman, fundamental-group, manifold, classification-of-surfaces]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, via-ferrata]
+updated: 2026-10-02
+activity: via-ferrata
+region: dolomites
+start_m: 1450
+summit_m: 2700
+aspect: mixed
+glacier: false
+difficulty: approx. B
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-09-13-clip-alpinisteig.md]
+related: [dolomites, zsigmondy-hut, via-ferrata-grades]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: dolomites
+start_m: 1496
+summit_m: 2750
+aspect: mixed
+glacier: false
+difficulty: T3, short cable sections
+best_months: [Jun, Jul, Aug, Sep]
+done: null
+sources: [2025-05-20-notes-alta-via-1.md]
+related: [dolomites]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, alpine-tour]
+updated: 2026-10-02
+activity: alpine-tour
+region: stubai-alps
+start_m: 1420
+summit_m: 3195
+aspect: mixed
+glacier: true
+difficulty: approx. WS (glacier)
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-09-16-clip-becherhaus.md]
+related: [stubai-alps, becherhaus, wilder-freiger, glacier-travel]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, ski-tour]
+updated: 2026-10-02
+activity: ski-tour
+region: bavarian-prealps
+start_m: 1085
+summit_m: 1683
+aspect: N
+glacier: false
+difficulty: easy
+best_months: [Jan, Feb, Mar]
+done: null
+sources: [2025-03-05-article-spring-snow.md]
+related: [bavarian-prealps, hirschberg]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, ski-tour]
+updated: 2026-10-02
+activity: ski-tour
+region: ortler-alps
+start_m: 2178
+summit_m: 3769
+aspect: W–NW
+glacier: true
+difficulty: WS
+best_months: [Apr, May]
+done: null
+sources: [2025-03-02-blog-cevedale-from-pizzini.md]
+related: [ortler-alps, rifugio-pizzini, similaun-vs-cevedale-late-april]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, ski-tour]
+updated: 2026-10-02
+activity: ski-tour
+region: silvretta
+start_m: 2037
+summit_m: 3197
+aspect: N–NE
+glacier: true
+difficulty: WS
+best_months: [Mar, Apr, May]
+done: null
+sources: [2025-02-10-excerpt-silvretta-ski-tours.md, 2024-04-21-trip-report-piz-buin.md]
+related: [silvretta, wiesbadener-hut, piz-buin]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, via-ferrata]
+updated: 2026-10-02
+activity: via-ferrata
+region: bernese-alps
+start_m: 2320
+summit_m: 2663
+aspect: mixed
+glacier: false
+difficulty: approx. C
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-07-14-clip-eiger-rotstock.md]
+related: [bernese-alps, via-ferrata-grades]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: valmalenco
+start_m: 1100
+summit_m: 2760
+aspect: mixed
+glacier: false
+difficulty: approx. T2–T3
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-08-06-clip-fellaria-glacier.md]
+related: [valmalenco, rifugio-bignami]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, ski-tour]
+updated: 2026-10-02
+activity: ski-tour
+region: oetztal-alps
+start_m: 1895
+summit_m: 3500
+aspect: NE
+glacier: true
+difficulty: L–WS
+best_months: [Mar, Apr, May]
+done: null
+sources: [2025-02-03-excerpt-oetztal-ski-tours.md]
+related: [oetztal-alps, vernagt-hut]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, ski-tour]
+updated: 2026-10-02
+activity: ski-tour
+region: bavarian-prealps
+start_m: 770
+summit_m: 1670
+aspect: N
+glacier: false
+difficulty: easy
+best_months: [Jan, Feb]
+done: 2025-01-18
+sources: [2025-01-19-trip-report-hirschberg.md, 2025-03-05-article-spring-snow.md]
+related: [bavarian-prealps, brecherspitz]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: stubai-alps
+start_m: 2340
+summit_m: 2340
+aspect: mixed
+glacier: false
+difficulty: approx. T2
+best_months: [Jun, Jul, Aug, Sep, Oct]
+done: null
+sources: [2026-09-15-clip-hochtennbodensteig.md]
+related: [stubai-alps, birgitzkoepflhaus]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, via-ferrata]
+updated: 2026-10-02
+activity: via-ferrata
+region: pennine-alps
+start_m: 2400
+summit_m: 3206
+aspect: mixed
+glacier: false
+difficulty: K4 (SAC), approx. C/D
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-08-30-clip-jegihorn.md, 2026-09-20-clip-jegihorn-details.md]
+related: [pennine-alps, weissmies-hut, via-ferrata-grades]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: pennine-alps
+start_m: 2250
+summit_m: 2825
+aspect: mixed
+glacier: false
+difficulty: approx. T3
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-09-11-clip-cabane-de-moiry.md, 2026-09-01-clip-swiss-mountain-huts.md]
+related: [pennine-alps, cabane-de-moiry]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: dolomites
+start_m: 2240
+summit_m: 2685
+aspect: mixed
+glacier: false
+difficulty: approx. T3
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-08-31-clip-sassolungo.md, 2026-09-05-clip-rifugio-vicenza.md]
+related: [dolomites, rifugio-vicenza]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: dolomites
+start_m: 2200
+summit_m: 2671
+aspect: mixed
+glacier: false
+difficulty: approx. T3
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-09-17-clip-rifugio-torre-di-pisa.md]
+related: [dolomites, rifugio-torre-di-pisa]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: wetterstein
+start_m: 950
+summit_m: 1100
+aspect: mixed
+glacier: false
+difficulty: T1
+best_months: [May, Jun, Jul, Aug, Sep, Oct]
+done: null
+sources: [2026-09-07-clip-leutascher-geisterklamm.md]
+related: [wetterstein]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: raetikon
+start_m: 1970
+summit_m: 2000
+aspect: mixed
+glacier: false
+difficulty: T1
+best_months: [Jun, Jul, Aug, Sep, Oct]
+done: null
+sources: [2026-08-12-clip-luenersee.md]
+related: [raetikon, douglass-hut]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, via-ferrata]
+updated: 2026-10-02
+activity: via-ferrata
+region: karwendel
+start_m: 2244
+summit_m: 2370
+aspect: mixed
+glacier: false
+difficulty: A/B
+best_months: [Jul, Aug, Sep, Oct]
+done: null
+sources: [2026-08-04-clip-mittenwalder-hoehenweg.md]
+related: [karwendel, brunnstein-hut, via-ferrata-grades]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: dolomites
+start_m: 2250
+summit_m: 2575
+aspect: mixed
+glacier: false
+difficulty: approx. T2
+best_months: [Jun, Jul, Aug, Sep]
+done: null
+sources: [2026-08-24-clip-rifugio-nuvolau.md, 2026-09-01-clip-three-dolomites-huts.md]
+related: [dolomites, rifugio-nuvolau]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: bernese-alps
+start_m: 2090
+summit_m: 2640
+aspect: mixed
+glacier: false
+difficulty: approx. T3
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-09-20-clip-oberaletsch-hut.md]
+related: [bernese-alps, oberaletsch-hut]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, ski-tour]
+updated: 2026-10-02
+activity: ski-tour
+region: silvretta
+start_m: 2037
+summit_m: 3312
+aspect: N
+glacier: true
+difficulty: WS, summit I
+best_months: [Mar, Apr, May]
+done: 2024-04-20
+sources: [2025-02-10-excerpt-silvretta-ski-tours.md, 2024-04-21-trip-report-piz-buin.md]
+related: [silvretta, wiesbadener-hut, dreilaenderspitze]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: rofan
+start_m: 1830
+summit_m: 2067
+aspect: mixed
+glacier: false
+difficulty: approx. T3–T4, short cables
+best_months: [Jun, Jul, Aug, Sep, Oct]
+done: null
+sources: [2026-08-28-clip-rotspitze.md]
+related: [rofan, erfurter-hut, karwendel]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, ski-tour]
+updated: 2026-10-02
+activity: ski-tour
+region: oetztal-alps
+start_m: 1895
+summit_m: 3599
+aspect: NW
+glacier: true
+difficulty: WS
+best_months: [Mar, Apr, May]
+done: null
+sources: [2025-02-03-excerpt-oetztal-ski-tours.md]
+related: [oetztal-alps, martin-busch-hut, wildspitze, similaun-vs-cevedale-late-april]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: uri-alps
+start_m: 1525
+summit_m: 2291
+aspect: mixed
+glacier: false
+difficulty: T3
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-08-24-clip-surenenpass.md]
+related: [uri-alps, mountain-trail-grades]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, alpine-tour]
+updated: 2026-10-02
+activity: alpine-tour
+region: stubai-alps
+start_m: 1530
+summit_m: 3418
+aspect: mixed
+glacier: true
+difficulty: approx. WS
+best_months: [Jul, Aug, Sep]
+done: null
+sources: [2026-09-16-clip-stubai-summit.md]
+related: [stubai-alps, sulzenau-hut, nuernberger-hut, becher, glacier-travel]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, ski-tour]
+updated: 2026-10-02
+activity: ski-tour
+region: oetztal-alps
+start_m: 1895
+summit_m: 3768
+aspect: SE
+glacier: true
+difficulty: WS+
+best_months: [Mar, Apr, May]
+done: 2025-04-12
+sources: [2025-02-03-excerpt-oetztal-ski-tours.md, 2025-04-13-trip-report-wildspitze.md]
+related: [oetztal-alps, similaun, spring-snow, glacier-travel]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, ski-tour]
+updated: 2026-10-02
+activity: ski-tour
+region: stubai-alps
+start_m: 1721
+summit_m: 3507
+aspect: NE
+glacier: true
+difficulty: WS+
+best_months: [Mar, Apr, May]
+done: null
+sources: [2025-02-14-excerpt-stubai-zuckerhuetl.md]
+related: [stubai-alps]
+<<<<< next page >>>>>
+type: entity
+kind: tour
+tags: [mountains, hike]
+updated: 2026-10-02
+activity: hike
+region: wetterstein
+start_m: 720
+summit_m: 2962
+aspect: mixed
+glacier: false
+difficulty: T4
+best_months: [Jul, Aug, Sep]
+done: 2023-08-15
+sources: [2023-08-16-trip-report-zugspitze-reintal.md]
+related: [wetterstein]
+<<<<< next page >>>>>
+type: entity
+kind: variety
+tags: [coffee, variety, arabica]
+updated: 2026-10-02
+species: arabica
+genetic_group: Bourbon-Typica (Bourbon)
+origin: Yemen → La Réunion (early 1700s) → Brazil (~1860)
+optimal_altitude_m: ">1600 equatorial, >1300 tropical, >1000 subtropical"
+yield: medium
+leaf_rust: susceptible
+cup_quality: very good at high altitude
+sources: [2026-10-02-wcr-bourbon.md]
+related: [typica, sl28, coffee-brazil, coffee]
+<<<<< next page >>>>>
+type: entity
+kind: variety
+tags: [coffee, variety, arabica]
+updated: 2026-10-02
+species: arabica
+genetic_group: Ethiopian landrace
+origin: Ethiopia (collected 1930s), famous via Panama (2005)
+optimal_altitude_m: ">1600 near the equator, >1300 at 5–15° latitude"
+yield: low
+leaf_rust: intermediate
+cup_quality: exceptional at high altitude
+typical_flavours: [floral, jasmine, peach]
+sources: [2026-10-02-wcr-geisha.md]
+related: [coffee-ethiopia, coffee, cupping, v60, which-brewer-for-which-bean]
+<<<<< next page >>>>>
+type: entity
+kind: variety
+tags: [coffee, variety, arabica]
+updated: 2026-10-02
+species: arabica
+genetic_group: Bourbon-related
+origin: Kenya, Scott Agricultural Laboratories, 1935
+optimal_altitude_m: ">1200 near the equator, >900 at 5–15°, >700 beyond 15°"
+yield: low
+leaf_rust: low resistance
+drought_tolerance: high
+cup_quality: exceptional at high altitude
+sources: [2026-10-02-wcr-sl28.md, 2026-10-02-sucafina-kenya-kagurumai.md]
+related: [coffee-kenya, bourbon, coffee]
+<<<<< next page >>>>>
+type: entity
+kind: variety
+tags: [coffee, variety, arabica]
+updated: 2026-10-02
+species: arabica
+genetic_group: Bourbon-Typica (Typica)
+origin: south-western Ethiopia → India → Java (1696/1699) → Americas
+optimal_altitude_m: "400–1000 beyond 15° latitude, >1600 near the equator"
+yield: low
+leaf_rust: highly susceptible
+cup_quality: very good at high altitude
+sources: [2026-10-02-wcr-typica.md]
+related: [bourbon, coffee-ethiopia, coffee]
+<<<<< next page >>>>>
+type: topic
+tags: [index]
+updated: 2026-10-04
+sources: []
+related: [log, mountains, coffee, mathematics]
+<<<<< next page >>>>>
+type: topic
+tags: [log]
+updated: 2026-10-04
+sources: []
+related: [index]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2023-08-16-trip-report-zugspitze-reintal.md]
+related: [zugspitze-reintal, tour-log]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2024-04-21-trip-report-piz-buin.md]
+related: [piz-buin, tour-log]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2025-01-19-trip-report-hirschberg.md]
+related: [hirschberg, tour-log]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2025-02-03-excerpt-oetztal-ski-tours.md]
+related: [oetztal-alps, wildspitze, similaun, fluchtkogel]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2025-02-10-excerpt-silvretta-ski-tours.md]
+related: [silvretta, piz-buin, dreilaenderspitze, wiesbadener-hut]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2025-02-14-excerpt-stubai-zuckerhuetl.md]
+related: [stubai-alps, zuckerhuetl]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2025-03-02-blog-cevedale-from-pizzini.md]
+related: [ortler-alps, cevedale, rifugio-pizzini]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2025-03-05-article-spring-snow.md]
+related: [spring-snow, corn-snow, aspect]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2025-03-08-avalanche-course-handout.md]
+related: [avalanche-danger-scale, glacier-travel, spring-snow]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2025-04-13-trip-report-wildspitze.md]
+related: [wildspitze, tour-log]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2025-05-20-notes-alta-via-1.md]
+related: [alta-via-1, dolomites]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-07-14-clip-eiger-rotstock.md]
+related: [eiger-rotstock, bernese-alps]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-08-04-clip-mittenwalder-hoehenweg.md]
+related: [mittenwalder-hoehenweg, karwendel, brunnstein-hut]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-08-06-clip-fellaria-glacier.md]
+related: [fellaria-glacier, rifugio-bignami, valmalenco]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-08-11-clip-jimmi-hut.md]
+related: [jimmi-hut, dolomites]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-08-12-clip-luenersee.md]
+related: [luenersee, douglass-hut, raetikon]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-08-24-clip-rifugio-nuvolau.md]
+related: [monte-nuvolau, rifugio-nuvolau, dolomites]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-08-24-clip-surenenpass.md]
+related: [surenenpass, uri-alps]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-08-28-clip-rotspitze.md]
+related: [rotspitze, erfurter-hut, rofan]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-08-30-clip-jegihorn.md]
+related: [jegihorn, pennine-alps]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-08-31-clip-sassolungo.md]
+related: [langkofelkar, rifugio-vicenza, dolomites]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-01-clip-bivacco-fiamme-gialle.md]
+related: [bivacco-fiamme-gialle, dolomites]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-01-clip-swiss-mountain-huts.md]
+related: [cabane-de-moiry, pennine-alps, bernese-alps]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-01-clip-three-dolomites-huts.md]
+related: [rifugio-passo-santner, rifugio-nuvolau, dolomites]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-02-clip-rifugio-del-grande-camerini.md]
+related: [rifugio-del-grande-camerini, valmalenco]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-05-clip-rifugio-vicenza.md]
+related: [rifugio-vicenza, langkofelkar, dolomites]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-07-clip-leutascher-geisterklamm.md]
+related: [leutascher-geisterklamm, wetterstein]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-11-clip-cabane-de-moiry.md]
+related: [lac-de-moiry, cabane-de-moiry, pennine-alps]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-13-clip-alpinisteig.md]
+related: [alpinisteig, dolomites]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-15-clip-hochtennbodensteig.md]
+related: [hochtennbodensteig, birgitzkoepflhaus, stubai-alps]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-16-clip-becherhaus.md]
+related: [becher, becherhaus, stubai-alps]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-16-clip-stubai-summit.md]
+related: [wilder-freiger, stubai-alps]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-17-clip-rifugio-torre-di-pisa.md]
+related: [latemar-torre-di-pisa, rifugio-torre-di-pisa, dolomites]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-18-clip-rifugio-passo-santner.md]
+related: [rifugio-passo-santner, dolomites]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-20-clip-jegihorn-details.md]
+related: [jegihorn, weissmies-hut, pennine-alps]
+<<<<< next page >>>>>
+type: source
+tags: [source]
+updated: 2026-10-02
+sources: [2026-09-20-clip-oberaletsch-hut.md]
+related: [oberaletsch, oberaletsch-hut, bernese-alps]
+<<<<< next page >>>>>
+type: source
+tags: [source, ski-touring, safety]
+updated: 2026-10-02
+sources: [2026-10-02-dav-decisions-in-avalanche-terrain.md]
+related: [deutscher-alpenverein, avalanche-decision-making, tour-planning-3x3, avalanche-danger-scale]
+<<<<< next page >>>>>
+type: source
+tags: [source, safety, emergency]
+updated: 2026-10-02
+sources: [2026-10-02-dav-emergency-numbers-alps.md]
+related: [deutscher-alpenverein, alpine-emergency]
+<<<<< next page >>>>>
+type: source
+tags: [source, safety, emergency]
+updated: 2026-10-02
+sources: [2026-10-02-dav-how-an-emergency-call-works.md]
+related: [deutscher-alpenverein, alpine-emergency]
+<<<<< next page >>>>>
+type: source
+tags: [source, hiking, grades]
+updated: 2026-10-02
+sources: [2026-10-02-dav-mountain-trail-grades.md]
+related: [deutscher-alpenverein, mountain-trail-grades]
+<<<<< next page >>>>>
+type: source
+tags: [source, ski-touring, nature]
+updated: 2026-10-02
+sources: [2026-10-02-dav-natuerlich-auf-tour.md]
+related: [deutscher-alpenverein, wildlife-friendly-touring, bavarian-prealps]
+<<<<< next page >>>>>
+type: source
+tags: [source, huts]
+updated: 2026-10-02
+sources: [2026-10-02-dav-staying-at-alpine-club-huts.md]
+related: [deutscher-alpenverein, hut-etiquette]
+<<<<< next page >>>>>
+type: source
+tags: [source, organization]
+updated: 2026-10-02
+sources: [2026-10-02-dav-structure.md]
+related: [deutscher-alpenverein]
+<<<<< next page >>>>>
+type: source
+tags: [source, ski-touring, safety]
+updated: 2026-10-02
+sources: [2026-10-02-dav-ten-ski-touring-recommendations.md]
+related: [deutscher-alpenverein, tour-planning-3x3, avalanche-safety-kit, avalanche-decision-making, wildlife-friendly-touring]
+<<<<< next page >>>>>
+type: source
+tags: [source, planning]
+updated: 2026-10-02
+sources: [2026-10-02-dav-tour-planning-basics.md]
+related: [deutscher-alpenverein, tour-planning-3x3]
+<<<<< next page >>>>>
+type: source
+tags: [source, hiking, grades]
+updated: 2026-10-02
+sources: [2026-10-02-dav-via-ferrata-grades.md]
+related: [deutscher-alpenverein, via-ferrata-grades]
+<<<<< next page >>>>>
+type: source
+tags: [source, safety, avalanche]
+updated: 2026-10-02
+sources: [2026-10-02-eaws-avalanche-danger-scale.md]
+related: [eaws, avalanche-danger-scale]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-gold-cup-standard-guide.md]
+related: [extraction, brew-ratio, grind-size, water-for-coffee]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-hario-v60-guide.md]
+related: [v60, grind-size, brew-ratio]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-honey-process-guide.md]
+related: [coffee-processing]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology, history]
+updated: 2026-10-02
+sources: [2026-10-02-mactutor-history-of-topology.md]
+related: [topology, leonhard-euler, bernhard-riemann, henri-poincare, luitzen-brouwer, felix-hausdorff, euler-characteristic]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology, own-notes]
+updated: 2026-10-02
+sources: [2026-10-02-notes-topology-study-log.md]
+related: [connectedness, compactness, homotopy, manifold, hairy-ball-theorem]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology, own-notes, history]
+updated: 2026-10-02
+sources: [2026-10-02-notes-topology-who-is-who.md]
+related: [leonhard-euler, bernhard-riemann, henri-poincare, felix-hausdorff, luitzen-brouwer, emmy-noether, grigori-perelman, topology]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-sca-water-standards-glossary.md]
+related: [water-for-coffee, extraction]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-sucafina-kenya-kagurumai.md]
+related: [coffee-kenya, sl28, coffee-processing]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wcr-bourbon.md]
+related: [bourbon, typica]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wcr-geisha.md]
+related: [geisha, coffee-ethiopia]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wcr-sensory-lexicon.md]
+related: [cupping]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wcr-sl28.md]
+related: [sl28, coffee-kenya, bourbon]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wcr-typica.md]
+related: [typica, bourbon]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-brouwer-fixed-point-theorem.md]
+related: [brouwer-fixed-point-theorem, luitzen-brouwer, compactness, continuity]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-chemex.md]
+related: [chemex, v60]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-coffee-bean.md]
+related: [coffee, coffee-processing]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-coffee-brazil.md]
+related: [coffee-brazil, coffee-processing]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-coffee-cupping.md]
+related: [cupping, coffee-ethiopia]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-coffee-ethiopia.md]
+related: [coffee-ethiopia, geisha]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-coffee-preparation.md]
+related: [french-press, aeropress, espresso-machine, moka-pot, brew-ratio]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-coffee-production.md]
+related: [coffee, coffee-ethiopia, coffee-brazil]
+<<<<< next page >>>>>
+type: source
+tags: [source, coffee]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-coffee-roasting.md]
+related: [roast-levels, extraction]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-euler-characteristic.md]
+related: [euler-characteristic, classification-of-surfaces, leonhard-euler, hairy-ball-theorem]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-fundamental-group.md]
+related: [fundamental-group, homotopy, poincare-conjecture, henri-poincare]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-knot-theory.md]
+related: [knot, homeomorphism]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-poincare-conjecture.md]
+related: [poincare-conjecture, grigori-perelman, henri-poincare, fundamental-group, manifold]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-surface-topology.md]
+related: [classification-of-surfaces, manifold, euler-characteristic]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-topological-space.md]
+related: [topological-space, open-set, continuity, homeomorphism, felix-hausdorff]
+<<<<< next page >>>>>
+type: source
+tags: [source, mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-topology.md]
+related: [topology, homeomorphism, topological-space, coffee-mug-and-donut, leonhard-euler, henri-poincare, felix-hausdorff]
+<<<<< next page >>>>>
+type: synthesis
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-topology.md, 2026-10-02-wikipedia-fundamental-group.md, 2026-10-02-wikipedia-euler-characteristic.md, 2026-10-02-wikipedia-surface-topology.md]
+related: [homeomorphism, fundamental-group, euler-characteristic, classification-of-surfaces, topological-invariants-overview]
+<<<<< next page >>>>>
+type: synthesis
+tags: [mountains, ski-tour, planning]
+updated: 2026-10-02
+sources: [2025-02-03-excerpt-oetztal-ski-tours.md, 2025-03-02-blog-cevedale-from-pizzini.md, 2025-03-05-article-spring-snow.md, 2025-03-08-avalanche-course-handout.md, 2025-04-13-trip-report-wildspitze.md]
+related: [similaun, cevedale, spring-snow, corn-snow, aspect, glacier-travel, martin-busch-hut, rifugio-pizzini, oetztal-alps, ortler-alps, wildspitze]
+<<<<< next page >>>>>
+type: synthesis
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-notes-topology-study-log.md, 2026-10-02-wikipedia-fundamental-group.md, 2026-10-02-wikipedia-euler-characteristic.md, 2026-10-02-wikipedia-surface-topology.md, 2026-10-02-wikipedia-knot-theory.md, 2026-10-02-notes-topology-who-is-who.md]
+related: [luitzen-brouwer, connectedness, compactness, fundamental-group, euler-characteristic, knot, homeomorphism, homotopy]
+<<<<< next page >>>>>
+type: synthesis
+tags: [coffee, brewing]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-chemex.md, 2026-10-02-hario-v60-guide.md, 2026-10-02-wikipedia-coffee-preparation.md, 2026-10-02-wikipedia-coffee-roasting.md, 2026-10-02-honey-process-guide.md, 2026-10-02-wcr-geisha.md, 2026-10-02-wikipedia-coffee-ethiopia.md, 2026-10-02-wikipedia-coffee-brazil.md, 2026-10-02-gold-cup-standard-guide.md]
+related: [v60, chemex, french-press, aeropress, espresso-machine, moka-pot, roast-levels, coffee-processing, geisha, coffee-ethiopia, coffee-kenya, coffee-brazil, brew-log]
+<<<<< next page >>>>>
+type: topic
+tags: [coffee, log]
+updated: 2026-10-02
+sources: []
+related: [coffee, v60, extraction, grind-size, brew-ratio, which-brewer-for-which-bean]
+<<<<< next page >>>>>
+type: topic
+tags: [coffee]
+updated: 2026-10-02
+sources: []
+related: [coffee-ethiopia, coffee-kenya, coffee-brazil, geisha, sl28, bourbon, typica, v60, chemex, aeropress, french-press, espresso-machine, moka-pot, extraction, brew-ratio, grind-size, roast-levels, coffee-processing, water-for-coffee, cupping, which-brewer-for-which-bean, brew-log]
+<<<<< next page >>>>>
+type: topic
+tags: [mountains, hike, via-ferrata, alpine-tour]
+updated: 2026-10-02
+sources: [2023-08-16-trip-report-zugspitze-reintal.md, 2025-05-20-notes-alta-via-1.md, 2026-10-02-dav-mountain-trail-grades.md, 2026-10-02-dav-via-ferrata-grades.md]
+related: [mountains, tour-log, mountain-trail-grades, via-ferrata-grades]
+<<<<< next page >>>>>
+type: topic
+tags: [mathematics]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-topology.md, 2026-10-02-mactutor-history-of-topology.md]
+related: [topology, leonhard-euler, emmy-noether]
+<<<<< next page >>>>>
+type: topic
+tags: [mountains]
+updated: 2026-10-02
+sources: []
+related: [ski-touring, hiking, tour-log, deutscher-alpenverein]
+<<<<< next page >>>>>
+type: topic
+tags: [mountains, ski-tour]
+updated: 2026-10-02
+sources: [2025-03-05-article-spring-snow.md, 2025-03-08-avalanche-course-handout.md, 2026-10-02-dav-ten-ski-touring-recommendations.md]
+related: [mountains, spring-snow, tour-log]
+<<<<< next page >>>>>
+type: topic
+tags: [mathematics, topology]
+updated: 2026-10-02
+sources: [2026-10-02-wikipedia-topology.md, 2026-10-02-mactutor-history-of-topology.md, 2026-10-02-notes-topology-study-log.md, 2026-10-02-notes-topology-who-is-who.md]
+related: [mathematics, topological-space, homeomorphism, fundamental-group, classification-of-surfaces, topological-invariants-overview, coffee-mug-and-donut]
+<<<<< next page >>>>>
+type: topic
+tags: [mountains, log]
+updated: 2026-10-02
+sources: [2023-08-16-trip-report-zugspitze-reintal.md, 2024-04-21-trip-report-piz-buin.md, 2025-01-19-trip-report-hirschberg.md, 2025-04-13-trip-report-wildspitze.md]
+related: [mountains, ski-touring, hiking]

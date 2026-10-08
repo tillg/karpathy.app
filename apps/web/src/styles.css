@@ -533,3 +533,54 @@ a.tc { text-decoration: none; cursor: pointer; }
   .dl.skip, .banner .link { min-height: 44px; }
   .banner .link { display: inline-flex; align-items: center; padding: 0 6px; }
 }
+
+/* ---------- note outline (#79) ---------- */
+.outline { position: absolute; z-index: 20; display: flex; flex-direction: column; max-height: 70vh; background: var(--mat); -webkit-backdrop-filter: saturate(180%) blur(30px); backdrop-filter: saturate(180%) blur(30px);
+  border: .5px solid var(--sep); box-shadow: var(--shadow); animation: pop .18s ease-out; }
+.outline.panel { top: 60px; right: 16px; width: min(320px, calc(100% - 32px)); border-radius: 14px; }
+.outline.sheet { left: 0; right: 0; bottom: 0; border-radius: 14px 14px 0 0; border-bottom: 0; animation: sheet-up .25s cubic-bezier(.32,.72,0,1); }
+@keyframes sheet-up { from { transform: translateY(100%); } }
+.outline-scrim { position: absolute; inset: 0; z-index: 19; background: rgba(0,0,0,.28); animation: fade .2s; }
+.outline .grabber { flex: none; display: flex; justify-content: center; align-items: center; height: 22px; }
+.outline .grabber span { width: 36px; height: 5px; border-radius: 3px; background: var(--label3); }
+.outline-list { position: relative; list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; overscroll-behavior: contain; }
+.outline-item { display: flex; align-items: center; width: 100%; min-height: 44px; padding: 6px 16px; text-align: left; font-size: 15px; line-height: 1.3; color: var(--label); }
+.outline-item:hover { background: var(--fill2); }
+.outline-item[aria-current] { color: var(--tint); font-weight: 600; background: var(--tint-soft); }
+.note-info { flex: none; margin: 0; padding: 10px 16px; border-top: .5px solid var(--sep); font-size: 12.5px; color: var(--label2); }
+
+/* ---------- properties form (#82) ---------- */
+.props-form { margin: 0 0 14px; background: var(--bg2); border: .5px solid var(--sep); border-radius: 12px; font-size: 14px; }
+.props-head .sp { flex: 1; }
+.props-head { display: flex; align-items: center; gap: 6px; padding: 0 6px 0 4px; min-height: 44px; }
+.props-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 8px; font-weight: 600; color: var(--label); }
+.props-count { color: var(--label2); font-weight: 500; }
+.props-yaml { min-height: 32px; padding: 0 10px; border-radius: 8px; font: 600 12.5px var(--mono); color: var(--tint); background: var(--fill2); }
+.props-row { display: grid; grid-template-columns: minmax(80px, 30%) 1fr; gap: 4px 10px; align-items: center; padding: 6px 12px; border-top: .5px solid var(--sep); }
+.props-key { color: var(--label2); font-size: 13px; overflow-wrap: anywhere; }
+.props-val { min-width: 0; overflow-wrap: anywhere; }
+.props-bar { margin: 0 0 8px; font-size: 13px; }
+.props-input { width: 100%; max-width: 100%; min-height: 36px; border: .5px solid var(--sep); background: var(--paper); border-radius: 8px; padding: 0 10px; font-size: 15px; color: var(--label); }
+.props-date { display: flex; gap: 6px; align-items: center; }
+.props-btn { flex: none; min-height: 36px; padding: 0 10px; border-radius: 8px; background: var(--fill2); color: var(--tint); font-weight: 600; font-size: 13.5px; }
+.props-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.props-chips .chip { display: inline-flex; align-items: center; gap: 2px; }
+.chip-x { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; color: var(--label2); }
+.props-raw { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.props-rawtext { font: 13px/1.4 var(--mono); color: var(--label2); white-space: pre-wrap; }
+.props-violation { display: block; margin-top: 4px; font-size: 12.5px; color: var(--orange-ink); }
+.props-warn { color: var(--orange-ink); font-weight: 600; }
+.props-add { position: relative; flex: 1 1 120px; min-width: 120px; }
+.props-sugg { position: absolute; z-index: 10; left: 0; right: 0; top: 100%; margin-top: 4px; display: flex; flex-direction: column; background: var(--bg2); border: .5px solid var(--sep); border-radius: 10px; box-shadow: var(--shadow); padding: 4px 0; }
+.props-sugg button { min-height: 40px; padding: 0 12px; text-align: left; font-size: 15px; color: var(--label); }
+.props-sugg button:hover { background: var(--fill2); }
+/* Phone: every control in the form is a 44 px tap target. */
+#app.phone .props-form :is(button, input, select) { min-height: 44px; }
+#app.phone .props-form .chip-x { min-width: 44px; margin: -10px -8px -10px -6px; }
+#app.phone .props-row { grid-template-columns: 1fr; }
+/* Selects: no native look (WebKit ignores their height otherwise), a chevron instead. */
+.props-form select.props-input { -webkit-appearance: none; appearance: none; padding-right: 28px;
+  background: var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238a8a8e' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 10px center; }
+.props-addbtn { min-height: 40px; padding: 0 12px; margin: 2px 4px 4px; border-radius: 8px; color: var(--tint); font-weight: 600; font-size: 14px; }
+.props-addbtn:hover:not(:disabled) { background: var(--fill2); }
+.props-addrow { grid-template-columns: 1fr auto; }

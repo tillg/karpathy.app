@@ -89,6 +89,13 @@ flowchart LR
   puts `![[name]]` on its own line as one isolated undo step and returns false once the editor is gone) and
   `setDoc(text)` (the reload's minimal change, applied at once). A `domEventHandlers` drop handler takes file drops
   (`posAtCoords`, outline class `cm-drop-target`) and leaves text drags to CodeMirror. See [Uploads](#uploads).
+  For the outline and the properties form the handle also has `outline()` (headings from the syntax tree),
+  `selectionText()`, `applyChange(change, expect)`, and the props `onFrontmatter`, `hideFrontmatter`,
+  `onRevealFrontmatter`, `onSelection`; see [Outline and properties](#outline-and-properties).
+- **Outline and note info** (`lib/outline.ts`, `lib/noteinfo.ts`, `OutlinePanel`): see
+  [Outline and properties](#outline-and-properties).
+- **Properties form** (`lib/frontmatter.ts`, `lib/schema.ts`, `PropertiesPanel`, `Linked`): see
+  [Outline and properties](#outline-and-properties).
 - **Commands** (`lib/commands.ts`, `ChatPane`, `Dialogs.tsx` `MoveNotice`): the command palette, command chips and the
   agents-move notice; see [Commands](#commands) and [The agents move](#the-agents-move).
 - **Media** (`lib/media.ts`, `lib/embed.ts`, shared `MEDIA` table): see [Media embeds](#media-embeds).
@@ -511,6 +518,83 @@ The app moves a vault to the `.agents` standard (`AGENTS.md`, `.agents/skills/`)
   editor through the watcher's `files-changed` events like any change on disk. A moved skill folder shows as one delete plus
   one add per file in the uncommitted changes.
 
+## Outline and properties
+
+Two note-pane features (#79, #82), web only: no route, no API change.
+
+```mermaid
+flowchart LR
+    subgraph outline["Outline (#79)"]
+      OL["lib/outline.ts<br/>collectHeadings, outlineOfText,<br/>currentHeading"]
+      NI["lib/noteinfo.ts<br/>countText, readingMinutes"]
+      OP["OutlinePanel<br/>sheet or panel"]
+    end
+    subgraph props["Properties (#82)"]
+      FM["lib/frontmatter.ts<br/>parseProps, editFrontmatter,<br/>checkEdit"]
+      SC["lib/schema.ts<br/>DEFAULT_SCHEMA, parseSchema,<br/>validate"]
+      PP["PropertiesPanel"]
+      HF["lib/cm.ts<br/>hideFrontmatter"]
+    end
+    ED["Editor.tsx"]
+    NP["NotePane"]
+    ST["store.tsx<br/>schema, propsView"]
+    OL & NI --> OP --> NP
+    FM & SC --> PP --> NP
+    HF --> ED
+    ED -->|outline, onFrontmatter,<br/>selectionText| NP
+    NP -->|applyChange| ED
+    ST --> NP
+```
+
+**Outline.** Both modes read the headings with the editor's Lezer Markdown parser (`commonmarkLanguage`), so the
+list is the same in Write and Read mode; code drops out by the grammar, the frontmatter (its closing `---` would make
+`title: x` a setext heading) and `%%comments%%` are skipped explicitly (`frontmatterEndLine`, `commentRanges` in
+`lib/markdown.ts`, shared with the editor's embed and line plugins). Write mode reads them from CodeMirror's syntax
+tree (`ensureSyntaxTree`, kept up to date incrementally; `outlineOfText` is the fallback for a tree not ready in
+50 ms), Read mode from `outlineOfText(text)`. While typing, the outline and the note info follow a *settled* copy of
+the text, set once no edit came for 300 ms (the pause is keyed on the editor's `onChange`, not on renders); the list of
+outline items is memoized, so a note with thousands of headings re-renders only when they or the current one change.
+A jump: Write mode `gotoLine(line, { focus: false, align: 'start' })`, Read mode `scrollToLine(scroller, line,
+'top')` plus the `hit` class for 1.5 s; no history entry. The current section comes from a rAF-throttled scroll
+listener (`topLine()` / `topBlockLine()` → `currentHeading`). Phone: a bottom sheet (`aria-modal`, scrim, grabber,
+inside the transformed pane so it sits above the tab bar); tablet: a floating panel that closes on a jump or a tap
+outside; wide: the same panel, open across notes. Escape is handled on `document` with `preventDefault`, so the
+Shell's window handler skips it. Note info counts with `Intl.Segmenter` (words: `isWordLike`; characters: graphemes
+without line breaks) on the body (`splitFrontmatter`), or the selection: Write mode `selectionText()` clipped past
+the frontmatter, Read mode the DOM selection inside `.rd`, read on the button's `pointerdown` (iOS clears it on tap).
+
+**Properties form.** The frontmatter comes from the editor (`onFrontmatter`: `{ from, to, text }` in CodeMirror's
+positions, reported on create and when that text changes), so form edits and the editor agree on offsets also for
+CRLF notes; NotePane keys it by note, so another note's report never shows. `parseProps` parses with `yaml`'s
+`Parser` + `Composer({ keepSourceTokens })`; errors, warnings, a non-map, keys that print the same (`1` / `"1"`) and
+an unresolvable alias make it unreadable (the YAML lines show). Editable: one-line plain or quoted scalars, one-line
+flow lists and block lists of them; the rest is `raw`. Edits follow [ADR 0005](../../docs/adr/0005-frontmatter-edits-through-the-yaml-cst.md):
+
+| Edit | How the new text is made |
+|---|---|
+| `set` on a scalar | `CST.setScalarValue` on the value's token, in its own style when that reads back as the value, else `PLAIN`, else double-quoted; then `CST.stringify` |
+| `set` on an empty value | a splice after `key:` (a comment after it stays) |
+| `add` | flow: `, item` after the last item (or into `[]`); block: a new line with the last item's prefix; empty value: `[item]` |
+| `remove` | flow: the item and its separator; block: the item's line (its comment goes with it); the only block item: `key: []` |
+| `addKey` | a new last line before trailing blank lines; lists as flow lists |
+
+Every result passes `checkEdit` (parses, other properties equal and in order, only the pair's lines or the line after
+them changed, the value reads back as intended) or is refused. `NotePane.editProp` computes the edit on the form's
+text and calls `applyChange(minimalChange + from, expect)`, which writes only while the editor still holds `expect`
+(an AI reload or pull meanwhile: nothing written, a toast); the transaction is a normal user change (`isolateHistory`,
+`input.properties`), so autosave, drafts and undo treat it like typing. `hideFrontmatter(onBlocked)` is a
+`StateField` with one block `Decoration.replace` over the frontmatter lines plus `atomicRanges`, and a
+`transactionFilter` that clamps cursor moves and select-all to the body and drops typed or deleted changes that would
+reach the hidden lines (Backspace at the body start) while calling `onBlocked`, which shows the lines. A search match
+(`select.search`) or a `gotoLine` into the frontmatter shows them too. The store loads `.karpathy/schema.json` when a
+vault becomes usable and on `files-changed` naming it (404 → default; invalid → default and a toast once per problem
+and vault); `propsView` is localStorage `karpathy.propsView`; the per-note YAML override `yamlFor` lives in NotePane
+and clears on a note change. `PropertiesPanel` renders one field per property (select with an extra flagged option
+for a value outside the enum, date + Today, decimal input that keeps non-canonical numbers as typed, switch, chips
+with an Add field and note suggestions for link lists, `raw` with "Edit in YAML"), violations under their field,
+missing required keys as their own rows, and **+ Property** (a datalist of the schema's missing keys, any
+`isPropertyName` key; starting value `[]`, today or `""` by kind).
+
 ## Media embeds
 
 ```mermaid
@@ -765,7 +849,7 @@ flowchart LR
 | Volume `opencode-data` | opencode sessions = chat history, including attached files (base64, after opencode's resize), until the chat is deleted. | opencode |
 | localStorage `karpathy.chips:<vault>:<chat>` | Unsent chat attachments (path, version, type, size) and their source folder. | web |
 | Volume `caddy-data` | TLS certificates and keys. | proxy |
-| Browser localStorage | Token, local drafts, tree expansion state, tree sort and filter (`karpathy.treeSort`, `karpathy.treeFilter`), main pane, mode preference (`karpathy.mode`). | web |
+| Browser localStorage | Token, local drafts, tree expansion state, tree sort and filter (`karpathy.treeSort`, `karpathy.treeFilter`), main pane, mode preference (`karpathy.mode`), properties view (`karpathy.propsView`). | web |
 | localStorage `karpathy.recentCommands.<vault>`, `karpathy.shownMoves` | The last 10 commands started in a vault (chip order); the agents moves already announced (last 50). | web |
 | Backend memory | Per vault: the skill stamp of the last opencode refresh, the last agents move, the skill-link scan after it, running commit-message proposals. Lost on restart (the first check then refreshes). | backend |
 | opencode image `/opt/opencode-config/opencode/` | Tools `open_note`, `open_url` and `save_url`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
@@ -895,6 +979,9 @@ The ones that shape the whole system:
   swappable.
 - **Editor = CodeMirror 6 on raw Markdown** ([ADR 0003](../../docs/adr/0003-codemirror-raw-markdown-editor.md)):
   lossless round trip, clean git diffs, no fight with the AI's raw edits.
+- **Form edits go through the YAML CST and are refused when lossy**
+  ([ADR 0005](../../docs/adr/0005-frontmatter-edits-through-the-yaml-cst.md)): `Document.toString()` moves comments
+  and re-styles scalars; js-yaml has no CST. One invariant (`checkEdit`) guards every edit kind.
 - **Vault = GitHub repo, sync = git:** the app holds no content of its own; Obsidian on other devices uses the same
   remote. One GitHub token for all vaults, editable in the app (the deployment secret is the fallback); if vaults
   ever span several owners, the follow-up is one token per owner, not per vault.
@@ -1007,6 +1094,13 @@ The ones that shape the whole system:
 
 ## Testing
 
+- **Outline and properties tests:** units `outline.test.ts`, `noteinfo.test.ts`, `schema.test.ts`,
+  `frontmatter.test.ts` (incl. the demo vault's 212 `Wiki/` frontmatters set-and-back, add-and-remove, byte for byte)
+  and `frontmatter.prop.test.ts` (fast-check, 1,000 runs per property: stringify identity, every edit refused or
+  byte-identical outside the edited pair, set-back and add/remove identity, refusals under 5 %); e2e
+  `outline.spec.ts` (both modes, jumps, current section, sheet/panel rules, note info, selection, no recompute while
+  typing in a 5,000-heading note) and `properties.spec.ts` (form/YAML, one field = one line, undo, CRLF, chips,
+  stale edits, hits in the frontmatter, the guard, schema file, + Property, phone, read-only); a11y scans with both open.
 - **Incoming-changes tests:** `repo.test.ts` (count in files, GitHub's side only, root pathspec, no merge base),
   `lock.test.ts` (`tryShared` never queues), `api.test.ts` (fetch schedule with a short `fetchIntervalMs`, joined
   fetches, `pullError`, `POST /pull` incl. 423 and a conflict), `incoming.test.ts` (the AI-turn rule, which the e2e

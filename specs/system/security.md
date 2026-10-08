@@ -202,6 +202,11 @@ prod proxy adds a strict **CSP** (`default-src 'self'`, `script-src 'self'`, `ob
 - **Open** (PDF only) navigates a new tab to a blob the app typed `application/pdf`, so only the PDF viewer can show
   it; no `frame-src` or `object-src` relaxation.
 
+**Properties and the schema file** come from the vault too: property values and heading texts render as React text
+(links through the same resolver as wikilinks), never as HTML. `.karpathy/schema.json` is checked by hand (known
+kinds, strings only) and can only change which fields and flags the form shows; rule lookups never reach
+`Object.prototype` (a key named `constructor`). It is not harness config: the AI may edit it like any vault file.
+
 ## Runtime hardening
 
 - On a target only the proxy publishes ports (443 only, no port 80); backend and opencode are on the internal network.
