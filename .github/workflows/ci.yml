@@ -22,9 +22,16 @@ jobs:
       - run: docker build --progress=plain -t kai-test-opencode -f deploy/opencode/Dockerfile .
         timeout-minutes: 10
       - run: docker build -q -t kai-test-egress-img -f deploy/egress/Dockerfile .
+      # The ingest image's build context: the private ingest-email repo at its pinned commit (read-only deploy key).
+      - id: ie
+        run: echo "ref=$(cat deploy/ingest/ingest-email.ref)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with: { repository: tillg/ingest_email, ref: '${{ steps.ie.outputs.ref }}', ssh-key: '${{ secrets.INGEST_EMAIL_DEPLOY_KEY }}', path: tmp/ingest_email-src, persist-credentials: false }
+      - run: docker build -q --build-context ingest_email=tmp/ingest_email-src -t kai-test-ingest -f deploy/ingest/Dockerfile .
       - run: npm test
       # Every environment in deploy/settings/ validates.
       - run: node_modules/.bin/tsx packages/settings/src/cli.ts check
+      - run: bash deploy/ingest/run.test.sh && bash deploy/ingest/server.test.sh
       - run: npm run build -w apps/web
       # Dev stacks take their ports from deploy/stack.sh (`just dev up`); render stack 1.
       - run: docker compose -f deploy/compose.yml -f deploy/compose.dev.yml config -q

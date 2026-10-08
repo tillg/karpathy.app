@@ -17,6 +17,7 @@
     "question": "deny",
     "doom_loop": "deny",
     "save_url": "deny",
+    "move_to_sources": "deny",
     "read": {
       "*": "allow",
       "*.env": "deny",
@@ -44,7 +45,8 @@
         },
         "open_note": "allow",
         "open_url": "allow",
-        "save_url": "allow"
+        "save_url": "allow",
+        "move_to_sources": "allow"
       }
     },
     "vault-readonly": {

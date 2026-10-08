@@ -97,6 +97,28 @@ working. It never overwrites an existing name (the clash is listed), shows a not
 ordinary uncommitted changes (discarding them undoes the move until the next pull). Skills that come from a
 Claude Code plugin aren't in the vault and don't show; copy them into the vault.
 
+## Ingest
+
+New sources (mails, links, Instagram posts) are fetched on the server, no Mac needed:
+
+- **`Input/`** in a vault is the **ingest queue**: one folder per source not yet turned into wiki pages. The file
+  tree shows a red count on `Input` (and on the phone's Files tab). Anything you drop into `Input/` (Obsidian,
+  upload) counts too; `Sources/` is the archive of what was ingested. Changes under `Input/` don't count toward the
+  commit reminder.
+- **Ingest** next to the count opens a new chat and sends `/ingest`: the vault's own `ingest` skill
+  (`.agents/skills/ingest/SKILL.md`, maintained in the vault) writes the wiki pages and moves each finished folder to
+  `Sources/` with the AI tool `move_to_sources`. Without that skill there is no button.
+- The **ingest service** (compose service `ingest`, [`deploy/ingest/`](deploy/ingest/)) runs
+  [ingest-email](https://github.com/tillg/ingest_email): every 15 minutes it fetches the mails of a Gmail label into
+  the vault's `Input/`, every minute it resolves the links in them (web pages, PDFs with OCR, YouTube, GitHub,
+  Instagram) as sibling folders. It reaches the internet only through the egress proxy and never commits. Which label
+  feeds which vault is `ingest.profiles` in [`deploy/settings/`](deploy/settings/) (empty = idle; only the
+  production settings may have profiles, dev and test stacks never read a real label).
+- **Gmail access**: `just ingest-auth <target> <email>` copies this Mac's gog OAuth client and the account's refresh
+  token into the target's ingest service. **Instagram**: Settings › Instagram, username and password (plus a 2FA code
+  if Instagram asks); the server logs in and keeps only the session. "Expired — Reconnect" there, and a notice in the
+  Vaults list, when Instagram rejected it.
+
 ## Status
 
 MVP (spec milestone M4) implemented: vaults from GitHub, file tree, CodeMirror editor with

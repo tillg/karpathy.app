@@ -2,6 +2,7 @@ import { MAX_UPLOAD_BYTES, rewriteLinks, WARN_UPLOAD_BYTES, type AgentsMove, typ
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError, api, errorText } from './lib/api';
 import { prepare } from './lib/attach';
+import { recordCommand } from './lib/commands';
 import { draftAction, dropDraft, dropVaultDrafts, getDraft, putDraft } from './lib/drafts';
 import { invalidate } from './lib/media';
 import { readNdjson } from './lib/ndjson';
@@ -527,6 +528,20 @@ function useAppState() {
   /** The graph is shown in the note pane, over the open note (which stays as it was); opening a note closes it. */
   const [graphOpen, setGraphOpenState] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
+  /** Ingest button: a new chat that sends `/ingest` (the vault's ingest skill), shown at once. */
+  const ingestNow = useCallback(async () => {
+    const v = activeRef.current;
+    if (!v) return;
+    try {
+      const { chatId: id } = await api.newChat(v);
+      if (activeRef.current !== v) return;
+      setChatId(id);
+      if (phone) setPhoneTab('chat');
+      else setChatOpen(true);
+      recordCommand(v, 'ingest');
+      await api.prompt(v, id, '/ingest');
+    } catch (e) { toast(errorText(e)); }
+  }, [phone, toast]);
 
   /** The pane's scroll element, set by NotePane; read when a note is left, to remember its place. */
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -841,7 +856,7 @@ function useAppState() {
     note, currentText, openNote, isEditing, closeNote, forgetVault, editDraft, flush, uploadToNote, reloadNote, overwriteNote, deleteNote, newNote, stale, setStale,
     keepDeletedNote, closeDeletedNote,
     followLink, exists, readOnly, conflict,
-    section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain,
+    section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain, ingestNow,
     schema: schema?.vault === activeId ? schema.schema : DEFAULT_SCHEMA,
     sidebarOpen, setSidebarOpen, mode, setMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, adminOpen, setAdminOpen, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
   };

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createApp } from './app.js';
 import { ChatService } from './chat.js';
 import { OpencodeCommitMessages } from './commit-message.js';
@@ -36,7 +37,9 @@ vaults.beforeRemove = (id) => chat.deleteAllChats(id);
 void chat.init().catch((e) => console.warn('chat init:', (e as Error).message));
 const commitMessages = new OpencodeCommitMessages(vaults, store, harness, (id) => chat.dir(id));
 
-const app = createApp({ token: settings.token, vaults, store, githubToken, chat, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), version: env.version, built: env.built, deployed: env.deployed });
+const app = createApp({ token: settings.token, vaults, store, githubToken, chat, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), version: env.version, built: env.built, deployed: env.deployed,
+  // The ingest service's internal endpoint (Admin › Instagram): container wiring, the token a compose secret.
+  ...(process.env.INGEST_URL && process.env.INGEST_TOKEN_FILE ? { ingest: { url: process.env.INGEST_URL, token: readFileSync(process.env.INGEST_TOKEN_FILE, 'utf8').trim() } } : {}) });
 const server = app.listen(env.port, () => console.log(`backend listening on :${env.port}`));
 
 const shutdown = () => {

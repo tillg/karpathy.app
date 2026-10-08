@@ -1,4 +1,4 @@
-import type { FileEntry } from '@karpathy/shared';
+import { INPUT_DIR, type FileEntry } from '@karpathy/shared';
 
 export interface TreeNode {
   name: string;
@@ -77,6 +77,12 @@ export function buildTree(entries: FileEntry[], sort: TreeSort = DEFAULT_SORT, f
   };
   order(root);
   return root.children;
+}
+
+/** Input count: the direct, non-hidden sub-folders of the root `Input/` folder (loose files don't count). */
+export function inputCount(tree: TreeNode[]): number {
+  const input = tree.find((n) => n.dir && n.name === INPUT_DIR);
+  return input ? input.children.filter((c) => c.dir && !c.name.startsWith('.')).length : 0;
 }
 
 /** The folders above a path, outermost first (`a/b/c.md` → `a`, `a/b`). */

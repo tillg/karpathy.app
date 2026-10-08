@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { api, errorText } from '../lib/api';
-import { dismissReminder, reminderDue, type Dismissed } from '../lib/reminder';
+import { dismissReminder, reminderCount, reminderDue, type Dismissed } from '../lib/reminder';
 import { useApp } from '../store';
 import { Icon } from './Icon';
 
@@ -150,7 +150,7 @@ export function StaleDialog() {
 export function ReminderDialog() {
   const { status, settings, activeId, commitOpen, setCommitOpen, conflict } = useApp();
   const [dismissed, setDismissed] = useState<Record<string, Dismissed>>({});
-  const count = status?.changedCount ?? 0;
+  const count = reminderCount(status);
   const threshold = settings?.commitReminderThreshold ?? 4;
   const level = (activeId && dismissed[activeId]) || 0;
   const r = reminderDue(count, threshold, level);

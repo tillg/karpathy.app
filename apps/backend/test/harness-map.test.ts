@@ -72,6 +72,17 @@ describe('mapping edge cases', () => {
     expect(writtenPaths(part, '/vaults/a')).toEqual(['x.md', 'y.md', 'z.md']);
   });
 
+  it('move_to_sources part yields file-edited for Input/x and Sources/x', () => {
+    const files = [
+      { filePath: 'Input/x/index.md', movePath: 'Sources/x/index.md' },
+      { filePath: 'Input/x/photo.jpg', movePath: 'Sources/x/photo.jpg' },
+    ];
+    const part = { id: 'm1', tool: 'move_to_sources', state: { status: 'completed', input: { name: 'x' }, output: 'Moved to Sources/x', metadata: { files } } };
+    expect(mapToolPart(part, '/vaults/a')).toMatchObject({ tool: 'move_to_sources', path: 'Sources/x', writes: true });
+    expect(writtenPaths(part, '/vaults/a')).toEqual(['Input/x/index.md', 'Sources/x/index.md', 'Input/x/photo.jpg', 'Sources/x/photo.jpg']);
+    expect(writtenPaths({ ...part, state: { ...part.state, status: 'error' } }, '/vaults/a')).toEqual([]);
+  });
+
   it('save_url writes its filePath and keeps its url', () => {
     const part = { id: 's1', tool: 'save_url', state: { status: 'completed', input: { url: 'https://a.com/c.png', filePath: 'notes/c.png' }, output: 'saved notes/c.png (1 KB).' } };
     expect(mapToolPart(part, '/vaults/a')).toMatchObject({ tool: 'save_url', path: 'notes/c.png', url: 'https://a.com/c.png', writes: true, opens: false });

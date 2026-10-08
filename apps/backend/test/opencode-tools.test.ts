@@ -71,6 +71,42 @@ describe('opencode custom tools', () => {
   });
 });
 
+describe('move_to_sources tool', () => {
+  /** Runs the baked tool's execute inside the container (opencode's own Bun) on a vault folder; one output line. */
+  async function runMove(name: string) {
+    await writeFile(join(vaultsDir, 'move.ts'), [
+      "const t = (await import('/opt/opencode-config/opencode/tools/move_to_sources.ts')).default;",
+      `try { console.log(JSON.stringify(await t.execute({ name: ${JSON.stringify(name)} }, { directory: '/vaults/move' }))); } catch (e) { console.log('ERR ' + e.message); }`,
+    ].join('\n'));
+    const r = spawnSync('docker', ['exec', '-e', 'BUN_BE_BUN=1', oc.name, 'opencode', 'run', '/vaults/move.ts'], { encoding: 'utf8' });
+    return `${r.stdout}${r.stderr}`.trim();
+  }
+
+  it('opencode lists move_to_sources as a tool', async () => {
+    const r = await oc.fetch(`${oc.url}/experimental/tool/ids?directory=/vaults`);
+    expect(await r.json()).toContain('move_to_sources');
+  });
+
+  it('move_to_sources moves an item in agent vault', async () => {
+    await mkdir(join(vaultsDir, 'move/Input/mail-2026-10-08-a'), { recursive: true });
+    await writeFile(join(vaultsDir, 'move/Input/mail-2026-10-08-a/index.md'), '---\ntitle: a\n---\n');
+    expect(JSON.parse(await runMove('mail-2026-10-08-a'))).toEqual({
+      output: 'Moved to Sources/mail-2026-10-08-a',
+      metadata: { files: [{ filePath: 'Input/mail-2026-10-08-a/index.md', movePath: 'Sources/mail-2026-10-08-a/index.md' }] },
+    });
+    expect(await readFile(join(vaultsDir, 'move/Sources/mail-2026-10-08-a/index.md'), 'utf8')).toContain('title: a');
+    expect(await runMove('../x')).toMatch(/^ERR not an input item name/);
+  });
+
+  it('move_to_sources is not available in vault-readonly', async () => {
+    const cfg = JSON.parse(await readFile(join(import.meta.dirname, '../../../deploy/opencode/opencode.json'), 'utf8'));
+    expect(cfg.permission.move_to_sources).toBe('deny');
+    expect(cfg.agent.vault.permission.move_to_sources).toBe('allow');
+    expect(cfg.agent['vault-readonly'].permission.move_to_sources).toBeUndefined();
+    expect(cfg.agent['commit-message'].permission).toEqual({ '*': 'deny' });
+  });
+});
+
 describe('save_url tool', () => {
   /**
    * Runs the baked tool's execute inside the container, on opencode's own Bun, for each URL; one output line

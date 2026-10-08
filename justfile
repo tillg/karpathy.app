@@ -24,6 +24,9 @@ check:
     npm test
     just settings check
     bash deploy/stack.test.sh
+    bash deploy/ingest/run.test.sh
+    bash deploy/ingest/compose.test.sh
+    bash deploy/ingest/server.test.sh
     node --experimental-strip-types --test e2e/stack.unit.ts
 
 # App settings (deploy/settings/): `just settings show <env>|check|render <env> --out <dir> --secrets <dir>`
@@ -91,12 +94,16 @@ prodtest action="up" *args:
         mkdir -p tmp/prodtest/secrets
         [ -s tmp/prodtest/secrets/bearer_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/bearer_token
         [ -s tmp/prodtest/secrets/opencode_password ] || openssl rand -hex 24 > tmp/prodtest/secrets/opencode_password
+        [ -s tmp/prodtest/secrets/gog_keyring_password ] || openssl rand -hex 24 > tmp/prodtest/secrets/gog_keyring_password
+        [ -s tmp/prodtest/secrets/ingest_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/ingest_token
         touch tmp/prodtest/secrets/github_token tmp/prodtest/secrets/dns_api_token
         # Provider keys of a hosted gateway (deploy/settings/prodtest.local.yaml) come from the dev secrets.
         for k in deploy/secrets/*_api_key; do [ -e "$k" ] && cp "$k" tmp/prodtest/secrets/; done
         settings_legacy_check
         settings_render prodtest tmp/prodtest/secrets
         echo "$n" > tmp/prodtest/stack
+        # The ingest image's build context for the private ingest-email repo.
+        deploy/ingest/fetch-source.sh >/dev/null
         prodtest_compose up -d --build
         echo "App: https://localhost:$PRODTEST_PORT  token: $(cat tmp/prodtest/secrets/bearer_token)"
         ;;
@@ -169,6 +176,10 @@ deploy-e2e target *args:
 # Copy a target's access token to the clipboard; `--qr` also prints a login QR code for a phone/iPad
 token target *flag:
     deploy/ansible/token.sh {{target}} {{flag}}
+
+# Give a target's ingest service Gmail access: this Mac's gog OAuth client + the account's refresh token (`dev` = this checkout's dev stack)
+ingest-auth target email:
+    deploy/ansible/ingest-auth.sh {{target}} {{email}}
 
 # Copy an ntfy topic to the clipboard (subscribe to it in the ntfy app): a target's alert topic, or `dev` for dev progress (Keychain karpathy-ntfy-dev)
 ntfy-topic target:

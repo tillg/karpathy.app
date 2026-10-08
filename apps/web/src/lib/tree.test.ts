@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FileEntry } from '@karpathy/shared';
-import { ancestors, buildTree, DEFAULT_SORT, loadExpanded, loadSortFilter, saveExpanded, saveSortFilter, type TreeNode } from './tree';
+import { ancestors, buildTree, DEFAULT_SORT, inputCount, loadExpanded, loadSortFilter, saveExpanded, saveSortFilter, type TreeNode } from './tree';
 
 it('nests entries with folders first', () => {
   const t = buildTree([
@@ -125,5 +125,20 @@ describe('sort and filter (#122)', () => {
     const throwing = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('quota'); }, removeItem: () => {} };
     expect(loadSortFilter(throwing)).toEqual({ sort: DEFAULT_SORT, filter: 'any' });
     expect(() => saveSortFilter(throwing, { sort: DEFAULT_SORT, filter: 'ai' })).not.toThrow();
+  });
+});
+
+describe('input count', () => {
+  it('inputCount counts direct sub-folders of root Input/', () => {
+    expect(inputCount(buildTree([{ path: 'Wiki/a.md', type: 'file' }]))).toBe(0);
+    expect(inputCount(buildTree([
+      { path: 'Input/mail-1/index.md', type: 'file' },
+      { path: 'Input/insta-2', type: 'dir' },
+      { path: 'Input/web-3/index.md', type: 'file' },
+      { path: 'Input/web-3/nested/x.md', type: 'file' },
+      { path: 'Input/loose.md', type: 'file' },
+      { path: 'Input/.tmp-x/index.md', type: 'file' },
+      { path: 'Wiki/Input/mail-9/index.md', type: 'file' },
+    ]))).toBe(3);
   });
 });

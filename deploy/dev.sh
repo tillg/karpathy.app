@@ -30,6 +30,8 @@ case "${1:-up}" in
     mkdir -p secrets ../tmp/dev/remotes
     [ -s secrets/bearer_token ] || openssl rand -hex 24 > secrets/bearer_token
     [ -s secrets/opencode_password ] || openssl rand -hex 24 > secrets/opencode_password
+    [ -s secrets/gog_keyring_password ] || openssl rand -hex 24 > secrets/gog_keyring_password
+    [ -s secrets/ingest_token ] || openssl rand -hex 24 > secrets/ingest_token
     touch secrets/github_token secrets/dns_api_token
     # deploy/settings/ (dev.yaml, your dev.local.yaml) → tmp/settings/dev/, which compose reads.
     settings_render dev secrets || exit 1
@@ -38,6 +40,8 @@ case "${1:-up}" in
     # An Ollama model (~2 GB) lives with the native Ollama, pulled once for all stacks.
     model=$(sed -n 's/^DEFAULT_MODEL=//p' ../tmp/settings/dev/.env)
     case "$model" in ollama/*) ollama show "${model#ollama/}" >/dev/null 2>&1 || ollama pull "${model#ollama/}" ;; esac
+    # The ingest image's build context for the private ingest-email repo.
+    ingest/fetch-source.sh >/dev/null
     compose up -d --build
     echo "Stack $n: https://localhost:$PROXY_PORT  token: $(cat secrets/bearer_token)"
     ;;

@@ -185,6 +185,9 @@ export async function startOpencode(vaultsDir: string, env: Record<string, strin
     if (Date.now() > deadline) {
       const logs = docker('logs', name);
       docker('rm', '-f', name); // don't leak it
+      // Up inside, unreachable from the host: Rancher Desktop's port forwarder died (every published port refuses).
+      if (logs.includes('opencode server listening'))
+        throw new Error(`opencode is up in the container, but ${url} doesn't answer from the host: Rancher Desktop's port forwarder? Restart it: rdctl shutdown && open -a "Rancher Desktop". Logs: ${logs}`);
       throw new Error(`opencode did not start: ${logs}`);
     }
     await new Promise((r) => setTimeout(r, 300));
@@ -200,6 +203,34 @@ export async function startOpencode(vaultsDir: string, env: Record<string, strin
     pause: () => void docker('stop', name),
     resume: () => void docker('start', name),
   };
+}
+
+/** The ingest image (deploy/ingest), per checkout like IMAGE. */
+export const INGEST_IMAGE = `kai-test-ingest-${createHash('sha1').update(REPO).digest('hex').slice(0, 8)}`;
+/** Internal network like compose's `internal`: no route out, only the egress proxy (also on NET) reaches the internet. */
+const INGEST_NET = 'kai-test-ingest-net';
+
+/** Starts the ingest container on INGEST_NET with compose's proxy env. Its build context needs ingest-email's source. */
+export async function startIngest() {
+  ensureEgress();
+  const src = execFileSync(join(REPO, 'deploy/ingest/fetch-source.sh'), { encoding: 'utf8' }).trim();
+  try {
+    docker('build', '-q', '--build-context', `ingest_email=${src}`, '-t', INGEST_IMAGE, '-f', join(REPO, 'deploy/ingest/Dockerfile'), REPO);
+  } catch (e) {
+    if (!String((e as { stderr?: string }).stderr).includes('already exists')) throw e;
+  }
+  try { docker('network', 'create', '--internal', INGEST_NET); } catch (e) {
+    if (!String((e as { stderr?: string }).stderr).includes('already exists')) throw e;
+  }
+  try { docker('network', 'connect', INGEST_NET, EGRESS); } catch (e) {
+    if (!String((e as { stderr?: string }).stderr).includes('already exists')) throw e;
+  }
+  const name = `kai-test-ingest-${randomBytes(4).toString('hex')}`;
+  const proxy = `http://${EGRESS}:3128`;
+  // The loop idles without a config; the tests only exec into the container.
+  docker('run', '-d', '--name', name, '--network', INGEST_NET, '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true',
+    '-e', `HTTP_PROXY=${proxy}`, '-e', `HTTPS_PROXY=${proxy}`, '-e', 'NO_PROXY=localhost,127.0.0.1', INGEST_IMAGE, 'sleep', 'infinity');
+  return { name, stop: () => void docker('rm', '-f', name) };
 }
 
 /**

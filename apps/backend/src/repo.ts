@@ -1,6 +1,6 @@
 import { mkdir, readFile, rm, writeFile, access } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
-import type { Change, ChangeKind, ConflictChoice } from '@karpathy/shared';
+import { INPUT_DIR, type Change, type ChangeKind, type ConflictChoice } from '@karpathy/shared';
 import { Git, type GitOptions } from './git.js';
 
 export const PULL_STASH = 'karpathy-app-pull';
@@ -240,9 +240,11 @@ export class Repo {
       }
       await this.git.run(['reset', '-q', '--mixed', mb.stdout.trim()]);
     }
-    // 3. Stash uncommitted changes (whole repo).
-    const dirty = (await this.git.out(['status', '--porcelain', '--untracked-files=all'])).trim() !== '';
-    if (dirty) await this.git.run(['stash', 'push', '-q', '--include-untracked', '-m', PULL_STASH]);
+    // 3. Stash uncommitted changes (whole repo) except the ingest queue: the ingest service writes into Input/
+    // at any time and bind-mounts it, so the folder must never be removed and recreated by a stash.
+    const keepInput = ['--', '.', `:(exclude)${this.toRepoPath(INPUT_DIR)}`];
+    const dirty = (await this.git.out(['status', '--porcelain', '--untracked-files=all', ...keepInput])).trim() !== '';
+    if (dirty) await this.git.run(['stash', 'push', '-q', '--include-untracked', '-m', PULL_STASH, ...keepInput]);
     // 4. Always a fast-forward now.
     await this.git.run(['merge', '-q', '--ff-only', this.upstream]);
     // 5. Re-apply.

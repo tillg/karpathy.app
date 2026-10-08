@@ -816,6 +816,13 @@ describe('git API', () => {
     expect((await t.api.get(`/vaults/${t.id}/status`)).body).toMatchObject({ state: 'ready', changedCount: 1, unpushedCount: 0, busy: 'none' });
   });
 
+  it('status counts changed paths under Input/ as inputChangedCount', async () => {
+    const t = await vaultApp();
+    for (const p of ['Input/mail-a/index.md', 'Input/mail-a/original.eml', 'Input/web-b/index.md', 'added.md', 'Wiki/Input/x.md'])
+      await t.api.put(`/vaults/${t.id}/file?path=${encodeURIComponent(p)}`, { content: 'x\n', version: null });
+    expect((await t.api.get(`/vaults/${t.id}/status`)).body).toMatchObject({ changedCount: 5, inputChangedCount: 3 });
+  });
+
   it('discard of the last new file in a new folder removes the emptied folders', async () => {
     const t = await vaultApp();
     await t.api.put(`/vaults/${t.id}/file?path=${encodeURIComponent('new/deep/x.md')}`, { content: 'x\n', version: null });

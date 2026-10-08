@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { incomingView } from '../lib/incoming';
+import { buildTree, inputCount } from '../lib/tree';
 import { useApp } from '../store';
 import { Admin } from './Admin';
 import { ChatPane } from './ChatPane';
@@ -21,6 +22,7 @@ export function Shell() {
   const s = useApp();
   const { phone, wide, phoneTab, phoneNote, status } = s;
   const inc = incomingView(status, s.pulling);
+  const queued = useMemo(() => inputCount(buildTree(s.files)), [s.files]);
   const cls = [
     phone ? 'phone' : wide ? 'wide' : 'tablet',
     s.chatOpen && !phone ? 'insp' : '',
@@ -93,6 +95,9 @@ export function Shell() {
                     ? <span className="tab-badge" data-testid="changes-badge-tab">{[status?.changedCount || '', inc.show ? '↓' : ''].filter(Boolean).join(' ')}</span>
                     : null}
                   {t.id === 'changes' && inc.show && <span className="sr-only"> · {inc.count} incoming</span>}
+                  {t.id === 'files' && queued > 0 && (
+                    <span className="tab-badge" data-testid="input-badge-tab" aria-label={`${queued} sources waiting to be ingested`}>{queued}</span>
+                  )}
                 </span>
                 {t.label}
               </button>

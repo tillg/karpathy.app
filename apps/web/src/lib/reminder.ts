@@ -16,3 +16,8 @@ export function reminderDue(count: number, threshold: number, dismissed: Dismiss
 export function dismissReminder(count: number, threshold: number): Dismissed {
   return count >= 2 * threshold ? 2 : 1;
 }
+
+/** What the reminder counts: changed files outside `Input/` (waiting sources are pending work, not unsaved results). */
+export function reminderCount(status: { changedCount: number; inputChangedCount: number } | null): number {
+  return status ? status.changedCount - status.inputChangedCount : 0;
+}

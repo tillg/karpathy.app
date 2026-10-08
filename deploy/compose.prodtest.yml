@@ -21,6 +21,11 @@ services:
     environment:
       NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama.internal
 
+  # The whole vaults volume (deploy/settings/prodtest.yaml has no ingest profiles: the loop idles).
+  ingest:
+    volumes:
+      - vaults:/vaults
+
   # ollama.internal:11434 (on this project's internal network) → the native Ollama on the Mac, /v1 API only.
   ollama-bridge:
     image: caddy:2.10-alpine
@@ -36,3 +41,5 @@ secrets:
   opencode_password: { file: ../tmp/prodtest/secrets/opencode_password }
   github_token: { file: ../tmp/prodtest/secrets/github_token }
   dns_api_token: { file: ../tmp/prodtest/secrets/dns_api_token }
+  gog_keyring_password: { file: ../tmp/prodtest/secrets/gog_keyring_password }
+  ingest_token: { file: ../tmp/prodtest/secrets/ingest_token }

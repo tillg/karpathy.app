@@ -4,6 +4,7 @@ import { api, ApiError, errorText } from '../lib/api';
 import { useApp } from '../store';
 import { Modal } from './Dialogs';
 import { Icon } from './Icon';
+import { InstagramNotice, InstagramSettings } from './InstagramSettings';
 
 interface Form { name: string; repo: string; branch: string; root: string }
 const emptyForm: Form = { name: '', repo: '', branch: 'main', root: '' };
@@ -302,6 +303,8 @@ function SettingsDialog() {
     <Modal title="Settings" onClose={() => setAdminOpen(false)} wide testid="settings-dialog" focusTitle>
       <div className="gh">GitHub</div>
       <GitHubTokenForm />
+      <div className="gh">Instagram</div>
+      <InstagramSettings />
       <div className="gh">App</div>
       <SettingsForm />
       <div className="gh">Version</div>
@@ -331,6 +334,7 @@ function VaultsDialog() {
             Vaults
             <button className="ib help" data-testid="admin-help" aria-label="What is a vault?" title="What is a vault?" onClick={() => setHelp(true)}><Icon n="question_circle" size={18} /></button>
           </div>
+          <InstagramNotice open={() => setAdminOpen('settings')} />
           {vaults?.length === 0 && <p className="muted">No vaults yet. Each vault is an existing GitHub repo.</p>}
           {vaults?.map((v) => <VaultRow key={v.id} v={v} open={() => setView({ kind: 'details', id: v.id })} />)}
           <div className="acts">

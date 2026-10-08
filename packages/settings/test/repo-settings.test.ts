@@ -17,6 +17,10 @@ function repeated(base: unknown, over: unknown, path = ''): string[] {
 }
 
 describe('deploy/settings', () => {
+  it('real ingest profiles only on hetzner: dev and test stacks never read a real Gmail label', () => {
+    for (const env of ['dev', 'local', 'prodtest', 'test']) expect(loadSettings(env, { overlay: false }).ingest?.profiles, env).toEqual({});
+  });
+
   it('has the five environments', () => {
     expect(environments()).toEqual(['dev', 'hetzner', 'local', 'prodtest', 'test']);
   });

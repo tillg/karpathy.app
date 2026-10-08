@@ -1,0 +1,3 @@
+# Build context of the ingest image: only its own files (the repo root is several GB).
+*
+!deploy/ingest/

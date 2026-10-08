@@ -1,7 +1,7 @@
 app_root: /opt/karpathy.app
 app_repo: tillg/karpathy.app
 app_registry: ghcr.io/tillg/karpathy.app
-app_images: [proxy, backend, opencode, egress]
+app_images: [proxy, backend, opencode, egress, ingest]
 app_keep_releases: 5
 # X.Y.Z without the v (`just deploy <target> <version>`); empty = the newest GitHub release.
 app_version: ""

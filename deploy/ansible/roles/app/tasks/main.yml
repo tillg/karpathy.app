@@ -128,6 +128,7 @@
           env: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/.env') }}"
           opencode: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/opencode.env') }}"
           settings: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/settings.json') }}"
+          ingest: "{{ lookup('ansible.builtin.file', app_settings_tmp.path ~ '/out/ingest.json', errors='ignore') | default('', true) }}"
       no_log: true
   always:
     - name: Remove the rendered settings from the controller
@@ -162,6 +163,57 @@
       APP_GID={{ deploy_gid }}
     mode: "0600"
   no_log: true
+
+# Older releases have no ingest service: nothing of it is rendered for them.
+- name: The release has the ingest service
+  ansible.builtin.set_fact:
+    app_ingest: "{{ 'ingest' in app_release_images }}"
+
+# The profiles come from deploy/settings/ (ingest.profiles, rendered to ingest.json). Only cloned vaults get mounts: an
+# Input/ created where the backend hasn't cloned yet would make the clone fail.
+- name: The ingest profiles' vaults (folder in the vaults filesystem, Input/ and Sources/ under a vault root)
+  ansible.builtin.set_fact:
+    app_ingest_targets: >-
+      {{ ((app_rendered.ingest | default('{}', true) | from_json).profiles | default({})).values() | list }}
+
+- name: Clones of the ingest profiles' vaults
+  ansible.builtin.stat:
+    path: "{{ vaults_fs_mount }}/{{ item.vault }}/.git"
+  loop: "{{ app_ingest_targets }}"
+  loop_control: { label: "{{ item.vault }}" }
+  register: app_ingest_clones
+  when: app_ingest
+
+- name: Vault folders the ingest service writes to (none yet)
+  ansible.builtin.set_fact:
+    app_ingest_vaults: []
+
+- name: Vault folders the ingest service writes to (vault id plus root)
+  ansible.builtin.set_fact:
+    app_ingest_vaults: "{{ app_ingest_vaults + [(item.item.vault ~ '/' ~ (item.item.root | default(''))) | regex_replace('/+$', '')] }}"
+  loop: "{{ app_ingest_clones.results | default([]) | selectattr('stat', 'defined') | selectattr('stat.exists') | list }}"
+  loop_control: { label: "{{ item.item.vault }}" }
+
+# Bind-mount sources must exist before the container starts; an empty Input/ is not a git change.
+- name: Input/ and Sources/ in each ingest vault
+  ansible.builtin.file:
+    path: "{{ vaults_fs_mount }}/{{ item.0 }}/{{ item.1 }}"
+    state: directory
+    owner: "{{ deploy_uid }}"
+    group: "{{ deploy_gid }}"
+    mode: "0755"
+  loop: "{{ app_ingest_vaults | product(['Input', 'Sources']) | list }}"
+
+- name: Ingest config (ingest.json, from deploy/settings/)
+  ansible.builtin.copy:
+    dest: "{{ app_root }}/shared/ingest.json"
+    content: "{{ app_rendered.ingest }}\n"
+    owner: "{{ deploy_uid }}"
+    group: "{{ deploy_gid }}"
+    mode: "0600"
+  register: app_ingest_config
+  no_log: true
+  when: app_ingest
 
 - name: Target-specific compose file
   ansible.builtin.template:
@@ -206,6 +258,20 @@
     group: "{{ deploy_gid }}"
     mode: "0600"
   register: app_opencode_password
+  no_log: true
+
+# The ingest service's secrets, generated once on the target like opencode_password: the gog token store's
+# keyring password (only the ingest container reads it) and the token of its internal endpoint (backend + ingest).
+- name: Ingest secrets
+  ansible.builtin.copy:
+    dest: "{{ app_root }}/shared/secrets/{{ item }}"
+    content: "{{ lookup('ansible.builtin.password', '/dev/null chars=ascii_letters,digits length=48') }}"
+    force: false
+    owner: "{{ deploy_uid }}"
+    group: "{{ deploy_gid }}"
+    mode: "0600"
+  loop: [gog_keyring_password, ingest_token]
+  register: app_ingest_secrets
   no_log: true
 
 # Bind-mounted files are replaced, not edited: a change needs a recreate (below).
@@ -286,7 +352,7 @@
     # Containers read secrets and env files at start: a rotated one needs a recreate.
     recreate: >-
       {{ 'always' if app_secrets is changed or app_opencode_password is changed or app_provider_keys is changed
-         or app_relay_config is changed else 'auto' }}
+         or app_relay_config is changed or app_ingest_secrets is changed or app_ingest_config is changed else 'auto' }}
     remove_orphans: true
     wait: true
     wait_timeout: 300

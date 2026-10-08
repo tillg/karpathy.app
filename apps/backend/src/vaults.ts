@@ -19,7 +19,7 @@ import {
   type VaultState,
   type VaultStatus,
 } from '@karpathy/shared';
-import { isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
+import { INPUT_DIR, isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
 import { filesMentioning, graph, listTree, search, versionOf, versionOfFile } from './files.js';
@@ -297,11 +297,12 @@ export class Vaults {
   async status(id: string): Promise<VaultStatus> {
     const v = this.config(id);
     const r = this.runtime(id);
-    const base: VaultStatus = { state: this.stateOf(v), changedCount: 0, unpushedCount: 0, incomingCount: 0, incomingPaths: [], busy: r.lock.busy, conflictPaths: [], ...(r.pullError ? { pullError: r.pullError } : {}) };
+    const base: VaultStatus = { state: this.stateOf(v), changedCount: 0, inputChangedCount: 0, unpushedCount: 0, incomingCount: 0, incomingPaths: [], busy: r.lock.busy, conflictPaths: [], ...(r.pullError ? { pullError: r.pullError } : {}) };
     if (r.state !== 'ready') return base;
     const repo = this.repo(v);
     const [changes, unpushed, incoming] = await Promise.all([repo.changes(), repo.unpushedCount(), repo.incomingPaths()]);
     base.changedCount = changes.length;
+    base.inputChangedCount = changes.filter((c) => c.path.startsWith(`${INPUT_DIR}/`)).length;
     base.unpushedCount = unpushed;
     base.incomingCount = incoming.length;
     base.incomingPaths = incoming.slice(0, INCOMING_PATHS_MAX);

@@ -13,6 +13,15 @@ services:
     volumes:
       - {{ remotes_dir }}:/remotes
 {% endif %}
+{% if app_ingest_vaults %}
+  # Only what the ingest service needs: Input/ to write, Sources/ to look up duplicates.
+  ingest:
+    volumes:
+{% for v in app_ingest_vaults %}
+      - {{ vaults_fs_mount }}/{{ v }}/Input:/vaults/{{ v }}/Input
+      - {{ vaults_fs_mount }}/{{ v }}/Sources:/vaults/{{ v }}/Sources:ro
+{% endfor %}
+{% endif %}
 {% if app_settings_env.OLLAMA_UPSTREAM is defined %}
   # The gateway is the Mac's native Ollama (deploy/settings/): opencode reaches it through this /v1-only relay.
   opencode:
@@ -29,7 +38,7 @@ services:
       internal: { aliases: [ollama.internal] }
       egress: {}
 {% endif %}
-{% if remotes_dir is not defined and app_settings_env.OLLAMA_UPSTREAM is not defined %}
+{% if remotes_dir is not defined and app_settings_env.OLLAMA_UPSTREAM is not defined and not app_ingest_vaults %}
   {}
 {% endif %}
 
