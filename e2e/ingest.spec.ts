@@ -77,3 +77,16 @@ test('@llm Ingest moves the item to Sources/: badge gone, the moved file in Chan
   // Never committed in Input/, so the move shows as the new file in Sources/ only.
   expect((await api.changes(vault.id)).map((c) => c.path)).toContain('Sources/mail-2026-10-08-llm/index.md');
 });
+
+test('a pull keeps the waiting items: badge unchanged, no conflict, Obsidian\'s change arrives', async ({ page, api, vault }) => {
+  await openApp(page, vault.id);
+  seed(vault, ['mail-2026-10-08-a', 'web-2026-10-08-b']);
+  await expect(treeItem(page, 'Input').getByTestId('input-badge')).toHaveText('2');
+  pushFromObsidian(vault.bare, 'Ideas.md', '# Ideas from Obsidian\n');
+  const r = await api.ctx.post(`/api/vaults/${vault.id}/pull`);
+  expect(r.ok()).toBe(true);
+  expect((await api.status(vault.id)).state).toBe('ready');
+  expect(backendExec('sh', '-c', `ls /vaults/${vault.id}/Input`).trim().split('\n')).toEqual(['mail-2026-10-08-a', 'web-2026-10-08-b']);
+  expect((await api.file(vault.id, 'Ideas.md'))?.content).toBe('# Ideas from Obsidian\n');
+  await expect(treeItem(page, 'Input').getByTestId('input-badge')).toHaveText('2');
+});
