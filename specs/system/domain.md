@@ -1,7 +1,7 @@
 ---
 title: "Domain: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-06
+edited: 2026-10-08
 ---
 
 # Domain: karpathy.app
@@ -54,6 +54,7 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Own folder** | A folder that belongs to one page and holds its attachments. A page is in its own folder when the folder carries its name (`Wiki/foo/foo.md`, case-insensitive) or it is the folder's `index.md`; otherwise it is **flat** (`Wiki/foo.md`). | `attachmentFolder` |
 | **Move into own folder** | What the app does to a flat page before its first upload from the editor: `Wiki/foo.md` → `Wiki/foo/foo.md` (into an existing `foo/` folder in any case), plus the link rewrite. The only move the app makes. *Avoid:* rename. | `Vaults.moveIntoOwnFolder` |
 | **Path-form link** | A link that names a folder on the way to its target (`[[serien/foo]]`, `[Foo](../serien/foo.md)`), as opposed to a **bare link** (`[[foo]]`). A move breaks path-form links to the page in Obsidian, so the app rewrites them; percent-encoded links keep their encoding. | `rewriteLinks` (`packages/shared`) |
+| **Note graph** | The vault's notes (`.md` files) as nodes and the links between them as edges: wikilinks, embeds and relative Markdown links, resolved like the editor resolves them; links in code, self links and links to non-notes don't count. Read when the graph dialog opens, never cached. A view only. | `noteLinks` (`packages/shared`), `GET /vaults/:id/graph` |
 | **Source folder (upload)** | Where a chat message's attachments go: `Sources/upload-YYYY-MM-DD-HHMMSS/` (the device's local time of the first upload, `-2` … if taken), one per message. The AI writes the source page into it when it ingests. | `Vaults.upload` with `source` |
 | **Upload name** | The device's file name, cleaned (`<>:"\|?*\#^[]` and control characters → `-`, no leading dot, at most 80 characters), or `photo-YYYYMMDD-HHMMSS.jpg` for a camera photo. A name taken anywhere in the vault (case-insensitive) gets `-2`, `-3` …, so the bare `![[name]]` is unambiguous. | web `uploadName`; server `writeNew` |
 | **Photo preparation** | What the browser does to a JPEG or HEIC before upload: at most 2048 px on the long edge, re-encoded as JPEG 0.85, metadata (GPS, camera) dropped. Other formats go as they are. | web `lib/attach.ts` `prepare` |
