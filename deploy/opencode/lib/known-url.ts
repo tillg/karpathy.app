@@ -57,7 +57,7 @@ export function callsThisTurn(messages: Message[], tool: string): number {
   return n;
 }
 
-const WRITE_TOOLS = ['edit', 'write', 'apply_patch', 'patch', 'multiedit'];
+const WRITE_TOOLS = ['edit', 'write', 'apply_patch', 'patch', 'multiedit', 'save_url'];
 const SOURCE_TOOLS = ['read', 'webfetch', 'websearch'];
 
 const samePath = (a: string, b: string) => a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
@@ -96,20 +96,20 @@ export function capFromEnv(value: string | undefined): number {
   return value !== undefined && /^[1-9]\d*$/.test(value.trim()) ? Number(value) : 20;
 }
 
-/** The tools the plugin guards: the web tools and the link offer. */
-export const GUARDED_TOOLS = ['webfetch', 'websearch', 'open_url'];
+/** The tools the plugin guards: the web tools, the download and the link offer. */
+export const GUARDED_TOOLS = ['webfetch', 'websearch', 'save_url', 'open_url'];
 
 /**
  * The plugin's decision for one tool call: the error to fail it with, or null to let it run. `webfetch` and
- * `websearch` are capped per turn; `webfetch` and `open_url` need a known URL. `open_url` has no cap: the
- * user taps every link offer. `messages` must not hold the call itself.
+ * `save_url` share the fetch cap, `websearch` has its own; all but `websearch` need a known URL. `open_url`
+ * has no cap: the user taps every link offer. `messages` must not hold the call itself.
  */
 export function guardWebCall(tool: string, args: Record<string, unknown> | undefined, messages: Message[], caps: { fetch: number; search: number }): string | null {
-  if (tool === 'webfetch' || tool === 'websearch') {
-    const cap = tool === 'webfetch' ? caps.fetch : caps.search;
-    if (callsThisTurn(messages, tool) >= cap) return `${tool === 'webfetch' ? 'Fetch' : 'Search'} limit reached (${cap} per turn)`;
+  if (tool === 'webfetch' || tool === 'save_url') {
+    if (callsThisTurn(messages, 'webfetch') + callsThisTurn(messages, 'save_url') >= caps.fetch) return `Fetch limit reached (${caps.fetch} per turn)`;
   }
-  if ((tool === 'webfetch' || tool === 'open_url') && !isKnownUrl(String(args?.url ?? ''), knownTexts(messages)))
+  if (tool === 'websearch' && callsThisTurn(messages, tool) >= caps.search) return `Search limit reached (${caps.search} per turn)`;
+  if (['webfetch', 'save_url', 'open_url'].includes(tool) && !isKnownUrl(String(args?.url ?? ''), knownTexts(messages)))
     return 'URL not in this chat: paste it into the chat first';
   return null;
 }

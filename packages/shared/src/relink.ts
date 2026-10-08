@@ -1,4 +1,4 @@
-import { resolveRelativeLink, resolveWikilink, WIKILINK_RE } from './wikilink.js';
+import { parseWikilink, resolveRelativeLink, resolveWikilink, WIKILINK_RE } from './wikilink.js';
 
 const dirOf = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf('/')));
 
@@ -75,4 +75,21 @@ export function rewriteLinks(text: string, page: string, from: string, to: strin
     return `${head}../${bare}${suffix}${tail}`;
   });
   return out;
+}
+
+/**
+ * Notes the page at `page` links to (wikilinks, embeds and relative Markdown links), resolved against
+ * `paths`, deduplicated, in order of appearance. Only `.md` targets count; self links and code are skipped.
+ */
+export function noteLinks(text: string, page: string, paths: readonly string[]): string[] {
+  const code = codeRanges(text);
+  const inCode = (i: number) => code.some(([s, e]) => i >= s && i < e);
+  const found: [number, string | null][] = [
+    ...[...text.matchAll(WIKILINK_RE)].map((m) => [m.index, resolveWikilink(parseWikilink(m[1]!).target, paths, page)] as [number, string | null]),
+    ...[...text.matchAll(MD_LINK_RE)].map((m) => [m.index, resolveRelativeLink(m[2]!, page, paths)] as [number, string | null]),
+  ];
+  const out = new Set<string>();
+  for (const [i, p] of found.sort((a, b) => a[0] - b[0]))
+    if (p && p !== page && /\.md$/i.test(p) && !inCode(i)) out.add(p);
+  return [...out];
 }

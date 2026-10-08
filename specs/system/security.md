@@ -71,7 +71,7 @@ bearer token.
 
 - **Managed opencode config** merged last (`/etc/opencode/opencode.json`), so a vault can't override it; an empty
   tmpfs `HOME` means no global config either.
-- **Denied tools:** `bash`, `task`, `question`, `external_directory`; `webfetch` and `websearch` are denied in the
+- **Denied tools:** `bash`, `task`, `question`, `external_directory`; `webfetch`, `websearch` and `save_url` are denied in the
   managed config too and switched on per turn only (see [Web access](#web-access)). No permission is ever "ask", so a
   turn never blocks on an approval (opencode's built-in defaults contain `ask` rules, each one is overridden). Reading
   `*.env` is denied; editing `.git`, `opencode.json(c)` and `.opencode/` is denied. Why:
@@ -106,11 +106,12 @@ bearer token.
 - **App skills come only from the image** (`/opt/opencode-config/opencode/skills/`, read-only, root-owned like the tools),
   never from a vault. A vault skill of the same name only replaces it in that vault; the backend decides the clash, and the
   AI's `skill` tool may still load either.
-- **The custom tools, `open_note` and `open_url`, come from the image**, never from a vault: they sit in a root-owned,
+- **The custom tools, `open_note`, `open_url` and `save_url`, come from the image**, never from a vault: they sit in a root-owned,
   read-only global config dir (`XDG_CONFIG_HOME=/opt/opencode-config`), pre-populated at build so opencode installs nothing at
   runtime. `open_note` checks the path lexically and by `stat` inside the session directory, refuses dot-segments, reads no
   content and changes nothing. `open_url` fetches nothing and returns `offered <url>` for an http(s) URL (see
-  [Web access](#web-access)). Both are allowed for `vault-readonly` too. opencode *would* load tools from a vault's
+  [Web access](#web-access)). Both are allowed for `vault-readonly` too. `save_url` is the one custom tool that writes: it
+  is allowed for `vault` only, and only a known URL becomes a new media file or PDF (see [Web access](#web-access)). opencode *would* load tools from a vault's
   `.opencode/tools/`; the harness-config rule below is what stops that.
 - **Harness config in a vault** (`.opencode/`, `opencode.json(c)`) disables chat for that vault and can't be created
   through the file API. It is code (plugins, custom tools, MCP servers with a `command`), and the managed config can
@@ -119,23 +120,24 @@ bearer token.
 
 ## Web access
 
-The AI's only outbound channel: opencode's built-in `websearch` (pinned to Exa) and `webfetch`, switched on per turn
-by the **Web access** setting (on by default). The managed config keeps both `deny` (fail-closed); the backend sends
-`tools: { websearch, webfetch }` with every turn, `false` included, because opencode stores that map as the session's
+The AI's only outbound channel: opencode's built-in `websearch` (pinned to Exa) and `webfetch` plus the custom `save_url`, switched on per turn
+by the **Web access** setting (on by default). The managed config keeps all three `deny` (fail-closed); the backend sends
+`tools: { websearch, webfetch, save_url }` with every turn (`save_url` is also `false` in a read-only conflict turn, because session rules beat agent rules), `false` included, because opencode stores that map as the session's
 permission and it replaces earlier rules. Off = the model sees neither tool. `commit-message` never gets them.
 
 | Risk | Guard | What remains |
 |---|---|---|
-| Vault data leaves in a **fetch URL** | **Known-URL provenance:** a plugin (`deploy/opencode/plugins/known-url.ts`, `tool.execute.before`) lets `webfetch` fetch only a URL that appears verbatim in what the model saw in this chat (user messages, tool outputs; truncated outputs count as their preview). Normalization: scheme and host lower-case, default port and fragment dropped; path and query exact. Otherwise the call fails "URL not in this chat: paste it into the chat first". | The AI can fetch an attacker URL that is already in a note or page, but without added data. |
-| Data in the **order of fetches** | **Web caps:** at most 20 fetches and 20 searches per turn (`WEB_FETCH_CAP`, `WEB_SEARCH_CAP` in `opencode.env`, read at start), counted from the stored messages | A slow leak of a few characters per turn. |
+| Vault data leaves in a **fetch URL** | **Known-URL provenance:** a plugin (`deploy/opencode/plugins/known-url.ts`, `tool.execute.before`) lets `webfetch` and `save_url` fetch only a URL that appears verbatim in what the model saw in this chat (user messages, tool outputs; truncated outputs count as their preview). Normalization: scheme and host lower-case, default port and fragment dropped; path and query exact. Otherwise the call fails "URL not in this chat: paste it into the chat first". | The AI can fetch an attacker URL that is already in a note or page, but without added data. |
+| Data in the **order of fetches** | **Web caps:** at most 20 fetches and 20 searches per turn (`WEB_FETCH_CAP`, `WEB_SEARCH_CAP` in `opencode.env`, read at start), counted from the stored messages; `webfetch` and `save_url` calls share the fetch cap | A slow leak of a few characters per turn. |
 | Data in a **search query** | Every query is a chip; the switch turns web access off | Exa receives the query text; the user sees it afterwards, not before. |
 | **SSRF / escape** (opencode API, backend, metadata, tailnet) | **Egress proxy** (Squid, `deploy/egress`): opencode is only on the `internal: true` network and reaches the internet through `HTTP(S)_PROXY`; the proxy refuses loopback, RFC 1918, link-local, CGNAT/tailnet, ULA and other special ranges after DNS resolution, on every request (so every redirect hop). | None known; the network tests check each target. |
 | **Loopback** (`NO_PROXY` names it, because opencode's plugin client must reach its own server directly) | **opencode server password:** HTTP Basic on every opencode route, health included. The backend sends it; the AI can't read it (`bash`, `external_directory` and `*.env` denied). | — |
 | Vault data leaves through a **link offer** (`open_url`) | The same known-URL check as `webfetch` (`guardWebCall`, one function for both, unit-tested), http(s) only, no cap, and the user's tap on a chip that shows the host. Nothing is fetched by the server, so it works with Web access off, and no tab opens by itself (browsers block that without a tap). | The AI can offer an attacker URL that is already in a note or page, but without added data. |
+| A **media download** (`save_url`) writes outside the vault or overwrites, or reaches an internal host | Data can't leave in the URL: the same known-URL check as `webfetch`. Writes are confined in the tool: the target must be a new file (`wx`, never an overwrite) of a media or PDF extension (no SVG) inside the vault after resolving symlinks, no dot-segments (`.git`, `.opencode`, hidden), Content-Type must fit the extension, at most 50 MB (partial file removed), 120 s timeout. SSRF: the download is passed to the egress proxy explicitly (`proxy` option from `HTTP(S)_PROXY`), because a direct fetch could reach `backend` and `opencode` on the compose network; without a proxy env the tool refuses. Bun still fetches `NO_PROXY` hosts (`localhost`, `127.0.0.1`, …, subdomains too) directly, even with an explicit proxy, so redirects are followed by hand and every hop to a `NO_PROXY` host is refused. | The AI can save an attacker's image or PDF that is already in a note or page (new file, shown in Changes, reviewed before commit). Stock `webfetch` lacks the hop check: a known `http://localhost:4096/…` URL goes straight to opencode's API (it answers 401 without the password). |
 | **Research** spends before the user agreed, or runs away | Skill instruction only: the plan turn scouts ≤ 3 searches / ≤ 2 fetches and stops; no backend rule (a `/research` turn has the tools of every turn). The 20 / 20 caps bound every turn, the skill aims at 8 sources per run turn, and the next block needs the user's reply. | A model that ignores the skill can run a full 20 / 20 block in the plan turn. No money or token cap. |
 | **Untrusted web content** (pages up to 5 MB, images, results) | None at fetch time | An injected instruction can make the AI edit notes, and content it saves lands in `Sources/` and `Wiki/`; the diff review before commit is the safety net (ADR 0001). |
 
-Within it, `webfetch` and `open_url` need a known URL, and only `webfetch` and `websearch` are capped.
+Within it, `webfetch`, `save_url` and `open_url` need a known URL, and only `webfetch`, `save_url` and `websearch` are capped.
 
 Not taken: an approval prompt per call (needs `ask`, which blocks the turn), a domain allowlist (defeats reading what
 the user points to), provider server tools (tied to one model vendor, ADR 0002).

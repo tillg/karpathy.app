@@ -78,7 +78,7 @@ works from iPad/phone, not just the Mac terminal.
 ## Scope
 
 MVP boundary = milestone **M4** (chat that reads and writes the vault, mobile, git-synced).
-Out of scope: graph view, plugins, canvas, multi-user/real-time collaboration, offline AI.
+Out of scope: plugins, canvas, multi-user/real-time collaboration, offline AI.
 Skill portability caveats (Python scripts, scraper credentials, the non-portable RTK hook and
 global `~/.claude/CLAUDE.md`) are listed in `specs/system/functional.md` (Skills).
 
