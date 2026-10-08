@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ROOT, TOKEN, expect, makeConflict, openApp, openNote, test } from './helpers';
+import { PROJECT, ROOT, TOKEN, expect, makeConflict, openApp, openNote, test } from './helpers';
 
 // Verifies from the MVP plan (specs/01_mvp/plan.md, removed; see git 9c25f72) that had no e2e test yet.
 
@@ -16,10 +16,11 @@ test.describe('stack (plan P1)', () => {
     for (const t of [body.built, body.deployed]) if (t !== null) expect(Number.isNaN(Date.parse(t))).toBe(false);
   });
 
-  test('compose ps: every service with a healthcheck is healthy; only the proxy publishes a port; opencode not reachable from the host', async () => {
-    const out = execFileSync('docker', ['compose', '-f', join(ROOT, 'deploy/compose.yml'), '-f', join(ROOT, 'deploy/compose.dev.yml'), 'ps', '--format', 'json'], { encoding: 'utf8' });
+  test('compose ps: every service with a healthcheck is healthy; only the proxy publishes a port (and the backend its loopback debug port); opencode not reachable from the host', async () => {
+    test.skip(!PROJECT, 'needs the dev stack');
+    const out = execFileSync('docker', ['compose', '-p', PROJECT!, 'ps', '--format', 'json'], { encoding: 'utf8' });
     // One JSON object per line (compose v2.21+), or one array.
-    const rows: { Service: string; State: string; Health: string; Publishers: { PublishedPort: number }[] | null }[] =
+    const rows: { Service: string; State: string; Health: string; Publishers: { URL: string; PublishedPort: number }[] | null }[] =
       out.trim().startsWith('[') ? JSON.parse(out) : out.trim().split('\n').map((l) => JSON.parse(l));
     expect(rows.map((r) => r.Service).sort()).toEqual(expect.arrayContaining(['backend', 'opencode', 'proxy']));
     for (const r of rows) {
@@ -27,6 +28,7 @@ test.describe('stack (plan P1)', () => {
       if (r.Health) expect(r.Health, r.Service).toBe('healthy');
       const published = (r.Publishers ?? []).filter((p) => p.PublishedPort > 0);
       if (r.Service === 'proxy') expect(published.length).toBeGreaterThan(0);
+      else if (r.Service === 'backend') expect(published.map((p) => p.URL)).toEqual(['127.0.0.1']);
       else expect(published, r.Service).toEqual([]);
     }
     // opencode listens on 4096 inside the compose network only.
@@ -35,7 +37,8 @@ test.describe('stack (plan P1)', () => {
 });
 
 test.describe('opencode container (mvp §2.5 / §3.2)', () => {
-  const inOpencode = (script: string) => execFileSync('docker', ['compose', '-f', join(ROOT, 'deploy/compose.yml'), '-f', join(ROOT, 'deploy/compose.dev.yml'), 'exec', '-T', 'opencode', 'sh', '-c', script], { encoding: 'utf8' }).trim();
+  test.skip(!PROJECT, 'needs the dev stack');
+  const inOpencode = (script: string) => execFileSync('docker', ['compose', '-p', PROJECT!, 'exec', '-T', 'opencode', 'sh', '-c', script], { encoding: 'utf8' }).trim();
 
   test('no git in the image (keeps subfolder confinement), HOME is a tmpfs without ~/.claude, managed config mounted, no GitHub/bearer secrets', async () => {
     expect(inOpencode('command -v git >/dev/null && echo has-git || echo no-git')).toBe('no-git');
@@ -47,7 +50,7 @@ test.describe('opencode container (mvp §2.5 / §3.2)', () => {
     expect(inOpencode('ls /run/secrets 2>/dev/null || true')).toBe('opencode_password');
     expect(inOpencode('env | grep -ciE "github|bearer" || true')).toBe('0');
     // Same UID/GID as the backend, so opencode's files stay committable.
-    const uid = (svc: string) => execFileSync('docker', ['compose', '-f', join(ROOT, 'deploy/compose.yml'), '-f', join(ROOT, 'deploy/compose.dev.yml'), 'exec', '-T', svc, 'id', '-u'], { encoding: 'utf8' }).trim();
+    const uid = (svc: string) => execFileSync('docker', ['compose', '-p', PROJECT!, 'exec', '-T', svc, 'id', '-u'], { encoding: 'utf8' }).trim();
     expect(uid('opencode')).toBe(uid('backend'));
   });
 });

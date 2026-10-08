@@ -157,21 +157,31 @@ UI layout prototypes from the MVP design (layout 07 was built) —
 
 ## Running it
 
-Everything runs in docker compose (on this Mac: Rancher Desktop).
+Everything runs in docker compose (on this Mac: Rancher Desktop), except the dev model: one native
+Ollama on the Mac (Metal GPU), shared by all dev stacks. Set it up once with `brew install ollama` and
+`just ollama install` (a LaunchAgent on 127.0.0.1:11434; `just ollama status|uninstall`).
 
-**Dev** (hot reload, https://localhost:8443, local Ollama `qwen2.5:3b` as the model):
+**Dev** (hot reload, `qwen2.5:3b` on the native Ollama as the model). Several dev stacks run side by side,
+one per checkout (main clone or worktree): stack N (1–9) is on https://localhost:80N0, and its header
+reads `karpathy #N`.
 
 ```sh
-just dev                # builds, starts, pulls the dev model once, prints the token
+just dev                # stack of this checkout, else the first free one: builds, starts, pulls the model once, prints URL + token
+just dev up 2           # pick stack 2 (refused if another checkout owns it)
+just dev stacks         # which stacks are free, and which checkout owns the others
 just dev logs           # also: ps, token
 just dev down
 ```
+
+Stack N owns the ports 80N0–80N9: 80N0 the app, 80N1 the backend (http, loopback), 80N5 the
+paired prodtest. Each stack's `ollama` service is only a relay to the native Ollama. The number is remembered in `tmp/dev/stack`; `just e2e` and
+`just prodtest` use it.
 
 `just` lists all commands (`brew install just`); they wrap `deploy/dev.sh` and npm. Deploying
 also needs `brew install lima ansible ansible-lint qrencode jq` (the local target VM, the playbook,
 the login QR code and the deploy scripts).
 
-Notes open at `https://localhost:8443/#/<vault>/<path>` (Back/Forward work). Binary files
+Notes open at `https://localhost:80N0/#/<vault>/<path>` (Back/Forward work). Binary files
 (images, PDFs, …) are listed but not editable. A vault whose clone failed can be retried
 from the **Vaults** dialog. Unsaved edits
 are also kept on the device and restored after a reload or a lost connection. For the
@@ -196,14 +206,15 @@ npm test               # unit + integration: real git against local bare repos, 
 npm run test:github    # @github: clone/push against the throwaway repo tillg/karpathy-app-test-vault
 npm run test:llm       # @llm: real model turns (default: local Ollama qwen2.5:3b, see apps/backend/test/opencode-container.ts)
                        # the /research tests need a capable model: LLM_TEST_MODEL=openrouter/z-ai/glm-5.3 with OPENROUTER_API_KEY set (costs money)
-npm run test:e2e       # Playwright against the running dev stack
+npm run test:e2e       # Playwright against this checkout's dev stack
 npm run typecheck
 ```
 
-`just check` runs lint, typecheck and `npm test` in one go.
+`just check` runs lint, typecheck, `npm test` and the stack tooling's tests (`deploy/stack.test.sh`,
+`e2e/stack.unit.ts`; they need Docker, and test against the native Ollama when it runs).
 
-To run the e2e suite against the **prod images** (https://localhost:9443, next to the dev
-stack): `just prodtest`, `just prodtest e2e [playwright args]`, `just prodtest down`; details in the header of `deploy/compose.prodtest.yml`: `E2E_BASE_URL`, `E2E_TOKEN_FILE` and `E2E_BACKEND_CONTAINER`
+To run the e2e suite against the **prod images** (https://localhost:80N5, paired with this
+checkout's dev stack N): `just prodtest`, `just prodtest e2e [playwright args]`, `just prodtest down`; details in the header of `deploy/compose.prodtest.yml`: `E2E_BASE_URL`, `E2E_TOKEN_FILE` and `E2E_BACKEND_CONTAINER`
 point Playwright at it.
 
 Tests that need a real model turn are tagged `@llm` in their title; `--grep-invert @llm` skips them.

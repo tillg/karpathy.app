@@ -143,6 +143,26 @@ Terms for running the app, not for using it ([deployment.md](deployment.md)).
 | **Website deploy** | Publishing the current `site/` from `main` to GitHub Pages. Independent of releases; the website has no version. *Avoid:* release. | `.github/workflows/pages.yml` |
 | **Login link** | `<app url>/#token=…`, shown as a QR code by `just token <target> --qr`; logs a device in. | `lib/login-code.ts` |
 
+### Development
+
+Terms for running the app on the developer's Mac, where several agents work side by side, one per checkout
+([architecture.md](architecture.md#dev-stacks)). Not targets: prod and the deploy targets are `deploy/compose.yml`
+alone (project `karpathy-app`), not numbered stacks.
+
+| Term | Meaning | In code |
+|---|---|---|
+| **Checkout** | A working copy of the repo: the main clone or a worktree under `.worktrees/<name>`. | `git rev-parse --show-toplevel` |
+| **Dev stack N** | The dev compose stack (`compose.yml` + `compose.dev.yml`) as compose project `karpathy-app-N`, N ∈ 1…9, built from one checkout's bind-mounted sources. Started only with `just dev up [N]`. *Avoid:* "the dev stack" on 8443 (gone). | `deploy/dev.sh`, `deploy/stack.sh` |
+| **Port block** | The host ports 80N0–80N9 of stack N: 80N0 the app (proxy, HTTPS), 80N1 the backend's HTTP API (loopback only, for debugging), 80N5 the paired prodtest; 80N3/80N4 reserved for opencode and web but never published (internal network only); the rest spare. Nothing else binds them. | `stack_ports` |
+| **Owner** | The checkout whose `deploy/compose.yml` project `karpathy-app-N` was started from (Docker's `ConfigFiles`); a stopped project still counts. Before the containers exist (a build takes minutes), the checkout whose remembered stack is N: its **claim**, from `just dev up` until `just dev down`. Only the owner may `down`, restart or exec into a stack. | `stack_owner_in`, `stack_claimant` |
+| **Free stack** | No project `karpathy-app-N`, no claim by another checkout, and nothing listening on 80N0, 80N1 or 80N5 (else *port-busy*). A bare `just dev up` takes the first free one. | `stack_state`, `stack_first_free` |
+| **Orphan stack** | A project `karpathy-app-N` whose owning checkout was deleted. Any checkout's `just dev up N` may take it over. | `stack_state` |
+| **Remembered stack** | The number in `<checkout>/tmp/dev/stack`, written by `just dev up` and deleted by `just dev down`. Every later `dev`, `e2e` and `prodtest` command in that checkout uses it. A checkout holds at most one stack. | `stack_resolve`, `stack_remember` |
+| **Paired prodtest** | The prod images as project `karpathy-app-N-prodtest` on 80N5, taking N from the checkout's dev stack (remembered in `tmp/prodtest/stack` while it runs, so it outlives `just dev down`). | `just prodtest` |
+| **Native Ollama** | The dev LLM server on the Mac itself (LaunchAgent `app.karpathy.ollama`, `127.0.0.1:11434`, Metal GPU, models in `~/.ollama`), shared by all stacks and their prodtests. An outside service, like a cloud provider. | `just ollama install` |
+| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native Ollama and answers 403 to everything else. | `deploy/proxy/Caddyfile.ollama-relay` |
+| **Stack label** | `karpathy #N`, the header brand (vault switcher) on dev stack N, so a browser tab shows which stack it is. Everywhere else the brand is `karpathy.app`. | `lib/brand.ts` › `brandName` |
+
 ## Concepts and entities
 
 ```mermaid
@@ -232,7 +252,7 @@ more.
 | **Public web** | Serves fetched pages; untrusted. |
 | **Obsidian / other git clients** | Change the same GitHub repo from other devices; their changes arrive on the next pull and can cause a conflict. |
 | **GitHub** | Hosts the vault repos; the backend clones, fetches and pushes with the GitHub token, and asks `GET /user` to test it. |
-| **LLM provider** (e.g. Anthropic; Ollama in dev) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
+| **LLM provider** (e.g. Anthropic; the native Ollama on the Mac in dev) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
 
 ## Processes
 

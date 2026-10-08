@@ -1,7 +1,7 @@
 ---
 title: "Security: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-06
+edited: 2026-10-08
 ---
 
 # Security: karpathy.app
@@ -204,10 +204,16 @@ prod proxy adds a strict **CSP** (`default-src 'self'`, `script-src 'self'`, `ob
 
 ## Runtime hardening
 
-- Only the proxy publishes ports (443 only, no port 80); backend and opencode are on the internal network.
+- On a target only the proxy publishes ports (443 only, no port 80); backend and opencode are on the internal network.
 - Backend and opencode run as uid 1000, not root; every service has `cap_drop: [ALL]` (the proxy keeps
   `NET_BIND_SERVICE`), `no-new-privileges` and bounded logs.
 - opencode's snapshots, sharing and auto-update are off; its version is pinned.
+- **Dev stacks on the Mac** (prod is unchanged): besides the proxy on 80N0, the backend's HTTP API is published on
+  `127.0.0.1:80N1` only, for debugging; opencode and web stay unpublished on the internal network. The dev model
+  is the native Ollama, bound to `127.0.0.1:11434`. opencode reaches it only through the stack's Ollama relay
+  (`ollama.internal`), which passes `/v1/*` (the OpenAI-compatible API) and answers 403 to everything else, so a
+  prompt-injected AI can't use Ollama's admin API (pull, delete, create); a pull from an "insecure" registry would
+  otherwise make the Mac itself request LAN or loopback addresses the egress proxy forbids.
 - **Production server:** reachable only over Tailscale. The Hetzner firewall blocks all inbound traffic; the app,
   Beszel and Gatus bind the tailnet IP. SSH takes keys only, no root login. The operator logs in as `ops` (sudo);
   uid 1000, the app's user, has no login, no sudo and no Docker access, so a container breakout doesn't reach root

@@ -83,8 +83,8 @@ when the whole box is gone.
 
 | Stack | URL | What it's for | Start |
 |---|---|---|---|
-| **dev** | https://localhost:8443 | Working on the code: sources bind-mounted, hot reload, local Ollama model | `just dev` |
-| **prodtest** | https://localhost:9443 | The prod images built from the working tree, next to dev | `just prodtest` |
+| **dev** stack N (1–9) | https://localhost:80N0 | Working on the code: sources bind-mounted, hot reload, the Mac's native Ollama as the model; one per checkout, side by side (`just dev stacks`) | `just dev up [N]` |
+| **prodtest** | https://localhost:80N5 | The prod images built from the working tree, paired with dev stack N | `just prodtest` |
 | **local** target | https://localhost:9444 | A released version on an Ubuntu VM (Lima) sized like the server: tests the whole playbook | `just vm up`, `just deploy local` |
 | **hetzner** target | https://app.karpathy.app | Production: Hetzner server, reachable only over Tailscale | `just deploy hetzner` |
 
@@ -100,11 +100,12 @@ managed by Ansible.
 | Recipe | Does |
 |---|---|
 | `just install` | `npm install` for the workspace (after a clone or in a fresh worktree). |
-| `just dev [up\|down\|logs\|ps\|token]` | The dev stack on :8443; `token` prints its access token. |
-| `just check` | Lint, typecheck and the unit + integration tests. |
+| `just dev [up [N]\|down\|logs\|ps\|token\|stacks]` | This checkout's dev stack N on :80N0 (`up` without N: the remembered one, else the first free); `stacks` lists who owns which stack; `token` prints the access token. |
+| `just ollama install\|uninstall\|status` | The dev model server: native Ollama on 127.0.0.1:11434 as a LaunchAgent, shared by all dev stacks (`brew install ollama` first). |
+| `just check` | Lint, typecheck, the unit + integration tests and the dev-stack tooling tests. |
 | `just test [args]` | The unit + integration tests only. |
-| `just e2e [args]` | Playwright against the dev stack. |
-| `just prodtest [up\|down\|e2e]` | The prod images on :9443, and the e2e suite against them. |
+| `just e2e [args]` | Playwright against this checkout's dev stack. |
+| `just prodtest [up\|down\|e2e]` | The prod images on :80N5 (paired with dev stack N), and the e2e suite against them. |
 
 **Release and deploy**
 
@@ -239,7 +240,7 @@ Each fresh server requests a new certificate; Let's Encrypt allows 5 for the sam
 ```
 deploy/
   compose.yml              the stack (one definition for dev, prodtest and every target)
-  compose.dev.yml          dev overrides (bind mounts, Ollama, Vite)
+  compose.dev.yml          dev overrides (bind mounts, Ollama relay, Vite)
   compose.prodtest.yml     prodtest overrides
   dev.sh                   behind `just dev`
   backend/ proxy/ opencode/ web/   Dockerfiles and their config (Caddyfile, opencode.json)
