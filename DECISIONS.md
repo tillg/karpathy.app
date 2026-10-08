@@ -1243,6 +1243,11 @@ edited: 2026-10-08
 - **Alternatives:** stop before prod and leave the release to the user.
 - **Consequences:** rollback = `just deploy hetzner <previous version> --only app` (the rendered `.env`
   keeps every key older releases read).
+  What shipped: `local` got 0.0.15 with the new playbook (20:15); `v0.0.16-rc.1` was built but never
+  deployed (review fixes came after it); `v0.0.16-rc.2` → `local` (20:43), rollback to 0.0.15 and forward
+  to rc.2 (both green); `main` fast-forwarded (c43fc43); `v0.0.16` (CI re-run once for a flaky live-web
+  test) → `hetzner` at 2026-10-08 20:59, verified (health, default model, ZDR routing). Prod rollback:
+  `just deploy hetzner 0.0.15 --only app`.
 
 ## 18:45 — Commit closely related plan steps together {#run-2026-10-08-1839-2}
 
