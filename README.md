@@ -100,7 +100,7 @@ Claude Code plugin aren't in the vault and don't show; copy them into the vault.
 ## Status
 
 MVP (spec milestone M4) implemented: vaults from GitHub, file tree, CodeMirror editor with
-live preview and `[[wikilinks]]`, search (several words find notes with all of them, `"quotes"` for a phrase), uncommitted changes / diff / discard, Commit & Push
+live preview and `[[wikilinks]]`, search (several words find notes with all of them, `"quotes"` for a phrase), a 3D graph of the notes and their links (graph button in the sidebar; tap a note to open it), uncommitted changes / diff / discard, Commit & Push
 with an AI-proposed message, conflict resolution, and a streaming AI chat that reads and
 edits the vault through opencode. Ask the AI to show you a note ("open my reading list") and it
 opens notes in the editor through its `open_note` tool (on a phone or a smaller iPad when the reply is

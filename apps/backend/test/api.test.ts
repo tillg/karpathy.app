@@ -697,6 +697,14 @@ describe('files', () => {
     expect(await paths()).toEqual(['Home.md', 'Sources', 'Wiki']);
   });
 
+  it('#130 graph lists the notes and the links between them', async () => {
+    const t = await vaultApp({ 'Home.md': '[[Other]] [[Other]] [[missing]] ![[pic.png]]\n', 'Other.md': '[n](notes/n1.md)\n', 'notes/n1.md': '`[[Home]]`\n', 'pic.png': 'x' });
+    expect((await t.api.get(`/vaults/${t.id}/graph`)).body).toEqual({
+      nodes: [{ path: 'Home.md' }, { path: 'notes/n1.md' }, { path: 'Other.md' }],
+      links: [{ source: 'Home.md', target: 'Other.md' }, { source: 'Other.md', target: 'notes/n1.md' }],
+    });
+  });
+
   it('search finds content and file names', async () => {
     const t = await vaultApp();
     const hits = (await t.api.get(`/vaults/${t.id}/search?q=ALPHA`)).body;
