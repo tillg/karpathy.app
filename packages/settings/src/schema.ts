@@ -29,6 +29,19 @@ const gateway = z.strictObject({
   models: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
 });
 
+/**
+ * One ingest profile (deploy/ingest): a Gmail label feeding one vault's Input/. `account` and `allowed_senders` may be
+ * secret references (personal data stays out of this public repo); `settings` passes ingest-email options on.
+ */
+const ingestProfile = z.strictObject({
+  vault: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'a backend vault id'),
+  root: z.string().optional(),
+  label: z.string().min(1),
+  account: text,
+  allowed_senders: z.array(text),
+  settings: z.record(z.string(), z.unknown()).optional(),
+});
+
 /** The settings schema: what settings.yaml and the merged result of an environment must satisfy. */
 export const settingsSchema = z.strictObject({
   ai: z.strictObject({
@@ -57,6 +70,11 @@ export const settingsSchema = z.strictObject({
   commit_reminder_threshold: z.number().int().nonnegative(),
   files: z.strictObject({ visible_dot_dirs: z.array(dotDir) }),
   gateways: z.record(z.string(), gateway),
+  /** The ingest service: which Gmail label fills which vault's Input/. No profiles = the loop idles. */
+  ingest: z.strictObject({
+    defaults: z.record(z.string(), z.unknown()).optional(),
+    profiles: z.record(z.string(), ingestProfile),
+  }).optional(),
 });
 
 /** Every object key optional, at any depth; unknown keys still rejected. Secret references stay whole. */

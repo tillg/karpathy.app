@@ -5,8 +5,3 @@ app_images: [proxy, backend, opencode, egress, ingest]
 app_keep_releases: 5
 # X.Y.Z without the v (`just deploy <target> <version>`); empty = the newest GitHub release.
 app_version: ""
-# Ingest service (deploy/ingest): profile → { vault: <vault id>, label: <Gmail label>, allowed_senders: [...], …ingest-email
-# settings }. Empty = the loop idles. Only the production target gets real profiles (dev and test stacks must never read
-# a real label); see deploy/ingest/config.example.json.
-app_ingest_profiles: {}
-app_ingest_defaults: { max_per_poll: 20, resolve_max_urls_per_mail: 5, run_interval_s: 900 }

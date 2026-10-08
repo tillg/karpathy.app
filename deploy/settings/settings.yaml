@@ -56,3 +56,11 @@ gateways:
     models:
       qwen2.5:3b: { name: qwen2.5:3b, tool_call: true, limit: { context: 16384, output: 4096 } }
       qwen3-vl:2b: { name: qwen3-vl:2b, tool_call: true, limit: { context: 16384, output: 4096 }, modalities: { input: [text, image], output: [text] } }
+
+# The ingest service (deploy/ingest): which Gmail label fills which vault's Input/. No profiles = the loop idles;
+# only hetzner gets real ones (dev and test stacks must never read a real label). A profile:
+#   mylife: { vault: mylife, label: MyLife, account: { secret: ingest_mylife_account },
+#             allowed_senders: [{ secret: ingest_mylife_sender }], settings: { max_per_poll: 20 } }
+ingest:
+  defaults: { max_per_poll: 20, resolve_max_urls_per_mail: 5, run_interval_s: 900 }
+  profiles: {}

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseEnv } from 'node:util';
-import { loadSettings, renderBackendSettings, renderComposeEnv, renderOpencodeEnv, renderOpencodeProviders } from '../src/index.js';
+import { loadSettings, renderBackendSettings, renderComposeEnv, renderIngestConfig, renderOpencodeEnv, renderOpencodeProviders } from '../src/index.js';
 import { backendSettingsSchema } from '../../../apps/backend/src/settings.js';
 import { tempDir } from './helpers.js';
 
@@ -103,5 +103,32 @@ describe('renderBackendSettings', () => {
       expect(() => backendSettingsSchema.parse(JSON.parse(renderBackendSettings(loadSettings(e, { overlay: false }), SECRETS))), e).not.toThrow();
     for (const name of ['bearer_token', 'opencode_password', 'github_token', 'dns_api_token', 'openrouter_api_key'])
       expect(json).not.toContain(SECRETS[name as keyof typeof SECRETS]);
+  });
+});
+
+describe('renderIngestConfig', () => {
+  it('no profiles: an idle ingest loop', () => {
+    expect(JSON.parse(renderIngestConfig(loadSettings('dev', { overlay: false }), SECRETS))).toEqual({
+      defaults: { max_per_poll: 20, resolve_max_urls_per_mail: 5, run_interval_s: 900 },
+      profiles: {},
+    });
+  });
+
+  it("profiles with their secrets resolved, in ingest-email's shape plus vault, root and label", () => {
+    const s = loadSettings('hetzner', { overlay: false });
+    s.ingest = {
+      defaults: { max_per_poll: 20 },
+      profiles: {
+        mylife: { vault: 'mylife', label: 'MyLife', account: { secret: 'git_author_email' }, allowed_senders: ['a@b.c', { secret: 'git_author_name' }] },
+        sub: { vault: 'x', root: 'wiki', label: 'X', account: 'me@gmail.com', allowed_senders: [], settings: { max_per_poll: 5 } },
+      },
+    };
+    expect(JSON.parse(renderIngestConfig(s, SECRETS))).toEqual({
+      defaults: { max_per_poll: 20 },
+      profiles: {
+        mylife: { vault: 'mylife', label: 'MyLife', account: 'jane@example.com', allowed_senders: ['a@b.c', 'Jane Doe'] },
+        sub: { vault: 'x', root: 'wiki', label: 'X', account: 'me@gmail.com', allowed_senders: [], max_per_poll: 5 },
+      },
+    });
   });
 });

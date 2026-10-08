@@ -28,7 +28,3 @@ beszel_hub_pubkey: "{{ vault_beszel_hub_pubkey }}"
 beszel_token: "{{ vault_beszel_token }}"
 # Single-use, tagged tag:server, pre-approved; only used when the host joins the tailnet.
 tailscale_authkey: "{{ vault_tailscale_authkey }}"
-
-# Ingest service (deploy/ingest): no profiles until the cutover (rework-ingestion-pipeline, "After release"); then e.g.
-# app_ingest_profiles: { mylife: { vault: mylife, label: MyLife, allowed_senders: [ … ] } }
-app_ingest_profiles: {}

@@ -1,5 +1,0 @@
-{
-  "_comment": "Dev stacks and prodtest: no profiles, so the ingest loop idles and never reads a real Gmail label.",
-  "defaults": {},
-  "profiles": {}
-}

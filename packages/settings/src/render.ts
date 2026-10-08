@@ -99,3 +99,16 @@ export function renderBackendSettings(s: Settings, secrets: Secrets): string {
   };
   return JSON.stringify(backend, null, 2) + '\n';
 }
+
+/** The ingest service's config (ingest.json → /etc/ingest/config.json): profiles with their secrets resolved. */
+export function renderIngestConfig(s: Settings, secrets: Secrets): string {
+  const profiles = Object.fromEntries(Object.entries(s.ingest?.profiles ?? {}).map(([name, p]) => [name, {
+    vault: p.vault,
+    ...(p.root ? { root: p.root } : {}),
+    label: p.label,
+    account: text(p.account, secrets),
+    allowed_senders: p.allowed_senders.map((a) => text(a, secrets)),
+    ...p.settings,
+  }]));
+  return JSON.stringify({ defaults: s.ingest?.defaults ?? {}, profiles }, null, 2) + '\n';
+}

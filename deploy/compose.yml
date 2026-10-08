@@ -129,7 +129,8 @@ services:
     secrets: [gog_keyring_password, ingest_token]
     volumes:
       - ingest-state:/state
-      - ./ingest/config.json:/etc/ingest/config.json:ro
+      # Its profiles, rendered from deploy/settings/ (ingest.profiles) like settings.json.
+      - { type: bind, source: "${SETTINGS_DIR:-.}/ingest.json", target: /etc/ingest/config.json, read_only: true, bind: { create_host_path: false } }
     # run.sh touches the heartbeat after every round (≤ 1 min, plus Instagram pacing); 20 min without one = stuck.
     healthcheck:
       test: ["CMD-SHELL", "test -n \"$$(find /state/last-run -mmin -20 2>/dev/null)\""]

@@ -13,8 +13,6 @@ tmp/
 deploy/secrets/
 deploy/settings/*.local.yaml
 # from before deploy/settings/ (#133); dev.sh refuses to start while they exist
-# rendered by Ansible on the server (example: deploy/ingest/config.example.json)
-deploy/ingest/config.json
 deploy/.env
 deploy/opencode.env
 node_modules/

@@ -21,11 +21,9 @@ services:
     environment:
       NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama.internal
 
-  # No profiles: the loop idles (prodtest never reads a real Gmail label).
+  # The whole vaults volume (deploy/settings/prodtest.yaml has no ingest profiles: the loop idles).
   ingest:
     volumes:
-      - ingest-state:/state
-      - ./ingest/config.none.json:/etc/ingest/config.json:ro
       - vaults:/vaults
 
   # ollama.internal:11434 (on this project's internal network) → the native Ollama on the Mac, /v1 API only.

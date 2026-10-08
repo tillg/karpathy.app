@@ -120,13 +120,13 @@ step that needs it.
     `python -c "import httpx; httpx.get(…)"` and `gog` both honour `HTTPS_PROXY` (no direct route exists, so success
     proves it). Fails today: no ingest image in the test helpers.
   - Verify: `npm test -w apps/backend` → all green
-- [ ] Ansible: render `ingest/config.json` (real profiles only for `hetzner`) and the per-vault subpath mounts,
-      `gog_keyring_password` and `ingest_token` secrets, `just ingest-auth <target>` (Gmail only)
+- [ ] Ansible: copy `ingest.json` (rendered from `deploy/settings/`; real profiles only for `hetzner`) and the
+      per-vault mounts, `gog_keyring_password` and `ingest_token` secrets, `just ingest-auth <target>` (Gmail only)
   - Depends on: 10
-  - Test first: none for the role itself (the other roles have no unit tests either); the check is a real deploy to the
-    `local` target (Lima VM): `just deploy-check local` shows `shared/ingest/config.json` with an empty `profiles` map
-    and the subpath mounts, and `just ingest-auth local` with a test account makes `gog auth list` in the container
-    list it. Fails today: no tasks, no recipe.
+  - Test first: `packages/settings` tests (profiles render, only hetzner may have them); the role itself has no unit
+    tests (the other roles neither); the check is a real deploy to the `local` target (Lima VM): `shared/ingest.json`
+    with an empty `profiles` map and the ingest container healthy. `just ingest-auth` was checked against a dev stack
+    with a throwaway account (a test Gmail account isn't available). Fails today: no tasks, no recipe.
   - Verify: `just vm up && just deploy local && just deploy-e2e local` → green, `ingest` healthy on the VM
 
 ## Instagram connection

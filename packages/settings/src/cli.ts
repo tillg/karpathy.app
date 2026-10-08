@@ -10,7 +10,7 @@ import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { Document, isMap, visit } from 'yaml';
 import { environments, loadSettings, SETTINGS_DIR } from './load.js';
-import { renderBackendSettings, renderComposeEnv, renderOpencodeEnv } from './render.js';
+import { renderBackendSettings, renderComposeEnv, renderIngestConfig, renderOpencodeEnv } from './render.js';
 import { resolveSecrets, secretRefs } from './secrets.js';
 
 const { values, positionals } = parseArgs({
@@ -70,6 +70,7 @@ function run(): void {
     write('.env', renderComposeEnv(settings, secrets, { settingsDir }), 0o600);
     write('opencode.env', renderOpencodeEnv(settings, secrets), 0o600);
     write('settings.json', renderBackendSettings(settings, secrets));
+    write('ingest.json', renderIngestConfig(settings, secrets), 0o600);
     return;
   }
   usage();

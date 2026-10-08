@@ -47,7 +47,7 @@ Five pieces, mostly independent:
 
 | Piece | Where | New / changed |
 |---|---|---|
-| Ingest service | `deploy/ingest/` (Dockerfile, `run.sh`, `config.example.json`), `deploy/compose.yml`, Ansible role `app` | new container running `ingest-email` from its own repo |
+| Ingest service | `deploy/ingest/` (Dockerfile, `run.sh`, `server.py`), `deploy/compose.yml`, `deploy/settings/` (`ingest`), Ansible role `app` | new container running `ingest-email` from its own repo |
 | `Input/` badge | `apps/web/src/lib/tree.ts` (`inputCount`), `FileTree.tsx`, `Shell.tsx` (phone tab) | new, client-only |
 | Ingest button | `FileTree.tsx` + store action `ingestNow()` | new, uses the existing chat API |
 | `move_to_sources` | `deploy/opencode/tools/move_to_sources.ts`, `deploy/opencode/lib/move-to-sources.ts`, `opencode.json`, `apps/backend/src/harness/map.ts` | new tool, following `save_url` |
@@ -90,7 +90,7 @@ ingest:
   secrets: [gog_keyring_password, ingest_token]   # ingest_token also goes to the backend (section 6)
   volumes:
     - ingest-state:/state            # gog token store (file keyring), instascraper session + activity ledger, locks
-    - ./ingest/config.json:/etc/ingest/config.json:ro
+    - ${SETTINGS_DIR:-.}/ingest.json:/etc/ingest/config.json:ro   # rendered from deploy/settings/
     # vault mounts: added by the deploy (prod) or the dev/prodtest overrides, see "Mounts" below
   networks: [internal]               # no route out except the egress proxy
   depends_on: { egress: { condition: service_healthy } }
@@ -184,21 +184,22 @@ user with `GOG_HOME`.
 
 ### Config
 
-`deploy/ingest/config.json` (rendered by Ansible from the target's vars; example in the repo):
+`ingest` in `deploy/settings/` (the central settings, #133), rendered by `just settings render` / the Ansible role into
+`ingest.json`, which compose mounts at `/etc/ingest/config.json` like `settings.json`:
 
-```json
-{
-  "defaults": { "max_per_poll": 20, "resolve_max_urls_per_mail": 5, "run_interval_s": 900 },
-  "profiles": {
-    "mylife": { "vault": "mylife", "label": "MyLife", "allowed_senders": ["…"] },
-    "frechen": { "vault": "frechen", "label": "FrechenHelper", "max_per_poll": 50, "allowed_senders": ["…"] }
-  }
-}
+```yaml
+ingest:
+  defaults: { max_per_poll: 20, resolve_max_urls_per_mail: 5, run_interval_s: 900 }
+  profiles:   # only in hetzner.yaml; dev, local, prodtest, test have none (a test asserts it)
+    mylife: { vault: mylife, label: MyLife, account: { secret: ingest_mylife_account },
+              allowed_senders: [{ secret: ingest_mylife_sender }], settings: { max_per_poll: 20 } }
 ```
 
-`vault` is the backend vault id; `run.sh` maps it to `target_dir=/vaults/<id>/Input` and
-`archive_dirs=[/vaults/<id>/Sources]`. A vault that isn't cloned yet is skipped with a log line. Configuring this in the
-admin area is out of scope.
+`vault` is the backend vault id, `root` its subfolder if the vault has one; `run.sh` maps them to
+`target_dir=/vaults/<id>[/<root>]/Input` and `archive_dirs=[…/Sources]`, `label` to the four Gmail labels, and passes
+`account` (the gog account, required by ingest-email), `allowed_senders` and `settings` on. `account` and
+`allowed_senders` may be secret references, so no personal data lands in this public repo. A vault that isn't cloned
+yet is skipped with a log line. Configuring this in the admin area is out of scope.
 
 ## 2. `Input/` badge
 

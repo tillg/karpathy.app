@@ -112,7 +112,8 @@ New sources (mails, links, Instagram posts) are fetched on the server, no Mac ne
   [ingest-email](https://github.com/tillg/ingest_email): every 15 minutes it fetches the mails of a Gmail label into
   the vault's `Input/`, every minute it resolves the links in them (web pages, PDFs with OCR, YouTube, GitHub,
   Instagram) as sibling folders. It reaches the internet only through the egress proxy and never commits. Which label
-  feeds which vault is the deploy setting `app_ingest_profiles` (empty = idle; dev stacks never read a real label).
+  feeds which vault is `ingest.profiles` in [`deploy/settings/`](deploy/settings/) (empty = idle; only the
+  production settings may have profiles, dev and test stacks never read a real label).
 - **Gmail access**: `just ingest-auth <target> <email>` copies this Mac's gog OAuth client and the account's refresh
   token into the target's ingest service. **Instagram**: Settings › Instagram, username and password (plus a 2FA code
   if Instagram asks); the server logs in and keeps only the session. "Expired — Reconnect" there, and a notice in the

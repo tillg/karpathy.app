@@ -29,6 +29,7 @@ for v in prod dev prodtest; do
   check "$v: ingest runs non-root with no capabilities" py "$j" "s.get('user') and s['cap_drop'] == ['ALL'] and 'no-new-privileges:true' in s['security_opt']"
   check "$v: ingest keeps its state in the ingest-state volume" py "$j" "any(m['source'] == 'ingest-state' and m['target'] == '/state' for m in s['volumes'])"
   check "$v: ingest reads its config read-only" py "$j" "any(m['target'] == '/etc/ingest/config.json' and m.get('read_only') for m in s['volumes'])"
+  check "$v: ingest keeps its state volume" py "$j" "any(m['source'] == 'ingest-state' and m['target'] == '/state' for m in s['volumes'])"
 done
 
 check "prod: the image build takes ingest_email as a named build context, no token secret" py "$prod" "s['build'].get('additional_contexts', {}).get('ingest_email', '').endswith('tmp/ingest_email-src') and not s['build'].get('secrets') and 'gh_token' not in c.get('secrets', {})"
@@ -37,11 +38,7 @@ check "prodtest: no fake Instagram login" py "$prodtest" "'INGEST_FAKE_INSTAGRAM
 check "dev: the fake Instagram login (e2e)" py "$dev" "s['environment'].get('INGEST_FAKE_INSTAGRAM_LOGIN') == '1'"
 check "prod: the backend reaches the ingest endpoint with the token" py "$prod" "c['services']['backend']['environment']['INGEST_URL'] == 'http://ingest:8090' and 'ingest_token' in [x['source'] for x in c['services']['backend']['secrets']]"
 check "prod: the whole vaults volume is not mounted (the deploy adds per-vault Input/ and Sources/)" py "$prod" "not any(m['target'] == '/vaults' for m in s['volumes'])"
-for v in dev prodtest; do
-  j=${!v}
-  cfg=$(python3 -c "import json,sys; s=json.loads(sys.argv[1])['services']['ingest']; print(next(m['source'] for m in s['volumes'] if m['target'] == '/etc/ingest/config.json'))" "$j")
-  check "$v config has no profiles ($cfg)" python3 -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('profiles') == {} else 1)" "$cfg"
-done
+check "the ingest config comes from the rendered settings (SETTINGS_DIR/ingest.json)" py "$prod" "any(m['target'] == '/etc/ingest/config.json' and m['source'].endswith('/ingest.json') and m.get('read_only') for m in s['volumes'])"
 
 if [ "$fails" != 0 ]; then echo "compose.test.sh: $fails failed"; exit 1; fi
 echo "compose.test.sh: ok"

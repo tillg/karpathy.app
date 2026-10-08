@@ -36,15 +36,13 @@ services:
   egress:
     image: !reset null
 
-  # No profiles: the loop idles (dev stacks never read a real Gmail label).
+  # The whole vaults volume (deploy/settings/dev.yaml has no ingest profiles: the loop idles).
   ingest:
     image: !reset null
     # The e2e suite's Instagram login: no Instagram, password `wrong` fails, user twofa… asks for code 000000.
     environment:
       INGEST_FAKE_INSTAGRAM_LOGIN: "1"
     volumes:
-      - ingest-state:/state
-      - ./ingest/config.none.json:/etc/ingest/config.json:ro
       - vaults:/vaults
 
   # The dev LLM is the native Ollama on the Mac (`just ollama install`), shared by all stacks. This relay
