@@ -82,6 +82,7 @@ mark { background: rgba(245,158,11,.35); color: var(--label); border-radius: 3px
 /* ---------- sidebar ---------- */
 #sidebar { background: var(--sb); }
 .vswitch { position: relative; }
+#sidebar .seg.full { margin: 0 16px 10px; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 8px 20px 12px; width: 100%; text-align: left; }
 .brand img { width: 40px; height: 40px; border-radius: 9px; background: #fff; box-shadow: 0 0 0 .5px var(--sep); }
 .brand b { font-size: 20px; letter-spacing: -.2px; display: block; }
