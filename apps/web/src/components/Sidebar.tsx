@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useApp, type Section } from '../store';
 import { ChangesPanel } from './ChangesPanel';
 import { FileTree } from './FileTree';
 import { GitPill } from './GitPill';
+import { GraphDialog } from './GraphDialog';
 import { Icon } from './Icon';
 import { SearchPanel } from './SearchPanel';
 import { VaultSwitcher } from './VaultSwitcher';
@@ -10,13 +12,15 @@ const TITLES: Record<Section, string> = { files: 'Files', search: 'Search', chan
 
 /** Sidebar column (desktop), overlay (tablet), or the Files/Search/Changes tab root (phone). */
 export function Sidebar({ inert }: { inert?: boolean }) {
-  const { section, setSection, phone, phoneTab, setAdminOpen, setSidebarOpen, wide, status } = useApp();
+  const { section, setSection, phone, phoneTab, setAdminOpen, setSidebarOpen, wide, status, usable } = useApp();
+  const [graph, setGraph] = useState(false);
   const current: Section = phone ? (phoneTab === 'chat' ? 'files' : phoneTab) : section;
   return (
     <aside className="pane" id="sidebar" inert={inert} aria-label="Sidebar">
       <header className="bar">
         {phone && <span className="bar-title">{TITLES[current]}</span>}
         <span className="sp" />
+        <button className="ib" title="Graph" aria-label="Graph" data-testid="open-graph" disabled={!usable} onClick={() => setGraph(true)}><Icon n="circle_grid_hex" /></button>
         <button className="ib" title="Settings" aria-label="Settings" data-testid="open-settings" onClick={() => setAdminOpen('settings')}><Icon n="gear_alt" /></button>
         {!wide && !phone && <button className="ib" title="Close sidebar" onClick={() => setSidebarOpen(false)}><Icon n="sidebar_left" /></button>}
       </header>
@@ -37,6 +41,7 @@ export function Sidebar({ inert }: { inert?: boolean }) {
         {current === 'changes' && <ChangesPanel />}
       </div>
       {!phone && <div className="sbfoot"><GitPill /></div>}
+      {graph && <GraphDialog onClose={() => setGraph(false)} />}
     </aside>
   );
 }

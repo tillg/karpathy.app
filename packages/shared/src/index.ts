@@ -117,6 +117,12 @@ export interface SearchHit {
   text: string;
 }
 
+/** `GET /vaults/:id/graph`: the notes (`.md` files) and the links between them. */
+export interface GraphData {
+  nodes: { path: string }[];
+  links: { source: string; target: string }[];
+}
+
 export type ChangeKind = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked';
 
 export interface Change {

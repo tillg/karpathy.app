@@ -10,6 +10,7 @@ import {
   type ConflictChoice,
   type FileContent,
   type FileEntry,
+  type GraphData,
   type SearchHit,
   type UploadResult,
   type Vault,
@@ -21,7 +22,7 @@ import {
 import { isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
-import { filesMentioning, listTree, search, versionOf, versionOfFile } from './files.js';
+import { filesMentioning, graph, listTree, search, versionOf, versionOfFile } from './files.js';
 import { Git, GitError, type GitIdentity } from './git.js';
 import { VaultLock } from './lock.js';
 import { normalizeRel, resolveInVault } from './paths.js';
@@ -659,6 +660,11 @@ export class Vaults {
     if (!q.trim()) return { hits: [], truncated: false };
     if (/[\r\n]/.test(q)) throw new HttpError(400, 'search text must be a single line', 'bad-query');
     return search(this.vaultRootDir(id), q);
+  }
+
+  async graph(id: string): Promise<GraphData> {
+    this.requireReady(id);
+    return graph(this.vaultRootDir(id));
   }
 
   // ---- git ----
