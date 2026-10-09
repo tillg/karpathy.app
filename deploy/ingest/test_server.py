@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-from instascraper.auth import BadPassword
+from instascraper.auth import BadPassword, LoginFailed
 
 import server
 
@@ -37,6 +37,10 @@ class FakeLogin:
         self.saw_session_dir = Path(session_dir)
         if password == "wrong":
             raise BadPassword("Wrong username or password")
+        if username == "throttled":
+            raise LoginFailed("ClientThrottledError: Status 429: Too many requests")
+        if username == "challenged":
+            raise LoginFailed("ChallengeRequired: challenge_required")
         if username.startswith("twofa"):
             if code("SMS") != "123456":
                 raise RuntimeError("bad code")
@@ -205,3 +209,15 @@ def test_disconnect(svc):
     svc.call("POST", "/instagram/login", {"username": "tillg", "password": PASSWORD})
     assert svc.call("POST", "/instagram/disconnect") == (200, {"state": "not-connected", "waitingLinks": 0})
     assert not list((svc.home / ".config" / "instascraper").glob("session-*.json"))
+
+
+def test_instagram_rate_limiting_says_so(svc):
+    status, body = svc.call("POST", "/instagram/login", {"username": "throttled", "password": PASSWORD})
+    assert status == 429 and body["error"] == "rate-limited"
+    assert "try again later" in body["message"]
+
+
+def test_other_login_failures_name_the_reason(svc):
+    status, body = svc.call("POST", "/instagram/login", {"username": "challenged", "password": PASSWORD})
+    assert status == 502 and body["error"] == "login-failed"
+    assert "ChallengeRequired" in body["message"] and PASSWORD not in body["message"]

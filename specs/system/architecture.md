@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-08
+edited: 2026-10-09
 ---
 
 # Architecture: karpathy.app
@@ -681,8 +681,9 @@ then sees in use.
   (instascraper ≥ 1.1.0); when Instagram wants a code, `code(via)` blocks on a queue that `POST /instagram/code` fills,
   at most 300 s (`expired-code`, 400). One pending login at a time; a new login supersedes it. `POST /login` and
   `/code` wait at most 90 s for the next answer, else `504 login-timeout` and the login is cancelled. Errors:
-  `wrong-password` (400), `expired-code` (400), `no-pending-login` (409), `login-failed` (502, the exception's type
-  only).
+  `wrong-password` (400), `expired-code` (400), `no-pending-login` (409), `rate-limited` (429: Instagram throttles the
+  server's IP — `ClientThrottledError`, `PleaseWaitFewMinutes`, `RateLimitError`; try again later, once),
+  `login-failed` (502, with instascraper's reason `<Type>: <message>`, the password removed).
 - **Sessions:** each attempt logs in into its own `mkdtemp` staging dir under `/state/instagram-login/` (a copy of the
   old session keeps the device ids stable); only a successful, still-current attempt installs
   `~/.config/instascraper/session-<user>.json` (0600) under the service lock and sets `IG_USERNAME` in instascraper's

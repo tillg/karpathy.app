@@ -184,7 +184,12 @@ class Service:
         if isinstance(exc, (CodeTimeout, TimeoutError)):
             self.last_error = "expired-code"
             return EXPIRED_CODE
-        return 502, {"error": "login-failed", "message": f"Instagram login failed: {type(exc).__name__}"}
+        # instascraper's LoginFailed carries instagrapi's cause as "<Type>: <message>", the password removed.
+        reason = " ".join(str(exc).split())[:200] or type(exc).__name__
+        if any(t in reason for t in ("ClientThrottledError", "PleaseWaitFewMinutes", "RateLimitError", "429")):
+            return 429, {"error": "rate-limited",
+                         "message": "Instagram is rate-limiting this server (too many requests): try again later, once"}
+        return 502, {"error": "login-failed", "message": f"Instagram login failed: {reason}"}
 
     def start_login(self, username, password):
         with self.lock:
