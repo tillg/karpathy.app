@@ -28,7 +28,9 @@ token=${INGEST_REFRESH_TOKEN:-$(security find-generic-password -s gogcli -a "tok
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["refresh_token"])')} \
   || { echo "no gog token for $email in the Keychain: gog auth add $email" >&2; exit 1; }
 
-in_ingest 'gog auth credentials set /dev/stdin >/dev/null' < "$client"
+# gog keeps its client flat ({client_id, client_secret}); `credentials set` wants Google's client_secret.json shape.
+python3 -c 'import json,sys; d=json.load(sys.stdin); d=d if "installed" in d or "web" in d else {"installed": {**d, "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token", "redirect_uris": ["http://localhost"]}}; json.dump(d, sys.stdout)' < "$client" \
+  | in_ingest 'gog auth credentials set /dev/stdin >/dev/null'
 printf %s "$token" | in_ingest "gog auth import --email $(printf %q "$email") --services gmail --refresh-token-stdin >/dev/null"
 if ! in_ingest 'gog auth list --plain' | grep -q "^$email"; then
   echo "$target: import ran, but gog auth list doesn't show $email" >&2; exit 1
