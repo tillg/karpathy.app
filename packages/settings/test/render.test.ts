@@ -121,13 +121,16 @@ describe('renderIngestConfig', () => {
       profiles: {
         mylife: { vault: 'mylife', label: 'MyLife', account: { secret: 'git_author_email' }, allowed_senders: ['a@b.c', { secret: 'git_author_name' }] },
         sub: { vault: 'x', root: 'wiki', label: 'X', account: 'me@gmail.com', allowed_senders: [], settings: { max_per_poll: 5 } },
+        listed: { vault: 'y', label: 'Y', account: 'me@gmail.com', allowed_senders: { secret: 'ingest_allowed_senders' } },
       },
     };
-    expect(JSON.parse(renderIngestConfig(s, SECRETS))).toEqual({
+    expect(JSON.parse(renderIngestConfig(s, { ...SECRETS, ingest_allowed_senders: 'a@b.c, d@e.f\n' }))).toEqual({
       defaults: { max_per_poll: 20 },
       profiles: {
         mylife: { vault: 'mylife', label: 'MyLife', account: 'jane@example.com', allowed_senders: ['a@b.c', 'Jane Doe'] },
         sub: { vault: 'x', root: 'wiki', label: 'X', account: 'me@gmail.com', allowed_senders: [], max_per_poll: 5 },
+        // One secret with the whole list: comma- or newline-separated.
+        listed: { vault: 'y', label: 'Y', account: 'me@gmail.com', allowed_senders: ['a@b.c', 'd@e.f'] },
       },
     });
   });

@@ -8,4 +8,6 @@ app_settings_secrets: >-
        'dns_api_token': dns_api_token | default(''),
        'git_author_name': vault_git_author_name | default(''),
        'git_author_email': vault_git_author_email | default(''),
+       'ingest_gmail_account': vault_ingest_gmail_account | default(''),
+       'ingest_allowed_senders': vault_ingest_allowed_senders | default(''),
      } | combine(dict((vault_opencode_env | default({})).keys() | map('lower') | zip((vault_opencode_env | default({})).values()))) }}

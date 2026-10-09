@@ -107,7 +107,9 @@ export function renderIngestConfig(s: Settings, secrets: Secrets): string {
     ...(p.root ? { root: p.root } : {}),
     label: p.label,
     account: text(p.account, secrets),
-    allowed_senders: p.allowed_senders.map((a) => text(a, secrets)),
+    allowed_senders: isRef(p.allowed_senders)
+      ? text(p.allowed_senders, secrets).split(/[,\n]/).map((a) => a.trim()).filter(Boolean)
+      : p.allowed_senders.map((a) => text(a, secrets)),
     ...p.settings,
   }]));
   return JSON.stringify({ defaults: s.ingest?.defaults ?? {}, profiles }, null, 2) + '\n';

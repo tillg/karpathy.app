@@ -7,3 +7,20 @@ proxy:
 git:
   author: { name: { secret: git_author_name }, email: { secret: git_author_email } }
 timezone: Europe/Berlin
+
+# The ingest service (deploy/ingest): Gmail labels → the vaults' Input/. Account and senders are in the vault.
+# resolve_max_attempts 75: links are resolved every minute here (every 15 min on the Mac before: 5 attempts).
+ingest:
+  profiles:
+    mylife:
+      vault: mylife
+      label: MyLife
+      account: { secret: ingest_gmail_account }
+      allowed_senders: { secret: ingest_allowed_senders }
+      settings: { resolve_max_attempts: 75 }
+    frechen:
+      vault: frechen
+      label: FrechenHelper
+      account: { secret: ingest_gmail_account }
+      allowed_senders: { secret: ingest_allowed_senders }
+      settings: { max_per_poll: 50, resolve_max_attempts: 75 }

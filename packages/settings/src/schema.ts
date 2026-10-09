@@ -38,7 +38,8 @@ const ingestProfile = z.strictObject({
   root: z.string().optional(),
   label: z.string().min(1),
   account: text,
-  allowed_senders: z.array(text),
+  /** A list, or one secret holding the whole list (comma- or newline-separated). */
+  allowed_senders: z.union([z.array(text), secretRef]),
   settings: z.record(z.string(), z.unknown()).optional(),
 });
 

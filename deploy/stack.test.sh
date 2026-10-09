@@ -187,16 +187,17 @@ grep -q 'settings_render prodtest' "$here/../justfile" && ok "just prodtest rend
 (
   fails=0
   out=$(mktemp -d)
-  printf '{"bearer_token":"tok-SECRET","github_token":"","dns_api_token":"d:SECRET","git_author_name":"Jane","git_author_email":"j@x","openrouter_api_key":"or-SECRET"}' \
+  printf '{"bearer_token":"tok-SECRET","github_token":"","dns_api_token":"d:SECRET","git_author_name":"Jane","git_author_email":"j@x","openrouter_api_key":"or-SECRET","ingest_gmail_account":"me@x","ingest_allowed_senders":"a@x, b@x"}' \
     | "$here/ansible/render-settings.sh" hetzner "$out" > "$out.log" 2>&1; rc=$?
   eq "render-settings.sh hetzner exits 0" "$rc" 0
-  for f in .env opencode.env settings.json; do
+  for f in .env opencode.env settings.json ingest.json; do
     [ -s "$out/$f" ] && ok "… writes $f" || bad "… writes $f" "missing"
   done
   grep -q '^OPENROUTER_API_KEY=or-SECRET$' "$out/opencode.env" && ok "… the key reaches opencode.env" || bad "… the key reaches opencode.env" "no"
   grep -q '^GIT_AUTHOR_NAME=Jane$' "$out/.env" && ok "… the vault's author reaches .env" || bad "… the vault's author reaches .env" "no"
+  grep -q '"b@x"' "$out/ingest.json" && ok "… the vault's ingest senders reach ingest.json" || bad "… the vault's ingest senders reach ingest.json" "no"
   ! grep -q SECRET "$out.log" && ok "… prints no secret" || bad "… prints no secret" "leaked"
-  [ -z "$(ls -A "$out" | grep -v -e '^\.env$' -e '^opencode.env$' -e '^settings.json$')" ] \
+  [ -z "$(ls -A "$out" | grep -v -e '^\.env$' -e '^opencode.env$' -e '^settings.json$' -e '^ingest.json$')" ] \
     && ok "… leaves no secret store behind" || bad "… leaves no secret store behind" "$(ls -A "$out")"
   printf '{"bearer_token":"t"}' | "$here/ansible/render-settings.sh" hetzner "$out/2" >/dev/null 2>&1 \
     && bad "a missing required secret fails" "rc 0" || ok "a missing required secret fails"
@@ -223,7 +224,7 @@ done
   ANSIBLE_LOCALHOST_WARNING=False ansible localhost -m template -a "src=$tpl dest=$out/local.yml" \
     -e '{"target":"local","remotes_dir":"/remotes","vaults_fs_mount":"/srv/vaults","app_settings_env":{"OLLAMA_UPSTREAM":"192.168.5.2:11434","GIT_REMOTE_BASE":"file:///remotes/"}}' >/dev/null 2>&1
   ANSIBLE_LOCALHOST_WARNING=False ansible localhost -m template -a "src=$tpl dest=$out/hetzner.yml" \
-    -e '{"target":"hetzner","vaults_fs_mount":"/srv/vaults","app_settings_env":{}}' >/dev/null 2>&1
+    -e '{"target":"hetzner","vaults_fs_mount":"/srv/vaults","app_settings_env":{},"app_ingest_vaults":["mylife","frechen/wiki"]}' >/dev/null 2>&1
   for t in local hetzner; do
     cfg=$(cd "$here" && OLLAMA_UPSTREAM=192.168.5.2:11434 docker compose -f compose.yml -f "$out/$t.yml" config --format json 2>&1) \
       || { bad "$t: compose.target.yml merges" "$cfg"; continue; }
@@ -233,6 +234,9 @@ done
       eq "local: older releases still get GIT_REMOTE_BASE (rollback)" "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).services.backend.environment.GIT_REMOTE_BASE)' <<<"$cfg")" file:///remotes/
     else
       eq "hetzner: no relay" "$has" none
+      eq "hetzner: ingest mounts Input/ rw and Sources/ ro per vault (root included)" \
+        "$(node -e 'const s=JSON.parse(require("fs").readFileSync(0,"utf8")).services.ingest; console.log(s.volumes.filter((v)=>v.target.startsWith("/vaults/")).map((v)=>v.target+(v.read_only?":ro":"")).join(" "))' <<<"$cfg")" \
+        "/vaults/mylife/Input /vaults/mylife/Sources:ro /vaults/frechen/wiki/Input /vaults/frechen/wiki/Sources:ro"
     fi
   done
   rm -rf "$out"

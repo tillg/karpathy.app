@@ -54,7 +54,8 @@ describe('settings CLI', () => {
     const r = cli('--list-secrets', 'hetzner');
     expect(r.code).toBe(0);
     expect(r.out.trim().split('\n').sort()).toEqual(
-      ['bearer_token', 'dns_api_token', 'exa_api_key', 'git_author_email', 'git_author_name', 'github_token', 'opencode_password', 'openrouter_api_key'],
+      ['bearer_token', 'dns_api_token', 'exa_api_key', 'git_author_email', 'git_author_name', 'github_token',
+        'ingest_allowed_senders', 'ingest_gmail_account', 'opencode_password', 'openrouter_api_key'],
     );
   });
 });

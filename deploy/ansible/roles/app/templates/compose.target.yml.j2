@@ -13,7 +13,7 @@ services:
     volumes:
       - {{ remotes_dir }}:/remotes
 {% endif %}
-{% if app_ingest_vaults %}
+{% if app_ingest_vaults | default([]) %}
   # Only what the ingest service needs: Input/ to write, Sources/ to look up duplicates.
   ingest:
     volumes:
@@ -38,7 +38,7 @@ services:
       internal: { aliases: [ollama.internal] }
       egress: {}
 {% endif %}
-{% if remotes_dir is not defined and app_settings_env.OLLAMA_UPSTREAM is not defined and not app_ingest_vaults %}
+{% if remotes_dir is not defined and app_settings_env.OLLAMA_UPSTREAM is not defined and not (app_ingest_vaults | default([])) %}
   {}
 {% endif %}
 
