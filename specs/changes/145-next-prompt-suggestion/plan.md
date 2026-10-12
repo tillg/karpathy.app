@@ -1,7 +1,7 @@
 ---
 feature: 145-next-prompt-suggestion
 title: "Plan: next-prompt suggestion"
-status: proposed
+status: applying
 order: 4
 created: 2026-10-13
 edited: 2026-10-13
@@ -11,10 +11,10 @@ edited: 2026-10-13
 
 E2E steps run against this checkout's stack (`just dev up` first, `just dev down` when done).
 
-- [ ] Tool logic: `cleanSuggestion`
+- [x] Tool logic: `cleanSuggestion`
   - Test first: `apps/backend/test/suggest-next-tool.test.ts` › trims and collapses whitespace, refuses empty and > 160 chars — fails today: no module
   - Verify: `npx vitest run apps/backend/test/suggest-next-tool.test.ts` → green
-- [ ] Tool baked into the image and allowed for the agents
+- [x] Tool baked into the image and allowed for the agents
   - Test first: `apps/backend/test/opencode-tools.test.ts` › "opencode lists suggest_next as a tool", "suggest_next is allowed for vault and vault-readonly" — fails today: no tool
   - Verify: `npx vitest run apps/backend/test/opencode-tools.test.ts -t suggest_next` → green (real container)
 - [ ] Harness mapping sets `ToolCall.suggestion`
@@ -26,7 +26,7 @@ E2E steps run against this checkout's stack (`just dev up` first, `just dev down
 - [ ] Composer ghost text, Tab and tap accept, hidden chip
   - Test first: `apps/web/src/components/Suggestion.test.tsx` › ghost shows while text empty, disappears on typing; Tab accepts (not sent); tap accepts; `Parts` renders no chip for `suggest_next` — fails today: no component
   - Verify: `npx vitest run apps/web/src/components/Suggestion.test.tsx` → green
-- [ ] Standing instruction: tool description tells the model when to call it
+- [x] Standing instruction: tool description tells the model when to call it
   - Test first: `apps/backend/test/suggest-next-tool.test.ts` › description says "at most once", "last" — fails today: no tool
   - Verify: same test → green
 - [ ] E2E with the real model and the phone viewport

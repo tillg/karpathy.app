@@ -1,7 +1,7 @@
 ---
 feature: 145-next-prompt-suggestion
 title: "Domain: next-prompt suggestion"
-status: proposed
+status: applying
 order: 2
 created: 2026-10-13
 edited: 2026-10-13

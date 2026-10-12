@@ -71,6 +71,32 @@ describe('opencode custom tools', () => {
   });
 });
 
+describe('suggest_next tool', () => {
+  it('opencode lists suggest_next as a tool', async () => {
+    const r = await oc.fetch(`${oc.url}/experimental/tool/ids?directory=/vaults`);
+    expect(await r.json()).toContain('suggest_next');
+  });
+
+  it('suggest_next is allowed for vault and vault-readonly, hidden for commit-message', async () => {
+    const cfg = JSON.parse(await readFile(join(import.meta.dirname, '../../../deploy/opencode/opencode.json'), 'utf8'));
+    expect(cfg.agent.vault.permission.suggest_next).toBe('allow');
+    expect(cfg.agent['vault-readonly'].permission.suggest_next).toBe('allow');
+    expect(cfg.agent['commit-message'].permission).toEqual({ '*': 'deny' });
+  });
+
+  it('suggest_next returns the cleaned prompt inside the container and refuses an empty one', async () => {
+    await mkdir(join(vaultsDir, 'suggest'), { recursive: true });
+    await writeFile(join(vaultsDir, 'suggest.ts'), [
+      "const t = (await import('/opt/opencode-config/opencode/tools/suggest_next.ts')).default;",
+      "for (const prompt of ['  Summarize\\nthe open points ', '']) {",
+      "  try { console.log(await t.execute({ prompt }, { directory: '/vaults/suggest' })); } catch (e) { console.log('ERR ' + e.message); }",
+      '}',
+    ].join('\n'));
+    const r = spawnSync('docker', ['exec', '-e', 'BUN_BE_BUN=1', oc.name, 'opencode', 'run', '/vaults/suggest.ts'], { encoding: 'utf8' });
+    expect(`${r.stdout}${r.stderr}`.trim().split('\n')).toEqual(['suggested: Summarize the open points', 'ERR The suggested prompt is empty']);
+  });
+});
+
 describe('move_to_sources tool', () => {
   /** Runs the baked tool's execute inside the container (opencode's own Bun) on a vault folder; one output line. */
   async function runMove(name: string) {

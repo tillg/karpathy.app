@@ -45,6 +45,7 @@
         },
         "open_note": "allow",
         "open_url": "allow",
+        "suggest_next": "allow",
         "save_url": "allow",
         "move_to_sources": "allow"
       }
@@ -55,7 +56,8 @@
       "permission": {
         "edit": "deny",
         "open_note": "allow",
-        "open_url": "allow"
+        "open_url": "allow",
+        "suggest_next": "allow"
       }
     },
     "commit-message": {

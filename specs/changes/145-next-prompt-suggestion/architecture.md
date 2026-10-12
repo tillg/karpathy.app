@@ -1,7 +1,7 @@
 ---
 feature: 145-next-prompt-suggestion
 title: "Architecture: next-prompt suggestion"
-status: proposed
+status: applying
 order: 3
 created: 2026-10-13
 edited: 2026-10-13
