@@ -7,7 +7,7 @@ afterEach(cleanup);
 
 describe('ContextMeter (#140)', () => {
   it('full: used / limit and the meter value', () => {
-    render(<ContextMeter usage={{ used: 3560, limit: 16384 }} variant="full" model="ollama/qwen2.5:3b" locale="en-US" />);
+    render(<ContextMeter usage={{ used: 3560, limit: 16384 }} variant="full" model="ollama/some-model" locale="en-US" />);
     expect(screen.getByTestId('context-meter').textContent).toContain('3,560 / 16,384');
     const m = screen.getByRole('meter');
     expect(m.getAttribute('aria-valuenow')).toBe('3560');
@@ -28,12 +28,12 @@ describe('ContextMeter (#140)', () => {
   });
 
   it('the tooltip names the share, the model and compaction', () => {
-    render(<ContextMeter usage={{ used: 3560, limit: 16384 }} variant="full" model="ollama/qwen2.5:3b" locale="en-US" />);
-    expect(screen.getByTestId('context-meter').getAttribute('title')).toBe("22% of qwen2.5:3b's context · drops when the chat is compacted");
+    render(<ContextMeter usage={{ used: 3560, limit: 16384 }} variant="full" model="ollama/some-model" locale="en-US" />);
+    expect(screen.getByTestId('context-meter').getAttribute('title')).toBe("22% of some-model's context · drops when the chat is compacted");
   });
 
   it('numbers follow the locale', () => {
-    render(<ContextMeter usage={{ used: 3560, limit: 16384 }} variant="full" model="ollama/qwen2.5:3b" locale="de-DE" />);
+    render(<ContextMeter usage={{ used: 3560, limit: 16384 }} variant="full" model="ollama/some-model" locale="de-DE" />);
     const m = screen.getByTestId('context-meter');
     expect(m.textContent).toContain('3.560 / 16.384');
     expect(m.getAttribute('title')).toMatch(/^22\s%/);
