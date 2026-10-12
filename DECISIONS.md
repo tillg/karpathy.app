@@ -148,6 +148,7 @@ edited: 2026-10-12
   - [01:05 — #143: a `current_page` tool that reads a per-chat file the backend writes outside the clones](#run-2026-10-12-2332-8)
   - [01:05 — #145: a `suggest_next` tool, shown as ghost text derived from the chat history; Tab or "Tap to use"](#run-2026-10-12-2332-9)
   - [01:05 — Archive #143 and #145 with their decisions still open](#run-2026-10-12-2332-10)
+  - [01:10 — Disk full: clear the Homebrew and npm caches, stop stack 1, prune build cache; fix the review's findings on a branch](#run-2026-10-12-2332-11)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2058,3 +2059,22 @@ edited: 2026-10-12
 - **Why:** the task asks to archive each issue; `/autonomous` allows passing the gate and logging it.
 - **Alternatives:** leave both changes open in `specs/changes/`.
 - **Consequences:** reverting a decision later is a `/spec:tweak`. Applies to #146 too when it lands.
+
+## 01:10 — Disk full: clear the Homebrew and npm caches, stop stack 1, prune build cache; fix the review's findings on a branch {#run-2026-10-12-2332-11}
+
+- **Status:** open
+- **Context:** around 00:50 the Mac's data volume hit 100 % (896 of 926 GB; Rancher Desktop's VM disk alone is 76 GB);
+  every shell call failed with ENOSPC, the #146 worker stopped at plan step 2, and Docker reported missing snapshots.
+  The self-review of the five merged features (decision 5's gate) found 7 defects at the same time.
+- **Question:** what may be deleted to continue, and how are the findings handled?
+- **Decision:** delete only regenerable caches (`brew cleanup -s` + Homebrew downloads, `npm cache clean --force`), take
+  down this checkout's own dev stack 1, prune Docker build cache and dangling images (no volumes, nothing of other
+  projects) — 18 GB free afterwards. The findings (copy-on-select overwriting the clipboard before paste-to-replace;
+  the screen-reader announcement losing the answer when `suggest_next` comes last; raw suggestion whitespace;
+  `current_page` calling a dot-dir file deleted; open-page files left when a vault is removed; the `/vaults` literal;
+  URLs ending in `)`) are fixed test-first on `fix/review-findings` and merged before the release.
+- **Why:** caches are rebuilt on demand; the user's data isn't mine to delete; shipping known defects to prod isn't
+  needed.
+- **Alternatives:** wait for the user (the run would stall all night); delete the Lima image cache or other apps'
+  caches (more space, but not obviously mine).
+- **Consequences:** the disk is still at 99 %: the user should free space. Further image builds may fill it again.
