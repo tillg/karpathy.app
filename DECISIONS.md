@@ -142,6 +142,7 @@ edited: 2026-10-12
   - [00:10 — #128: a `FROM scratch AS web` stage that a build context replaces; the node stage becomes `web-build`](#run-2026-10-12-2332-4)
   - [00:15 — Gate each merge on lint, typecheck, the touched workspace's tests and the feature's e2e; full suite before the release](#run-2026-10-12-2332-5)
   - [00:15 — #147: bare URLs link in every property; "open ↗" only for a value that is one whole URL](#run-2026-10-12-2332-6)
+  - [00:40 — #144: copy on mouseup/touchend/keyup in Write mode only, confirmed by the existing toast](#run-2026-10-12-2332-7)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1957,3 +1958,18 @@ edited: 2026-10-12
 - **Alternatives:** gate by key (misses `trailer`, `source_url`, …); link the first URL in mixed text.
 - **Consequences:** merged to `main` in c808e77, issue closed. Screenshots came from a throwaway Playwright spec, not
   the Playwright MCP.
+
+## 00:40 — #144: copy on mouseup/touchend/keyup in Write mode only, confirmed by the existing toast {#run-2026-10-12-2332-7}
+
+- **Status:** open
+- **Context:** #144 (tweak), `Editor.tsx` / `NotePane.tsx`. The issue names "the editor" and asks for a small visual
+  feedback; Safari only accepts clipboard writes made synchronously inside a user gesture.
+- **Question:** where does copy-on-select apply, what triggers it, and what shows it?
+- **Decision:** Write mode (CodeMirror) only; the copy runs in `mouseup`, `touchend` and `keyup` handlers when the
+  selection is non-empty and differs from the last copied text (an empty selection re-arms it); ranges are joined with
+  the document's line break, frontmatter included; the existing global toast says "Copied" after a successful write; a
+  refused write stays silent.
+- **Why:** Safari-safe; no new component; Read mode keeps the browser's own select-and-copy.
+- **Alternatives:** `selectionchange` (loses the gesture in Safari); also Read mode; a badge next to the selection.
+- **Consequences:** a mouse drag that ends outside the editor doesn't copy (handler on the editor only) — possible
+  follow-up. e2e ran on the Chromium desktop project only. Merged to `main`, issue closed.
