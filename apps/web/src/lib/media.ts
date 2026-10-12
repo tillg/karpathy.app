@@ -33,7 +33,8 @@ export type Resolved =
 /** `![[target|300]]` / `![[target|300x200]]` (width; the height is ignored) / `![[target|Caption]]`. */
 export function wikiEmbed(inner: string): Embed {
   const bar = inner.indexOf('|');
-  const ref = (bar >= 0 ? inner.slice(0, bar) : inner).trim();
+  // `\|`: the table-safe bar.
+  const ref = (bar >= 0 ? inner.slice(0, inner[bar - 1] === '\\' ? bar - 1 : bar) : inner).trim();
   const extra = bar >= 0 ? inner.slice(bar + 1).trim() : '';
   const hash = ref.indexOf('#');
   const w = /^(\d+)(?:x\d+)?$/.exec(extra);

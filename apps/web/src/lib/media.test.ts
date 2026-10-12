@@ -7,6 +7,8 @@ describe('parseEmbed', () => {
     expect(parseEmbed('![[a.png]]')).toMatchObject({ form: 'wiki', target: 'a.png' });
     expect(parseEmbed('![[a.png|300]]')).toMatchObject({ target: 'a.png', width: 300 });
     expect(parseEmbed('![[a.png|300x200]]')).toMatchObject({ target: 'a.png', width: 300 });
+    // #118: the table-safe escaped pipe.
+    expect(parseEmbed('![[a.png\\|300]]')).toMatchObject({ target: 'a.png', width: 300 });
     expect(parseEmbed('![[clip.mp4|200]]')).toMatchObject({ target: 'clip.mp4', width: 200 });
     const cap = parseEmbed('![[a.png|Caption]]')!;
     expect(cap.alt).toBe('Caption');

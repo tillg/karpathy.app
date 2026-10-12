@@ -51,7 +51,7 @@ export function rewriteLinks(text: string, page: string, from: string, to: strin
   const moved = page === from;
 
   let out = text.replace(WIKILINK_RE, (all, inner: string, offset: number) => {
-    const cut = inner.search(/[#|]/);
+    const cut = inner.search(/#|\\?\|/);
     const target = cut < 0 ? inner : inner.slice(0, cut);
     const t = target.trim();
     if (inCode(offset) || !t.includes('/') || resolveWikilink(t, paths, page) !== from) return all;
