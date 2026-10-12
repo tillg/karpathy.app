@@ -1,4 +1,5 @@
-import type { ChatDetail, ChatEvent, ChatMessage, ChatPart, ContextUsage, ToolCall } from '@karpathy/shared';
+import { isPdf } from '@karpathy/shared';
+import type { ChatDetail, ChatEvent, ChatMessage, ChatPart, ContextUsage, ModelInput, ToolCall } from '@karpathy/shared';
 
 export interface ChatView extends ChatDetail {
   readonly?: boolean;
@@ -248,4 +249,13 @@ export function lastContext(messages: ChatMessage[]): { usage: ContextUsage; mod
     if (m.role === 'assistant' && m.context) return { usage: m.context, ...(m.model ? { model: m.model } : {}) };
   }
   return null;
+}
+
+/**
+ * What an unsent attachment's chip warns about: a PDF the model can't read. Images never warn (#146): a text-only
+ * model gets them described by the look_at_image tool. Null = no warning.
+ */
+export function attachWarning(input: ModelInput | null | undefined, path: string, model: string): string | null {
+  if (!input || !isPdf(path) || input.pdf) return null;
+  return `${model} can’t see PDFs: the AI only gets the file’s path`;
 }

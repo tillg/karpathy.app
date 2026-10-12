@@ -29,7 +29,7 @@ describe('loadSettings', () => {
     const dir = tempDir({
       'settings.yaml': CENTRAL,
       'dev.yaml': 'timezone: Europe/Berlin\n',
-      'dev.local.yaml': 'ai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3 }\n',
+      'dev.local.yaml': 'ai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3, vision_model: openrouter/mistralai/m }\n',
       'hetzner.yaml': 'timezone: Europe/Berlin\n',
       'prodtest.yaml': 'timezone: Europe/Berlin\n',
     });

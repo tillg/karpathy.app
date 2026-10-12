@@ -6,7 +6,7 @@ import { loadChips, localStamp, saveChips, type Chip, type ChipDraft } from '../
 import { chipCommands, filterCommands, paletteQuery, recentCommands, recordCommand } from '../lib/commands';
 import { mountEmbed } from '../lib/embed';
 import { mediaKind } from '../lib/media';
-import { adoptQueued, applyChatEvent, changedPaths, isAcceptKey, lastContext, newOpens, nextSuggestion, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
+import { adoptQueued, applyChatEvent, attachWarning, changedPaths, isAcceptKey, lastContext, newOpens, nextSuggestion, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
 import { readNdjson } from '../lib/ndjson';
 import { chatTime } from '../lib/time';
 import { useApp } from '../store';
@@ -188,15 +188,14 @@ function Message({ t, model }: { t: Turn; model: string }) {
 /** An unsent attachment: its thumbnail or name and size, a warning if the model can't read it, and ✕. */
 function ChipView({ chip, model, onRemove }: { chip: Chip; model: string; onRemove(): void }) {
   const { settings } = useApp();
-  const input = settings?.modelInput;
   const pdf = isPdf(chip.path);
-  const blind = input && (pdf ? !input.pdf : !input.image);
+  const warning = attachWarning(settings?.modelInput, chip.path, model);
   const name = chip.path.split('/').pop()!;
   const size = chip.size >= 1024 * 1024 ? `${Math.round(chip.size / 2 ** 20)} MB` : chip.size >= 1024 ? `${Math.round(chip.size / 1024)} KB` : `${chip.size} B`;
   return (
     <div className="achip" data-testid="attach-chip" data-path={chip.path} title={chip.path}>
       {pdf ? <span className="achip-doc"><Icon n="doc" size={20} /><span><b>{name}</b><small>{size}</small></span></span> : <FileEmbed path={chip.path} present />}
-      {blind && <small className="achip-warn">{model} can’t see {pdf ? 'PDFs' : 'images'}: the AI only gets the file’s path</small>}
+      {warning && <small className="achip-warn">{warning}</small>}
       <button className="achip-x" aria-label={`Remove ${name}`} data-testid="attach-chip-remove" onClick={onRemove}><Icon n="xmark" size={12} /></button>
     </div>
   );

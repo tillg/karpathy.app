@@ -109,6 +109,20 @@ describe('suggest_next tool', () => {
   });
 });
 
+describe('look_at_image tool', () => {
+  it('opencode lists look_at_image as a tool', async () => {
+    const r = await oc.fetch(`${oc.url}/experimental/tool/ids?directory=/vaults`);
+    expect(await r.json()).toContain('look_at_image');
+  });
+
+  it('look_at_image is allowed for vault and vault-readonly, not commit-message', async () => {
+    const cfg = JSON.parse(await readFile(join(import.meta.dirname, '../../../deploy/opencode/opencode.json'), 'utf8'));
+    expect(cfg.agent.vault.permission.look_at_image).toBe('allow');
+    expect(cfg.agent['vault-readonly'].permission.look_at_image).toBe('allow');
+    expect(cfg.agent['commit-message'].permission).toEqual({ '*': 'deny' });
+  });
+});
+
 describe('move_to_sources tool', () => {
   /** Runs the baked tool's execute inside the container (opencode's own Bun) on a vault folder; one output line. */
   async function runMove(name: string) {

@@ -1,5 +1,5 @@
 # Dev stacks on the Mac (`just dev up`): the native Ollama, local bare repos instead of GitHub.
-ai: { gateway: ollama, model: ollama/qwen2.5:3b }
+ai: { gateway: ollama, model: ollama/qwen2.5:3b, vision_model: ollama/qwen3-vl:2b }
 git:
   remote_base: file:///remotes/
   author: { name: Dev User, email: dev@example.com }

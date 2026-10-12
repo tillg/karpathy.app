@@ -12,6 +12,12 @@ const KEY_VARS: Record<string, string> = {
   openai: 'OPENAI_API_KEY',
 };
 
+/** The OpenAI-compatible endpoint of a built-in gateway kind (the vision tool calls /chat/completions itself). */
+const KNOWN_BASE_URLS: Record<string, string> = {
+  openrouter: 'https://openrouter.ai/api/v1',
+  openai: 'https://api.openai.com/v1',
+};
+
 const isRef = (v: unknown): v is { secret: string } => typeof v === 'object' && v !== null && 'secret' in v;
 
 /** A string setting's value: itself, or its secret's value. */
@@ -41,19 +47,26 @@ export function renderOpencodeProviders(s: Settings): { provider: Record<string,
 }
 
 /**
- * opencode.env: the gateway's API key, Exa, the web caps, the default model and the gateway's provider config.
+ * opencode.env: the gateway's API key, Exa, the web caps, the default model, the vision model's endpoint and the gateway's provider config.
  * The providers go in OPENCODE_CONFIG_CONTENT, which opencode merges after a vault's own opencode.json (an
  * OPENCODE_CONFIG file comes before it): a vault can't turn off the ZDR routing or redirect the gateway.
  */
 export function renderOpencodeEnv(s: Settings, secrets: Secrets): string {
   const gw = s.gateways[s.ai.gateway]!;
   const keyVar = KEY_VARS[gw.kind];
+  // The vision model (look_at_image): a model of the same gateway; its `models` options go into the request body.
+  const visionModel = s.ai.vision_model.slice(s.ai.gateway.length + 1);
+  const visionOptions = gw.models?.[visionModel]?.options;
   return lines([
     ...(keyVar && gw.api_key ? [[keyVar, secrets[gw.api_key.secret]] as [string, string | undefined]] : []),
     ['EXA_API_KEY', s.ai.web.exa_api_key ? secrets[s.ai.web.exa_api_key.secret] : undefined],
     ['WEB_FETCH_CAP', String(s.ai.web.fetch_cap)],
     ['WEB_SEARCH_CAP', String(s.ai.web.search_cap)],
     ['OPENCODE_MODEL', s.ai.model],
+    ['VISION_BASE_URL', gw.base_url ?? KNOWN_BASE_URLS[gw.kind]],
+    ['VISION_MODEL', visionModel],
+    ['VISION_API_KEY', gw.api_key ? secrets[gw.api_key.secret] : undefined],
+    ['VISION_REQUEST_OPTIONS', visionOptions ? JSON.stringify(visionOptions) : undefined],
     ['OPENCODE_CONFIG_CONTENT', JSON.stringify(renderOpencodeProviders(s))],
   ]);
 }

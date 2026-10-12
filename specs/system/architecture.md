@@ -211,7 +211,7 @@ So a vault can't switch off the zero-data-retention routing or point the gateway
 file would be merged *before* the project config, which is why the providers don't travel that way (a vault's
 `zdr: false` won in the check that found it).
 
-The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `current_page`, `open_url`, `suggest_next`, `save_url`, `move_to_sources`),
+The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `current_page`, `open_url`, `suggest_next`, `save_url`, `move_to_sources`, `look_at_image`),
 `plugins/` (`known-url`, `md-lint`), `lib/` (helpers) and `skills/` (the **app skills**, today `research`). The bake step
 waits for the six tools in the tool ids and for both plugins' `ready` log lines before it makes the dir read-only.
 
@@ -253,6 +253,8 @@ refuses anything but `http:`/`https:` ("Only http(s) pages can be opened"), then
 nothing and needs no Web access (the server makes no request). Baked like `open_note`, allowed for `vault` and
 `vault-readonly` (`commit-message` keeps `"*": "deny"`). The web app turns the completed call into an Open chip ([Link
 offers](#link-offers)).
+
+**Custom tool `look_at_image`** (`deploy/opencode/tools/look_at_image.ts`, logic in `deploy/opencode/lib/look-at-image.ts`, #146): `{ path, question? }`. `resolveImage` reuses `resolveNote` (inside the vault, no dot segments), allows png, jpg, jpeg, gif, webp up to 10 MB; `buildRequest` makes an OpenAI chat request (question plus the image as data URL, `stream: false`, `VISION_REQUEST_OPTIONS` merged in); `describeImage` POSTs it to `VISION_BASE_URL/chat/completions` through the egress proxy (Bun's `fetch` `proxy`; the dev Ollama relay is `NO_PROXY`), 120 s timeout, `Bearer VISION_API_KEY` when set, and returns the first choice's text cut at 8000 characters. Errors (`image recognition is not configured`, HTTP status with a short body, never the key) reach the model as tool errors. Allowed for `vault` and `vault-readonly`, not in `WRITE_TOOLS`; an attached file reaches a text-only model as a file part named by its vault path, which the tool description points at.
 
 **Custom tool `suggest_next`** (`deploy/opencode/tools/suggest_next.ts`, check in `deploy/opencode/lib/suggestion.ts`, import-free):
 args `{ prompt }`; collapses whitespace, refuses an empty prompt and one over 160 characters (an error the model can
@@ -1156,7 +1158,7 @@ flowchart LR
 | Browser localStorage | Token, local drafts, tree expansion state, tree sort and filter (`karpathy.treeSort`, `karpathy.treeFilter`), main pane, mode preference (`karpathy.mode`), properties view (`karpathy.propsView`). | web |
 | localStorage `karpathy.recentCommands.<vault>`, `karpathy.shownMoves` | The last 10 commands started in a vault (chip order); the agents moves already announced (last 50). | web |
 | Backend memory | Per vault: the skill stamp of the last opencode refresh, the last agents move, the skill-link scan after it, running commit-message proposals. Lost on restart (the first check then refreshes). | backend |
-| opencode image `/opt/opencode-config/opencode/` | Tools `open_note`, `current_page`, `open_url`, `suggest_next`, `save_url` and `move_to_sources`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
+| opencode image `/opt/opencode-config/opencode/` | Tools `open_note`, `current_page`, `open_url`, `suggest_next`, `look_at_image`, `save_url` and `move_to_sources`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
 | Browser memory | Object URLs of media (≤ 200 MB), places of notes seen this session. Lost on reload. | web |
 | Service worker cache `vault-api` | Vault list, file trees, opened notes (for offline reading); cleared on 401. | web |
 
@@ -1341,7 +1343,7 @@ flowchart TB
 | Key | Holds | Overridden by |
 |---|---|---|
 | `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | `dev`, `prodtest`, `test`, `local`: `ollama`, `ollama/qwen2.5:3b` |
-| `ai.vision_model` | The integration tests' vision model | `test`: `ollama/qwen3-vl:2b` |
+| `ai.vision_model` | The vision model of `look_at_image` (required; a model of `ai.gateway`, whose kind must speak the OpenAI chat API): `openrouter/mistralai/mistral-small-2603`, with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY` and `VISION_REQUEST_OPTIONS` (the model's `options`, merged into the request) into `opencode.env`. | `dev`, `prodtest`, `test`, `local`: `ollama/qwen3-vl:2b` |
 | `ai.web` | `access` (default of the Web access switch), `fetch_cap`, `search_cap` (20 each), `exa_api_key` (optional secret) | — |
 | `auth` | `bearer_token`, `opencode_password` (secret references) | — |
 | `git` | `remote_base` (`https://github.com/`), `author` (`name`, `email`), `github_token` (optional secret) | `dev`, `prodtest`, `local`: `file:///remotes/`; author per environment; `hetzner`: author as secrets `git_author_name` / `git_author_email` |

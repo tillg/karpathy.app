@@ -166,7 +166,8 @@ export async function startOpencode(vaultsDir: string, env: Record<string, strin
     // A hosted model for the @llm tier (LLM_TEST_MODEL=openrouter/…): its key is passed by name only, so it
     // never shows in a command line.
     ...(process.env.OPENROUTER_API_KEY ? ['-e', 'OPENROUTER_API_KEY'] : []),
-    ...Object.entries(env).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
+    // The look_at_image tool's vision model: the test Ollama (a hosted one via VISION_* in `env`).
+    ...Object.entries({ VISION_BASE_URL: `http://${OLLAMA}:11434/v1`, VISION_MODEL: vision, ...env }).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
     '-e', `OPENCODE_CONFIG_CONTENT=${JSON.stringify(providerCfg)}`,
     '--tmpfs', `/home/app:uid=${process.getuid?.() ?? 1000},gid=${process.getgid?.() ?? 1000},mode=0700`,
     '--tmpfs', `/data:uid=${process.getuid?.() ?? 1000},gid=${process.getgid?.() ?? 1000}`,

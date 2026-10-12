@@ -48,7 +48,8 @@ export const settingsSchema = z.strictObject({
   ai: z.strictObject({
     gateway: z.string(),
     model: z.string(),
-    vision_model: z.string().optional(),
+    /** Looks at images for the chat model (the look_at_image tool); a model of `gateway`, which must speak the OpenAI chat API. */
+    vision_model: z.string(),
     web: z.strictObject({
       access: z.boolean(),
       fetch_cap: z.number().int().positive(),
@@ -102,7 +103,6 @@ export function crossFieldErrors(s: Settings): string[] {
   } else {
     for (const key of ['model', 'vision_model'] as const) {
       const model = s.ai[key];
-      if (model === undefined) continue;
       const prefix = `${s.ai.gateway}/`;
       const known = Object.keys(gw.models ?? {}).map((m) => prefix + m);
       if (!model.startsWith(prefix)) errors.push(`ai.${key}: ${model} is not a model of gateway ${s.ai.gateway}`);
@@ -110,6 +110,7 @@ export function crossFieldErrors(s: Settings): string[] {
         errors.push(`ai.${key}: ${model} is not one of ${known.join(', ')}`);
     }
   }
+  if (gw?.kind === 'anthropic') errors.push(`ai.vision_model: gateway ${s.ai.gateway} (anthropic) is not OpenAI-compatible, which the vision tool needs`);
   if (s.proxy.tls === 'dns' && !s.proxy.dns.api_token) errors.push('proxy.dns.api_token: required when proxy.tls is dns');
   return errors;
 }

@@ -320,7 +320,6 @@ test('growth warning and refusals', async ({ page, api, vault }) => {
 
 test('attach in the chat', async ({ page, api, vault }) => {
   page.on('dialog', (d) => void d.accept());
-  const settings = (await (await api.ctx.get('/api/settings')).json()) as { model: string; modelInput: { image: boolean; pdf: boolean } | null };
   await openApp(page, vault.id);
   const posts: string[] = [];
   page.on('request', (r) => { if (r.method() === 'POST' && r.url().includes('/raw?')) posts.push(decodeURIComponent(r.url())); });
@@ -349,8 +348,8 @@ test('attach in the chat', async ({ page, api, vault }) => {
   expect(files).toHaveLength(2);
   const folder = files[0]!.split('/').slice(0, 2).join('/');
   expect(files.every((p) => p.startsWith(`${folder}/`))).toBe(true);
-  if (settings.modelInput && !settings.modelInput.image)
-    await expect(chips.nth(0)).toContainText(`${settings.model.split('/').pop()} can’t see images`);
+  // An image never warns: look_at_image describes it for a text-only model (#146).
+  await expect(chips.nth(0).locator('.achip-warn')).toHaveCount(0);
 
   // 2. ✕ deletes the file; the last one takes its folder with it, and the next file starts a new one.
   await chips.nth(1).getByTestId('attach-chip-remove').click();
