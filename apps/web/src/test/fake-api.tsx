@@ -19,6 +19,8 @@ type Answer = unknown | ((body: unknown) => unknown);
 export interface FakeApi {
   /** Every request the app made, in order: `METHOD /api/path`, with its JSON body. */
   calls: { call: string; body: unknown }[];
+  /** Sends a vault event down the open event streams. */
+  emit: (e: unknown) => void;
 }
 
 export function fakeApi(opts: { files?: FileEntry[]; status?: Partial<VaultStatus>; routes?: Record<string, Answer> } = {}): FakeApi {
@@ -31,14 +33,16 @@ export function fakeApi(opts: { files?: FileEntry[]; status?: Partial<VaultStatu
     [`GET /api/vaults/${VAULT}/chats`]: [],
     ...opts.routes,
   };
-  const api: FakeApi = { calls: [] };
+  const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
+  const api: FakeApi = { calls: [], emit: (e) => { for (const c of streams) c.enqueue(new TextEncoder().encode(`${JSON.stringify(e)}\n`)); } };
   vi.stubGlobal('fetch', async (url: string, init: RequestInit = {}) => {
     const path = url.split('?')[0]!;
     const key = `${init.method ?? 'GET'} ${path}`;
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
     api.calls.push({ call: key, body });
-    // Event streams stay open and silent.
-    if (path.endsWith('/events') || path.endsWith('/stream')) return new Response(new ReadableStream());
+    // Event streams stay open, silent until a test emits.
+    if (path.endsWith('/events')) return new Response(new ReadableStream({ start: (c) => void streams.push(c) }));
+    if (path.endsWith('/stream')) return new Response(new ReadableStream());
     if (!(key in routes)) return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
     const a = routes[key];
     const out = typeof a === 'function' ? (a as (b: unknown) => unknown)(body) : a;

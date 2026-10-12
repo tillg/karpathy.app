@@ -849,6 +849,8 @@ function useAppState() {
     }
     setChangesNonce((x) => x + 1);
     if (e.files.some((f) => f.path === SCHEMA_PATH)) void loadSchema(vault);
+    // A skill written outside a pull (by the AI, a save, a service): chips and the Ingest button reload commands (#134).
+    if (e.files.some((f) => f.path.startsWith('.agents/skills/'))) setCommandsNonce((n) => n + 1);
     if (e.files.some((f) => f.version === null || !pathsRef.current.includes(f.path))) void refreshFiles();
     else refreshDatesSoon();
     // Cached media bytes of a changed file are stale: drop them and let the shown embeds fetch again.

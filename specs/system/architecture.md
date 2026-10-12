@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-12
+edited: 2026-10-13
 ---
 
 # Architecture: karpathy.app
@@ -578,8 +578,8 @@ sequenceDiagram
   `null`), `filterCommands` (case-insensitive; vault skills before app skills, prefix matches before other matches, each
   A–Z), `chipCommands(list, recent, 4)` (recent names still in the list first, then A–Z), `recentCommands` /
   `recordCommand` (localStorage `karpathy.recentCommands.<vaultId>`, at most 10 names, every access in `try/catch`).
-  `ChatPane` › `Conversation` loads the list on mount, when the app reports an agents move (`commandsNonce`) and each time
-  the palette opens; the list is optional: if the GET fails, palette and chips don't render and sending never waits for it.
+  `ChatPane` › `Conversation` loads the list on mount, when the app reports an agents move or a `files-changed` event under
+  `.agents/skills/` (`commandsNonce`, #134: a skill the AI or a save wrote outside a pull) and each time the palette opens; the list is optional: if the GET fails, palette and chips don't render and sending never waits for it.
   - **Palette:** a `listbox` above the composer while `paletteQuery(text) !== null`, grouped "This vault" and "karpathy.app",
     each row `/name`, a `vault`/`app` tag and the description; a `replaces` row adds "Replaces karpathy.app's /name; rename
     it in .agents/skills/ to get both." The textarea keeps focus (`aria-activedescendant`); ↑/↓, Enter or Tab pick, Escape
