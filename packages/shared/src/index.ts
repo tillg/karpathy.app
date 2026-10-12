@@ -234,6 +234,8 @@ export interface ToolCall {
   opens?: boolean;
   title?: string;
   error?: string;
+  /** suggest_next: the suggested next prompt (shown as ghost text in the composer, not as a chip). */
+  suggestion?: string;
   /** websearch: the search query. */
   query?: string;
   /** webfetch: the fetched URL. */

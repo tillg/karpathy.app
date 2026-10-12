@@ -17,7 +17,7 @@ E2E steps run against this checkout's stack (`just dev up` first, `just dev down
 - [x] Tool baked into the image and allowed for the agents
   - Test first: `apps/backend/test/opencode-tools.test.ts` › "opencode lists suggest_next as a tool", "suggest_next is allowed for vault and vault-readonly" — fails today: no tool
   - Verify: `npx vitest run apps/backend/test/opencode-tools.test.ts -t suggest_next` → green (real container)
-- [ ] Harness mapping sets `ToolCall.suggestion`
+- [x] Harness mapping sets `ToolCall.suggestion`
   - Test first: `apps/backend/test/harness-map.test.ts` › "suggest_next maps to suggestion, not writes/opens" on a synthetic tool part — fails today: field missing
   - Verify: `npx vitest run apps/backend/test/harness-map.test.ts` → green
 - [ ] `nextSuggestion(messages, turn)` picks the live suggestion
