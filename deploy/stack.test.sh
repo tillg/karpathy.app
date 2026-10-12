@@ -271,4 +271,20 @@ fi
 docker compose -p "karpathy-app-$n" down -t 0 >/dev/null 2>&1
 rm -rf "$other"
 
+# The proxy image's PWA build (#128): the release builds it once and passes it as the named build context `web`,
+# which replaces the Dockerfile's `web` stage; local builds (dev, prodtest) get the stage's own node build.
+grep -qE '^FROM scratch AS web$' "$here/proxy/Dockerfile" && grep -qE '^FROM node:[^ ]+ AS web-build$' "$here/proxy/Dockerfile" \
+  && ok "proxy Dockerfile: self-contained web stage (node build) for builds without a context" \
+  || bad "proxy Dockerfile: self-contained web stage" "FROM scratch AS web / FROM node AS web-build missing"
+grep -q "matrix.image == 'proxy' && 'web=" "$here/../.github/workflows/release.yml" \
+  && ok "release.yml passes the web build context to the proxy builds" || bad "release.yml passes the web build context to the proxy builds" "missing"
+ctx=$(mktemp -d); echo marker > "$ctx/index.html"
+if docker buildx build -q --load -t karpathy-web-ctx-test --build-context "web=$ctx" -f "$here/proxy/Dockerfile" "$here/.." >/dev/null 2>&1; then
+  eq "proxy image: the web build context is what Caddy serves" "$(docker run --rm --entrypoint cat karpathy-web-ctx-test /srv/index.html 2>&1)" marker
+  docker rmi -f karpathy-web-ctx-test >/dev/null 2>&1
+else
+  bad "proxy image builds with a web build context" "docker buildx build failed"
+fi
+rm -rf "$ctx"
+
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
