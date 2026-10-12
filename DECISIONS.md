@@ -153,9 +153,9 @@ edited: 2026-10-12
   - [01:05 — #145: a `suggest_next` tool, shown as ghost text derived from the chat history; Tab or "Tap to use"](#run-2026-10-12-2332-9)
   - [01:05 — Archive #143 and #145 with their decisions still open](#run-2026-10-12-2332-10)
   - [01:10 — Disk full: clear the Homebrew and npm caches, stop stack 1, prune build cache; fix the review's findings on a branch](#run-2026-10-12-2332-11)
-  - [02:00 — #146: Mistral Small 2603 via ZDR as the vision model, reached by a `look_at_image` tool; the chat model stays](#run-2026-10-12-2332-12)
-  - [02:10 — Release both runs' work as v0.0.22, gated by CI's full check](#run-2026-10-12-2332-13)
-  - [02:15 — Retro: ignore `.worktrees/`; the other findings stay notes](#run-2026-10-12-2332-14)
+  - [01:35 — #146: Mistral Small 2603 via ZDR as the vision model, reached by a `look_at_image` tool; the chat model stays](#run-2026-10-12-2332-12)
+  - [01:38 — Release both runs' work as v0.0.22, gated by CI's full check](#run-2026-10-12-2332-13)
+  - [01:41 — Retro: ignore `.worktrees/`; the other findings stay notes](#run-2026-10-12-2332-14)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2153,7 +2153,7 @@ edited: 2026-10-12
   literal stays with a comment (the opencode container gets no vaults-root env; the compose mount fixes it);
   `e2e/fix-144.spec.ts` is Chromium only (WebKit refuses clipboard permissions, as `attach.spec.ts` does for drops).
 
-## 02:00 — #146: Mistral Small 2603 via ZDR as the vision model, reached by a `look_at_image` tool; the chat model stays {#run-2026-10-12-2332-12}
+## 01:35 — #146: Mistral Small 2603 via ZDR as the vision model, reached by a `look_at_image` tool; the chat model stays {#run-2026-10-12-2332-12}
 
 - **Status:** open
 - **Context:** change `146-image-model`. The issue asks for "any image-capable model from OpenRouter, using the account
@@ -2177,7 +2177,7 @@ edited: 2026-10-12
   `qwen3-vl:2b` (2 GB) was pulled into the Mac's Ollama for dev. Merged in 130c96a, archived in af17238, issue
   closed. Also archived past the decision gate (decision 10).
 
-## 02:10 — Release both runs' work as v0.0.22, gated by CI's full check {#run-2026-10-12-2332-13}
+## 01:38 — Release both runs' work as v0.0.22, gated by CI's full check {#run-2026-10-12-2332-13}
 
 - **Status:** open
 - **Context:** all six issues and the review fixes are on `main`; the parallel bug-fix run (#134, #142) asked whether to
@@ -2194,7 +2194,7 @@ edited: 2026-10-12
 - **Consequences:** rollback: `just deploy hetzner 0.0.21`. A real CI failure is fixed forward as 0.0.23. The release
   is the first run of #128's `web` job: it started in parallel with `check`, as planned.
 
-## 02:15 — Retro: ignore `.worktrees/`; the other findings stay notes {#run-2026-10-12-2332-14}
+## 01:41 — Retro: ignore `.worktrees/`; the other findings stay notes {#run-2026-10-12-2332-14}
 
 - **Status:** open
 - **Context:** `/spec:retro` over this run. What went wrong: `.worktrees/` showed as untracked in `main` (risk of a
