@@ -1,7 +1,7 @@
 ---
 title: "Domain: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-12
+edited: 2026-10-13
 ---
 
 # Domain: karpathy.app
@@ -68,6 +68,7 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Open page** | The file the user has open in the note pane when a prompt is sent: vault-root-relative path, view mode (`read` / `write`) and whether it has unsaved edits; none while nothing is open. A snapshot per chat, replaced by every prompt; it is not updated mid-turn. | `OpenPage` (shared), `<vaults>/.open-page/<chatId>.json` |
 | **Page request** | One call of the AI's `current_page` tool: answers with the open page of the chat's latest prompt (re-checked against the vault), or that nothing is open. Reads and changes nothing in the vault; not a consulted or changed file. | `current_page` tool |
 | **Open request** | One call of the AI's `open_note` tool. It succeeds only for a file the file tree lists inside the chat's vault root; otherwise it fails as a tool error the AI sees, and nothing opens. Only `open_note`: a link offer is not an open request, because it never opens anything by itself. | `open_note` tool |
+| **Suggestion / ghost text** | One short prompt the AI proposes as the user's next message: the latest completed `suggest_next` call after the last user message, shown greyed out in the empty composer while no turn runs. Not a tool chip. **Accepting** it (Tab, or a tap on the button) copies it into the composer; only Enter sends. Derived from the chat history, so it survives a reload. | `ToolCall.suggestion`, `nextSuggestion` |
 | **Live event vs. history** | Live events arrive on the chat stream while a turn runs; history is the stored chat loaded on reload or when a chat is opened. Only a live open request moves the UI; history shows the chip and moves nothing. | `ChatEvent` vs. `api.chat` |
 | **AI-touched** | The set of paths the AI changed since the last commit. A commit that includes one of them gets the `Co-authored-by: karpathy.app agent` trailer. When a pull turns unpushed commits back into uncommitted changes, the files of those carrying the trailer join the set again. | `config.aiTouched`; `PullResult.aiPaths` |
 | **Edit stamp** | The time the app last saw the AI (**AI stamp**) or a person (**human stamp**) write a file. Per vault and path in the backend config; survives commits and restarts, unlike the AI-touched set. | `config.editStamps` |
