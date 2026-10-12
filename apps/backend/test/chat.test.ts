@@ -547,6 +547,16 @@ describe('command turns', () => {
     release();
   });
 
+  it('a skill saved through the file API shows in the next listing (#134)', async () => {
+    const t = await setup();
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.map((c: { name: string }) => c.name)).not.toContain('saved');
+    const request = (await import('supertest')).default;
+    const put = await request(t.app).put(`/api/vaults/${t.id}/file?path=.agents/skills/saved/SKILL.md`).set({ Authorization: `Bearer ${TOKEN}` })
+      .send({ content: '---\nname: saved\ndescription: Saved\n---\n\nS.\n', version: null });
+    expect(put.status).toBe(200);
+    expect((await t.api.get(`/vaults/${t.id}/commands`)).body.map((c: { name: string }) => c.name)).toContain('saved');
+  });
+
   it('no refresh while a commit message is being proposed', async () => {
     const t = await setup(helloSkill);
     await t.api.get(`/vaults/${t.id}/commands`);

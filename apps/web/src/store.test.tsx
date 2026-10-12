@@ -133,3 +133,18 @@ describe('ingestNow', () => {
     expect(app.chatOpen).toBe(true);
   });
 });
+
+describe('vault commands (#134)', () => {
+  it('a skill file changed outside a pull makes the command list reload', async () => {
+    const api = fakeApi();
+    renderApp(<Probe />);
+    await waitFor(() => expect(app.usable).toBe(true));
+    await waitFor(() => expect(api.calls.some((c) => c.call === `GET /api/vaults/${VAULT}/events`)).toBe(true));
+    const before = app.commandsNonce;
+    act(() => api.emit({ type: 'files-changed', files: [{ path: 'notes/a.md', version: 'v' }] }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(app.commandsNonce).toBe(before);
+    act(() => api.emit({ type: 'files-changed', files: [{ path: '.agents/skills/x/SKILL.md', version: 'v' }] }));
+    await waitFor(() => expect(app.commandsNonce).toBe(before + 1));
+  });
+});
