@@ -1,7 +1,8 @@
 import { expect, openApp, openNote, test } from './helpers';
 
 // #144: selecting text in the editor copies it (like a terminal) and a toast says so.
-test('144 selecting text in the editor copies it and shows "Copied"', async ({ page, context, api, vault }) => {
+test('144 selecting text in the editor copies it and shows "Copied"', async ({ page, context, api, vault, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Chromium only: WebKit refuses clipboard-read/clipboard-write permissions');
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await api.write(vault.id, 'Copy144.md', '# Copy144\n\nbeta\n');
   await openApp(page, vault.id);
