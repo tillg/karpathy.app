@@ -38,6 +38,10 @@ anything. Commands: `just` (see `README.md`).
 `specs/` layout: `system/` (how the system is), `changes/<name>/` (open spec changes, spec plugin;
 archived = folded into `system/` and deleted), `research/<name>/` (research results, kept as reference).
 
+Archiving a change (`/spec:archive`) also updates its GitHub issue, if it has one (`**Issue:**` line in
+`proposal.md`): comment what shipped (summary, commit, branch or PR) and close it, by `Closes #N` in the
+commit or right away.
+
 ## What this is
 
 Mobile-friendly PWA that combines Obsidian-style Markdown vaults with an AI chat that can
