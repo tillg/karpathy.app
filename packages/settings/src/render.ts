@@ -1,4 +1,4 @@
-import type { Settings } from './schema.js';
+import { visionGatewayId, type Settings } from './schema.js';
 
 type Secrets = Record<string, string | undefined>;
 
@@ -54,18 +54,20 @@ export function renderOpencodeProviders(s: Settings): { provider: Record<string,
 export function renderOpencodeEnv(s: Settings, secrets: Secrets): string {
   const gw = s.gateways[s.ai.gateway]!;
   const keyVar = KEY_VARS[gw.kind];
-  // The vision model (look_at_image): a model of the same gateway; its `models` options go into the request body.
-  const visionModel = s.ai.vision_model.slice(s.ai.gateway.length + 1);
-  const visionOptions = gw.models?.[visionModel]?.options;
+  // The vision model (look_at_image), on the gateway its prefix names; its `models` options go into the request body.
+  const vgwId = visionGatewayId(s);
+  const vgw = s.gateways[vgwId]!;
+  const visionModel = s.ai.vision_model.slice(vgwId.length + 1);
+  const visionOptions = vgw.models?.[visionModel]?.options;
   return lines([
     ...(keyVar && gw.api_key ? [[keyVar, secrets[gw.api_key.secret]] as [string, string | undefined]] : []),
     ['EXA_API_KEY', s.ai.web.exa_api_key ? secrets[s.ai.web.exa_api_key.secret] : undefined],
     ['WEB_FETCH_CAP', String(s.ai.web.fetch_cap)],
     ['WEB_SEARCH_CAP', String(s.ai.web.search_cap)],
     ['OPENCODE_MODEL', s.ai.model],
-    ['VISION_BASE_URL', gw.base_url ?? KNOWN_BASE_URLS[gw.kind]],
+    ['VISION_BASE_URL', vgw.base_url ?? KNOWN_BASE_URLS[vgw.kind]],
     ['VISION_MODEL', visionModel],
-    ['VISION_API_KEY', gw.api_key ? secrets[gw.api_key.secret] : undefined],
+    ['VISION_API_KEY', vgw.api_key ? secrets[vgw.api_key.secret] : undefined],
     ['VISION_REQUEST_OPTIONS', visionOptions ? JSON.stringify(visionOptions) : undefined],
     ['OPENCODE_CONFIG_CONTENT', JSON.stringify(renderOpencodeProviders(s))],
   ]);
@@ -87,7 +89,7 @@ export function renderComposeEnv(s: Settings, secrets: Secrets, { settingsDir }:
     ['GIT_AUTHOR_EMAIL', text(s.git.author.email, secrets)],
     ['GIT_REMOTE_BASE', s.git.remote_base],
     ['DEFAULT_MODEL', s.ai.model],
-    ['OLLAMA_UPSTREAM', gw.relay_upstream],
+    ['OLLAMA_UPSTREAM', gw.relay_upstream ?? s.gateways[visionGatewayId(s)]?.relay_upstream],
     ['SETTINGS_DIR', settingsDir],
   ]);
 }
