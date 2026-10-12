@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MEDIA } from '@karpathy/shared';
-import { proxyFor, SAVE_TYPES, saveUrl } from '../../../deploy/opencode/lib/save-url.js';
+import { proxyFor, SAVE_TYPES, SAVE_URL_DESCRIPTION, saveUrl } from '../../../deploy/opencode/lib/save-url.js';
 import { testDir } from './opencode-container.js';
 
 // The save_url tool's download, on a real directory and a real local HTTP server (the tool itself runs
@@ -51,6 +51,8 @@ describe('saveUrl', () => {
     const out = await saveUrl(vault, `${origin}/cat.png`, 'notes/cat.png');
     expect(out).toContain('saved notes/cat.png');
     expect(out).toContain('![[notes/cat.png]]');
+    // The result names the next step, which small models follow.
+    expect(out).toContain('you must now call the edit tool yourself to add ![[notes/cat.png]] to that note');
     expect(await readFile(join(vault, 'notes/cat.png'))).toEqual(PNG);
   });
 
@@ -67,6 +69,16 @@ describe('saveUrl', () => {
   it('never overwrites a file', async () => {
     await expect(saveUrl(vault, `${origin}/cat.png`, 'notes/taken.png')).rejects.toThrow('already exists: notes/taken.png');
     expect(await readFile(join(vault, 'notes/taken.png'), 'utf8')).toBe('old');
+  });
+
+  it('refuses characters Obsidian forbids in a file name, with a hint', async () => {
+    for (const bad of ['Ideas.md:img.png', 'Ideas.md:https://www.w3.org/Icons/w3c_home.png', 'notes/a*b.png', 'notes/a?b.png', 'notes/a"b.png', 'notes/a<b.png', 'notes/a>b.png', 'notes/a|b.png', 'notes/a\\b.png'])
+      await expect(saveUrl(vault, `${origin}/cat.png`, bad)).rejects.toThrow(/must not contain .* use filePath "cat.png"/);
+  });
+
+  it('tells the AI in its description to embed the picture in the note afterwards', () => {
+    expect(SAVE_URL_DESCRIPTION).toContain('call the edit tool yourself');
+    expect(SAVE_URL_DESCRIPTION).toContain('![[<path>]]');
   });
 
   it('refuses a web page saved as an image', async () => {

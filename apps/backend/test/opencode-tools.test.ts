@@ -154,7 +154,7 @@ describe('save_url tool', () => {
   });
 
   it.skipIf(!online)('save_url saves a public image into the vault', async () => {
-    expect(await runSaveUrl(['https://www.w3.org/Icons/w3c_home.png'])).toEqual([expect.stringMatching(/^saved probe-0\.png \(\d+ KB\)\. Embed it in a note with !\[\[probe-0\.png\]\]$/)]);
+    expect(await runSaveUrl(['https://www.w3.org/Icons/w3c_home.png'])).toEqual([expect.stringMatching(/^saved probe-0\.png \(\d+ KB\)\. To show it in a note, you must now call the edit tool yourself to add !\[\[probe-0\.png\]\] to that note \(never the URL; do not ask the user to do it\)\.$/)]);
     expect((await readFile(join(vaultsDir, 'save/probe-0.png'))).subarray(1, 4).toString()).toBe('PNG');
   });
 });

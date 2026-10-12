@@ -247,8 +247,9 @@ offers](#link-offers)).
 
 **Custom tool `save_url`** (`deploy/opencode/tools/save_url.ts`, logic in `deploy/opencode/lib/save-url.ts`): args `{ url, filePath }`.
 Downloads one http(s) URL into the vault as a **new** media file or PDF (`SAVE_TYPES`: the media table without SVG, plus
-`pdf`; a test keeps it in sync with `packages/shared`) and returns `saved <path> (<size>). Embed it in a note with
-![[<path>]]`; the AI then edits the note itself. It never overwrites (`wx`: "already exists: …; choose another name"),
+`pdf`; a test keeps it in sync with `packages/shared`) and returns `saved <path> (<size>). To show it in a note, add
+![[<path>]] to that note with edit.`; the AI then edits the note itself (the tool description says so too, #142). A file name
+with a character Obsidian forbids (`: * " \ < > | ?`) is refused with a hint, so a model can't glue the note's name into it. It never overwrites (`wx`: "already exists: …; choose another name"),
 creates missing folders, and refuses a path outside the vault (symlinks resolved), a dot-segment, a non-http(s) URL, an HTTP
 error, a Content-Type that doesn't fit the extension (an HTML page saved as `.png`; `application/octet-stream` passes) and
 a file over 50 MB (the upload cap; the partial file is removed). Timeout 120 s. The download always goes through the egress

@@ -23,6 +23,13 @@ const AUDIO = ['mp3', 'm4a', 'wav', 'ogg', 'flac', 'opus'];
 export const MAX_SAVE_BYTES = 50 * 1024 * 1024;
 const TIMEOUT_MS = 120_000;
 
+/** The save_url tool's description (tools/save_url.ts): a small model must learn here that saving is only half of the job. */
+export const SAVE_URL_DESCRIPTION =
+  "Download an image, video, audio file or PDF from the web into the vault. The URL must already appear in this chat (the user's messages, pages you fetched, search results). Save it next to the note that will show it. filePath is the NEW file's own name, like Animals/tabby.jpg: never put the note's name or a URL in it. It never overwrites a file. To add a picture to a note this is only step 1: afterwards you MUST call the edit tool yourself (not tell the user to) to add the embed ![[<path>]] with the path this tool returns (never the URL); a file that no note embeds is not shown. A URL alone in a note is not saved.";
+
+/** Characters Obsidian forbids in a file name (`:` is what a model mangles `Ideas.md` + `img.png` into). */
+const FORBIDDEN_NAME_CHARS = /[:*"\\<>|?]/;
+
 type Env = Record<string, string | undefined>;
 const MAX_REDIRECTS = 5;
 /** Wikimedia, the usual source of pictures, answers 429 to generic clients (its User-Agent policy). */
@@ -61,12 +68,13 @@ function bypassesProxy(host: string, env: Env): boolean {
 const size = (n: number) => (n >= 1024 * 1024 ? `${Math.round(n / 1024 / 1024)} MB` : `${Math.round(n / 1024)} KB`);
 
 /** `filePath` (vault-relative or absolute) as an absolute path for a new media file or PDF inside `dir`. */
-async function target(dir: string, filePath: string): Promise<{ abs: string; rel: string; ext: string }> {
+async function target(dir: string, filePath: string, suggestion: string): Promise<{ abs: string; rel: string; ext: string }> {
   const root = await realpath(dir);
   const rel = relative(root, resolve(root, filePath));
   if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) throw new Error(`outside the vault: ${filePath}`);
   if (rel.split(sep).some((s) => s.startsWith('.'))) throw new Error(`hidden path: ${rel}`);
   const name = rel.split(sep).pop()!;
+  if (rel.split(sep).some((s) => FORBIDDEN_NAME_CHARS.test(s))) throw new Error(`a file or folder name must not contain : * " \\ < > | ? (${rel}); filePath is the new picture file, not the note: use ${suggestion}`);
   const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
   if (!(SAVE_TYPES as readonly string[]).includes(ext))
     throw new Error(`only images, videos, audio and PDFs can be saved (${SAVE_TYPES.join(', ')}), not ${rel}`);
@@ -97,7 +105,8 @@ export async function saveUrl(dir: string, url: string, filePath: string, opts: 
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error(`Only http(s) URLs can be saved: ${url}`);
   const max = opts.maxBytes ?? MAX_SAVE_BYTES;
-  const t = await target(dir, filePath);
+  const last = decodeURIComponent(parsed.pathname.split('/').pop() ?? '').replace(/[:*"\\<>|?]/g, '');
+  const t = await target(dir, filePath, `filePath "${last.includes('.') ? last : 'picture.png'}" (add a folder in front to save it elsewhere), then edit the note`);
   const signal = AbortSignal.timeout(TIMEOUT_MS);
   // Redirects by hand: every hop must pass the NO_PROXY check, so none reaches an internal host directly.
   let res: Response;
@@ -132,5 +141,5 @@ export async function saveUrl(dir: string, url: string, filePath: string, opts: 
     await unlink(t.abs).catch(() => undefined);
     throw e;
   }
-  return `saved ${t.rel} (${size(n)}). Embed it in a note with ![[${t.rel}]]`;
+  return `saved ${t.rel} (${size(n)}). To show it in a note, you must now call the edit tool yourself to add ![[${t.rel}]] to that note (never the URL; do not ask the user to do it).`;
 }
