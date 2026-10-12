@@ -4,7 +4,7 @@ import { Annotation, Compartment, EditorState, Transaction } from '@codemirror/s
 import { EditorView, keymap } from '@codemirror/view';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { ensureSyntaxTree } from '@codemirror/language';
-import { codeView, frontmatterEnd, frontmatterRange, hideFrontmatter, liveMarkdown, refreshLinks } from '../lib/cm';
+import { codeView, copiesOnKeyup, frontmatterEnd, frontmatterRange, hideFrontmatter, liveMarkdown, refreshLinks } from '../lib/cm';
 import { commentRanges } from '../lib/markdown';
 import { collectHeadings, type OutlineItem } from '../lib/outline';
 import { minimalChange } from '../lib/diff';
@@ -158,7 +158,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
         EditorView.domEventHandlers({
           mouseup: (_, v) => void copySelection(v),
           touchend: (_, v) => void copySelection(v),
-          keyup: (_, v) => void copySelection(v),
+          keyup: (e, v) => void (copiesOnKeyup(e) && copySelection(v)),
         }),
         EditorView.contentAttributes.of({ spellcheck: 'false', autocapitalize: 'sentences', 'aria-label': 'Note editor' }),
         EditorView.updateListener.of((u) => {

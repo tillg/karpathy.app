@@ -20,6 +20,8 @@ beforeAll(async () => {
   await mkdir(state, { recursive: true });
   await writeFile(join(vault, 'notes/a.md'), '# A\n');
   await writeFile(join(vault, '.git/config'), 'x\n');
+  await mkdir(join(vault, '.agents/skills'), { recursive: true });
+  await writeFile(join(vault, '.agents/skills/x.md'), 'x\n');
   await writeFile(join(base, 'secret.md'), 'x\n');
 });
 
@@ -44,6 +46,17 @@ describe('describeOpenPage', () => {
   it('reports a page that was deleted since', async () => {
     await put('ses_gone', { path: 'notes/gone.md', mode: 'write', unsaved: false });
     expect(await answer('ses_gone')).toBe('The user had notes/gone.md open, but it no longer exists in the vault.');
+  });
+
+  it('a file in a visible dot dir is not claimed deleted (#143)', async () => {
+    await put('ses_dot', { path: '.agents/skills/x.md', mode: 'read', unsaved: false });
+    const text = await answer('ses_dot');
+    expect(text).toBe('The user has .agents/skills/x.md open, in a dot folder that this tool does not check: read it by that path.');
+    // Never a way out of the vault or into .git, even from a tampered state file.
+    for (const [i, path] of ['.agents/../../secret.md', '.git/config', '/etc/.x/y'].entries()) {
+      await put(`ses_dotbad${i}`, { path, mode: 'read', unsaved: false });
+      expect(await answer(`ses_dotbad${i}`)).toContain('no longer exists');
+    }
   });
 
   it('never points outside the vault, at dot paths or at a directory', async () => {

@@ -167,6 +167,17 @@ describe('turnAnnouncement (issue #45)', () => {
     expect(turnAnnouncement('running', reply(''))).toBe('Reply finished');
   });
 
+  it('reads the whole last turn: text before a trailing suggest_next message (#145)', () => {
+    const c: ChatView = {
+      ...reply('It says hello.'),
+      messages: [
+        ...reply('It says hello.').messages,
+        { id: 'a2', role: 'assistant', createdAt: 3, parts: [{ type: 'tool', id: 't', call: { id: 't', tool: 'suggest_next', status: 'completed', suggestion: 'More?', writes: false } }] },
+      ],
+    };
+    expect(turnAnnouncement('running', c)).toBe('Reply finished: It says hello.');
+  });
+
   it('announces waiting and failures', () => {
     expect(turnAnnouncement('idle', { ...empty, turn: 'queued', waiting: 'sync' })).toBe('Waiting for sync…');
     expect(turnAnnouncement('running', reply('', 'model down'))).toBe('Reply failed: model down');

@@ -24,8 +24,8 @@ export function useRenderCtx(base?: string): Required<RenderCtx> {
   }, [activeId, paths, from, exists]);
 }
 
-/** A bare http(s) URL in text; trailing sentence punctuation and closing brackets stay outside it (#147). */
-const URL_SRC = String.raw`https?:\/\/[^\s<>"]*[^\s<>".,;:!?)\]'*]`;
+/** A bare http(s) URL in text; trailing sentence punctuation stays outside it, and so does a closing bracket without its opening one (#147). */
+const URL_SRC = String.raw`https?:\/\/(?:[^\s<>"()]|\([^\s<>"()]*\))*(?:[^\s<>".,;:!?()\]'*]|\([^\s<>"()]*\))`;
 const LINK_RE = new RegExp(`${WIKILINK_RE.source}|(${URL_SRC})`, 'g');
 
 /** Whether the whole text is one http(s) URL. */
