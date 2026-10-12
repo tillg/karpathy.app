@@ -140,6 +140,8 @@ edited: 2026-10-12
   - [23:45 — Share main with the parallel bug-fix run: fetch before every merge, version picked at release time](#run-2026-10-12-2332-2)
   - [23:45 — Order: #147, #144, #128 in parallel first; #143, #145, #146 one after another](#run-2026-10-12-2332-3)
   - [00:10 — #128: a `FROM scratch AS web` stage that a build context replaces; the node stage becomes `web-build`](#run-2026-10-12-2332-4)
+  - [00:15 — Gate each merge on lint, typecheck, the touched workspace's tests and the feature's e2e; full suite before the release](#run-2026-10-12-2332-5)
+  - [00:15 — #147: bare URLs link in every property; "open ↗" only for a value that is one whole URL](#run-2026-10-12-2332-6)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1921,3 +1923,37 @@ edited: 2026-10-12
   in CI (Docker overhead for a static build).
 - **Consequences:** `deploy/stack.test.sh` checks both stages, the workflow's context and a real build with a marker
   context. Merged to `main` in 1b2d698, issue closed.
+
+## 00:15 — Gate each merge on lint, typecheck, the touched workspace's tests and the feature's e2e; full suite before the release {#run-2026-10-12-2332-5}
+
+- **Status:** open
+- **Overrides:** `/autonomous` — commit only with the full suite green (or no new failures against the baseline)
+- **Context:** the baseline `just check` on `main` (tmp/check-baseline-20261012-233801.log) had 19 backend failures,
+  all 30 s timeouts in git/repo/api tests, while the machine ran two autonomous runs with several dev stacks (load
+  average 25–30). Workers saw the same kind of timeouts, in other tests each time.
+- **Question:** what gates a merge to `main` while the backend suite can't finish under this load?
+- **Decision:** per feature: lint, typecheck, the tests of the workspace the feature touches, and its e2e spec(s) green
+  after merging `main` into the branch. Before the release tag, the full `just check` runs once more on `main` when the
+  load is lower and must be green or show only the baseline's failures.
+- **Why:** the failures are timeouts in code none of the features touch; waiting for an idle machine would stall both
+  runs.
+- **Alternatives:** serialize everything and run the full suite per merge (hours of wall-clock, still flaky while the
+  other run works); raise test timeouts (changes tests without permission).
+- **Consequences:** a real backend regression could reach `main` between merges; the pre-release full run catches it
+  before anything ships. Applied to #128 (stack.test.sh + actionlint) and #147 (web: 227 tests, lint, typecheck,
+  `e2e/fix-147.spec.ts`).
+
+## 00:15 — #147: bare URLs link in every property; "open ↗" only for a value that is one whole URL {#run-2026-10-12-2332-6}
+
+- **Status:** open
+- **Context:** #147 (tweak), `Linked.tsx` / `PropertiesPanel.tsx`; decision 2026-10-02 limits *wikilinks* in
+  frontmatter to `related` and `sources`.
+- **Question:** which fields link URLs, and when does Write mode show the button?
+- **Decision:** bare `http(s)://` URLs link in every field and list chip in Read mode (trailing `,.;:!?)]'*` stays
+  outside the link); Write mode shows **open ↗** next to a plain text field only when its whole value is one URL;
+  list chips in Write mode stay plain.
+- **Why:** the issue says "any URL field"; the related/sources rule is about wikilinks. A value with text around a URL
+  has no single target for a button.
+- **Alternatives:** gate by key (misses `trailer`, `source_url`, …); link the first URL in mixed text.
+- **Consequences:** merged to `main` in c808e77, issue closed. Screenshots came from a throwaway Playwright spec, not
+  the Playwright MCP.
