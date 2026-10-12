@@ -3,7 +3,7 @@ import { isListKind, isPropertyName, type Edit, type Frontmatter, type Prop } fr
 import type { FieldRule, Violation } from '../lib/schema';
 import type { PropsView } from '../store';
 import { Icon } from './Icon';
-import { Linked } from './Linked';
+import { isHttpUrl, Linked } from './Linked';
 
 /** Today in the user's time zone, as YYYY-MM-DD. */
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -108,8 +108,17 @@ function Field({ p, rule, names, disabled, describedBy, onEdit, onYaml }: {
         </span>
       );
     }
-    default:
-      return <TextField value={v === null ? '' : String(v)} disabled={disabled} label={label} describedBy={describedBy} onCommit={set} />;
+    default: {
+      const text = v === null ? '' : String(v);
+      const field = <TextField value={text} disabled={disabled} label={label} describedBy={describedBy} onCommit={set} />;
+      if (!isHttpUrl(text)) return field;
+      return (
+        <span className="props-date">
+          {field}
+          <a className="props-btn props-open" data-testid="props-open" href={text} target="_blank" rel="noopener noreferrer">open ↗</a>
+        </span>
+      );
+    }
   }
 }
 

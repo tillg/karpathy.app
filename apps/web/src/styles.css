@@ -596,6 +596,7 @@ a.tc { text-decoration: none; cursor: pointer; }
 .props-input { width: 100%; max-width: 100%; min-height: 36px; border: .5px solid var(--sep); background: var(--paper); border-radius: 8px; padding: 0 10px; font-size: 15px; color: var(--label); }
 .props-date { display: flex; gap: 6px; align-items: center; }
 .props-btn { flex: none; min-height: 36px; padding: 0 10px; border-radius: 8px; background: var(--fill2); color: var(--tint); font-weight: 600; font-size: 13.5px; }
+.props-open { display: inline-flex; align-items: center; white-space: nowrap; text-decoration: none; }
 .props-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .props-chips .chip { display: inline-flex; align-items: center; gap: 2px; }
 .chip-x { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; color: var(--label2); }
