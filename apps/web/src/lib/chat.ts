@@ -217,6 +217,23 @@ export function toolHref(call: ToolCall): string | null {
   return /^https?:\/\//i.test(call.url) ? call.url : null;
 }
 
+/**
+ * The ghost text of the composer (#145, pure): the suggestion of the latest completed suggest_next call in
+ * the replies after the last prompt, while no turn runs. Derived from history, so a reload shows it again.
+ */
+export function nextSuggestion(messages: ChatMessage[], turn: ChatView['turn']): string | null {
+  if (turn !== 'idle') return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role === 'user') return null;
+    for (let j = m.parts.length - 1; j >= 0; j--) {
+      const p = m.parts[j]!;
+      if (p.type === 'tool' && p.call.tool === 'suggest_next' && p.call.status === 'completed' && p.call.suggestion) return p.call.suggestion;
+    }
+  }
+  return null;
+}
+
 /** The composer's context meter (#140): the newest AI reply that has tokens, and the model it ran with. */
 export function lastContext(messages: ChatMessage[]): { usage: ContextUsage; model?: string } | null {
   for (let i = messages.length - 1; i >= 0; i--) {
