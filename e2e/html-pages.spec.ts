@@ -94,6 +94,21 @@ test('a search hit in a page opens its source; the page mode stays Read', async 
   await expect(page.getByTestId('mode-read')).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('Read chosen on one page stays for the next page', async ({ page, vault }) => {
+  seed(vault);
+  pushFromObsidian(vault.bare, 'Reports/other.html', '<!doctype html><html><body><h1>Other page</h1></body></html>');
+  await openApp(page, vault.id);
+  await openPage(page);
+  await page.getByTestId('mode-write').click();
+  await expect(page.locator('.cm-content')).toContainText('<h1>Report title</h1>');
+  await page.getByTestId('mode-read').click();
+  await expect(page.getByTestId('html-view')).toBeVisible();
+  await treeItem(page, 'Reports/other.html').click();
+  await expect(page.locator('.note-title')).toHaveText('other.html');
+  await expect(page.getByTestId('mode-read')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.frameLocator('[data-testid="html-view"]').locator('h1')).toHaveText('Other page');
+});
+
 test('@iphone an HTML page opens in Read on the phone', async ({ page, vault }) => {
   seed(vault);
   await openApp(page, vault.id);
