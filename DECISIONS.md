@@ -1901,3 +1901,5 @@ edited: 2026-10-12
 - **Alternatives:** all six in parallel (merge conflicts in the tool plumbing); #128 last (a broken release would block
   the deploy at the very end).
 - **Consequences:** the rc tag leaves a pre-release on GitHub.
+  Adjusted at 23:55: #143 started alongside batch 1 (its files don't overlap #147/#144/#128, and #128 needs no dev
+  stack), so only #145 and #146 wait; they still run one after another after #143.
