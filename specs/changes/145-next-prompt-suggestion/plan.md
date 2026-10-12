@@ -20,7 +20,7 @@ E2E steps run against this checkout's stack (`just dev up` first, `just dev down
 - [x] Harness mapping sets `ToolCall.suggestion`
   - Test first: `apps/backend/test/harness-map.test.ts` › "suggest_next maps to suggestion, not writes/opens" on a synthetic tool part — fails today: field missing
   - Verify: `npx vitest run apps/backend/test/harness-map.test.ts` → green
-- [ ] `nextSuggestion(messages, turn)` picks the live suggestion
+- [x] `nextSuggestion(messages, turn)` picks the live suggestion
   - Test first: `apps/web/src/lib/chat.test.ts` › latest call wins; none while running/queued; none after a user message; ignores error and empty — fails today: no function
   - Verify: `npx vitest run apps/web/src/lib/chat.test.ts` → green
 - [x] Composer ghost text, Tab and tap accept, hidden chip
