@@ -991,6 +991,11 @@ export class Vaults {
     return { ...cfg, state: this.stateOf(v), ...(cloneError ? { error: cloneError } : {}) };
   }
 
+  /** The vaults dir: the clones and the app's own state next to them (`.open-page`). */
+  vaultsPath() {
+    return resolve(this.env.vaultsDir);
+  }
+
   private cloneDir(id: string) {
     return join(resolve(this.env.vaultsDir), id);
   }

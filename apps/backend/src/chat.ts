@@ -1,13 +1,14 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { uploadMime, type ChatDetail, type Command, type ChatEvent, type ChatSummary, type TurnState } from '@karpathy/shared';
+import { uploadMime, type OpenPage, type ChatDetail, type Command, type ChatEvent, type ChatSummary, type TurnState } from '@karpathy/shared';
 import type { ConfigStore } from './config-store.js';
 import { readFrontmatter } from './agents-standard.js';
 import { commandInstructions, expandCommand, parseCommand, withoutBaseDir } from './harness/command.js';
 import type { Harness, HarnessCommand } from './harness/opencode.js';
 import type { HarnessEvent } from './harness/map.js';
 import type { Release } from './lock.js';
+import { removeOpenPage, writeOpenPage } from './open-page.js';
 import { HttpError, type Vaults } from './vaults.js';
 
 type Listener = (e: ChatEvent) => void;
@@ -228,12 +229,16 @@ export class ChatService {
     await this.requireChat(vaultId, chatId);
     if (this.turnState(vaultId, chatId) !== 'idle') throw new HttpError(409, 'stop the running turn first', 'busy');
     await this.harness.deleteSession(this.dir(vaultId), chatId);
+    await removeOpenPage(this.vaults.vaultsPath(), chatId);
   }
 
-  async prompt(vaultId: string, chatId: string, text: string, attachments?: string[]): Promise<void> {
+  async prompt(vaultId: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage): Promise<void> {
     await this.requireChat(vaultId, chatId);
     const c = this.v.get(vaultId)!;
     if (this.turnState(vaultId, chatId) !== 'idle') throw new HttpError(409, 'this chat already has a turn running or queued', 'busy');
+    // What the AI's current_page tool reports (#143); none = nothing open, never the page of an earlier prompt.
+    if (openPage) await writeOpenPage(this.vaults.vaultsPath(), chatId, openPage);
+    else await removeOpenPage(this.vaults.vaultsPath(), chatId);
     c.queue.push({ chatId, text, ...(attachments?.length ? { attachments } : {}) });
     // 202 means the prompt survives a backend restart (#37).
     await this.saveQueue(vaultId);

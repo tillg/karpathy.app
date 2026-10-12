@@ -240,7 +240,7 @@ const sentCommand = (text: string, list: Command[] | null) => {
 };
 
 function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) {
-  const { settings, setSettings, conflict, online, toast, paths, refreshFiles, commandsNonce } = useApp();
+  const { settings, setSettings, conflict, online, toast, paths, refreshFiles, commandsNonce, openPage } = useApp();
   const { chat, setChat, error, attach } = useChat(vaultId, chatId);
   // How full the context is after the newest reply (#140).
   const ctx = useMemo(() => (chat ? lastContext(chat.messages) : null), [chat]);
@@ -406,7 +406,7 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
     const attachments = sending.chips.map((c) => c.path);
     setPending({ text: t, attachments, userCount: userCount(chat), sent: false, ran: false });
     try {
-      await api.prompt(vaultId, chatId, t, attachments);
+      await api.prompt(vaultId, chatId, t, attachments, openPage());
       setPending((p) => p && { ...p, sent: true });
       setChat((c) => c && { ...c, turn: 'queued' });
       void attach();

@@ -126,7 +126,7 @@ live preview and `[[wikilinks]]`, search (several words find notes with all of t
 with an AI-proposed message, conflict resolution, and a streaming AI chat that reads and
 edits the vault through opencode. Ask the AI to show you a note ("open my reading list") and it
 opens notes in the editor through its `open_note` tool (on a phone or a smaller iPad when the reply is
-done; never while you are typing). On a wide screen the ⇄ button on the note/chat divider swaps the two
+done; never while you are typing). With "this note" or "this page" it asks for the file you have open through its `current_page` tool. On a wide screen the ⇄ button on the note/chat divider swaps the two
 columns, putting the chat in the large main column; the browser remembers the choice. Images, video, audio
 and PDFs in a note show up as **embeds** (`![[photo.png]]`, `![[clip.mp4|300]]`, `![alt](img/a.png)`) in Read mode, in
 Write mode (a block below the line; the text stays as written) and in chat answers; tapping an image opens

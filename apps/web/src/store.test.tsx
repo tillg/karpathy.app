@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { api } from './lib/api';
 import { useApp, type AppState } from './store';
 import { fakeApi, renderApp, setViewport, VAULT } from './test/fake-api';
 
@@ -131,5 +132,29 @@ describe('ingestNow', () => {
     ]);
     expect(app.chatId).toBe('c9');
     expect(app.chatOpen).toBe(true);
+  });
+});
+
+describe('open page (#143)', () => {
+  const file = { [`GET /api/vaults/${VAULT}/file`]: { path: 'x', content: '# x\n', version: 'v', binary: false } };
+
+  it('is none without a note, then the open note with its mode and unsaved state', async () => {
+    fakeApi({ routes: file });
+    renderApp(<Probe />);
+    await waitFor(() => expect(app.usable).toBe(true));
+    expect(app.openPage()).toBeUndefined();
+    await act(() => app.openNote('notes/A.md'));
+    await waitFor(() => expect(app.note?.path).toBe('notes/A.md'));
+    expect(app.openPage()).toEqual({ path: 'notes/A.md', mode: 'write', unsaved: false });
+    act(() => app.setMode('read'));
+    expect(app.openPage()?.mode).toBe('read');
+  });
+
+  it('a prompt sends it in the body, and nothing when none is open', async () => {
+    const fake = fakeApi({ routes: { [`POST /api/vaults/${VAULT}/chats/c1/prompt`]: { queued: true } } });
+    await api.prompt(VAULT, 'c1', 'hi', undefined, { path: 'A.md', mode: 'read', unsaved: true });
+    await api.prompt(VAULT, 'c1', 'hi');
+    const bodies = fake.calls.filter((c) => c.call.endsWith('/prompt')).map((c) => c.body);
+    expect(bodies).toEqual([{ text: 'hi', openPage: { path: 'A.md', mode: 'read', unsaved: true } }, { text: 'hi' }]);
   });
 });
