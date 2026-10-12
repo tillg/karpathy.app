@@ -29,7 +29,7 @@ E2E steps run against this checkout's stack (`just dev up` first, `just dev down
 - [x] Standing instruction: tool description tells the model when to call it
   - Test first: `apps/backend/test/suggest-next-tool.test.ts` › description says "at most once", "last" — fails today: no tool
   - Verify: same test → green
-- [ ] E2E with the real model and the phone viewport
+- [x] E2E with the real model and the phone viewport
   - Test first: `e2e/ai-suggest-next.spec.ts` › `@llm` ghost text after a reply, Tab accepts without sending, typing clears it, tap on phone — fails today: nothing renders
   - Verify: `npx playwright test e2e/ai-suggest-next.spec.ts` against this checkout's stack → green; screenshots in `tmp/`
 

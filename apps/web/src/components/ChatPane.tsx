@@ -418,6 +418,8 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
     const sending = draftRef.current;
     if ((!t && !sending.chips.length) || busy || pending || uploading) return;
     setText('');
+    // The box shrinks back to one row (a long prompt had grown it), so the next ghost text sits in a one-line box.
+    if (composer.current) composer.current.style.height = '';
     setDraft({ chips: [], folder: null });
     const cmd = sentCommand(t, commands);
     if (cmd) recordCommand(vaultId, cmd);
