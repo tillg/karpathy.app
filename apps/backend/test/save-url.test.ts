@@ -1,10 +1,10 @@
-import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MEDIA } from '@karpathy/shared';
-import { proxyFor, SAVE_TYPES, SAVE_URL_DESCRIPTION, saveUrl } from '../../../deploy/opencode/lib/save-url.js';
+import { defaultFilePath, proxyFor, SAVE_TYPES, SAVE_URL_DESCRIPTION, saveUrl } from '../../../deploy/opencode/lib/save-url.js';
 import { testDir } from './opencode-container.js';
 
 // The save_url tool's download, on a real directory and a real local HTTP server (the tool itself runs
@@ -77,8 +77,48 @@ describe('saveUrl', () => {
   });
 
   it('tells the AI in its description to embed the picture in the note afterwards', () => {
+    expect(SAVE_URL_DESCRIPTION).toContain('pass that note as `note`');
     expect(SAVE_URL_DESCRIPTION).toContain('call the edit tool yourself');
     expect(SAVE_URL_DESCRIPTION).toContain('![[<path>]]');
+  });
+
+  it('defaultFilePath is the URL file name next to the note, without forbidden characters', () => {
+    expect(defaultFilePath('https://www.w3.org/Icons/w3c_home.png')).toBe('w3c_home.png');
+    expect(defaultFilePath('https://a.com/x/My%20Pic.jpg?x=1', 'Animals/Cats/Ideas.md')).toBe('Animals/Cats/My Pic.jpg');
+    expect(() => defaultFilePath('https://a.com/')).toThrow('filePath is required');
+  });
+
+  describe('note', () => {
+    it('appends the embed on its own line after the saved file, keeping the note as is', async () => {
+      await writeFile(join(vault, 'notes/n1.md'), '# N1\ntext\n');
+      const out = await saveUrl(vault, `${origin}/cat.png`, 'notes/n1.png', { note: 'notes/n1.md' });
+      expect(await readFile(join(vault, 'notes/n1.md'), 'utf8')).toBe('# N1\ntext\n![[notes/n1.png]]\n');
+      expect(out).toContain('saved notes/n1.png');
+      expect(out).toContain('added ![[notes/n1.png]] to notes/n1.md');
+      expect(out).not.toContain('call the edit tool');
+    });
+
+    it('starts a new line when the note has no trailing newline; accepts .markdown and an absolute path', async () => {
+      await writeFile(join(vault, 'notes/n2.markdown'), 'no newline');
+      await saveUrl(vault, `${origin}/cat.png`, 'notes/n2.png', { note: join(vault, 'notes/n2.markdown') });
+      expect(await readFile(join(vault, 'notes/n2.markdown'), 'utf8')).toBe('no newline\n![[notes/n2.png]]\n');
+    });
+
+    it('refuses a missing note and saves nothing', async () => {
+      await expect(saveUrl(vault, `${origin}/cat.png`, 'notes/n3.png', { note: 'notes/nope.md' })).rejects.toThrow('note must be an existing Markdown file');
+      await expect(readFile(join(vault, 'notes/n3.png'))).rejects.toThrow();
+    });
+
+    it('refuses a non-Markdown note, a path outside the vault and a symlink out, saving nothing', async () => {
+      await writeFile(join(base, 'other/o.md'), 'x');
+      await writeFile(join(vault, 'notes/t.txt'), 'x');
+      for (const note of ['notes/t.txt', '../other/o.md', join(base, 'other/o.md'), 'escape/o.md']) {
+        await expect(saveUrl(vault, `${origin}/cat.png`, 'notes/n4.png', { note })).rejects.toThrow(/note must be|outside the vault/);
+        await expect(readFile(join(vault, 'notes/n4.png'))).rejects.toThrow();
+      }
+      expect(await readFile(join(base, 'other/o.md'), 'utf8')).toBe('x');
+      expect((await readdir(join(vault, 'notes'))).filter((f) => f.startsWith('n4'))).toEqual([]);
+    });
   });
 
   it('refuses a web page saved as an image', async () => {

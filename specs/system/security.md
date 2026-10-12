@@ -1,7 +1,7 @@
 ---
 title: "Security: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-08
+edited: 2026-10-13
 ---
 
 # Security: karpathy.app
@@ -136,7 +136,7 @@ GitHub, opencode password, provider keys), only its own two.
   runtime. `open_note` checks the path lexically and by `stat` inside the session directory, refuses dot-segments, reads no
   content and changes nothing. `open_url` fetches nothing and returns `offered <url>` for an http(s) URL (see
   [Web access](#web-access)). Both are allowed for `vault-readonly` too. `save_url` is the one custom tool that writes: it
-  is allowed for `vault` only, and only a known URL becomes a new media file or PDF (see [Web access](#web-access)). `move_to_sources`, also
+  is allowed for `vault` only, and only a known URL becomes a new media file or PDF (see [Web access](#web-access)); with its `note` argument it also appends one `![[…]]` line to an existing Markdown note inside the vault (same path confinement, nothing else rewritten). `move_to_sources`, also
   `vault` only, can only rename `Input/<name>` to a new `Sources/<name>` ([Ingest service](#ingest-service)). opencode *would* load tools from a vault's
   `.opencode/tools/`; the harness-config rule below is what stops that.
 - **Harness config in a vault** (`.opencode/`, `opencode.json(c)`) disables chat for that vault and can't be created

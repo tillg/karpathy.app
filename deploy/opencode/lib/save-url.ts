@@ -1,4 +1,4 @@
-import { mkdir, open, realpath, unlink } from 'node:fs/promises';
+import { appendFile, mkdir, open, readFile, realpath, stat, unlink } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 
 /**
@@ -25,7 +25,7 @@ const TIMEOUT_MS = 120_000;
 
 /** The save_url tool's description (tools/save_url.ts): a small model must learn here that saving is only half of the job. */
 export const SAVE_URL_DESCRIPTION =
-  "Download an image, video, audio file or PDF from the web into the vault. The URL must already appear in this chat (the user's messages, pages you fetched, search results). Save it next to the note that will show it. filePath is the NEW file's own name, like Animals/tabby.jpg: never put the note's name or a URL in it. It never overwrites a file. To add a picture to a note this is only step 1: afterwards you MUST call the edit tool yourself (not tell the user to) to add the embed ![[<path>]] with the path this tool returns (never the URL); a file that no note embeds is not shown. A URL alone in a note is not saved.";
+  "Download an image, video, audio file or PDF from the web into the vault. The URL must already appear in this chat (the user's messages, pages you fetched, search results). Save it next to the note that will show it. filePath is the NEW file's own name, like Animals/tabby.jpg: never put the note's name or a URL in it. It never overwrites a file. To add a picture to a note the user named, pass that note as `note` (only then; the note must already exist) and leave filePath out: one call saves the file and adds the embed ![[<path>]] to the note, nothing else to do. Without `note` you MUST call the edit tool yourself afterwards (not tell the user to) to add ![[<path>]] (never the URL); a file that no note embeds is not shown. A URL alone in a note is not saved.";
 
 /** Characters Obsidian forbids in a file name (`:` is what a model mangles `Ideas.md` + `img.png` into). */
 const FORBIDDEN_NAME_CHARS = /[:*"\\<>|?]/;
@@ -92,11 +92,42 @@ async function target(dir: string, filePath: string, suggestion: string): Promis
   return { abs: resolve(root, rel), rel: rel.split(sep).join('/'), ext };
 }
 
+/** The file name in the URL's path, without characters a vault file name can't have ('' if none). */
+function urlName(url: string): string {
+  try {
+    return decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '').replace(/[:*"\\<>|?]/g, '');
+  } catch {
+    return '';
+  }
+}
+
+/** The path to save to when the AI gives none: the URL's file name in the note's folder (the vault root without a note). */
+export function defaultFilePath(url: string, note?: string): string {
+  const name = urlName(url);
+  if (!name.includes('.')) throw new Error('filePath is required: the URL has no file name');
+  const dir = note ? dirname(note) : '.';
+  return dir === '.' ? name : `${dir}/${name}`;
+}
+
+/** `note` (vault-relative or absolute) as the real path of an existing Markdown file inside `dir`. */
+async function noteTarget(dir: string, note: string): Promise<{ real: string; rel: string }> {
+  const root = await realpath(dir);
+  const rel = relative(root, resolve(root, note));
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) throw new Error(`outside the vault: ${note}`);
+  if (rel.split(sep).some((s) => s.startsWith('.'))) throw new Error(`hidden path: ${rel}`);
+  if (!/\.(md|markdown)$/i.test(rel)) throw new Error(`note must be an existing Markdown file (.md), not ${rel}`);
+  const real = await realpath(resolve(root, rel)).catch(() => null);
+  if (real === null || !(await stat(real)).isFile()) throw new Error(`note must be an existing Markdown file (.md): ${rel} does not exist (omit note to just save the file)`);
+  const r = relative(root, real);
+  if (r.startsWith('..') || isAbsolute(r)) throw new Error(`outside the vault: ${note}`);
+  return { real, rel: rel.split(sep).join('/') };
+}
+
 /**
  * Downloads `url` (through `opts.proxy` when given) to the new file `filePath` in `dir`. Never overwrites;
- * removes a partial file on any failure. Returns the tool output: the saved path and the embed to add.
+ * removes a partial file on any failure. With `opts.note` (an existing Markdown note) it also appends the embed to that note. Returns the tool output.
  */
-export async function saveUrl(dir: string, url: string, filePath: string, opts: { proxy?: string; env?: Env; maxBytes?: number } = {}): Promise<string> {
+export async function saveUrl(dir: string, url: string, filePath: string, opts: { proxy?: string; env?: Env; maxBytes?: number; note?: string } = {}): Promise<string> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -105,7 +136,9 @@ export async function saveUrl(dir: string, url: string, filePath: string, opts: 
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error(`Only http(s) URLs can be saved: ${url}`);
   const max = opts.maxBytes ?? MAX_SAVE_BYTES;
-  const last = decodeURIComponent(parsed.pathname.split('/').pop() ?? '').replace(/[:*"\\<>|?]/g, '');
+  const last = urlName(parsed.href);
+  // The note is checked before anything is downloaded: a refusal saves nothing.
+  const note = opts.note ? await noteTarget(dir, opts.note) : undefined;
   const t = await target(dir, filePath, `filePath "${last.includes('.') ? last : 'picture.png'}" (add a folder in front to save it elsewhere), then edit the note`);
   const signal = AbortSignal.timeout(TIMEOUT_MS);
   // Redirects by hand: every hop must pass the NO_PROXY check, so none reaches an internal host directly.
@@ -141,5 +174,9 @@ export async function saveUrl(dir: string, url: string, filePath: string, opts: 
     await unlink(t.abs).catch(() => undefined);
     throw e;
   }
-  return `saved ${t.rel} (${size(n)}). To show it in a note, you must now call the edit tool yourself to add ![[${t.rel}]] to that note (never the URL; do not ask the user to do it).`;
+  const done = `saved ${t.rel} (${size(n)}).`;
+  if (!note) return `${done} To show it in a note, you must now call the edit tool yourself to add ![[${t.rel}]] to that note (never the URL; do not ask the user to do it).`;
+  const text = await readFile(note.real, 'utf8');
+  await appendFile(note.real, `${text === '' || text.endsWith('\n') ? '' : '\n'}![[${t.rel}]]\n`);
+  return `${done} Done: added ![[${t.rel}]] to ${note.rel}. Nothing more to do.`;
 }

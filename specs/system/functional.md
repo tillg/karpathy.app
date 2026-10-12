@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-12
+edited: 2026-10-13
 ---
 
 # Functional: karpathy.app
@@ -340,7 +340,7 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   they reach the vault only if the AI writes about them. With Web access off, the AI has neither tool.
 - **Add a picture, video, audio or PDF from the web** (Web access on, not in conflict): "add a picture of X from <URL> to
   this note" makes the AI save the file as a **new** vault file next to the note (`save_url`, a changed chip, stamped as AI
-  work, listed in Changes) and edit the note to embed it as `![[name]]`. Only a URL that already appears in the chat works
+  work, listed in Changes) and embed it as `![[name]]` at the end of the note (the tool's `note` argument, the note gets a changed chip too). Only a URL that already appears in the chat works
   (same rule as web fetch), and the download counts as a fetch against the cap. It never overwrites a file (the AI picks
   another name), refuses a file over 50 MB, a page that isn't the file (wrong Content-Type), SVG and any hidden or outside
   path; the failure comes back as a tool error and the turn goes on.

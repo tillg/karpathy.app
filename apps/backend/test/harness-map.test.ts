@@ -90,6 +90,18 @@ describe('mapping edge cases', () => {
     expect(writtenPaths({ ...part, state: { ...part.state, status: 'error' } }, '/vaults/a')).toEqual([]);
   });
 
+  it('save_url with a note also reports the note as written (metadata.files)', () => {
+    const part = { id: 's2', tool: 'save_url', state: { status: 'completed', input: { url: 'https://a.com/c.png', filePath: 'notes/c.png', note: 'Ideas.md' }, output: 'saved', metadata: { files: [{ filePath: 'Ideas.md' }] } } };
+    expect(mapToolPart(part, '/vaults/a')).toMatchObject({ path: 'notes/c.png', writes: true });
+    expect(writtenPaths(part, '/vaults/a')).toEqual(['notes/c.png', 'Ideas.md']);
+  });
+
+  it('save_url without filePath takes the saved file and the note from metadata.files', () => {
+    const part = { id: 's3', tool: 'save_url', state: { status: 'completed', input: { url: 'https://a.com/c.png', note: 'n/Ideas.md' }, output: 'saved', metadata: { files: [{ filePath: 'n/c.png' }, { filePath: 'n/Ideas.md' }] } } };
+    expect(mapToolPart(part, '/vaults/a')).toMatchObject({ path: 'n/c.png', writes: true });
+    expect(writtenPaths(part, '/vaults/a')).toEqual(['n/c.png', 'n/Ideas.md']);
+  });
+
   it('real captured websearch and webfetch parts map to query / url', () => {
     const tools = events.flatMap((e) => (e.type === 'part' && e.part.type === 'tool' ? [e.part.call] : []));
     expect(tools.find((t) => t.tool === 'websearch')).toMatchObject({ status: 'completed', query: expect.any(String), writes: false });

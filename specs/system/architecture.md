@@ -245,10 +245,13 @@ nothing and needs no Web access (the server makes no request). Baked like `open_
 `vault-readonly` (`commit-message` keeps `"*": "deny"`). The web app turns the completed call into an Open chip ([Link
 offers](#link-offers)).
 
-**Custom tool `save_url`** (`deploy/opencode/tools/save_url.ts`, logic in `deploy/opencode/lib/save-url.ts`): args `{ url, filePath }`.
+**Custom tool `save_url`** (`deploy/opencode/tools/save_url.ts`, logic in `deploy/opencode/lib/save-url.ts`): args `{ url, filePath, note? }`.
 Downloads one http(s) URL into the vault as a **new** media file or PDF (`SAVE_TYPES`: the media table without SVG, plus
-`pdf`; a test keeps it in sync with `packages/shared`) and returns `saved <path> (<size>). To show it in a note, add
-![[<path>]] to that note with edit.`; the AI then edits the note itself (the tool description says so too, #142). A file name
+`pdf`; a test keeps it in sync with `packages/shared`) and returns `saved <path> (<size>). …`. With `note` (an existing `.md`/`.markdown` file inside the vault, same confinement as
+`filePath`, checked before the download, so a refusal saves nothing) the tool also appends `![[<path>]]` on its own line to
+that note (newline first if it lacks one; nothing else is rewritten; no md-lint, a single embed line can't break it) and
+reports the note in `metadata.files`, so `writtenPaths` marks it changed by the AI too. Without `note` the result tells the AI
+to call `edit` on the note itself. One call does both for a small model (#142). A file name
 with a character Obsidian forbids (`: * " \ < > | ?`) is refused with a hint, so a model can't glue the note's name into it. It never overwrites (`wx`: "already exists: …; choose another name"),
 creates missing folders, and refuses a path outside the vault (symlinks resolved), a dot-segment, a non-http(s) URL, an HTTP
 error, a Content-Type that doesn't fit the extension (an HTML page saved as `.png`; `application/octet-stream` passes) and
