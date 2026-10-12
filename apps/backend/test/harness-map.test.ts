@@ -92,6 +92,11 @@ describe('mapping edge cases', () => {
     expect(writtenPaths(part, '/vaults/a')).toEqual([]);
   });
 
+  it('suggest_next collapses whitespace like the tool does, so Tab never inserts a newline (#145)', () => {
+    const part = { id: 'g2', tool: 'suggest_next', state: { status: 'running', input: { prompt: '  Summarize\n the   open\tpoints \n' } } };
+    expect(mapToolPart(part, '/vaults/a').suggestion).toBe('Summarize the open points');
+  });
+
   it('save_url writes its filePath and keeps its url', () => {
     const part = { id: 's1', tool: 'save_url', state: { status: 'completed', input: { url: 'https://a.com/c.png', filePath: 'notes/c.png' }, output: 'saved notes/c.png (1 KB).' } };
     expect(mapToolPart(part, '/vaults/a')).toMatchObject({ tool: 'save_url', path: 'notes/c.png', url: 'https://a.com/c.png', writes: true, opens: false });
