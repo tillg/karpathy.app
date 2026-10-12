@@ -1,7 +1,7 @@
 ---
 feature: 146-image-model
 title: "Plan: image model"
-status: proposed
+status: applying
 order: 4
 created: 2026-10-13
 edited: 2026-10-13
@@ -12,7 +12,7 @@ edited: 2026-10-13
 E2E and `@llm` steps run against this checkout's stack or the test containers (`just dev up` first, `just dev down`
 when done; the native Ollama must be up: `just ollama status`).
 
-- [ ] Schema: `vision_model` required, endpoint must be OpenAI-compatible; every environment sets it
+- [x] Schema: `vision_model` required, endpoint must be OpenAI-compatible; every environment sets it
   - Test first: `packages/settings/test/schema.test.ts` › "vision_model is required", "anthropic gateway refused for vision"; `repo-settings.test.ts` › hetzner `openrouter/mistralai/mistral-small-2603` with the ZDR provider routing, dev/local/prodtest/test `ollama/qwen3-vl:2b` — fails today: optional, not set
   - Verify: `npx vitest run packages/settings` → green; `just settings check`
 - [ ] Render the vision endpoint into `opencode.env`

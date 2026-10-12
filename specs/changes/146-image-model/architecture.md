@@ -1,7 +1,7 @@
 ---
 feature: 146-image-model
 title: "Architecture: image model"
-status: proposed
+status: applying
 order: 3
 created: 2026-10-13
 edited: 2026-10-13

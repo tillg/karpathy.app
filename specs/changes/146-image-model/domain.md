@@ -1,7 +1,7 @@
 ---
 feature: 146-image-model
 title: "Domain: image model"
-status: proposed
+status: applying
 order: 2
 created: 2026-10-13
 edited: 2026-10-13

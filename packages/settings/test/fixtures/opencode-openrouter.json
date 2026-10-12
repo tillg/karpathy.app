@@ -23,6 +23,22 @@
               "data_collection": "deny"
             }
           }
+        },
+        "mistralai/mistral-small-2603": {
+          "options": {
+            "provider": {
+              "order": [
+                "mistral/zdr",
+                "mistral"
+              ],
+              "only": [
+                "mistral/zdr",
+                "mistral"
+              ],
+              "zdr": true,
+              "data_collection": "deny"
+            }
+          }
         }
       }
     }

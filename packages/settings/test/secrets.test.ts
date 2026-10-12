@@ -4,7 +4,7 @@ import { CENTRAL, tempDir } from './helpers.js';
 
 describe('secrets', () => {
   const dev = loadSettings('dev', { dir: tempDir({ 'settings.yaml': CENTRAL, 'dev.yaml': '{}\n' }) });
-  const hetzner = loadSettings('hetzner', { dir: tempDir({ 'settings.yaml': CENTRAL, 'hetzner.yaml': 'ai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3 }\n' }) });
+  const hetzner = loadSettings('hetzner', { dir: tempDir({ 'settings.yaml': CENTRAL, 'hetzner.yaml': 'ai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3, vision_model: openrouter/mistralai/m }\n' }) });
 
   it('lists the references in use, with their paths', () => {
     expect(secretRefs(dev)).toEqual([

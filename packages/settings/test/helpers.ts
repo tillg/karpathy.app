@@ -14,6 +14,7 @@ export const CENTRAL = `
 ai:
   gateway: ollama
   model: ollama/small
+  vision_model: ollama/vision
   web: { access: true, fetch_cap: 20, search_cap: 20, exa_api_key: { secret: exa_api_key, optional: true } }
 auth:
   bearer_token: { secret: bearer_token }

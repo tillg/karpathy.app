@@ -20,13 +20,18 @@ describe('schema', () => {
     expect(() => loadSettings('dev', { dir })).toThrow(/settings\.yaml: timezone/);
   });
 
+  it('vision_model is required', () => {
+    const dir = tempDir({ 'settings.yaml': CENTRAL.replace('  vision_model: ollama/vision\n', ''), 'dev.yaml': '{}\n' });
+    expect(() => loadSettings('dev', { dir })).toThrow(/settings\.yaml: ai\.vision_model/);
+  });
+
   it('cross-field rules', () => {
     expect(load('dev', { 'dev.yaml': 'ai: { gateway: nope }\n' })).toThrow(/ai\.gateway: no gateway "nope"/);
     expect(load('dev', { 'dev.yaml': 'ai: { model: ollama/llama9 }\n' })).toThrow(/ai\.model: .*ollama\/small, ollama\/vision/);
     expect(load('dev', { 'dev.yaml': 'ai: { model: openrouter/z-ai/glm-5.3 }\n' })).toThrow(/ai\.model: .*gateway ollama/);
     expect(load('dev', { 'dev.yaml': 'ai: { vision_model: ollama/nope }\n' })).toThrow(/ai\.vision_model/);
-    expect(load('dev', { 'dev.yaml': 'ai: { gateway: openrouter, model: openrouter/anthropic/claude-x }\n' })).not.toThrow();
-    expect(load('dev', { 'dev.yaml': 'gateways: { anthropic: { kind: anthropic, api_key: { secret: anthropic_api_key } } }\nai: { gateway: anthropic, model: anthropic/claude-x }\n' })).not.toThrow();
+    expect(load('dev', { 'dev.yaml': 'ai: { gateway: openrouter, model: openrouter/anthropic/claude-x, vision_model: openrouter/mistralai/m }\n' })).not.toThrow();
+    expect(load('dev', { 'dev.yaml': 'gateways: { anthropic: { kind: anthropic, api_key: { secret: anthropic_api_key } } }\nai: { gateway: anthropic, model: anthropic/claude-x, vision_model: anthropic/claude-x }\n' })).toThrow(/ai\.vision_model: .*OpenAI-compatible/);
     expect(load('dev', { 'dev.yaml': 'proxy: { tls: dns, dns: { api_token: null } }\n' })).toThrow(/proxy\.dns\.api_token/);
   });
 });

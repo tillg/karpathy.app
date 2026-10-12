@@ -27,7 +27,11 @@ describe('deploy/settings', () => {
 
   it("today's effective values", () => {
     const hetzner = loadSettings('hetzner', { overlay: false });
-    expect(hetzner.ai).toMatchObject({ gateway: 'openrouter', model: 'openrouter/z-ai/glm-5.3' });
+    expect(hetzner.ai).toMatchObject({ gateway: 'openrouter', model: 'openrouter/z-ai/glm-5.3', vision_model: 'openrouter/mistralai/mistral-small-2603' });
+    // The vision model is routed like the chat model: ZDR providers only.
+    expect(hetzner.gateways.openrouter!.models!['mistralai/mistral-small-2603']).toEqual({
+      options: { provider: { order: ['mistral/zdr', 'mistral'], only: ['mistral/zdr', 'mistral'], zdr: true, data_collection: 'deny' } },
+    });
     expect(hetzner.proxy).toMatchObject({ domain: 'app.karpathy.app', tls: 'dns', dns: { provider: 'godaddy', api_token: { secret: 'dns_api_token' } } });
     expect(hetzner.timezone).toBe('Europe/Berlin');
     expect(hetzner.git.remote_base).toBe('https://github.com/');
@@ -35,13 +39,14 @@ describe('deploy/settings', () => {
     expect(hetzner.ai.web).toMatchObject({ access: true, fetch_cap: 20, search_cap: 20 });
 
     const local = loadSettings('local', { overlay: false });
-    expect(local.ai).toMatchObject({ gateway: 'ollama', model: 'ollama/qwen2.5:3b' });
+    expect(local.ai).toMatchObject({ gateway: 'ollama', model: 'ollama/qwen2.5:3b', vision_model: 'ollama/qwen3-vl:2b' });
     expect(local.git).toMatchObject({ remote_base: 'file:///remotes/', author: { name: 'karpathy.app local', email: 'local@karpathy.app' } });
     expect(local.proxy).toMatchObject({ domain: 'localhost', tls: 'internal' });
     expect(local.timezone).toBe('Europe/Berlin');
 
     for (const env of ['dev', 'prodtest']) {
       const s = loadSettings(env, { overlay: false });
+      expect(s.ai.vision_model).toBe('ollama/qwen3-vl:2b');
       expect(s.git.remote_base).toBe('file:///remotes/');
       expect(s.proxy.tls).toBe('internal');
     }
@@ -62,7 +67,7 @@ describe('deploy/settings', () => {
     const files = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean)
       // History and tests (their fixtures name models on purpose) are not settings.
       .filter((f) => !/^(specs\/|DECISIONS\.md$|deploy\/settings\/)/.test(f) && !/(\.test\.(ts|sh)|\.spec\.ts)$|(^|\/)test\//.test(f));
-    const only = ['openrouter/z-ai/glm-5.3', 'qwen2.5:3b', 'qwen3-vl:2b', 'ollama.internal:11434/v1', 'anthropic/claude-sonnet-5'];
+    const only = ['openrouter/z-ai/glm-5.3', 'qwen2.5:3b', 'qwen3-vl:2b', 'mistralai/mistral-small-2603', 'ollama.internal:11434/v1', 'anthropic/claude-sonnet-5'];
     const hits = files.flatMap((f) => {
       let text: string;
       try { text = readFileSync(root + f, 'utf8'); } catch { return []; }

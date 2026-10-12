@@ -45,9 +45,9 @@ describe('renderOpencodeEnv', () => {
   it('names the key variable after the gateway kind', () => {
     const dir = tempDir({
       'settings.yaml': readFileSync(new URL('../../../deploy/settings/settings.yaml', import.meta.url), 'utf8'),
-      'x.yaml': 'gateways: { anthropic: { kind: anthropic, api_key: { secret: anthropic_api_key } } }\nai: { gateway: anthropic, model: anthropic/claude-x }\n',
+      'x.yaml': 'gateways: { openai: { kind: openai, api_key: { secret: openai_api_key } } }\nai: { gateway: openai, model: openai/gpt-x, vision_model: openai/gpt-x }\n',
     });
-    expect(env(renderOpencodeEnv(loadSettings('x', { dir }), { anthropic_api_key: 'a' })).ANTHROPIC_API_KEY).toBe('a');
+    expect(env(renderOpencodeEnv(loadSettings('x', { dir }), { openai_api_key: 'a' })).OPENAI_API_KEY).toBe('a');
   });
 });
 
