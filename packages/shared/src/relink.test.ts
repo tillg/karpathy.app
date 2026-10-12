@@ -10,6 +10,7 @@ describe('rewriteLinks: inbound links', () => {
   it.each([
     ['[[serien/foo]]', '[[serien/foo/foo]]'],
     ['[[serien/foo|Foo]]', '[[serien/foo/foo|Foo]]'],
+    ['| [[serien/foo\\|Foo]] | x |', '| [[serien/foo/foo\\|Foo]] | x |'],
     ['![[serien/foo#Plot]]', '![[serien/foo/foo#Plot]]'],
     ['[[Wiki/serien/foo.md]]', '[[Wiki/serien/foo/foo.md]]'],
     ['[F](serien/foo.md)', '[F](serien/foo/foo.md)'],

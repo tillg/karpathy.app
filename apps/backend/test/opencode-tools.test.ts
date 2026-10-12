@@ -297,6 +297,14 @@ describe('known-url plugin', () => {
   }, 120_000);
 });
 
+describe('md-lint plugin', () => {
+  it('md-lint plugin is loaded', async () => {
+    // The hook itself is tested in md-lint.test.ts; the model's reaction in chat.llm.test.ts.
+    await oc.fetch(`${oc.url}/experimental/tool/ids?directory=/vaults`);
+    expect(await waitForLog(oc.name, /md-lint ready/)).toMatch(/md-lint ready/);
+  });
+});
+
 async function waitForLog(container: string, re: RegExp, ms = 15_000) {
   const end = Date.now() + ms;
   let logs = '';
