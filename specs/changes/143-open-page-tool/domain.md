@@ -1,7 +1,7 @@
 ---
 feature: 143-open-page-tool
 title: "Domain: open page"
-status: proposed
+status: applying
 order: 2
 created: 2026-10-12
 edited: 2026-10-12

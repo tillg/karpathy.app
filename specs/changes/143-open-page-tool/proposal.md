@@ -1,7 +1,7 @@
 ---
 feature: 143-open-page-tool
 title: "Proposal: tell the AI which page is open"
-status: proposed
+status: applying
 order: 1
 created: 2026-10-12
 edited: 2026-10-12
