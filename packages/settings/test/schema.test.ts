@@ -31,6 +31,9 @@ describe('schema', () => {
     expect(load('dev', { 'dev.yaml': 'ai: { model: openrouter/z-ai/glm-5.3 }\n' })).toThrow(/ai\.model: .*gateway ollama/);
     expect(load('dev', { 'dev.yaml': 'ai: { vision_model: ollama/nope }\n' })).toThrow(/ai\.vision_model/);
     expect(load('dev', { 'dev.yaml': 'ai: { gateway: openrouter, model: openrouter/anthropic/claude-x, vision_model: openrouter/mistralai/m }\n' })).not.toThrow();
+    // The vision model's own prefix names its gateway: switching only the chat gateway keeps the vision model valid.
+    expect(load('dev', { 'dev.yaml': 'ai: { gateway: openrouter, model: openrouter/anthropic/claude-x }\n' })).not.toThrow();
+    expect(load('dev', { 'dev.yaml': 'ai: { vision_model: nowhere/m }\n' })).toThrow(/ai\.vision_model: .*no gateway "nowhere"/);
     expect(load('dev', { 'dev.yaml': 'gateways: { anthropic: { kind: anthropic, api_key: { secret: anthropic_api_key } } }\nai: { gateway: anthropic, model: anthropic/claude-x, vision_model: anthropic/claude-x }\n' })).toThrow(/ai\.vision_model: .*OpenAI-compatible/);
     expect(load('dev', { 'dev.yaml': 'proxy: { tls: dns, dns: { api_token: null } }\n' })).toThrow(/proxy\.dns\.api_token/);
   });

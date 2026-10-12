@@ -49,6 +49,21 @@ describe('renderOpencodeEnv', () => {
     expect(dev.VISION_MODEL).toBe('qwen3-vl:2b');
   });
 
+  it("the vision endpoint comes from the vision model's own gateway", () => {
+    const dir = tempDir({
+      'settings.yaml': readFileSync(new URL('../../../deploy/settings/settings.yaml', import.meta.url), 'utf8'),
+      'x.yaml': 'ai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3, vision_model: ollama/qwen3-vl:2b }\n',
+    });
+    const x = env(renderOpencodeEnv(loadSettings('x', { dir }), SECRETS));
+    expect(x.OPENROUTER_API_KEY).toBe('sk-or-#1 "x"');
+    expect(x.VISION_BASE_URL).toBe('http://ollama.internal:11434/v1');
+    expect(x.VISION_MODEL).toBe('qwen3-vl:2b');
+    expect(x.VISION_API_KEY).toBeUndefined();
+    expect(x.VISION_REQUEST_OPTIONS).toBeUndefined();
+    // The relay still finds the Mac's Ollama for the vision model.
+    expect(env(renderComposeEnv(loadSettings('x', { dir }), SECRETS)).OLLAMA_UPSTREAM).toBe('host.docker.internal:11434');
+  });
+
   it('names the key variable after the gateway kind', () => {
     const dir = tempDir({
       'settings.yaml': readFileSync(new URL('../../../deploy/settings/settings.yaml', import.meta.url), 'utf8'),

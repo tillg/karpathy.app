@@ -94,23 +94,32 @@ export const partialSettingsSchema = deepPartial(settingsSchema);
 export type Settings = z.infer<typeof settingsSchema>;
 export type Gateway = Settings['gateways'][string];
 
+/** The gateway of the vision model: the longest configured gateway id its `<gateway>/` prefix starts with, else its first segment. */
+export function visionGatewayId(s: Settings): string {
+  const ids = Object.keys(s.gateways).filter((id) => s.ai.vision_model.startsWith(`${id}/`)).sort((a, b) => b.length - a.length);
+  return ids[0] ?? s.ai.vision_model.split('/')[0]!;
+}
+
 /** Rules across fields, checked on the merged settings. Returns `path: message` lines. */
 export function crossFieldErrors(s: Settings): string[] {
   const errors: string[] = [];
-  const gw = s.gateways[s.ai.gateway];
-  if (!gw) {
-    errors.push(`ai.gateway: no gateway "${s.ai.gateway}" (${Object.keys(s.gateways).join(', ')})`);
-  } else {
-    for (const key of ['model', 'vision_model'] as const) {
-      const model = s.ai[key];
-      const prefix = `${s.ai.gateway}/`;
-      const known = Object.keys(gw.models ?? {}).map((m) => prefix + m);
-      if (!model.startsWith(prefix)) errors.push(`ai.${key}: ${model} is not a model of gateway ${s.ai.gateway}`);
-      else if (!(BUILT_IN_KINDS as readonly string[]).includes(gw.kind) && !known.includes(model))
-        errors.push(`ai.${key}: ${model} is not one of ${known.join(', ')}`);
-    }
-  }
-  if (gw?.kind === 'anthropic') errors.push(`ai.vision_model: gateway ${s.ai.gateway} (anthropic) is not OpenAI-compatible, which the vision tool needs`);
+  // A model setting is `<gateway>/<model id>`: the chat model on ai.gateway, the vision model on the gateway its prefix names.
+  const checkModel = (key: 'model' | 'vision_model', gatewayId: string) => {
+    const gw = s.gateways[gatewayId];
+    const model = s.ai[key];
+    const prefix = `${gatewayId}/`;
+    if (!gw) return errors.push(`ai.${key}: no gateway "${gatewayId}" (${Object.keys(s.gateways).join(', ')})`);
+    const known = Object.keys(gw.models ?? {}).map((m) => prefix + m);
+    if (!model.startsWith(prefix)) errors.push(`ai.${key}: ${model} is not a model of gateway ${gatewayId}`);
+    else if (!(BUILT_IN_KINDS as readonly string[]).includes(gw.kind) && !known.includes(model))
+      errors.push(`ai.${key}: ${model} is not one of ${known.join(', ')}`);
+  };
+  if (!s.gateways[s.ai.gateway]) errors.push(`ai.gateway: no gateway "${s.ai.gateway}" (${Object.keys(s.gateways).join(', ')})`);
+  else checkModel('model', s.ai.gateway);
+  const visionGateway = visionGatewayId(s);
+  checkModel('vision_model', visionGateway);
+  if (s.gateways[visionGateway]?.kind === 'anthropic')
+    errors.push(`ai.vision_model: gateway ${visionGateway} (anthropic) is not OpenAI-compatible, which the vision tool needs`);
   if (s.proxy.tls === 'dns' && !s.proxy.dns.api_token) errors.push('proxy.dns.api_token: required when proxy.tls is dns');
   return errors;
 }
