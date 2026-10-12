@@ -69,7 +69,11 @@ describe('egress proxy', () => {
   });
 
   it.skipIf(!online)('redirect to internal refused', () => {
-    const r = wget('http://httpbin.org/redirect-to?url=http://169.254.169.254/');
+    // A public redirector sends wget on to the metadata address; the proxy refuses that second hop. Two
+    // services, because one being down (httpbin.org answered 503 for a release) isn't a proxy failure.
+    const redirectors = ['http://httpbin.org/redirect-to', 'http://postman-echo.com/redirect-to'];
+    const tries = redirectors.map((u) => wget(`${u}?url=http://169.254.169.254/`));
+    const r = tries.find((t) => t.out.includes('Location: http://169.254.169.254/')) ?? tries[0]!;
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('Location: http://169.254.169.254/');
     expect(r.out).toContain('403');
