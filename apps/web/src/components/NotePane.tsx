@@ -403,7 +403,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
                   onChange={(t) => { s.editDraft(t); lastEdit.current = performance.now(); if (outlineOpen) settleSoon(); }} exists={s.exists} onWikilink={s.followLink} resolveEmbed={rctx.resolveEmbed}
                   embedCtx={() => ({ vault: s.activeId!, toast: s.toast, onOpen: (p) => void s.openNote(p) })} mediaEpoch={s.mediaEpoch}
                   onDropFiles={canAttach ? (files, pos) => attach(files, false, pos) : undefined}
-                  onSelection={() => { if (outlineOpen) setSel(readSelection()); }}
+                  onSelection={() => { if (outlineOpen) setSel(readSelection()); }} onCopied={() => s.toast('Copied')}
                   hideFrontmatter={showForm} onFrontmatter={(f) => setFmFor({ key: noteKey!, fm: f })} onRevealFrontmatter={() => setYamlFor(note.path)} />
               : kind === 'html'
                 ? <HtmlView key={note.path} vault={s.activeId!} path={note.path} text={s.currentText()} paths={s.paths} />

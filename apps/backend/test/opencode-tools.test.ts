@@ -45,6 +45,18 @@ describe('opencode custom tools', () => {
     expect(await r.json()).toContain('open_note');
   });
 
+  it('opencode lists current_page as a tool', async () => {
+    const r = await oc.fetch(`${oc.url}/experimental/tool/ids?directory=/vaults`);
+    expect(await r.json()).toContain('current_page');
+  });
+
+  it('current_page is allowed for vault and vault-readonly, hidden for commit-message', async () => {
+    const cfg = JSON.parse(await readFile(join(import.meta.dirname, '../../../deploy/opencode/opencode.json'), 'utf8'));
+    expect(cfg.agent.vault.permission.current_page).toBe('allow');
+    expect(cfg.agent['vault-readonly'].permission.current_page).toBe('allow');
+    expect(cfg.agent['commit-message'].permission).toEqual({ '*': 'deny' });
+  });
+
   it('opencode lists open_url as a tool', async () => {
     const r = await oc.fetch(`${oc.url}/experimental/tool/ids?directory=/vaults`);
     expect(await r.json()).toContain('open_url');

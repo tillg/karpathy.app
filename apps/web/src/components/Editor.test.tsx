@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, render, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { EditorView } from '@codemirror/view';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Editor } from './Editor';
 
 afterEach(cleanup);
@@ -38,5 +39,67 @@ describe('Editor kind (#126)', () => {
   it('note kind unchanged: [[x]] is a wikilink', () => {
     const { container } = render(<Editor {...base} kind="note" path="a/x.md" doc={'See [[Home]]\n'} />);
     expect(container.querySelector('.cm-wl')?.textContent).toBe('Home');
+  });
+});
+
+describe('Copy on select (#144)', () => {
+  // jsdom has no clipboard: a recording stand-in; `reject` makes the write fail like a denied permission.
+  const clipboard = (reject = false) => {
+    const writeText = vi.fn(() => (reject ? Promise.reject(new Error('denied')) : Promise.resolve()));
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    return writeText;
+  };
+  const setup = (onCopied = vi.fn()) => {
+    const { container } = render(<Editor {...base} path="a/x.md" doc={'hello brave world\nsecond'} onCopied={onCopied} />);
+    const content = container.querySelector<HTMLElement>('.cm-content')!;
+    const view = EditorView.findFromDOM(container.querySelector<HTMLElement>('.cm-editor')!)!;
+    return { content, view, onCopied };
+  };
+
+  it('copies a selection on mouseup and reports it once', async () => {
+    const write = clipboard();
+    const { content, view, onCopied } = setup();
+    view.dispatch({ selection: { anchor: 6, head: 11 } });
+    fireEvent.mouseUp(content);
+    expect(write).toHaveBeenCalledWith('brave');
+    await waitFor(() => expect(onCopied).toHaveBeenCalledTimes(1));
+  });
+
+  it('copies on keyup (shift+arrows) and on touchend', () => {
+    const write = clipboard();
+    const { content, view } = setup();
+    view.dispatch({ selection: { anchor: 0, head: 5 } });
+    fireEvent.keyUp(content, { key: 'ArrowRight', shiftKey: true });
+    expect(write).toHaveBeenLastCalledWith('hello');
+    view.dispatch({ selection: { anchor: 6, head: 11 } });
+    fireEvent.touchEnd(content);
+    expect(write).toHaveBeenLastCalledWith('brave');
+  });
+
+  it('does not copy an empty or an unchanged selection twice', () => {
+    const write = clipboard();
+    const { content, view } = setup();
+    fireEvent.mouseUp(content);
+    expect(write).not.toHaveBeenCalled();
+    view.dispatch({ selection: { anchor: 0, head: 5 } });
+    fireEvent.mouseUp(content);
+    fireEvent.keyUp(content, { key: 'Shift' });
+    expect(write).toHaveBeenCalledTimes(1);
+    // Cleared and selected again: copied again (the clipboard may have changed meanwhile).
+    view.dispatch({ selection: { anchor: 3 } });
+    view.dispatch({ selection: { anchor: 0, head: 5 } });
+    fireEvent.mouseUp(content);
+    expect(write).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails silently when the clipboard write is rejected', async () => {
+    const write = clipboard(true);
+    const { content, view, onCopied } = setup();
+    view.dispatch({ selection: { anchor: 0, head: 5 } });
+    fireEvent.mouseUp(content);
+    await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(write).toHaveBeenCalled();
+    expect(onCopied).not.toHaveBeenCalled();
   });
 });
