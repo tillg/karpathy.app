@@ -34,12 +34,19 @@ describe('renderOpencodeEnv', () => {
       WEB_FETCH_CAP: '20',
       WEB_SEARCH_CAP: '20',
       OPENCODE_MODEL: 'openrouter/z-ai/glm-5.3',
+      VISION_BASE_URL: 'https://openrouter.ai/api/v1',
+      VISION_MODEL: 'mistralai/mistral-small-2603',
+      VISION_API_KEY: 'sk-or-#1 "x"',
+      VISION_REQUEST_OPTIONS: JSON.stringify({ provider: { order: ['mistral/zdr', 'mistral'], only: ['mistral/zdr', 'mistral'], zdr: true, data_collection: 'deny' } }),
     });
     // The providers, merged after a vault's own opencode.json.
     expect(JSON.parse(OPENCODE_CONFIG_CONTENT!)).toEqual(renderOpencodeProviders(loadSettings('hetzner', { overlay: false })));
     expect(env(renderOpencodeEnv(loadSettings('hetzner', { overlay: false }), { ...SECRETS, exa_api_key: 'exa' })).EXA_API_KEY).toBe('exa');
     const dev = env(renderOpencodeEnv(loadSettings('dev', { overlay: false }), {}));
-    expect(Object.keys(dev).sort()).toEqual(['OPENCODE_CONFIG_CONTENT', 'OPENCODE_MODEL', 'WEB_FETCH_CAP', 'WEB_SEARCH_CAP']);
+    expect(Object.keys(dev).sort()).toEqual(['OPENCODE_CONFIG_CONTENT', 'OPENCODE_MODEL', 'VISION_BASE_URL', 'VISION_MODEL', 'WEB_FETCH_CAP', 'WEB_SEARCH_CAP']);
+    // The relay on the stack's network, no key, no request options.
+    expect(dev.VISION_BASE_URL).toBe('http://ollama.internal:11434/v1');
+    expect(dev.VISION_MODEL).toBe('qwen3-vl:2b');
   });
 
   it('names the key variable after the gateway kind', () => {
