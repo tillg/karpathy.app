@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-08
+edited: 2026-10-12
 ---
 
 # Functional: karpathy.app
@@ -248,7 +248,9 @@ flowchart LR
   links to vault notes open in the app, external links open in a new tab.
 - **Wikilinks** `[[target#heading|alias]]`: click to open (resolved by path, then path suffix, then file name
   anywhere; with duplicate names the note's own folder wins, then the shortest path, then A–Z); links to missing pages
-  are marked and say "No page “X” yet".
+  are marked and say "No page “X” yet". In a table row the alias bar is written `[[target\|alias]]` (Obsidian's
+  table-safe form); it opens, resolves and shows its alias like `[[target|alias]]` in Read and Write mode, backlinks and
+  the graph.
 - **Autosave** 1.5 s after the last edit; local drafts survive reloads and crashes; status footer
   "Saving…" / "● Unsaved changes" / "Saved".
 - **Live updates:** a note changed by the AI or a pull reloads silently if it has no unsaved changes; a deleted note
@@ -315,6 +317,11 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
 - **Streaming reply** with Markdown and wikilinks, collapsible "Thinking", **tool chips** for files read, changed and
   opened (changed and opened ones open the note; long paths end in "…", the full path is the tooltip), and a footer
   listing the changed pages. A chat scrolled to the end stays at the end when its width changes.
+- **Clean Markdown from the AI** (#118): after every AI write of a note, the app checks the whole file for Markdown
+  that Obsidian shows broken and tells the AI in that write's result, so it fixes the note in the same turn. Two
+  mistakes are caught: a wikilink broken across lines (shown as plain text), and `[[page|alias]]` in a table row, whose
+  `|` splits the cell (fix: `[[page\|alias]]`). The user sees no message, at most one more *changed* chip. The user's
+  own edits are not checked.
 - **The AI opens notes** when asked ("show me my reading list"): on the wide layout right away, on a phone or in the
   tablet overlay when the reply is done, never while the user is editing (then a notice "AI opened …" and the chip).
   Reloading a chat never reopens anything; a wrong path goes back to the AI as a tool error. Works in conflict too.
@@ -621,6 +628,9 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
 - Chat is disabled in vaults that contain `.opencode/`, `opencode.json` or `opencode.jsonc`.
 - A save on page exit only works for notes under about 60 KB (browser keepalive limit); the local draft covers the rest.
 - Search skips files ignored by `.gitignore` and hidden files; capped at 200 hits.
+- **Markdown check:** a small model may ignore the check's report and leave the note as it wrote it. The check doesn't
+  see tables without a leading `|`, code spans over several lines or indented code blocks, and it reports old problems
+  in a file too, not only the ones the AI just wrote.
 - Vaults are full clones; there is no disk-space check before adding a vault and no per-file size limit.
 - Push failures aren't retried in the background, only on the next pull, commit or "retry".
 - The frontmatter properties table (Read mode) understands simple YAML only; other values are shown raw.
