@@ -152,6 +152,7 @@ edited: 2026-10-12
   - [01:05 — #145: a `suggest_next` tool, shown as ghost text derived from the chat history; Tab or "Tap to use"](#run-2026-10-12-2332-9)
   - [01:05 — Archive #143 and #145 with their decisions still open](#run-2026-10-12-2332-10)
   - [01:10 — Disk full: clear the Homebrew and npm caches, stop stack 1, prune build cache; fix the review's findings on a branch](#run-2026-10-12-2332-11)
+  - [02:00 — #146: Mistral Small 2603 via ZDR as the vision model, reached by a `look_at_image` tool; the chat model stays](#run-2026-10-12-2332-12)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2135,3 +2136,27 @@ edited: 2026-10-12
   path" (the `read` tool reaches `.agents/`), still refusing `..`, `.git` and absolute paths; the `/vaults/.open-page`
   literal stays with a comment (the opencode container gets no vaults-root env; the compose mount fixes it);
   `e2e/fix-144.spec.ts` is Chromium only (WebKit refuses clipboard permissions, as `attach.spec.ts` does for drops).
+
+## 02:00 — #146: Mistral Small 2603 via ZDR as the vision model, reached by a `look_at_image` tool; the chat model stays {#run-2026-10-12-2332-12}
+
+- **Status:** open
+- **Context:** change `146-image-model`. The issue asks for "any image-capable model from OpenRouter, using the account
+  we already have" for a first version. Prod's chat model `glm-5.3` is text-only and deliberately limited to ZDR
+  providers.
+- **Question:** which model, and how does it come into play?
+- **Decision:** `ai.vision_model` becomes a required setting of every environment: prod
+  `openrouter/mistralai/mistral-small-2603` (image input and tools; `provider.only: [mistral/zdr, mistral]`,
+  `zdr: true`, `data_collection: deny`, like glm-5.3), dev/test `ollama/qwen3-vl:2b`; it must be on the chat model's
+  gateway. The settings package renders `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY`, `VISION_REQUEST_OPTIONS`
+  into `opencode.env`. The baked-in tool `look_at_image({ path, question? })` checks the vault path and image type,
+  sends the image to the gateway's `/chat/completions` through the egress proxy (Bun `fetch` `proxy`, as `save_url`
+  does) and returns the text; the key never appears in errors. It stays available for image-capable chat models too.
+  Image attachment chips no longer warn; PDFs still do (`e2e/attach.spec.ts` now asserts no warning for an image).
+- **Why:** keeps the privacy routing of the chat model; one cheap model for images; no new secret (the OpenRouter key
+  exists) and no Ansible change.
+- **Alternatives:** switch the chat model to an image-capable one (changes every answer and its providers);
+  `glm-5v-turbo` / `qwen` vision models (no ZDR endpoint checked); macOS on-device recognition (needs a service on
+  the Mac, recorded as a later option).
+- **Consequences:** the hosted path (OpenRouter → mistral/zdr) is first exercised on prod; checked after the deploy.
+  `qwen3-vl:2b` (2 GB) was pulled into the Mac's Ollama for dev. Merged in 130c96a, archived in af17238, issue
+  closed. Also archived past the decision gate (decision 10).
