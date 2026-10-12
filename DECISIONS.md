@@ -132,6 +132,9 @@ edited: 2026-10-12
 - [2026-10-12 14:04 — Deploy v0.0.20 to prod once its build is done, notify via ntfy](#run-2026-10-12-1404)
   - [14:05 — Re-run the release's failed check job once: the httpbin.org egress test timed out](#run-2026-10-12-1404-1)
   - [14:12 — Egress redirect test: try httpbin.org, then postman-echo.com; release 0.0.21 instead of 0.0.20](#run-2026-10-12-1404-2)
+- [2026-10-12 23:25 — Fix the open bugs (#134, #137, #142), release and deploy to prod](#run-2026-10-12-2325)
+  - [23:30 — Each bug is a `/spec:tweak` on its own branch; "archive" means the issue closes with the fix on main](#run-2026-10-12-2325-1)
+  - [23:30 — #137: a recipe that imports this Mac's Instagram session, run against prod after the deploy](#run-2026-10-12-2325-2)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1785,3 +1788,48 @@ edited: 2026-10-12
 - **Consequences:** if both services are down the test still fails, as it should. Rollback of the prod deploy:
   `just deploy hetzner 0.0.19`.
   Deployed 14:29 (`just deploy hetzner 0.0.21`: failed=0, smoke ok); prod `/api/health` reports `0.0.21`.
+
+# 2026-10-12 23:25 — Fix the open bugs (#134, #137, #142), release and deploy to prod {#run-2026-10-12-2325}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > - go get the most recent version from remote
+  > - get all the open bugs from gh issues
+  > - per bug: 
+  >    - make one branch
+  >    - TDD / fix it
+  >    - When all tests are ok, commit, push, merge to main
+  > - When all bugs are done give it a version no and deploy to PROD
+  > - /spec:archive the bugs
+
+## 23:30 — Each bug is a `/spec:tweak` on its own branch; "archive" means the issue closes with the fix on main {#run-2026-10-12-2325-1}
+
+- **Status:** open
+- **Context:** open issues labelled `bug`: #142, #137, #134 (#136, a flaky test without the label, is left out).
+  None has a `specs/changes/<name>/`, so `/spec:archive` has nothing to archive per bug.
+- **Question:** what does "/spec:archive the bugs" mean for bugs without a change directory?
+- **Decision:** each bug runs as a `/spec:tweak` (inline plan, test-first, `specs/system/` updated in place) on a branch
+  `fix/<n>-<slug>` in `.worktrees/`, merged to `main` with `--no-ff` and pushed; the commit carries `Closes #N`, and the
+  issue gets a comment and is closed once the merge is on `main`. That is what archiving does for a change.
+- **Why:** the tweak lane is the spec plugin's lane for bug fixes; it ends exactly where an archive ends (system
+  description current, issue closed).
+- **Alternatives:** a full `/spec:propose` change per bug, then `/spec:archive` (three proposal/architecture/plan sets
+  for small fixes); also archiving the applied change `ui-issues-126-139-140` (not a bug, not asked: left open).
+- **Consequences:** `specs/changes/ui-issues-126-139-140/` stays open for the user to archive.
+
+## 23:30 — #137: a recipe that imports this Mac's Instagram session, run against prod after the deploy {#run-2026-10-12-2325-2}
+
+- **Status:** open
+- **Context:** #137 lists four options; the issue's "Done when" needs an Instagram link resolved on prod. Logins from
+  the Hetzner IP get HTTP 429, and the Mac holds a working instascraper session (`~/.config/instascraper/`).
+- **Question:** which option, and is the session put on prod in this run?
+- **Decision:** option 1: `just ingest-instagram-session <target>` pipes the Mac's session file and `IG_USERNAME` into
+  the target's ingest container (modelled on `just ingest-auth`), tested on the dev stack; after the prod deploy it runs
+  once against `hetzner`, checked through the ingest service's Instagram status, not with a real mail.
+- **Why:** no login from the datacenter IP at all; one small script, no new service; the user asked for the bugs fixed
+  on prod.
+- **Alternatives:** resolve Instagram links on the Mac (option 2: a second moving part); a residential proxy over
+  Tailscale (option 3); only raising `resolve_max_attempts` (option 4: postpones the loss).
+- **Consequences:** Instagram may challenge the session when it shows up from the Hetzner IP; then the user logs in
+  again on the Mac and re-runs the recipe. Rollback: Settings › Instagram › Disconnect on prod.
