@@ -141,6 +141,7 @@ edited: 2026-10-12
   - [01:05 — Restart Rancher Desktop after the Mac's disk filled up; reclaim only build cache](#run-2026-10-12-2325-6)
   - [01:05 — Merge #142 at 6/12 on its e2e and ship it; the issue stays open](#run-2026-10-12-2325-7)
   - [01:40 — One release for both runs: the enhancements run tags and deploys v0.0.22](#run-2026-10-12-2325-8)
+  - [01:55 — Retro: `just dev up` refuses with less than 10 GiB free](#run-2026-10-12-2325-9)
 - [2026-10-12 23:32 — Build the high-priority enhancements (#147, #144, #128, #143, #145, #146), release and deploy to prod](#run-2026-10-12-2332)
   - [23:45 — Small issues are tweaks, tool-adding issues are full changes; "archive" closes the issue either way](#run-2026-10-12-2332-1)
   - [23:45 — Share main with the parallel bug-fix run: fetch before every merge, version picked at release time](#run-2026-10-12-2332-2)
@@ -1949,6 +1950,21 @@ edited: 2026-10-12
   PROD" is met by v0.0.22.
 - **Alternatives:** release v0.0.22 myself and let them take v0.0.23 (two deploys within an hour).
 - **Consequences:** rollback, if needed: `just deploy hetzner 0.0.21`.
+
+## 01:55 — Retro: `just dev up` refuses with less than 10 GiB free {#run-2026-10-12-2325-9}
+
+- **Status:** open
+- **Context:** retro of this run: the Mac's disk filled up while two runs built images and ran e2e on several stacks;
+  the Docker VM broke and an agent lost its last steps.
+- **Question:** what mechanical check stops that next time?
+- **Decision:** `stack_disk_ok PATH MIN` in `deploy/stack.sh` (tested in `deploy/stack.test.sh`); `deploy/dev.sh up`
+  refuses below 10 GiB free and says how much is free.
+- **Why:** `just dev up` is where every image rebuild starts; a refusal there is cheaper than a broken VM.
+- **Alternatives:** a CLAUDE.md line (not mechanical); a check in `just e2e` too (e2e artifacts are small next to
+  image builds).
+- **Consequences:** a fixed 10 GiB, no setting: raise it in `dev.sh` if 10 turns out too low. Also found:
+  `stack.test.sh` "render dev/prodtest" fail on `main` since #146 (vision model vs. an openrouter gateway); reported to
+  the enhancements run, which owns it.
 
 # 2026-10-12 23:32 — Build the high-priority enhancements (#147, #144, #128, #143, #145, #146), release and deploy to prod {#run-2026-10-12-2332}
 

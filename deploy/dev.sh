@@ -25,6 +25,7 @@ case "${1:-up}" in
     if [ -n "$old" ] && [ "$old" != "$n" ] && [ "$(stack_state "$old")" = mine ]; then
       echo "this checkout holds stack $old: just dev down first" >&2; exit 1
     fi
+    stack_disk_ok .. 10 || exit 1
     stack_ollama_ready http://127.0.0.1:11434 || { echo "no Ollama on 127.0.0.1:11434: just ollama install" >&2; exit 1; }
     settings_legacy_check || exit 1
     mkdir -p secrets ../tmp/dev/remotes

@@ -36,6 +36,14 @@ ls_json='[{"Name":"karpathy-app-2","Status":"running(6)","ConfigFiles":"/x/.work
   exit "$fails"
 ) || fails=$((fails + 1))
 
+# Free disk check before `dev up`: image builds and e2e runs of parallel stacks filled the Mac's disk once.
+(
+  source "$here/stack.sh"
+  stack_disk_ok "$here" 0 && ok "0 GiB required → enough" || bad "0 GiB required → enough" "refused"
+  stack_disk_ok "$here" 999999 2>/dev/null && bad "999999 GiB required → refused" "accepted" || ok "999999 GiB required → refused"
+  eq "refusal names the free space" "$(stack_disk_ok "$here" 999999 2>&1 | grep -c 'GiB free')" 1
+)
+
 # Resolution order, each case in its own throwaway checkout (a git repo, as stack_root expects).
 checkout() { local d; d=$(mktemp -d); git -C "$d" init -q; echo "$d"; }
 (

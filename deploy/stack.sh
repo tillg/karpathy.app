@@ -73,6 +73,14 @@ stack_first_free() {
 # True if the native Ollama (`just ollama install`) answers at URL.
 stack_ollama_ready() { curl -sf -m 3 "$1/api/version" >/dev/null; }
 
+# True if the disk holding PATH has at least MIN GiB free; says how much is free otherwise. Image builds and e2e runs of
+# parallel stacks once filled the Mac's disk, and the Docker VM broke with it.
+stack_disk_ok() {
+  local free; free=$(( $(df -Pk "$1" | awk 'NR==2 {print $4}') / 1048576 ))
+  [ "$free" -ge "$2" ] && return 0
+  echo "only $free GiB free on the disk of $1 (need $2): free some space first" >&2; return 1
+}
+
 stack_remember() { mkdir -p "$(stack_root)/tmp/dev" && echo "$1" > "$(stack_root)/tmp/dev/stack"; }
 
 # This checkout's repo, from this file (stack.sh is sourced from deploy/ and from the repo root).
