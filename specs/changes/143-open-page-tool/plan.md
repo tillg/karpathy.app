@@ -1,7 +1,7 @@
 ---
 feature: 143-open-page-tool
 title: "Plan: current_page tool"
-status: applying
+status: applied
 order: 4
 created: 2026-10-12
 edited: 2026-10-12
@@ -26,13 +26,13 @@ Backend commands run from `apps/backend` (`npm test` = vitest, real opencode con
 - [x] The web app sends the open page with each message
   - Test first: `apps/web/src/store.test.tsx` or `ChatPane` test › "prompt body carries openPage {path, mode, unsaved}; none when no note is open" — fails today: body has no field
   - Verify: `cd apps/web && npx vitest run` and `npx tsc --noEmit` → green
-- [ ] Real-model check: the AI reports the open page (`@llm`, inconclusive when the model skips the tool)
+- [x] Real-model check: the AI reports the open page (`@llm`, inconclusive when the model skips the tool)
   - Test first: `apps/backend/test/chat.llm.test.ts` › "current_page returns the open page" — fails today: no tool
   - Verify: `just test-llm` or the file's own run command → green or inconclusive
-- [ ] E2E: open a note, ask the AI which page is open
+- [x] E2E: open a note, ask the AI which page is open
   - Test first: `e2e/ai-current-page.spec.ts` — fails today: no tool chip
   - Verify: `just dev up` then `just e2e e2e/ai-current-page.spec.ts e2e/ai-open-note.spec.ts` → green
-- [ ] Full gate
+- [x] Full gate
   - Test first: none — gate only
   - Verify: `just check` → no failures beyond the baseline on main
 

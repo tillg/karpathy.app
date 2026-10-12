@@ -1,7 +1,7 @@
 ---
 feature: 143-open-page-tool
 title: "Architecture: current_page tool"
-status: applying
+status: applied
 order: 3
 created: 2026-10-12
 edited: 2026-10-12

@@ -211,9 +211,18 @@ So a vault can't switch off the zero-data-retention routing or point the gateway
 file would be merged *before* the project config, which is why the providers don't travel that way (a vault's
 `zdr: false` won in the check that found it).
 
-The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `open_url`, `save_url`, `move_to_sources`),
+The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `current_page`, `open_url`, `save_url`, `move_to_sources`),
 `plugins/` (`known-url`, `md-lint`), `lib/` (helpers) and `skills/` (the **app skills**, today `research`). The bake step
-waits for the four tools in the tool ids and for both plugins' `ready` log lines before it makes the dir read-only.
+waits for the five tools in the tool ids and for both plugins' `ready` log lines before it makes the dir read-only.
+
+**Custom tool `current_page`** (`deploy/opencode/tools/current_page.ts`, helper `deploy/opencode/lib/open-page.ts`): tells the model which
+file the user has open (#143). The web app sends `openPage { path, mode, unsaved }` in the prompt body (none when no file is open); the backend
+validates it (`normalizeRel`) and, when it accepts the prompt, writes `<vaults>/.open-page/<chatId>.json` (`src/open-page.ts`, atomic; the
+dir sits next to the clones, outside every git clone, like `.preflight`; a prompt without `openPage` deletes the file, deleting the chat too).
+The tool reads `/vaults/.open-page/<context.sessionID>.json` (session id = chat id), re-checks the path with `resolveNote` and answers
+"The user has `<path>` open (Write mode)." (plus an unsaved-edits hint), "No page is open …", or "… no longer exists in the vault". The model then
+uses `read`. A tool rather than prompt injection: no changing line in every prompt, and the model asks only when the user means "this note". The
+call shows as a plain chip; `harness/map.ts` is unchanged. Allowed for `vault` and `vault-readonly`.
 
 **Custom tool `open_note`** (`deploy/opencode/tools/open_note.ts`, path check in `deploy/opencode/lib/resolve-note.ts`):
 checks that `path` resolves inside `context.directory`, exists, is a file and has no dot segment, then returns
@@ -986,7 +995,7 @@ flowchart LR
   (the server removes the emptied folder). Send posts `{ text, attachments: paths }`. Chips and sent files render
   through `FileEmbed` → `mountEmbed` (an image through `/raw` and the object-URL cache, a PDF as a file card). The
   composer re-reads `GET /settings` when a chat opens.
-- **Prompt:** `promptBody` = `{ text (≤ 100 000, may be empty with attachments), attachments? (≤ 5 paths) }`. The
+- **Prompt:** `promptBody` = `{ text (≤ 100 000, may be empty with attachments), attachments? (≤ 5 paths), openPage? { path, mode, unsaved } }` (`openPage`: see Custom tool `current_page`; not queued, written to the state file when the prompt is accepted). The
   queued `Turn` keeps the paths (persisted in `config.json` `queued`, never bytes); an attachment-only prompt titles the
   chat with the first file name. At turn start `Vaults.checkAttachment` applies the raw-file rules, `isUploadable` and
   `MAX_ATTACHMENT_BYTES` (20 MB); a failure is a stream `error` and the turn ends before opencode. `PromptInput.files`
@@ -1137,7 +1146,7 @@ flowchart LR
 | Browser localStorage | Token, local drafts, tree expansion state, tree sort and filter (`karpathy.treeSort`, `karpathy.treeFilter`), main pane, mode preference (`karpathy.mode`), properties view (`karpathy.propsView`). | web |
 | localStorage `karpathy.recentCommands.<vault>`, `karpathy.shownMoves` | The last 10 commands started in a vault (chip order); the agents moves already announced (last 50). | web |
 | Backend memory | Per vault: the skill stamp of the last opencode refresh, the last agents move, the skill-link scan after it, running commit-message proposals. Lost on restart (the first check then refreshes). | backend |
-| opencode image `/opt/opencode-config/opencode/` | Tools `open_note`, `open_url`, `save_url` and `move_to_sources`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
+| opencode image `/opt/opencode-config/opencode/` | Tools `open_note`, `current_page`, `open_url`, `save_url` and `move_to_sources`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
 | Browser memory | Object URLs of media (≤ 200 MB), places of notes seen this session. Lost on reload. | web |
 | Service worker cache `vault-api` | Vault list, file trees, opened notes (for offline reading); cleared on 401. | web |
 

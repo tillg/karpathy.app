@@ -322,6 +322,7 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   mistakes are caught: a wikilink broken across lines (shown as plain text), and `[[page|alias]]` in a table row, whose
   `|` splits the cell (fix: `[[page\|alias]]`). The user sees no message, at most one more *changed* chip. The user's
   own edits are not checked.
+- **The AI sees the open file:** each message carries the file open in the note pane (path, Read or Write mode, unsaved edits). When you say "this note", "this page" or "here", the AI calls `current_page` (a chip) and reads that file; with nothing open it says so. Unsaved edits aren't on disk: the AI reads the saved text.
 - **The AI opens notes** when asked ("show me my reading list"): on the wide layout right away, on a phone or in the
   tablet overlay when the reply is done, never while the user is editing (then a notice "AI opened …" and the chip).
   Reloading a chat never reopens anything; a wrong path goes back to the AI as a tool error. Works in conflict too.
