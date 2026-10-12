@@ -194,7 +194,8 @@ flowchart LR
   line ("Properties · 6 · ⚠ 1"); its lines are hidden in the editor and the cursor, select-all and editing keys can't
   reach them (a key that would shows them instead). Fields by kind: a picker (a value outside the list stays, flagged),
   a date with **Today**, a number field (`inputmode="decimal"`, non-canonical input like `007` kept as typed), a
-  switch, a text field (commits on Enter or leaving it), chips with ✕ and an Add field (Enter adds and keeps the
+  switch, a text field (commits on Enter or leaving it; with an `http(s)` URL as its whole value, an **open ↗** link
+  to it in a new tab sits next to it, #147), chips with ✕ and an Add field (Enter adds and keeps the
   keyboard; link lists suggest note names and open the note on a tap), read-only text with "Edit in YAML" for block
   scalars, maps, multi-line lists, anchors and tags. **+ Property** adds a property: the schema's missing ones are
   offered, any plain name (letters, digits, spaces, `-`, `_`) can be typed. A change edits only that property's lines,
@@ -213,7 +214,8 @@ flowchart LR
   applies without a reload; a broken one shows "Schema file ignored: …" once and the default applies. It is hidden
   in the tree and doesn't disable chat.
 - **Read mode:** rendered, sanitized Markdown of the note's current text; frontmatter as a properties table, where
-  `related` / `sources` values that name a note are links. Obsidian syntax: callouts `> [!type] Title`, `==highlight==`,
+  `related` / `sources` values that name a note are links, and a bare `http(s)://…` URL in any value (scalar or list
+  item) is an external link in a new tab (`rel="noopener noreferrer"`, #147). Obsidian syntax: callouts `> [!type] Title`, `==highlight==`,
   `%%comments%%` hidden, footnotes, task markers ☑ / ☐, media embeds (below), `![[note]]` as a link (no
   transclusion).
 - **Sticky mode:** the Write/Read mode the user last chose holds for every note opened afterwards (tree, search,
