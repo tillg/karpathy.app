@@ -140,6 +140,7 @@ edited: 2026-10-12
   - [00:35 — #142: save_url gets an optional `note` that it appends the embed to, after wording alone failed 0/6](#run-2026-10-12-2325-5)
   - [01:05 — Restart Rancher Desktop after the Mac's disk filled up; reclaim only build cache](#run-2026-10-12-2325-6)
   - [01:05 — Merge #142 at 6/12 on its e2e and ship it; the issue stays open](#run-2026-10-12-2325-7)
+  - [01:40 — One release for both runs: the enhancements run tags and deploys v0.0.22](#run-2026-10-12-2325-8)
 - [2026-10-12 23:32 — Build the high-priority enhancements (#147, #144, #128, #143, #145, #146), release and deploy to prod](#run-2026-10-12-2332)
   - [23:45 — Small issues are tweaks, tool-adding issues are full changes; "archive" closes the issue either way](#run-2026-10-12-2332-1)
   - [23:45 — Share main with the parallel bug-fix run: fetch before every merge, version picked at release time](#run-2026-10-12-2332-2)
@@ -1935,6 +1936,19 @@ edited: 2026-10-12
 - **Alternatives:** leave it unmerged (prod keeps the broken names); change the test (not allowed).
 - **Consequences:** follow-up in #142: a stronger dev model for @llm tests, or a retry like the sibling test (needs the
   user's OK to change the test).
+
+## 01:40 — One release for both runs: the enhancements run tags and deploys v0.0.22 {#run-2026-10-12-2325-8}
+
+- **Status:** open
+- **Context:** both fixes are on `main` (1f2c608); the parallel enhancements run (`~/git/karpathy2`, run
+  `2026-10-12 23:32`) also releases and deploys. Asked over a session message, it chose to tag `v0.0.22` from `main`
+  at 80ff006 (contains 1f2c608) and deploy it to hetzner itself.
+- **Question:** cut a release of my own, or ship in theirs?
+- **Decision:** ship in theirs; no tag and no deploy from this run. I check prod's version after their deploy message.
+- **Why:** one release and one deploy instead of two back-to-back; the task's "give it a version no and deploy to
+  PROD" is met by v0.0.22.
+- **Alternatives:** release v0.0.22 myself and let them take v0.0.23 (two deploys within an hour).
+- **Consequences:** rollback, if needed: `just deploy hetzner 0.0.21`.
 
 # 2026-10-12 23:32 — Build the high-priority enhancements (#147, #144, #128, #143, #145, #146), release and deploy to prod {#run-2026-10-12-2332}
 
