@@ -189,11 +189,12 @@ export function turnAnnouncement(prev: ChatView['turn'] | undefined, c: ChatView
   if (!prev || prev === c.turn) return null;
   if (c.turn === 'running') return 'AI is replying…';
   if (c.turn === 'queued') return c.waiting === 'sync' ? 'Waiting for sync…' : 'Waiting for other chat…';
-  // Only this turn's reply: the last message, if the assistant wrote it.
-  const last = c.messages.at(-1)?.role === 'assistant' ? c.messages.at(-1) : undefined;
-  const error = c.error ?? last?.error;
+  // Only this turn's reply: the whole last assistant turn (its last message may hold just the hidden suggest_next call).
+  const last = turns(c.messages).at(-1);
+  const reply = last?.role === 'assistant' ? last : undefined;
+  const error = c.error ?? reply?.errors[0];
   if (error) return `Reply failed: ${error}`;
-  const text = (last?.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join(' ').trim();
+  const text = (reply?.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join(' ').trim();
   return text ? `Reply finished: ${text.length > 300 ? `${text.slice(0, 300)}…` : text}` : 'Reply finished';
 }
 

@@ -353,6 +353,17 @@ describe('chat API against a real opencode container', () => {
     await expect(readFile(state, 'utf8')).rejects.toThrow('ENOENT');
   });
 
+  it('removing a vault removes the open-page files of its chats (#143)', async () => {
+    const t = await setup();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    const state = join(vaultsDir, '.open-page', `${chatId}.json`);
+    expect((await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'one', openPage: { path: 'Home.md', mode: 'read', unsaved: false } })).status).toBe(202);
+    await waitIdle(t.chat, t.id, chatId);
+    expect(await readFile(state, 'utf8')).toContain('Home.md');
+    await t.chat.deleteAllChats(t.id);
+    await expect(readFile(state, 'utf8')).rejects.toThrow('ENOENT');
+  });
+
   it('attachment reaches opencode as a file part', async () => {
     const t = await setup();
     const request = (await import('supertest')).default;

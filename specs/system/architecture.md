@@ -218,9 +218,9 @@ waits for the six tools in the tool ids and for both plugins' `ready` log lines 
 **Custom tool `current_page`** (`deploy/opencode/tools/current_page.ts`, helper `deploy/opencode/lib/open-page.ts`): tells the model which
 file the user has open (#143). The web app sends `openPage { path, mode, unsaved }` in the prompt body (none when no file is open); the backend
 validates it (`normalizeRel`) and, when it accepts the prompt, writes `<vaults>/.open-page/<chatId>.json` (`src/open-page.ts`, atomic; the
-dir sits next to the clones, outside every git clone, like `.preflight`; a prompt without `openPage` deletes the file, deleting the chat too).
+dir sits next to the clones, outside every git clone, like `.preflight`; a prompt without `openPage` deletes the file, deleting the chat or its vault too). The path is a literal: the volume mounts at `/vaults` in the opencode container, the path `OPENCODE_VAULTS_DIR` names.
 The tool reads `/vaults/.open-page/<context.sessionID>.json` (session id = chat id), re-checks the path with `resolveNote` and answers
-"The user has `<path>` open (Write mode)." (plus an unsaved-edits hint), "No page is open …", or "… no longer exists in the vault". The model then
+"The user has `<path>` open (Write mode)." (plus an unsaved-edits hint), "No page is open …", "… no longer exists in the vault", or, for a path in a dot folder (`.agents`, which `resolveNote` refuses but `read` reaches), "… open, in a dot folder that this tool does not check: read it by that path". The model then
 uses `read`. A tool rather than prompt injection: no changing line in every prompt, and the model asks only when the user means "this note". The
 call shows as a plain chip; `harness/map.ts` is unchanged. Allowed for `vault` and `vault-readonly`.
 

@@ -57,7 +57,7 @@ export function mapToolPart(part: Json, root: string): ToolCall {
     writes: WRITE_TOOLS.has(tool),
     opens: OPEN_TOOLS.has(tool),
     ...(path ? { path } : {}),
-    ...(tool === 'suggest_next' && str(input.prompt) ? { suggestion: str(input.prompt) } : {}),
+    ...(tool === 'suggest_next' && str(input.prompt) ? { suggestion: str(input.prompt)!.replace(/\s+/g, ' ').trim() } : {}),
     ...(tool === 'websearch' && str(input.query) ? { query: str(input.query) } : {}),
     ...((tool === 'webfetch' || tool === 'open_url' || tool === 'save_url') && str(input.url) ? { url: str(input.url) } : {}),
     ...(str(state.title) ? { title: str(state.title) } : {}),

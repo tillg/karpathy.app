@@ -88,7 +88,10 @@ export class ChatService {
     const dir = this.dir(vaultId);
     // A vault carrying harness config never reached opencode, so it has no chats to delete.
     if (!this.vaults.harnessConfigIn(vaultId))
-      for (const s of await this.harness.listSessions(dir).catch(() => [])) await this.harness.deleteSession(dir, s.id).catch(() => undefined);
+      for (const s of await this.harness.listSessions(dir).catch(() => [])) {
+        await this.harness.deleteSession(dir, s.id).catch(() => undefined);
+        await removeOpenPage(this.vaults.vaultsPath(), s.id).catch(() => undefined);
+      }
     this.vaultRemoved(vaultId);
     await this.store.update((c) => { delete c.queued[vaultId]; });
   }
