@@ -1,6 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
-import { resolveNote } from './resolve-note.ts';
+import { resolveNote } from './resolve-note.js';
 
 // The look_at_image tool's logic (import-free of opencode, so the backend tests load it): reads an image of the
 // vault and asks the vision model (an OpenAI-compatible /chat/completions endpoint) what it shows.

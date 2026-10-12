@@ -333,6 +333,7 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
 - **The AI opens notes** when asked ("show me my reading list"): on the wide layout right away, on a phone or in the
   tablet overlay when the reply is done, never while the user is editing (then a notice "AI opened …" and the chip).
   Reloading a chat never reopens anything; a wrong path goes back to the AI as a tool error. Works in conflict too.
+- **Images** (#146): the AI can interpret images of the vault and attached ones through its `look_at_image` tool, which asks a separate vision model (`ai.vision_model`; production `mistralai/mistral-small-2603` via ZDR providers) and returns its description; the chat shows a `look_at_image <path>` chip. PDFs and SVGs are not supported.
 - **Suggested next prompt** (#145): at the end of a reply the AI may call `suggest_next`; the text shows greyed out in the
   empty composer (no chip) with a small "↹ Tab" button on keyboard devices and "Tap to use" on touch. **Tab** (or a tap)
   puts it into the composer and sends nothing; **Enter** sends it. Typing, sending or a new turn removes it; clearing the
@@ -386,8 +387,8 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   (thumbnail, or PDF name and size); ✕ deletes its file, and the folder once it is empty. Unsent chips survive a
   reload; one whose file is gone is dropped. The text may be empty when files are attached. The sent message shows
   its attachments (thumbnail through the vault, or a file card; a deleted file shows the missing card), right away
-  while it is pending and also after a reload. If the chat's model can't read images or PDFs, the chip says "`<model>` can't see images: the AI only gets
-  the file's path"; the file can still be sent. The settings are read again when a chat opens.
+  while it is pending and also after a reload. If the chat's model can't read PDFs, the chip says "`<model>` can't see PDFs: the AI only gets
+  the file's path"; the file can still be sent. Images never warn: a text-only model gets them described by `look_at_image` (#146). The settings are read again when a chat opens.
 - **Read-only while in conflict** ("the AI can only read, not change notes"); web search and fetch, Open chips and commands still work (a command that writes can't save anything then).
 - The AI can read and edit notes in the vault root only; its changes are uncommitted until the user commits.
 

@@ -14,7 +14,7 @@ const vault = join(base, 'vault');
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex');
 let server: Server;
 let origin: string;
-let seen: { auth?: string; body: any }[] = [];
+let seen: { auth?: string; body: { provider?: unknown; messages: { content: { image_url: { url: string } }[] }[] } }[] = [];
 
 beforeAll(async () => {
   await mkdir(join(vault, 'Photos'), { recursive: true });
@@ -89,7 +89,7 @@ describe('describeImage', () => {
     expect(out).toBe('A red square.');
     expect(seen[0]!.auth).toBe('Bearer sk-1');
     expect(seen[0]!.body.provider).toEqual({ zdr: true });
-    expect(seen[0]!.body.messages[0].content[1].image_url.url).toMatch(/^data:image\/png;base64,/);
+    expect(seen[0]!.body.messages[0]!.content[1]!.image_url.url).toMatch(/^data:image\/png;base64,/);
   });
   it('sends no Authorization without a key', async () => {
     seen = [];
