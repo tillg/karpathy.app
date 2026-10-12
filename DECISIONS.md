@@ -153,6 +153,8 @@ edited: 2026-10-12
   - [01:05 — Archive #143 and #145 with their decisions still open](#run-2026-10-12-2332-10)
   - [01:10 — Disk full: clear the Homebrew and npm caches, stop stack 1, prune build cache; fix the review's findings on a branch](#run-2026-10-12-2332-11)
   - [02:00 — #146: Mistral Small 2603 via ZDR as the vision model, reached by a `look_at_image` tool; the chat model stays](#run-2026-10-12-2332-12)
+  - [02:10 — Release both runs' work as v0.0.22, gated by CI's full check](#run-2026-10-12-2332-13)
+  - [02:15 — Retro: ignore `.worktrees/`; the other findings stay notes](#run-2026-10-12-2332-14)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2160,3 +2162,36 @@ edited: 2026-10-12
 - **Consequences:** the hosted path (OpenRouter → mistral/zdr) is first exercised on prod; checked after the deploy.
   `qwen3-vl:2b` (2 GB) was pulled into the Mac's Ollama for dev. Merged in 130c96a, archived in af17238, issue
   closed. Also archived past the decision gate (decision 10).
+
+## 02:10 — Release both runs' work as v0.0.22, gated by CI's full check {#run-2026-10-12-2332-13}
+
+- **Status:** open
+- **Context:** all six issues and the review fixes are on `main`; the parallel bug-fix run (#134, #142) asked whether to
+  release separately. The local full `just check` before #146 (tmp/check-premerge146-20261013-011924.log) had 2
+  failures, both 30 s timeouts that pass alone; #146 was gated on its targeted suites (decision 5).
+- **Question:** which version, one release or two, and what gates it?
+- **Decision:** one release, `v0.0.22` (the next free number; the rc of decision 3 never existed), tagged from `main`
+  at 80ff006 including the other run's 1f2c608; the other run agreed not to tag or deploy. The release workflow's
+  `check` job (the full `just check` on an idle runner) is the full-suite gate instead of a second local run on the
+  loaded Mac. Deploy with `just deploy hetzner 0.0.22` once it is green.
+- **Why:** one deploy instead of two on the same night; CI is the more reliable full run.
+- **Alternatives:** the other run releases first and this run takes 0.0.23 (two prod deploys); another local full run
+  (20 min, more load timeouts).
+- **Consequences:** rollback: `just deploy hetzner 0.0.21`. A real CI failure is fixed forward as 0.0.23. The release
+  is the first run of #128's `web` job: it started in parallel with `check`, as planned.
+
+## 02:15 — Retro: ignore `.worktrees/`; the other findings stay notes {#run-2026-10-12-2332-14}
+
+- **Status:** open
+- **Context:** `/spec:retro` over this run. What went wrong: `.worktrees/` showed as untracked in `main` (risk of a
+  sweeping `git add`); a worker ran `just dev up` in the main checkout after a failed `cd`; backend tests time out at
+  30 s under load; the disk filled up; the session refused the rc tag.
+- **Question:** which fixes are project-level and mechanical?
+- **Decision:** add `.worktrees/` to `.gitignore` (CLAUDE.md already puts worktrees there). The `just dev up` slip had no
+  damage (`tmp/dev/stack` reuse is the documented behaviour) and the load timeouts have no mechanical fix without
+  changing tests: both stay notes in the report. Disk space and the permission refusal are environment-level: drafted
+  for the user, not published.
+- **Why:** the most mechanical fix per item; nothing else is project-level.
+- **Alternatives:** a guard in `deploy/dev.sh` against starting a stack from the main checkout while worktrees exist
+  (the main checkout is a legitimate place to run a stack).
+- **Consequences:** none at runtime.

@@ -33,3 +33,6 @@ specs/**/*.html
 !specs/**/*-report.html
 /DECISIONS.html
 _site/
+
+# Git worktrees of parallel agents (CLAUDE.md: worktrees go in .worktrees/)
+.worktrees/
