@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ChatEvent, ToolCall } from '@karpathy/shared';
+import type { ChatEvent, OpenPage, ToolCall } from '@karpathy/shared';
 import { lintMarkdown } from '../../../deploy/opencode/lib/md-lint.js';
 import { createApp } from '../src/app.js';
 import { ChatService } from '../src/chat.js';
@@ -41,10 +41,10 @@ async function setup(files: Record<string, string> = {}) {
 type T = Awaited<ReturnType<typeof setup>>;
 
 /** Runs one turn, collecting the tool calls from the chat stream. */
-async function turn(t: T, text: string, chatId?: string): Promise<{ chatId: string; tools: ToolCall[] }> {
+async function turn(t: T, text: string, chatId?: string, openPage?: OpenPage): Promise<{ chatId: string; tools: ToolCall[] }> {
   const id = chatId ?? (await t.chat.create(t.id)).chatId;
   const tools = new Map<string, ToolCall>();
-  await t.chat.prompt(t.id, id, text);
+  await t.chat.prompt(t.id, id, text, undefined, openPage);
   // Attach after queuing, otherwise the stream sees an idle chat and ends right away.
   await new Promise<void>((resolve) => {
     t.chat.stream(t.id, id, (e) => {
@@ -392,6 +392,18 @@ describe('@llm AI reads and writes', () => {
       const opens = tools.filter((x) => x.tool === 'open_note' && x.status === 'completed');
       if (opens.length === 0) throw new Inconclusive(`no completed open_note: ${JSON.stringify(tools)}`);
       expect(opens[0]).toMatchObject({ path: 'notes/Todo.md', opens: true, writes: false });
+    });
+  });
+
+  it('current_page answers for the open page, and read follows (#143)', async () => {
+    const t = await setup();
+    await withRetry(async () => {
+      const { tools } = await turn(t, 'Use the current_page tool to find out which page I have open. Do nothing else.', undefined, { path: 'notes/Todo.md', mode: 'write', unsaved: false });
+      if (tools.length === 0) throw new Inconclusive('model made no tool call');
+      const calls = tools.filter((x) => x.tool === 'current_page');
+      if (calls.length === 0) throw new Inconclusive(`no current_page call: ${JSON.stringify(tools)}`);
+      expect(calls.find((x) => x.status === 'completed')).toMatchObject({ opens: false, writes: false });
+      expect(calls.filter((x) => x.status === 'denied' || x.status === 'error')).toEqual([]);
     });
   });
 
