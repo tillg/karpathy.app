@@ -135,6 +135,10 @@ edited: 2026-10-12
 - [2026-10-12 23:25 — Fix the open bugs (#134, #137, #142), release and deploy to prod](#run-2026-10-12-2325)
   - [23:30 — Each bug is a `/spec:tweak` on its own branch; "archive" means the issue closes with the fix on main](#run-2026-10-12-2325-1)
   - [23:30 — #137: a recipe that imports this Mac's Instagram session, run against prod after the deploy](#run-2026-10-12-2325-2)
+- [2026-10-12 23:32 — Build the high-priority enhancements (#147, #144, #128, #143, #145, #146), release and deploy to prod](#run-2026-10-12-2332)
+  - [23:45 — Small issues are tweaks, tool-adding issues are full changes; "archive" closes the issue either way](#run-2026-10-12-2332-1)
+  - [23:45 — Share main with the parallel bug-fix run: fetch before every merge, version picked at release time](#run-2026-10-12-2332-2)
+  - [23:45 — Order: #147, #144, #128 in parallel first; #143, #145, #146 one after another](#run-2026-10-12-2332-3)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1833,3 +1837,67 @@ edited: 2026-10-12
   Tailscale (option 3); only raising `resolve_max_attempts` (option 4: postpones the loss).
 - **Consequences:** Instagram may challenge the session when it shows up from the Hetzner IP; then the user logs in
   again on the Mac and re-runs the recipe. Rollback: Settings › Instagram › Disconnect on prod.
+
+# 2026-10-12 23:32 — Build the high-priority enhancements (#147, #144, #128, #143, #145, #146), release and deploy to prod {#run-2026-10-12-2332}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > - get the most recent version from remote
+  > - then get all the issues from gh that match this search: "is:issue state:open label:enhancement label:priority:high"
+  > - for each of those issues
+  >    - create a branch
+  >    - TDD - dev it
+  >    - When all tests pass, merge main into the branch, then merge all to main and commit & push it
+  >    - Then /spec:archive the issue
+  > - When all features are done give it a version no and deploy to PROD
+  > - In between notify me via ntfy about every feature that has been built
+
+## 23:45 — Small issues are tweaks, tool-adding issues are full changes; "archive" closes the issue either way {#run-2026-10-12-2332-1}
+
+- **Status:** open
+- **Context:** the six issues have no `specs/changes/<name>/`, so `/spec:archive` has nothing to archive for them as
+  they stand. #147 (clickable frontmatter URLs), #144 (copy on select) and #128 (web build once per release) stay
+  inside the tweak limits; #143 (tool: the open page), #145 (next-prompt suggestion) and #146 (image model) each add
+  an AI tool and a new data flow, which the tweak limits rule out.
+- **Question:** what does "/spec:archive the issue" mean per issue?
+- **Decision:** #147, #144, #128 run as `/spec:tweak` (inline plan, test-first, `specs/system/` updated in place,
+  `Closes #N`), like the parallel bug-fix run's decision 23:30. #143, #145, #146 each get a change
+  `specs/changes/<n>-<slug>/` (proposal with `**Issue:** #N`, architecture, plan) on their branch, applied
+  test-first, then `/spec:archive`d after the merge to `main`. Every issue is closed with a comment once its work is
+  on `main`.
+- **Why:** the plugin's own tweak limits decide the lane; a change directory makes "archive" literal where there is
+  design to record.
+- **Alternatives:** a change for every issue (three proposal/architecture/plan sets for one-file fixes); tweaks for
+  all (the tool designs would leave no record beyond `specs/system/`).
+- **Consequences:** one feature branch `feat/<n>-<slug>` per issue in `.worktrees/`, merged with `--no-ff`.
+
+## 23:45 — Share main with the parallel bug-fix run: fetch before every merge, version picked at release time {#run-2026-10-12-2332-2}
+
+- **Status:** open
+- **Context:** run `2026-10-12 23:25` (clone `~/git/karpathy_app`) fixes #134, #137, #142 at the same time and also
+  merges to `main`, releases and deploys to prod. Dev stacks 1 (this checkout) and 6–8 are free.
+- **Question:** how to avoid stepping on it?
+- **Decision:** before every merge to `main`: `git fetch`, fast-forward `main`, merge `main` into the feature branch,
+  re-run the checks, then `--no-ff` merge and push; a rejected push repeats this (no rebase of `main`). `DECISIONS.md`
+  conflicts keep both runs' sections. The release version is the next free patch number read from the tags at release
+  time; no prod deploy while the other run's release or deploy is in flight. At most three feature worktrees run
+  stacks at once, each via `just dev up`.
+- **Why:** both runs need `main` and prod; serial merges with fresh fetches are the only coordination available.
+- **Alternatives:** wait for the other run to finish first (unknown duration); one shared release for both runs (no
+  way to agree on it).
+- **Consequences:** whichever release comes later contains both runs' work.
+
+## 23:45 — Order: #147, #144, #128 in parallel first; #143, #145, #146 one after another {#run-2026-10-12-2332-3}
+
+- **Status:** open
+- **Context:** #143, #145 and #146 each add a baked-in opencode tool and so touch the same files (opencode Dockerfile,
+  `opencode.json`, chat tool rendering, specs). #128 changes the release workflow that the final deploy depends on.
+- **Question:** in what order, and how parallel?
+- **Decision:** batch 1 = #147, #144, #128 in parallel worker agents (independent files); then #143, #145, #146 in
+  sequence, each branched from `main` after the previous merge. #128 is proven with a release candidate tag
+  (`vX.Y.Z-rc.N`, images only, no deploy) before the final release.
+- **Why:** parallel where files don't overlap, serial where they do; the release path is risky to change last.
+- **Alternatives:** all six in parallel (merge conflicts in the tool plumbing); #128 last (a broken release would block
+  the deploy at the very end).
+- **Consequences:** the rc tag leaves a pre-release on GitHub.
