@@ -1,4 +1,4 @@
-import type { ChatDetail, ChatEvent, ChatMessage, ChatPart, ToolCall } from '@karpathy/shared';
+import type { ChatDetail, ChatEvent, ChatMessage, ChatPart, ContextUsage, ToolCall } from '@karpathy/shared';
 
 export interface ChatView extends ChatDetail {
   readonly?: boolean;
@@ -215,4 +215,13 @@ export function toolLabel(call: ToolCall): string {
 export function toolHref(call: ToolCall): string | null {
   if ((call.tool !== 'webfetch' && call.tool !== 'open_url') || call.status !== 'completed' || !call.url) return null;
   return /^https?:\/\//i.test(call.url) ? call.url : null;
+}
+
+/** The composer's context meter (#140): the newest AI reply that has tokens, and the model it ran with. */
+export function lastContext(messages: ChatMessage[]): { usage: ContextUsage; model?: string } | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
+    if (m.role === 'assistant' && m.context) return { usage: m.context, ...(m.model ? { model: m.model } : {}) };
+  }
+  return null;
 }

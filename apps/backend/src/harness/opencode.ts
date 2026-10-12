@@ -1,6 +1,7 @@
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2/client';
 import type { ChatMessage, ChatSummary, ModelInput } from '@karpathy/shared';
-import { mapEvent, mapMessages, writtenPaths, type HarnessEvent } from './map.js';
+import { lastEntries, ModelLimits, type LastEntryCache } from './context-cache.js';
+import { mapEvent, mapMessages, mapModels, withLimit, writtenPaths, type HarnessEvent } from './map.js';
 
 export type AgentName = 'vault' | 'vault-readonly' | 'commit-message';
 
@@ -53,7 +54,7 @@ export interface Harness {
   abort(dir: string, id: string): Promise<void>;
   busySessions(dir: string): Promise<string[]>;
   /** The models the harness can run (providers with credentials): `provider/model` and what they read. */
-  models(): Promise<{ id: string; input: ModelInput }[]>;
+  models(): Promise<{ id: string; input: ModelInput; limit?: number }[]>;
   /** The commands (skills) of a directory, without the harness's built-ins. */
   commands(dir: string): Promise<HarnessCommand[]>;
   /** Drops the harness's cached state of a directory (its skill list); never while a turn runs there. */
@@ -82,6 +83,10 @@ export class OpencodeHarness implements Harness {
   private c: OpencodeClient;
   /** Per directory: callbacks of a `refresh` waiting for every subscription to connect again. */
   private reconnectWaiters = new Map<string, Set<{ waiters: (() => void)[] }>>();
+  /** Context window per model (#140). */
+  private modelLimits = new ModelLimits(() => this.models());
+  /** Per directory: last entry and context per chat, for the polled chat list (#140). */
+  private lastEntryCaches = new Map<string, LastEntryCache>();
 
   /** `password` = the opencode server password (HTTP Basic, user `opencode`); none = no auth. */
   constructor(baseUrl: string, password?: string) {
@@ -95,9 +100,16 @@ export class OpencodeHarness implements Harness {
 
   async listSessions(dir: string): Promise<Omit<ChatSummary, 'turn'>[]> {
     const list = unwrap(await this.c.session.list({ directory: dir, roots: true, limit: 200 }), 'session.list');
-    return list
+    const sessions = list
       .filter((s) => !s.parentID && s.directory === dir)
       .map((s) => ({ id: s.id, title: s.title, updatedAt: s.time.updated }));
+    let cache = this.lastEntryCaches.get(dir);
+    if (!cache) this.lastEntryCaches.set(dir, (cache = new Map()));
+    return lastEntries(sessions, cache, async (id) => {
+      const msgs = mapMessages(unwrap(await this.c.session.messages({ directory: dir, sessionID: id, limit: 4 }), 'session.messages'), dir);
+      await this.modelLimits.know(msgs.map((m) => m.model));
+      return msgs.map((m) => withLimit(m, this.modelLimits.limits));
+    });
   }
 
   async createSession(dir: string, title?: string) {
@@ -110,7 +122,9 @@ export class OpencodeHarness implements Harness {
   }
 
   async messages(dir: string, id: string) {
-    return mapMessages(unwrap(await this.c.session.messages({ directory: dir, sessionID: id }), 'session.messages'), dir);
+    const list = mapMessages(unwrap(await this.c.session.messages({ directory: dir, sessionID: id }), 'session.messages'), dir);
+    await this.modelLimits.know(list.map((m) => m.model));
+    return list.map((m) => withLimit(m, this.modelLimits.limits));
   }
 
   async deleteSession(dir: string, id: string) {
@@ -157,12 +171,9 @@ export class OpencodeHarness implements Harness {
   }
 
   async models() {
-    type M = { capabilities?: { input?: { image?: boolean; pdf?: boolean } } };
-    const data = unwrap(await this.c.config.providers(), 'config.providers') as { providers: { id: string; models: Record<string, M> }[] };
-    return data.providers.flatMap((p) => Object.entries(p.models).map(([m, info]) => ({
-      id: `${p.id}/${m}`,
-      input: { image: !!info.capabilities?.input?.image, pdf: !!info.capabilities?.input?.pdf },
-    })));
+    const models = mapModels(unwrap(await this.c.config.providers(), 'config.providers'));
+    this.modelLimits.set(models);
+    return models;
   }
 
   async commands(dir: string): Promise<HarnessCommand[]> {
@@ -210,7 +221,11 @@ export class OpencodeHarness implements Harness {
             // A refresh (instance dispose) ends the stream on purpose: reconnect at once, it is no outage.
             if (type === 'server.instance.disposed') disposed = true;
             const e = mapEvent(raw, dir);
-            if (e) onEvent(e);
+            if (e?.type === 'message') {
+              // A model not seen yet (a settings change): its window is fetched before the message goes out.
+              if (e.message.model && !this.modelLimits.has(e.message.model)) await this.modelLimits.know([e.message.model]);
+              onEvent({ ...e, message: withLimit(e.message, this.modelLimits.limits) });
+            } else if (e) onEvent(e);
             // Cross-check for the AI-touched set: completed write tools carry their paths too.
             const r = raw as { type?: string; properties?: { part?: Record<string, unknown> } };
             if (r.type === 'message.part.updated' && r.properties?.part)

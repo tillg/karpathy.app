@@ -8,7 +8,8 @@ import { invalidate } from './lib/media';
 import { readNdjson } from './lib/ndjson';
 import { DEFAULT_SCHEMA, parseSchema, SCHEMA_PATH, type Schema } from './lib/schema';
 import { loadSortFilter, saveSortFilter, usesDates, type TreeSortFilter } from './lib/tree';
-import { formatRoute, parseRoute } from './lib/route';
+import { formatRoute, parseRoute, routeState, type RouteState } from './lib/route';
+import { fileKind, viewMode } from './lib/lang';
 import { parseWikilink, resolveWikilink } from './lib/wikilink';
 
 
@@ -59,6 +60,7 @@ interface OpenNote { vault: string; path: string; version: string; saved: string
 const ACTIVE_KEY = 'karpathy.activeVault';
 const CHAT_MAIN_KEY = 'karpathy.chatMain';
 const MODE_KEY = 'karpathy.mode';
+const PAGE_MODE_KEY = 'karpathy.pageMode';
 const PROPS_VIEW_KEY = 'karpathy.propsView';
 /** How Write mode shows the frontmatter: the properties form open or collapsed, or the raw YAML lines. */
 export type PropsView = 'open' | 'closed' | 'yaml';
@@ -247,6 +249,8 @@ function useAppState() {
   const autosavePaused = useRef<OpenNote | null>(null);
   /** The next route sync replaces the history entry (the open note moved, it wasn't navigated to). */
   const replaceRoute = useRef(false);
+  /** The history entry before this one is a file of this vault (#139). */
+  const [canGoBack, setCanGoBack] = useState(false);
 
   /** Resolves true when the open note's text is on the server (nothing to save counts). */
   const save = useCallback(async (force = false, keepalive = false): Promise<boolean> => {
@@ -503,6 +507,16 @@ function useAppState() {
     setModeState(m);
     try { localStorage.setItem(MODE_KEY, m); } catch { /* not remembered */ }
   }, []);
+  // HTML pages keep their own preference, Read for a new browser (#126): pages are mostly read.
+  const [pageMode, setPageModeState] = useState<'write' | 'read'>(() => { try { return localStorage.getItem(PAGE_MODE_KEY) === 'write' ? 'write' : 'read'; } catch { return 'read'; } });
+  const setPageMode = useCallback((m: 'write' | 'read') => {
+    setPageModeState(m);
+    try { localStorage.setItem(PAGE_MODE_KEY, m); } catch { /* not remembered */ }
+  }, []);
+  const pageModeRef = useRef(pageMode);
+  pageModeRef.current = pageMode;
+  /** The mode a file of this vault shows in (#126); places are remembered and restored in it. */
+  const modeOf = useCallback((path: string, binary = false) => viewMode(fileKind(path, binary), modeRef.current, pageModeRef.current), []);
   const [propsView, setPropsViewState] = useState<PropsView>(() => {
     try { const v = localStorage.getItem(PROPS_VIEW_KEY); return v === 'closed' || v === 'yaml' ? v : 'open'; } catch { return 'open'; }
   });
@@ -576,15 +590,15 @@ function useAppState() {
       const l = heading ? headingLine(cur.draft, heading) : line;
       if (l) setNote((v) => v && { ...v, goto: { line: l, nonce: Date.now() } });
     } else {
-      if (cur && placeNow.current) places.current.set(`${cur.vault}\0${cur.path}`, { ...placeNow.current(), mode: modeRef.current });
+      if (cur && placeNow.current) places.current.set(`${cur.vault}\0${cur.path}`, { ...placeNow.current(), mode: modeOf(cur.path, !!cur.binary) });
       if (!(await leave())) return;
       if ((await load(path, line, heading)) !== 'ok') return;
       const place = restorePlace.current ? places.current.get(`${activeId}\0${path}`) : undefined;
-      if (place && place.mode === modeRef.current) setNote((v) => v && { ...v, restore: { top: place.top, line: place.line, nonce: Date.now() } });
+      if (place && place.mode === modeOf(path)) setNote((v) => v && { ...v, restore: { top: place.top, line: place.line, nonce: Date.now() } });
     }
     setGraphOpenState(false);
     showDetail();
-  }, [leave, load, activeId, showDetail]);
+  }, [leave, load, activeId, showDetail, modeOf]);
 
   /** The user is editing (checked when an AI open would switch the note): editor focused or unsaved text. */
   const isEditing = useCallback(() => {
@@ -699,9 +713,10 @@ function useAppState() {
 
   const newNote = useCallback(async (path: string) => {
     if (!activeId) return;
-    const title = path.split('/').pop()!.replace(/\.md$/i, '');
+    const title = path.split('/').pop()!.replace(/\.(md|markdown)$/i, '');
     try {
-      await api.putFile(activeId, path, `# ${title}\n`, null);
+      // Only a note starts with its title; a code file or an HTML page starts empty (#126).
+      await api.putFile(activeId, path, fileKind(path, false) === 'note' ? `# ${title}\n` : '', null);
       await refreshFiles();
       await openNote(path);
     } catch (e) {
@@ -723,12 +738,21 @@ function useAppState() {
   // ---- URL: #/<vault>/<path> (Back/Forward, reload) ----
   const syncRoute = useCallback((replace = false) => {
     if (pendingRoute.current) return;
-    const h = formatRoute(activeRef.current, noteRef.current?.path);
-    if (location.hash === h) return;
-    const url = h || location.pathname + location.search;
-    if (replace || !location.hash) history.replaceState(null, '', url);
-    else history.pushState(null, '', url);
+    const to = { vault: activeRef.current, path: noteRef.current?.path ?? null };
+    const h = formatRoute(to.vault, to.path);
+    if (location.hash !== h) {
+      const url = h || location.pathname + location.search;
+      const rep = replace || !location.hash;
+      const state = routeState(parseRoute(location.hash), to, rep, history.state as RouteState | null);
+      if (rep) history.replaceState(state, '', url);
+      else history.pushState(state, '', url);
+    } else if (history.state === null && to.path) {
+      // A deep-linked first entry: tagged, so Back to it isn't mistaken for an entry the browser made.
+      history.replaceState({ prev: null } satisfies RouteState, '', location.href);
+    }
+    setCanGoBack(!!(history.state as RouteState | null)?.prev);
   }, []);
+  const goBack = useCallback(() => history.back(), []);
   useEffect(() => {
     syncRoute(replaceRoute.current);
     replaceRoute.current = false;
@@ -748,6 +772,10 @@ function useAppState() {
     const onPop = async () => {
       const r = parseRoute(location.hash);
       if (!r.vault) return;
+      // An entry the browser made, not the app (a link in a rendered HTML page, an edited URL): it remembers
+      // the file open until now, so the back arrow returns there (#139).
+      if (history.state === null && r.path)
+        history.replaceState(routeState({ vault: activeRef.current, path: noteRef.current?.path ?? null }, r, false, null), '', location.href);
       if (r.vault !== activeRef.current) await setActiveId(r.vault, r.path);
       else if (r.path && r.path !== noteRef.current?.path) {
         restorePlace.current = true;
@@ -855,10 +883,10 @@ function useAppState() {
     agentsMove, dismissAgentsMove: () => setAgentsMove(null), commandsNonce,
     note, currentText, openNote, isEditing, closeNote, forgetVault, editDraft, flush, uploadToNote, reloadNote, overwriteNote, deleteNote, newNote, stale, setStale,
     keepDeletedNote, closeDeletedNote,
-    followLink, exists, readOnly, conflict,
+    followLink, exists, readOnly, conflict, canGoBack, goBack,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain, ingestNow,
     schema: schema?.vault === activeId ? schema.schema : DEFAULT_SCHEMA,
-    sidebarOpen, setSidebarOpen, mode, setMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, adminOpen, setAdminOpen, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
+    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, adminOpen, setAdminOpen, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
   };
 }
 

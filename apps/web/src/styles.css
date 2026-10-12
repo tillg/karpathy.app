@@ -231,6 +231,11 @@ mark { background: rgba(245,158,11,.35); color: var(--label); border-radius: 3px
 .editor .cm-editor { font-size: 17px; line-height: 1.62; background: transparent; }
 .editor .cm-editor.cm-focused { outline: none; }
 .editor .cm-scroller { font-family: var(--font); overflow: visible; }
+/* An HTML page in Read mode (#126): its own document (white like a browser page), scrolling inside the frame. */
+.html-view { display: block; width: 100%; height: calc(100dvh - 190px); min-height: 320px; border: 0; border-radius: 8px; background: #fff; }
+.html-view.skeleton { background: var(--fill2); }
+.editor .cm-editor.cm-code { font-size: 14px; line-height: 1.5; }
+.editor .cm-editor.cm-code .cm-scroller { font-family: var(--mono); }
 .editor .cm-content { caret-color: var(--tint); padding: 0; }
 .editor .cm-line { padding: 0 6px; }
 .editor .cm-cursor { border-left: 2px solid var(--tint); }
@@ -349,6 +354,15 @@ a.tc { text-decoration: none; cursor: pointer; }
 @keyframes rot { to { transform: rotate(360deg); } }
 .comp { flex: none; border-top: .5px solid var(--sep); background: var(--mat); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); padding: 8px 12px calc(10px + env(safe-area-inset-bottom)); }
 .inrow { display: flex; align-items: flex-end; gap: 8px; }
+/* Context meter (#140): a 3 px track, filled by how much of the model's context the chat uses. */
+.ctx-bar { display: block; height: 3px; border-radius: 2px; background: var(--fill); overflow: hidden; }
+.ctx-bar > span { display: block; height: 100%; border-radius: 2px; background: var(--tint); }
+.ctx-bar.warn > span { background: var(--orange); }
+.ctx-bar.crit > span { background: var(--red); }
+.ctx-meter { display: flex; align-items: center; gap: 8px; margin: 0 4px 6px; font-size: 12px; color: var(--label2); font-variant-numeric: tabular-nums; }
+.ctx-meter .ctx-bar { flex: 1; }
+.row-main .nm-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.row-main .nm-wrap .ctx-bar { max-width: 160px; }
 /* Command palette (over the composer) and command chips (empty chat) */
 .palette { margin: 0 0 8px; max-height: min(320px, 45vh); overflow-y: auto; background: var(--bg2); border: .5px solid var(--sep); border-radius: 14px; box-shadow: var(--shadow); padding: 4px 0; }
 .pal-h { padding: 6px 14px 2px; font-size: 12px; font-weight: 600; color: var(--label2); text-transform: uppercase; letter-spacing: .02em; }
@@ -492,7 +506,7 @@ a.tc { text-decoration: none; cursor: pointer; }
 #app.phone .doc { padding: 6px 18px 60px; }
 #app.phone .editor .cm-h1 { font-size: 28px; }
 #app.phone .ib { min-width: 44px; height: 44px; }
-#app.phone .bar .seg button { padding: 0 9px; }
+#app.phone .bar .seg button { padding: 0 7px; }
 #tabbar { display: flex; position: absolute; left: 0; right: 0; bottom: 0; height: var(--tabh); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); z-index: 30;
   background: var(--mat); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 -.5px 0 var(--sep); }
 #tabbar button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 10.5px; font-weight: 500; color: var(--label2); min-height: 50px; }

@@ -159,7 +159,15 @@ can be typed. On wiki pages (`Wiki/`) the form flags what doesn't fit the LLM-wi
 `updated` required; `confidence` high/medium/low; a value of the wrong type; wikilinks in lists need quotes) and
 never fixes it; a
 vault can bring its own rules in `.karpathy/schema.json` (`{ "appliesTo": ["Wiki/"], "fields": { "type": {
-"kind": "enum", "values": […], "required": true } } }`), which replaces the default. How it works today: [`specs/system/`](specs/system/) (domain,
+"kind": "enum", "values": […], "required": true } } }`), which replaces the default. **Code files**: only
+`.md`/`.markdown` files are notes; any other text file (`.py`, `.ts`, `.sh`, `.json`, `Dockerfile`, …) opens with
+syntax colours in one view (plain text, line breaks as written, when the language is unknown), and `.svg` shows as
+an image. **HTML pages** (`.html`) keep Write (the source) and Read (the page in a sandboxed frame: its own styles
+and vault images, no scripts or forms, no remote resources), with their own sticky mode that starts at Read. A **↩
+back arrow** in the note header returns to the previous file of the vault (browser Back as a button, also in the
+installed PWA). The **chat list** shows each chat's last message time and sorts by it, with a bar for how full the
+model's context is; the composer shows the same as `3,560 / 16,384`, in the device's number format (orange from 70 %, red from 90 %; the window
+comes from the provider config). How it works today: [`specs/system/`](specs/system/) (domain,
 functional, architecture, security, deployment); key decisions: [`docs/adr/`](docs/adr/). The
 original MVP spec, plan, opencode spike and implementation log are in git history
 ([`specs/01_mvp/` at 9c25f72](https://github.com/tillg/karpathy.app/tree/9c25f7242ad08a53ac6d57ec57180036a4c9a14e/specs/01_mvp)).

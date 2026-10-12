@@ -1,0 +1,53 @@
+import { describe, expect, it } from 'vitest';
+import { fileKind, languageFor, viewMode } from './lang';
+
+describe('fileKind', () => {
+  it('follows the kind table', () => {
+    const cases: [string, boolean, string][] = [
+      ['A.MD', false, 'note'],
+      ['dir/a.md', false, 'note'],
+      ['a.markdown', false, 'note'],
+      ['a.html', false, 'html'],
+      ['a.HTM', false, 'html'],
+      ['a.mdx', false, 'code'],
+      ['a.txt', false, 'code'],
+      ['a.py', false, 'code'],
+      ['ops/Dockerfile', false, 'code'],
+      ['a.unknown', false, 'code'],
+      ['a.svg', false, 'media'],
+      ['a.png', true, 'media'],
+      ['a.pdf', true, 'binary'],
+      ['a.md', true, 'binary'],
+    ];
+    for (const [path, binary, kind] of cases) expect(fileKind(path, binary), path).toBe(kind);
+  });
+});
+
+describe('languageFor', () => {
+  it('finds the language by file name', () => {
+    const cases: [string, string][] = [
+      ['a.py', 'Python'],
+      ['src/b.ts', 'TypeScript'],
+      ['c.js', 'JavaScript'],
+      ['D.java', 'Java'],
+      ['e.sh', 'Shell'],
+      ['ops/Dockerfile', 'Dockerfile'],
+      ['p.html', 'HTML'],
+    ];
+    for (const [path, name] of cases) expect(languageFor(path)?.name, path).toBe(name);
+  });
+
+  it('is null for plain text and unknown names', () => {
+    expect(languageFor('notes.txt')).toBeNull();
+    expect(languageFor('x.unknownext')).toBeNull();
+  });
+});
+
+describe('viewMode', () => {
+  it('notes follow the mode, HTML pages the page mode, code files are always Write', () => {
+    expect(viewMode('note', 'read', 'write')).toBe('read');
+    expect(viewMode('html', 'read', 'write')).toBe('write');
+    expect(viewMode('html', 'write', 'read')).toBe('read');
+    expect(viewMode('code', 'read', 'read')).toBe('write');
+  });
+});

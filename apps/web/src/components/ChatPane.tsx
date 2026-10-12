@@ -1,15 +1,17 @@
 import { isPdf, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, WARN_UPLOAD_BYTES, type ChatEvent, type ChatPart, type ChatSummary, type Command, type ToolCall } from '@karpathy/shared';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, api, errorText } from '../lib/api';
 import { prepare } from '../lib/attach';
 import { loadChips, localStamp, saveChips, type Chip, type ChipDraft } from '../lib/chips';
 import { chipCommands, filterCommands, paletteQuery, recentCommands, recordCommand } from '../lib/commands';
 import { mountEmbed } from '../lib/embed';
 import { mediaKind } from '../lib/media';
-import { adoptQueued, applyChatEvent, changedPaths, newOpens, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
+import { adoptQueued, applyChatEvent, changedPaths, lastContext, newOpens, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
 import { readNdjson } from '../lib/ndjson';
+import { chatTime } from '../lib/time';
 import { useApp } from '../store';
 import { AttachButton } from './AttachButton';
+import { ContextMeter } from './ContextMeter';
 import { Icon } from './Icon';
 import { Markdown } from './NotePane';
 import { VaultSwitcher } from './VaultSwitcher';
@@ -18,11 +20,6 @@ const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((r) => {
   const t = setTimeout(r, ms);
   signal.addEventListener('abort', () => { clearTimeout(t); r(); });
 });
-
-const when = (t: number) => {
-  const d = new Date(t);
-  return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-};
 
 /** Loads a chat and, while its turn isn't idle, follows the live stream (reattaching on drops). */
 function useChat(vaultId: string, chatId: string) {
@@ -245,6 +242,8 @@ const sentCommand = (text: string, list: Command[] | null) => {
 function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) {
   const { settings, setSettings, conflict, online, toast, paths, refreshFiles, commandsNonce } = useApp();
   const { chat, setChat, error, attach } = useChat(vaultId, chatId);
+  // How full the context is after the newest reply (#140).
+  const ctx = useMemo(() => (chat ? lastContext(chat.messages) : null), [chat]);
   // The vault's commands, for the palette and the chips. Optional: without it the composer works as before.
   const [commands, setCommands] = useState<Command[] | null>(null);
   const loadCommands = useCallback(() => {
@@ -461,6 +460,7 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
         </div>
       </div>
       <div className="comp">
+        {ctx && <ContextMeter usage={ctx.usage} variant="full" {...(ctx.model ? { model: ctx.model } : {})} />}
         {paletteOpen && <Palette items={paletteItems} active={paletteActive} onPick={(c) => putCommand(c, '')} />}
         {(draft.chips.length > 0 || uploading > 0) && (
           <div className="achips" data-testid="attach-chips">
@@ -516,9 +516,10 @@ function ChatList({ vaultId }: { vaultId: string }) {
           {chats.map((c) => (
             <div className="row" key={c.id}>
               <button className="row-main" data-testid="chat-item" onClick={() => setChatId(c.id)}>
-                <span className="ic"><Icon n="bubble_left" size={20} /></span><span className="nm" title={c.title || undefined}>{c.title || 'Untitled chat'}</span>
+                <span className="ic"><Icon n="bubble_left" size={20} /></span>
+                <span className="nm-wrap"><span className="nm" title={c.title || undefined}>{c.title || 'Untitled chat'}</span>{c.context && <ContextMeter usage={c.context} variant="bar" />}</span>
                 {c.turn !== 'idle' && <span className={`turn-mark ${c.turn}`} data-testid="chat-turn" data-turn={c.turn}>{c.turn === 'running' ? 'Running' : 'Queued'}</span>}
-                <span className="cnt">{when(c.updatedAt)}</span>
+                <span className="cnt">{chatTime(c.lastEntryAt ?? c.updatedAt)}</span>
               </button>
               <button className="ib sm danger" title="Delete chat" data-testid="chat-delete" onClick={() => void remove(c)}><Icon n="trash" size={17} /></button>
             </div>

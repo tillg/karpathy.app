@@ -11,7 +11,107 @@ function Probe() {
 }
 
 beforeEach(() => setViewport(false));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); history.replaceState(null, '', '/'); });
+
+describe('newNote (#126)', () => {
+  const created = async (path: string) => {
+    const api = fakeApi({ routes: { [`PUT /api/vaults/${VAULT}/file`]: { version: 'v' } } });
+    renderApp(<Probe />);
+    await waitFor(() => expect(app.usable).toBe(true));
+    await act(() => app.newNote(path));
+    return (api.calls.find((c) => c.call === `PUT /api/vaults/${VAULT}/file`)?.body as { content: string } | undefined)?.content;
+  };
+
+  it('a note starts with its title', async () => {
+    expect(await created('a/x.md')).toBe('# x\n');
+  });
+
+  it('a .markdown note starts with its title', async () => {
+    expect(await created('a/x.markdown')).toBe('# x\n');
+  });
+
+  it('a code file starts empty', async () => {
+    expect(await created('a/run.py')).toBe('');
+  });
+
+  it('an HTML page starts empty', async () => {
+    expect(await created('a/page.html')).toBe('');
+  });
+});
+
+describe('back arrow state (#139)', () => {
+  const file = { [`GET /api/vaults/${VAULT}/file`]: { path: 'x', content: '# x\n', version: 'v', binary: false } };
+
+  it('opening B after A sets prev = A and canGoBack; the first file has none', async () => {
+    fakeApi({ routes: file });
+    renderApp(<Probe />);
+    await waitFor(() => expect(app.usable).toBe(true));
+    await act(() => app.openNote('A.md'));
+    await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/A.md`));
+    expect(app.canGoBack).toBe(false);
+    await act(() => app.openNote('B.md'));
+    await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/B.md`));
+    expect(history.state).toEqual({ prev: 'A.md' });
+    expect(app.canGoBack).toBe(true);
+  });
+
+  it('Back to A: canGoBack follows A\'s entry', async () => {
+    fakeApi({ routes: file });
+    renderApp(<Probe />);
+    await waitFor(() => expect(app.usable).toBe(true));
+    await act(() => app.openNote('A.md'));
+    await act(() => app.openNote('B.md'));
+    await waitFor(() => expect(app.canGoBack).toBe(true));
+    act(() => app.goBack());
+    await waitFor(() => expect(app.note?.path).toBe('A.md'));
+    await waitFor(() => expect(app.canGoBack).toBe(false));
+  });
+
+  it('a deep-linked first file stays without a previous file after Back to it', async () => {
+    fakeApi({ routes: file });
+    history.replaceState(null, '', `/#/${VAULT}/A.md`);
+    renderApp(<Probe />);
+    await waitFor(() => expect(app.note?.path).toBe('A.md'));
+    await act(() => app.openNote('B.md'));
+    await waitFor(() => expect(app.canGoBack).toBe(true));
+    act(() => history.back());
+    await waitFor(() => expect(app.note?.path).toBe('A.md'));
+    await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/A.md`));
+    expect(history.state).toEqual({ prev: null });
+    expect(app.canGoBack).toBe(false);
+  });
+});
+
+describe('page mode (#126)', () => {
+  it('a new browser opens HTML pages in Read and notes in Write', async () => {
+    fakeApi();
+    renderApp(<Probe />);
+    await waitFor(() => expect(app.usable).toBe(true));
+    expect(app.pageMode).toBe('read');
+    expect(app.mode).toBe('write');
+  });
+
+  it('switching on a page leaves the notes\' mode, and the other way round', async () => {
+    fakeApi();
+    renderApp(<Probe />);
+    await waitFor(() => expect(app.usable).toBe(true));
+    act(() => app.setMode('read'));
+    act(() => app.setPageMode('write'));
+    expect(app.pageMode).toBe('write');
+    expect(app.mode).toBe('read');
+    act(() => app.setMode('write'));
+    expect(app.mode).toBe('write');
+    expect(app.pageMode).toBe('write');
+  });
+
+  it('the page mode survives a reload', async () => {
+    fakeApi();
+    localStorage.setItem('karpathy.pageMode', 'write');
+    renderApp(<Probe />);
+    await waitFor(() => expect(app.usable).toBe(true));
+    expect(app.pageMode).toBe('write');
+  });
+});
 
 describe('ingestNow', () => {
   it('ingestNow creates a chat and sends /ingest', async () => {

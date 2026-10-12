@@ -4,7 +4,7 @@ import { Annotation, Compartment, EditorState, Transaction } from '@codemirror/s
 import { EditorView, keymap } from '@codemirror/view';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { ensureSyntaxTree } from '@codemirror/language';
-import { frontmatterEnd, frontmatterRange, hideFrontmatter, liveMarkdown, refreshLinks } from '../lib/cm';
+import { codeView, frontmatterEnd, frontmatterRange, hideFrontmatter, liveMarkdown, refreshLinks } from '../lib/cm';
 import { commentRanges } from '../lib/markdown';
 import { collectHeadings, type OutlineItem } from '../lib/outline';
 import { minimalChange } from '../lib/diff';
@@ -43,6 +43,9 @@ export interface TrackedPos {
 }
 
 interface Props {
+  /** `code`: a code file or an HTML page's source (#126): colored by `path`, no Markdown preview, links, embeds or drops. */
+  kind?: 'note' | 'code';
+  path?: string;
   doc: string;
   /** Changes on every (re)load, so a reload back to the same `doc` still replaces edited text. */
   docNonce?: number;
@@ -85,6 +88,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
   latest.current = props;
   const ro = useRef(new Compartment());
   const hide = useRef(new Compartment());
+  const lang = useRef(new Compartment());
   /** Whether the frontmatter lines are hidden now. */
   const hidden = useRef(false);
   /** Hides the frontmatter lines; a typed change that would reach them shows them instead. */
@@ -102,6 +106,7 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
 
   useEffect(() => {
     const doc = props.doc;
+    const code = props.kind === 'code';
     const state = EditorState.create({
       doc,
       extensions: [
@@ -109,15 +114,17 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
         history(),
         search({ top: true }),
         keymap.of([...searchKeymap, ...historyKeymap, ...defaultKeymap]),
-        liveMarkdown((t) => latest.current.exists(t), (i) => latest.current.onWikilink(i), {
-          resolve: (e) => latest.current.resolveEmbed(e),
-          ctx: () => latest.current.embedCtx(),
-          epoch: () => latest.current.mediaEpoch,
-        }),
+        code
+          ? codeView(props.path ?? '', lang.current, () => view.current)
+          : liveMarkdown((t) => latest.current.exists(t), (i) => latest.current.onWikilink(i), {
+            resolve: (e) => latest.current.resolveEmbed(e),
+            ctx: () => latest.current.embedCtx(),
+            epoch: () => latest.current.mediaEpoch,
+          }),
         ro.current.of([EditorState.readOnly.of(props.readOnly), EditorView.editable.of(!props.readOnly)]),
         hide.current.of(props.hideFrontmatter ? hideLines : []),
         // A file from the device is uploaded and embedded where it was dropped; text drags stay CodeMirror's.
-        EditorView.domEventHandlers({
+        code ? [] : EditorView.domEventHandlers({
           dragover: (e, v) => {
             if (!hasFiles(e)) return false;
             e.preventDefault();

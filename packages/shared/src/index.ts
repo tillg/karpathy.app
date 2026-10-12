@@ -202,10 +202,21 @@ export interface Command {
   replaces?: true;
 }
 
+/** Tokens the chat's last AI reply used, against its model's context window (opencode `limit.context`; #140). */
+export interface ContextUsage {
+  used: number;
+  /** Unknown when the provider config doesn't say. */
+  limit?: number;
+}
+
 export interface ChatSummary {
   id: string;
   title: string;
   updatedAt: number;
+  /** Time of the chat's last message, any role; absent until the backend has looked (#140). */
+  lastEntryAt?: number;
+  /** From the last AI reply; absent before the first one. */
+  context?: ContextUsage;
   turn: TurnState;
 }
 
@@ -243,6 +254,8 @@ export interface ChatMessage {
   createdAt: number;
   /** `provider/model` the turn actually ran with. */
   model?: string;
+  /** AI replies with tokens: how full the chat's context is after this reply. */
+  context?: ContextUsage;
   error?: string;
 }
 

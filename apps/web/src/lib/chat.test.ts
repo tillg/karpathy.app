@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatEvent, ChatMessage, ToolCall } from '@karpathy/shared';
-import { adoptQueued, applyChatEvent, changedPaths, newOpens, noteToOpen, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, type ChatView, type PendingPrompt } from './chat';
+import { adoptQueued, applyChatEvent, changedPaths, lastContext, newOpens, noteToOpen, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, type ChatView, type PendingPrompt } from './chat';
 
 const empty: ChatView = { id: 'c1', title: 'T', messages: [], turn: 'idle' };
 
@@ -241,5 +241,20 @@ describe('toolLabel / toolHref', () => {
     expect(toolHref(call({ tool: 'websearch', query: 'x' }))).toBeNull();
     expect(toolHref(call({ status: 'error', url: 'https://example.com/a' }))).toBeNull();
     expect(toolHref(call({ status: 'running', url: 'https://example.com/a' }))).toBeNull();
+  });
+});
+
+describe('context meter data (#140)', () => {
+  const ai = (id: string, used?: number): ChatMessage => ({ id, role: 'assistant', createdAt: 1, model: 'p/m', parts: [], ...(used ? { context: { used, limit: 100 } } : {}) });
+  const user: ChatMessage = { id: 'u', role: 'user', createdAt: 2, parts: [] };
+
+  it('a message event with context replaces the message\'s context', () => {
+    const c = applyChatEvent({ ...empty, messages: [ai('a1', 10)] }, { type: 'message', message: { id: 'a1', role: 'assistant', createdAt: 1, context: { used: 42, limit: 100 } } });
+    expect(c.messages[0]!.context).toEqual({ used: 42, limit: 100 });
+  });
+
+  it('lastContext: the newest AI reply that has tokens, with its model', () => {
+    expect(lastContext([ai('a1', 10), ai('a2', 20), user, ai('a3')])).toEqual({ usage: { used: 20, limit: 100 }, model: 'p/m' });
+    expect(lastContext([user])).toBeNull();
   });
 });

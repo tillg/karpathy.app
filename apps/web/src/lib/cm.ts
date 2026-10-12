@@ -1,13 +1,14 @@
 // CodeMirror 6 live-preview extensions. They only add decorations over the raw text; the
 // document itself is never rewritten (lossless round-trip, mvp §2.2).
 import { markdown } from '@codemirror/lang-markdown';
-import { HighlightStyle, ensureSyntaxTree, syntaxHighlighting, syntaxTree } from '@codemirror/language';
-import { EditorSelection, EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
+import { HighlightStyle, defaultHighlightStyle, ensureSyntaxTree, syntaxHighlighting, syntaxTree } from '@codemirror/language';
+import { type Compartment, EditorSelection, EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { mountEmbed, type EmbedCtx } from './embed';
 import { commentRanges, frontmatterEndLine, inComment } from './markdown';
 import { EMBED_RE, knownNatural, mdEmbed, wikiEmbed, type Embed, type Resolved } from './media';
+import { languageFor } from './lang';
 import { WIKILINK_RE } from './wikilink';
 
 const style = HighlightStyle.define([
@@ -259,6 +260,15 @@ function embeds(hooks: EmbedHooks): Extension {
     },
     provide: (f) => EditorView.decorations.from(f),
   });
+}
+
+/**
+ * A code file (#126): the language's colors once its chunk has loaded (into `lang`), no Markdown decorations.
+ * Unknown names, or a chunk that can't load (offline), stay plain text.
+ */
+export function codeView(path: string, lang: Compartment, view: () => EditorView | null): Extension {
+  void languageFor(path)?.load().then((support) => view()?.dispatch({ effects: lang.reconfigure(support) }), () => {});
+  return [lang.of([]), syntaxHighlighting(defaultHighlightStyle), EditorView.lineWrapping, EditorView.editorAttributes.of({ class: 'cm-code' })];
 }
 
 export function liveMarkdown(exists: (target: string) => boolean, open: (inner: string) => void, embedHooks: EmbedHooks): Extension {

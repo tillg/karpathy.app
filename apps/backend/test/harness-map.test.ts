@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { mapEvent, mapMessages, mapToolPart, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
+import { mapEvent, mapMessageInfo, mapMessages, mapModels, withLimit, mapToolPart, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
 
 // Real opencode 1.18.25 event captures from the Phase 0 spike (vault root /vaults/a).
 const raw = readFileSync(join(import.meta.dirname, 'fixtures/opencode-events.jsonl'), 'utf8')
@@ -147,5 +147,49 @@ describe('user file parts (real capture: a prompt with an attached PNG, chat.tes
   it('a file part without a file name maps to nothing', () => {
     const noName = { ...stored, parts: stored.parts.map((p: Record<string, unknown>) => (p.type === 'file' ? { ...p, filename: undefined } : p)) };
     expect(mapMessages([noName], '/vaults/x')[0]!.parts.map((p) => p.type)).toEqual(['text']);
+  });
+});
+
+describe('context used (#140)', () => {
+  const info = (tokens: unknown, role = 'assistant') => ({ id: 'm1', role, time: { created: 1 }, providerID: 'p', modelID: 'm', tokens });
+  const t = { input: 100, output: 20, reasoning: 5, cache: { read: 1000, write: 3 } };
+
+  it('assistant tokens → used = total', () => {
+    expect(mapMessageInfo(info({ ...t, total: 4242 })).context).toEqual({ used: 4242 });
+  });
+  it('no total → input + output + reasoning + cache read + cache write', () => {
+    expect(mapMessageInfo(info(t)).context).toEqual({ used: 1128 });
+  });
+  it('zero tokens (a reply still starting) → no context', () => {
+    expect(mapMessageInfo(info({ input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } })).context).toBeUndefined();
+  });
+  it('user message → no context', () => {
+    expect(mapMessageInfo({ id: 'u', role: 'user', time: { created: 1 }, model: { providerID: 'p', modelID: 'm' } }).context).toBeUndefined();
+  });
+});
+
+describe('context window (#140)', () => {
+  const providers = { providers: [{ id: 'ollama', models: {
+    'qwen2.5:3b': { capabilities: { input: { image: false, pdf: false } }, limit: { context: 16384, output: 4096 } },
+    'nolimit': { capabilities: { input: { image: true, pdf: false } }, limit: { context: 0, output: 0 } },
+  } }] };
+
+  it('mapModels keeps what the model reads and its context window', () => {
+    expect(mapModels(providers)).toEqual([
+      { id: 'ollama/qwen2.5:3b', input: { image: false, pdf: false }, limit: 16384 },
+      { id: 'ollama/nolimit', input: { image: true, pdf: false } },
+    ]);
+  });
+
+  it('withLimit adds the window of the message\'s model', () => {
+    const limits = new Map([['ollama/qwen2.5:3b', 16384]]);
+    expect(withLimit({ id: 'm', role: 'assistant', createdAt: 1, model: 'ollama/qwen2.5:3b', context: { used: 10 } }, limits).context).toEqual({ used: 10, limit: 16384 });
+  });
+
+  it('unknown model → no limit; no context → unchanged', () => {
+    const limits = new Map([['ollama/qwen2.5:3b', 16384]]);
+    expect(withLimit({ id: 'm', role: 'assistant', createdAt: 1, model: 'x/y', context: { used: 10 } }, limits).context).toEqual({ used: 10 });
+    const user = { id: 'u', role: 'user' as const, createdAt: 1, model: 'ollama/qwen2.5:3b' };
+    expect(withLimit(user, limits)).toEqual(user);
   });
 });

@@ -18,3 +18,16 @@ export function parseRoute(hash: string): Route {
     return { vault: null, path: null };
   }
 }
+
+/** What a history entry remembers (#139): the file open before it in the same vault, for the back arrow. */
+export interface RouteState { prev: string | null }
+
+/**
+ * The state for the entry going from `from` to `to`. A push remembers `from`'s file when it is in the same
+ * vault; a replace (outline jump, move into own folder) keeps what the replaced entry remembered.
+ */
+export function routeState(from: Route, to: Route, replace: boolean, cur: RouteState | null): RouteState | null {
+  if (!to.path) return null;
+  if (replace) return { prev: cur?.prev ?? null };
+  return { prev: from.vault === to.vault && from.path ? from.path : null };
+}

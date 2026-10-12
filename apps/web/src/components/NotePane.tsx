@@ -3,6 +3,8 @@ import { frontmatterFields, renderMarkdown, splitFrontmatter, type FieldValue } 
 import { isPdf, isUploadable } from '@karpathy/shared';
 import { mountEmbed, mountEmbeds, type Mounted } from '../lib/embed';
 import { mediaKind } from '../lib/media';
+import { fileKind, viewMode } from '../lib/lang';
+import type { RouteState } from '../lib/route';
 import { editFrontmatter, parseProps, type Edit } from '../lib/frontmatter';
 import { minimalChange } from '../lib/diff';
 import { countText, readingMinutes } from '../lib/noteinfo';
@@ -15,6 +17,7 @@ import { useApp } from '../store';
 import { AttachButton } from './AttachButton';
 import { Editor, type EditorHandle, type FrontmatterText } from './Editor';
 import { GitPill } from './GitPill';
+import { HtmlView } from './HtmlView';
 import { GraphPane } from './GraphPane';
 import { Icon } from './Icon';
 import { OutlinePanel } from './OutlinePanel';
@@ -121,7 +124,16 @@ function MediaView({ path }: { path: string }) {
 
 export function NotePane({ inert }: { inert?: boolean }) {
   const s = useApp();
-  const { note, mode, setMode, readOnly, online, conflict, phone, wide } = s;
+  const { note, setMode, readOnly, online, conflict, phone, wide } = s;
+  // What the open file is (#126): only notes have the Markdown tools; a code file is always its editor.
+  const kind = note ? fileKind(note.path, !!note.binary) : null;
+  const isNote = kind === 'note';
+  const textual = kind === 'note' || kind === 'html' || kind === 'code';
+  // HTML pages keep their own Write/Read preference (page mode). A hit position (search hit, AI open at a
+  // line) in a page shows its source, since the rendered page has no lines; the preference stays.
+  const [hitSeen, setHitSeen] = useState(0);
+  const hitWrite = kind === 'html' && !!note?.goto && note.goto.nonce !== hitSeen;
+  const mode = hitWrite ? 'write' : kind ? viewMode(kind, s.mode, s.pageMode) : s.mode;
   const editor = useRef<EditorHandle>(null);
   const rctx = useRenderCtx();
   // The same note while an upload moves it into its own folder: the editor and the scroll position stay.
@@ -183,10 +195,11 @@ export function NotePane({ inert }: { inert?: boolean }) {
   const pendingLine = useRef<number | null>(null);
   const switchMode = (m: 'write' | 'read') => {
     if (m === mode) return;
+    if (hitWrite) setHitSeen(note!.goto!.nonce);
     stopRestore.current();
     const sc = s.scrollRef.current;
-    pendingLine.current = (mode === 'write' ? editor.current?.topLine() : sc && topBlockLine(sc)) ?? null;
-    setMode(m);
+    pendingLine.current = kind === 'html' ? null : (mode === 'write' ? editor.current?.topLine() : sc && topBlockLine(sc)) ?? null;
+    (kind === 'html' ? s.setPageMode : setMode)(m);
   };
   useEffect(() => {
     const line = pendingLine.current;
@@ -201,7 +214,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const editorDoc = useMemo(() => s.currentText(), [noteKey, note?.loadNonce, mode]);
 
-  const canAttach = !!note && mode === 'write' && !note.binary && !readOnly && !note.deleted;
+  const canAttach = !!note && mode === 'write' && isNote && !readOnly && !note.deleted;
   /** Uploads files for the note and embeds them at `at` (default: the cursor). */
   const attach = (files: File[], fromCamera: boolean, at?: number) => {
     const ok = files.filter((f) => isUploadable(f.name) || /\.hei[cf]$/i.test(f.name));
@@ -242,7 +255,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
       s.toast('The properties changed meanwhile — try again');
   };
   const names = useMemo(() => [...new Set(s.paths.filter((p) => /\.md$/i.test(p)).map((p) => p.split('/').pop()!.replace(/\.md$/i, '')))].sort(), [s.paths]);
-  const showForm = mode === 'write' && !!note && !note.binary && !!fm && !fm.error && s.propsView !== 'yaml' && yamlFor !== note.path;
+  const showForm = mode === 'write' && !!note && isNote && !!fm && !fm.error && s.propsView !== 'yaml' && yamlFor !== note.path;
 
   const [outlineOpen, setOutlineOpen] = useState(false);
   const text = note && !note.binary ? s.currentText() : '';
@@ -321,7 +334,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
     setTimeout(() => b.classList.remove('hit'), 1500);
   };
 
-  const title = note ? note.path.split('/').pop()!.replace(/\.md$/i, '') : '';
+  const title = note ? (isNote ? note.path.split('/').pop()!.replace(/\.(md|markdown)$/i, '') : note.path.split('/').pop()!) : '';
   const del = () => { if (note && confirm(`Delete ${note.path}? It stays recoverable until you commit.`)) void s.deleteNote(); };
 
   return (
@@ -329,29 +342,33 @@ export function NotePane({ inert }: { inert?: boolean }) {
       {/* The note stays as it is under the graph (drafts, cursor, scroll), out of reach while the graph is shown. */}
       <header className="bar" inert={s.graphOpen}>
         {!phone && <button className="ib" title="Toggle sidebar" data-testid="sidebar-toggle" onClick={() => s.setSidebarOpen(!s.sidebarOpen)}><Icon n="sidebar_left" /></button>}
-        {phone && <button className="ib back" data-testid="back" onClick={() => s.setPhoneNote(false)}><Icon n="chevron_left" size={24} /><span>{s.phoneTab === 'search' ? 'Search' : s.phoneTab === 'changes' ? 'Changes' : 'Files'}</span></button>}
+        {/* With the back arrow next to it the label goes, so the phone header still fits (#139). */}
+        {phone && <button className="ib back" data-testid="back" aria-label={s.phoneTab === 'search' ? 'Search' : s.phoneTab === 'changes' ? 'Changes' : 'Files'} onClick={() => s.setPhoneNote(false)}><Icon n="chevron_left" size={24} />{!s.canGoBack && <span>{s.phoneTab === 'search' ? 'Search' : s.phoneTab === 'changes' ? 'Changes' : 'Files'}</span>}</button>}
+        {s.canGoBack && <button className="ib" title={`Back to ${(history.state as RouteState | null)?.prev?.split('/').pop() ?? ''}`} aria-label="Back"
+          data-testid="note-back" onClick={s.goBack}><Icon n="arrow_uturn_left" /></button>}
         {note && !phone && <span className="crumb">{note.path.split('/').join(' › ')}</span>}
         <span className="sp" />
         {!wide && !phone && <GitPill small />}
         {note && (
           <>
-            {!note.binary && <button id="outline-button" className={`ib${outlineOpen ? ' on' : ''}`} title="Outline" aria-expanded={outlineOpen} data-testid="outline-button"
+            {isNote && <button id="outline-button" className={`ib${outlineOpen ? ' on' : ''}`} title="Outline" aria-expanded={outlineOpen} data-testid="outline-button"
               onPointerDown={() => setSel(readSelection())} onClick={() => openOutline(!outlineOpen)}><Icon n="list_bullet" /></button>}
-            {!note.binary && (
+            {(isNote || kind === 'html') && (
               <div className="seg" role="group" aria-label="Mode" data-testid="mode-toggle">
                 <button className={mode === 'write' ? 'on' : ''} aria-pressed={mode === 'write'} data-testid="mode-write" onClick={() => switchMode('write')}>Write</button>
                 <button className={mode === 'read' ? 'on' : ''} aria-pressed={mode === 'read'} data-testid="mode-read" onClick={() => switchMode('read')}>Read</button>
               </div>
             )}
             {canAttach && <AttachButton testid="attach" multiple onFiles={(files, fromCamera) => attach(files, fromCamera)} />}
-            {mode === 'write' && !note.binary && <button className="ib" title="Find in note" data-testid="find-in-note" onClick={() => editor.current?.openSearch()}><Icon n="search" /></button>}
-            <button className="ib" title={note.binary ? 'Delete file' : 'Delete note'} data-testid="delete-note" disabled={readOnly || note.deleted} onClick={del}><Icon n="trash" /></button>
+            {mode === 'write' && textual && <button className="ib" title={isNote ? 'Find in note' : 'Find in file'} data-testid="find-in-note" onClick={() => editor.current?.openSearch()}><Icon n="search" /></button>}
+            <button className="ib" title={isNote ? 'Delete note' : 'Delete file'} data-testid="delete-note" disabled={readOnly || note.deleted} onClick={del}><Icon n="trash" /></button>
           </>
         )}
-        <button className={`ib${s.chatOpen && !phone ? ' on' : ''}`} title="AI chat" data-testid="chat-toggle"
-          onClick={() => (phone ? s.setPhoneTab('chat') : s.setChatOpen(!s.chatOpen))}><Icon n="sparkles" /></button>
+        {/* The phone has the Chat tab; its header has no room for a second way there (#139). */}
+        {!phone && <button className={`ib${s.chatOpen ? ' on' : ''}`} title="AI chat" data-testid="chat-toggle"
+          onClick={() => s.setChatOpen(!s.chatOpen)}><Icon n="sparkles" /></button>}
       </header>
-      {outlineOpen && note && !note.binary && !s.graphOpen && <OutlinePanel variant={phone ? 'sheet' : 'panel'} items={outline} info={info!} current={current} closeOutside={!phone && !wide}
+      {outlineOpen && note && isNote && !s.graphOpen && <OutlinePanel variant={phone ? 'sheet' : 'panel'} items={outline} info={info!} current={current} closeOutside={!phone && !wide}
         onJump={jumpTo} onClose={() => setOutlineOpen(false)} />}
       <div className="scroll" ref={s.scrollRef} inert={s.graphOpen}>
         {!online && <div className="banner warn" data-testid="offline-banner">Offline — showing cached notes, read-only.</div>}
@@ -370,25 +387,27 @@ export function NotePane({ inert }: { inert?: boolean }) {
             Changed on GitHub · <PullLink idle="Pull" busy="Pulling…" />
           </div>
         )}
-        {note?.binary ? (
+        {note && (kind === 'media' || kind === 'binary') ? (
           <MediaView key={note.path} path={note.path} />
         ) : note ? (
           <div className="doc">
             <h2 className="note-title">{title}</h2>
-            {mode === 'write' && fm && (showForm
+            {mode === 'write' && isNote && fm && (showForm
               ? <PropertiesPanel fm={fm} rules={rules} names={names} violations={violations} view={s.propsView === 'closed' ? 'closed' : 'open'}
                   disabled={readOnly || !!note.deleted} onView={s.setPropsView} onEdit={editProp} onYaml={() => setYamlFor(note.path)} toast={s.toast} />
               : fm.error
                 ? <div className="props-bar" data-testid="props-unreadable">Can’t read these properties: {fm.error}</div>
                 : <div className="props-bar"><button className="link" data-testid="props-form" onClick={() => { setYamlFor(null); if (s.propsView === 'yaml') s.setPropsView('open'); }}>Properties form</button></div>)}
             {mode === 'write'
-              ? <Editor key={noteKey} ref={editor} doc={editorDoc} docNonce={note.loadNonce} readOnly={readOnly || !!note.deleted}
+              ? <Editor key={noteKey} ref={editor} kind={isNote ? 'note' : 'code'} path={note.path} doc={editorDoc} docNonce={note.loadNonce} readOnly={readOnly || !!note.deleted}
                   onChange={(t) => { s.editDraft(t); lastEdit.current = performance.now(); if (outlineOpen) settleSoon(); }} exists={s.exists} onWikilink={s.followLink} resolveEmbed={rctx.resolveEmbed}
                   embedCtx={() => ({ vault: s.activeId!, toast: s.toast, onOpen: (p) => void s.openNote(p) })} mediaEpoch={s.mediaEpoch}
                   onDropFiles={canAttach ? (files, pos) => attach(files, false, pos) : undefined}
                   onSelection={() => { if (outlineOpen) setSel(readSelection()); }}
                   hideFrontmatter={showForm} onFrontmatter={(f) => setFmFor({ key: noteKey!, fm: f })} onRevealFrontmatter={() => setYamlFor(note.path)} />
-              : <ReadView text={s.currentText()} />}
+              : kind === 'html'
+                ? <HtmlView key={note.path} vault={s.activeId!} path={note.path} text={s.currentText()} paths={s.paths} />
+                : <ReadView text={s.currentText()} />}
             <div className="dfoot" data-testid="save-state">
               {note.uploading ? 'Uploading…' : note.saving ? 'Saving…' : note.dirty ? '● Unsaved changes' : 'Saved'}{readOnly ? ' · read-only' : ''}
             </div>

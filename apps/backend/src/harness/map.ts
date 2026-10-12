@@ -1,5 +1,5 @@
 import { posix } from 'node:path';
-import type { ChatMessage, ChatPart, ToolCall, ToolStatus } from '@karpathy/shared';
+import type { ChatMessage, ChatPart, ModelInput, ToolCall, ToolStatus } from '@karpathy/shared';
 
 /**
  * Maps opencode's wire shapes to the backend↔harness vocabulary (ACP-shaped: session /
@@ -104,18 +104,45 @@ function errorMessage(e: unknown): string | undefined {
   return str(obj(o.data).message) ?? str(o.name) ?? 'error';
 }
 
+/** A reply's tokens = what the next request starts from (as opencode's own TUI counts its context). */
+function contextUsed(t: Json): number {
+  const n = (v: unknown) => (typeof v === 'number' ? v : 0);
+  if (typeof t.total === 'number') return t.total;
+  const cache = obj(t.cache);
+  return n(t.input) + n(t.output) + n(t.reasoning) + n(cache.read) + n(cache.write);
+}
+
 export function mapMessageInfo(info: Json): Omit<ChatMessage, 'parts'> {
   const err = errorMessage(info.error);
   // Assistant messages carry providerID/modelID, user messages a model object.
   const m = info.providerID ? info : obj(info.model);
   const model = str(m.providerID) && str(m.modelID) ? `${str(m.providerID)}/${str(m.modelID)}` : undefined;
+  const used = info.role === 'user' ? 0 : contextUsed(obj(info.tokens));
   return {
     id: str(info.id) ?? '',
     role: info.role === 'user' ? 'user' : 'assistant',
     createdAt: Number(obj(info.time).created ?? 0),
     ...(model ? { model } : {}),
+    ...(used > 0 ? { context: { used } } : {}),
     ...(err ? { error: err } : {}),
   };
+}
+
+/** opencode's provider list → the models the harness can run, what they read and their context window (#140). */
+export function mapModels(data: unknown): { id: string; input: ModelInput; limit?: number }[] {
+  const providers = Array.isArray(obj(data).providers) ? (obj(data).providers as unknown[]) : [];
+  return providers.flatMap((p) => Object.entries(obj(obj(p).models)).map(([m, raw]) => {
+    const info = obj(raw);
+    const input = obj(obj(info.capabilities).input);
+    const limit = Number(obj(info.limit).context) || 0;
+    return { id: `${str(obj(p).id)}/${m}`, input: { image: !!input.image, pdf: !!input.pdf }, ...(limit > 0 ? { limit } : {}) };
+  }));
+}
+
+/** Adds the context window of the message's model to its context usage; unknown model → unchanged. */
+export function withLimit<M extends Omit<ChatMessage, 'parts'>>(m: M, limits: Map<string, number>): M {
+  const limit = m.context && m.model ? limits.get(m.model) : undefined;
+  return limit ? { ...m, context: { ...m.context!, limit } } : m;
 }
 
 export function mapMessages(list: unknown[], root: string): ChatMessage[] {
