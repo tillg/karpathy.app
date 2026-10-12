@@ -1,7 +1,7 @@
 ---
 title: "Deployment: releases, targets and operations"
 created: 2026-10-02
-edited: 2026-10-08
+edited: 2026-10-12
 ---
 
 # Deployment: releases, targets and operations
@@ -54,11 +54,17 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
 - A **release** is a tag `vX.Y.Z` on `main`; a **pre-release** is `vX.Y.Z-rc.N` from any commit.
   `just release <version>` tags and pushes; it refuses a dirty tree, and a final version unless HEAD
   is on `main`. The workflow's `guard` job enforces the same.
-- `release.yml`: `check` (the CI workflow, reusable) → `build` (matrix image × arch, native
+- `release.yml`: `check` (the CI workflow, reusable) and `web` (the PWA build, once) → `build` (matrix image × arch, native
   `ubuntu-24.04` and `ubuntu-24.04-arm` runners, pushed by digest) → `manifest` (`:X.Y.Z`, and
   `:latest` only for the highest final version) → `release` (`gh release create`, `compose.yml` as
   asset; pre-releases never become "Latest"). Permissions are read-only except for the push and release
   jobs.
+- **The PWA is built once per release:** the `web` job runs in parallel with `check`, builds `apps/web` with
+  `APP_VERSION` and uploads `dist` as an artifact. Both proxy builds download it and pass it as the named build
+  context `web` (`build-contexts: web=tmp/web-dist`), which replaces the `web` stage of `deploy/proxy/Dockerfile`
+  (`FROM scratch AS web`, the dist as its root); the node build stage `web-build` isn't run then. Without the
+  context (`just dev up`, `just prodtest`, compose builds) BuildKit builds that stage itself, so local builds need
+  no extra step. `deploy/stack.test.sh` checks both paths.
 - **The ingest image's private source:** the ingest image is built from the private repo `tillg/ingest_email` at the
   commit in `deploy/ingest/ingest-email.ref`. CI and the release workflow check it out with a read-only deploy key on
   that repo (repo secret `INGEST_EMAIL_DEPLOY_KEY`, `persist-credentials: false`) and hand it to the build as the named

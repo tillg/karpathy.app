@@ -61,6 +61,8 @@ interface Props {
   onDropFiles?(files: File[], pos: number): void;
   /** The selection changed. */
   onSelection?(): void;
+  /** A selection was just copied to the clipboard (#144): the pane shows the feedback. */
+  onCopied?(): void;
   /** Hide the frontmatter lines (the properties form shows them). */
   hideFrontmatter?: boolean;
   /** The frontmatter text and its place, on create and whenever that text changes; null when there is none. */
@@ -100,6 +102,15 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
     if ((fm?.text ?? null) === reportedFm.current) return;
     reportedFm.current = fm?.text ?? null;
     latest.current.onFrontmatter?.(fm);
+  };
+  /** The selection text last copied (#144); null once the selection is empty again, so a new selection copies again. */
+  const copied = useRef<string | null>(null);
+  /** Copies the selection like a terminal does. Called straight from a gesture event: Safari only allows the clipboard write there. */
+  const copySelection = (v: EditorView) => {
+    const text = v.state.selection.ranges.filter((r) => !r.empty).map((r) => v.state.sliceDoc(r.from, r.to)).join(v.state.lineBreak);
+    if (!text || text === copied.current) return;
+    copied.current = text;
+    navigator.clipboard?.writeText(text).then(() => latest.current.onCopied?.(), () => {});
   };
   /** Positions handed out by `track`, mapped through every change. */
   const tracked = useRef(new Set<{ pos: number }>());
@@ -144,11 +155,19 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
             return true;
           },
         }),
+        EditorView.domEventHandlers({
+          mouseup: (_, v) => void copySelection(v),
+          touchend: (_, v) => void copySelection(v),
+          keyup: (_, v) => void copySelection(v),
+        }),
         EditorView.contentAttributes.of({ spellcheck: 'false', autocapitalize: 'sentences', 'aria-label': 'Note editor' }),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) for (const t of tracked.current) t.pos = u.changes.mapPos(t.pos, 1);
           if (u.docChanged && !u.transactions.some((t) => t.annotation(External))) latest.current.onChange(editorText(u.state));
-          if (u.selectionSet) latest.current.onSelection?.();
+          if (u.selectionSet) {
+            latest.current.onSelection?.();
+            if (u.state.selection.main.empty) copied.current = null;
+          }
           // A match of find-in-note inside the hidden lines (search selections are user `select` events).
           if (hidden.current && u.transactions.some((t) => t.isUserEvent('select.search')) && inFrontmatter(u.view, u.state.selection.main.head)) latest.current.onRevealFrontmatter?.();
           if (u.docChanged) reportFrontmatter(u.state);
