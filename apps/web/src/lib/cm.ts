@@ -274,3 +274,6 @@ export function codeView(path: string, lang: Compartment, view: () => EditorView
 export function liveMarkdown(exists: (target: string) => boolean, open: (inner: string) => void, embedHooks: EmbedHooks): Extension {
   return [markdown(), syntaxHighlighting(style), lines, wikilinks(exists, open), embeds(embedHooks), EditorView.lineWrapping];
 }
+
+/** Whether a key release ends a Shift-based selection worth copying (#144); Cmd/Ctrl combos (select-all, find next) never copy. */
+export const copiesOnKeyup = (e: Pick<KeyboardEvent, 'shiftKey' | 'metaKey' | 'ctrlKey'>) => e.shiftKey && !e.metaKey && !e.ctrlKey;

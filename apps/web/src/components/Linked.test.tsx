@@ -2,7 +2,7 @@
 import { cleanup, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeApi, renderApp, setViewport } from '../test/fake-api';
-import { Linked } from './Linked';
+import { isHttpUrl, Linked } from './Linked';
 import { PropertiesPanel } from './PropertiesPanel';
 
 beforeEach(() => setViewport(false));
@@ -27,6 +27,16 @@ describe('Linked › URLs (#147)', () => {
     expect(wl!.textContent).toBe('bar');
     expect(wl!.getAttribute('target')).toBeNull();
     expect(url!.getAttribute('href')).toBe('http://a.example/x');
+  });
+
+  it('keeps a closing bracket that matches an opening one in the URL, cuts a stray one', () => {
+    fakeApi();
+    const wiki = 'https://en.wikipedia.org/wiki/Foo_(bar)';
+    expect(isHttpUrl(wiki)).toBe(true);
+    const { container } = renderApp(<Linked text={`see ${wiki}, and (https://a.example/x) ok`} />);
+    const [a, b] = [...container.querySelectorAll('a')];
+    expect(a!.getAttribute('href')).toBe(wiki);
+    expect(b!.getAttribute('href')).toBe('https://a.example/x');
   });
 
   it('text without a URL renders no external link', () => {
