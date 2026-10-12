@@ -16,4 +16,10 @@ test('144 selecting text in the editor copies it and shows "Copied"', async ({ p
   await page.evaluate(() => navigator.clipboard.writeText('x'));
   await page.keyboard.press('Shift+ArrowLeft');
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).not.toBe('x');
+
+  // Select-all (Cmd/Ctrl+A) must not overwrite the clipboard: "copy elsewhere, select, paste to replace" keeps working.
+  await page.evaluate(() => navigator.clipboard.writeText('keep-me'));
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('keep-me');
 });

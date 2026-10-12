@@ -2,6 +2,7 @@ import { expect, openApp, openNote, test } from './helpers';
 
 // #147: URLs in frontmatter are links in Read mode and get an "open ↗" link next to the input in Write mode.
 const NOTE = '---\ntrailer: https://example.com/watch?v=abc\nnote: plain text\n---\n# Film\n';
+const WIKI = 'https://en.wikipedia.org/wiki/Foo_(bar)';
 
 test('147 a frontmatter URL is a link in Read mode and has an open link in Write mode', async ({ page, api, vault }) => {
   await api.write(vault.id, 'Film.md', NOTE);
@@ -29,4 +30,9 @@ test('147 a frontmatter URL is a link in Read mode and has an open link in Write
   await input.fill('not a url');
   await input.press('Enter');
   await expect(row.getByTestId('props-open')).toHaveCount(0);
+
+  // A URL with balanced brackets keeps its closing one.
+  await input.fill(WIKI);
+  await input.press('Enter');
+  await expect(open).toHaveAttribute('href', WIKI);
 });
