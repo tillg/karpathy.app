@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatEvent, ChatMessage, ToolCall } from '@karpathy/shared';
-import { adoptQueued, applyChatEvent, changedPaths, lastContext, newOpens, noteToOpen, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, type ChatView, type PendingPrompt } from './chat';
+import { adoptQueued, applyChatEvent, changedPaths, lastContext, newOpens, nextSuggestion, noteToOpen, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, type ChatView, type PendingPrompt } from './chat';
 
 const empty: ChatView = { id: 'c1', title: 'T', messages: [], turn: 'idle' };
 
@@ -256,5 +256,46 @@ describe('context meter data (#140)', () => {
   it('lastContext: the newest AI reply that has tokens, with its model', () => {
     expect(lastContext([ai('a1', 10), ai('a2', 20), user, ai('a3')])).toEqual({ usage: { used: 20, limit: 100 }, model: 'p/m' });
     expect(lastContext([user])).toBeNull();
+  });
+});
+
+describe('nextSuggestion (#145)', () => {
+  const call = (id: string, suggestion: string | undefined, status: ToolCall['status'] = 'completed'): ChatMessage['parts'][number] =>
+    ({ type: 'tool', id, call: { id, tool: 'suggest_next', status, writes: false, ...(suggestion !== undefined ? { suggestion } : {}) } });
+  const user = (id: string): ChatMessage => ({ id, role: 'user', createdAt: 1, parts: [{ type: 'text', id: `${id}t`, text: 'hi' }] });
+  const ai = (id: string, ...parts: ChatMessage['parts']): ChatMessage => ({ id, role: 'assistant', createdAt: 2, parts });
+
+  it('is the suggestion of the reply to the last prompt, while the turn is idle', () => {
+    expect(nextSuggestion([user('u'), ai('a', call('s', 'Summarize it'))], 'idle')).toBe('Summarize it');
+  });
+
+  it('the latest call wins, also across the assistant messages of one turn', () => {
+    expect(nextSuggestion([user('u'), ai('a1', call('s1', 'First')), ai('a2', call('s2', 'Second'))], 'idle')).toBe('Second');
+  });
+
+  it('is none while a turn is queued or running', () => {
+    const m = [user('u'), ai('a', call('s', 'Summarize it'))];
+    expect(nextSuggestion(m, 'running')).toBeNull();
+    expect(nextSuggestion(m, 'queued')).toBeNull();
+  });
+
+  it('is none when a prompt came after it, or the reply made no call', () => {
+    expect(nextSuggestion([user('u'), ai('a', call('s', 'Old')), user('u2')], 'idle')).toBeNull();
+    expect(nextSuggestion([user('u'), ai('a', call('s', 'Old')), user('u2'), ai('a2')], 'idle')).toBeNull();
+  });
+
+  it('ignores failed, running and empty calls', () => {
+    expect(nextSuggestion([user('u'), ai('a', call('s', 'x', 'error'))], 'idle')).toBeNull();
+    expect(nextSuggestion([user('u'), ai('a', call('s', 'x', 'running'))], 'idle')).toBeNull();
+    expect(nextSuggestion([user('u'), ai('a', call('s', undefined))], 'idle')).toBeNull();
+    expect(nextSuggestion([user('u'), ai('a', call('s1', 'Good'), call('s2', 'x', 'error'))], 'idle')).toBe('Good');
+  });
+});
+
+describe('suggest_next in the chat (#145)', () => {
+  it('turns() hides its call from the chips and keeps the others', () => {
+    const tool = (id: string, name: string): ChatMessage['parts'][number] => ({ type: 'tool', id, call: { id, tool: name, status: 'completed', writes: false, suggestion: 'x' } });
+    const t = turns([{ id: 'a', role: 'assistant', createdAt: 1, parts: [tool('r', 'read'), { type: 'text', id: 't', text: 'Done' }, tool('s', 'suggest_next')] }]);
+    expect(t[0]!.role === 'assistant' && t[0]!.parts.map((p) => p.id)).toEqual(['r', 't']);
   });
 });

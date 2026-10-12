@@ -329,9 +329,15 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   mistakes are caught: a wikilink broken across lines (shown as plain text), and `[[page|alias]]` in a table row, whose
   `|` splits the cell (fix: `[[page\|alias]]`). The user sees no message, at most one more *changed* chip. The user's
   own edits are not checked.
+- **The AI sees the open file:** each message carries the file open in the note pane (path, Read or Write mode, unsaved edits). When you say "this note", "this page" or "here", the AI calls `current_page` (a chip) and reads that file; with nothing open it says so. Unsaved edits aren't on disk: the AI reads the saved text.
 - **The AI opens notes** when asked ("show me my reading list"): on the wide layout right away, on a phone or in the
   tablet overlay when the reply is done, never while the user is editing (then a notice "AI opened …" and the chip).
   Reloading a chat never reopens anything; a wrong path goes back to the AI as a tool error. Works in conflict too.
+- **Suggested next prompt** (#145): at the end of a reply the AI may call `suggest_next`; the text shows greyed out in the
+  empty composer (no chip) with a small "↹ Tab" button on keyboard devices and "Tap to use" on touch. **Tab** (or a tap)
+  puts it into the composer and sends nothing; **Enter** sends it. Typing, sending or a new turn removes it; clearing the
+  composer brings it back. It comes from the chat history, so a reload or another device shows it too, until the next
+  prompt. Works in conflict too (read-only agent). The AI calls it at most once, last, in the user's language, and may skip it.
 - **Web search and web fetch** (with Web access on): "What's new in X?" searches the web (Exa); "summarize the link
   in this note" or a pasted URL is fetched. Each call is a chip: `searched the web: "<query>"` (a label) and
   `fetched <host/path>` (a link to the page, new tab). The AI may fetch only a URL that already appears in the chat

@@ -220,6 +220,16 @@ export interface ChatSummary {
   turn: TurnState;
 }
 
+/** The file the user has open when a prompt is sent (#143); the AI reads it through its `current_page` tool. */
+export interface OpenPage {
+  /** Vault-root-relative path. */
+  path: string;
+  /** The view the file shows in. */
+  mode: 'read' | 'write';
+  /** Edits not saved yet: the AI reads the saved text. */
+  unsaved: boolean;
+}
+
 export type ToolStatus = 'pending' | 'running' | 'completed' | 'error' | 'denied';
 
 export interface ToolCall {
@@ -234,6 +244,8 @@ export interface ToolCall {
   opens?: boolean;
   title?: string;
   error?: string;
+  /** suggest_next: the suggested next prompt (shown as ghost text in the composer, not as a chip). */
+  suggestion?: string;
   /** websearch: the search query. */
   query?: string;
   /** webfetch: the fetched URL. */

@@ -1,6 +1,6 @@
 import type {
   ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData,
-  SearchHit, Settings, SettingsView, TokenTest, UploadResult, Vault, VaultConfig, VaultStatus,
+  OpenPage, SearchHit, Settings, SettingsView, TokenTest, UploadResult, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
 import { parseLoginCode } from './login-code';
@@ -120,8 +120,8 @@ export const api = {
   newChat: (id: string) => json<{ chatId: string }>('POST', `${v(id)}/chats`),
   chat: (id: string, chatId: string) => json<ChatDetail>('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
   deleteChat: (id: string, chatId: string) => json<void>('DELETE', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
-  prompt: (id: string, chatId: string, text: string, attachments?: string[]) =>
-    json<{ queued: boolean }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, { text, ...(attachments?.length ? { attachments } : {}) }),
+  prompt: (id: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage) =>
+    json<{ queued: boolean }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, { text, ...(attachments?.length ? { attachments } : {}), ...(openPage ? { openPage } : {}) }),
   chatStream: (id: string, chatId: string, signal: AbortSignal) => request('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}/stream`, undefined, signal),
   abort: (id: string, chatId: string) => json<void>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/abort`),
 };

@@ -1,4 +1,4 @@
-import { MAX_UPLOAD_BYTES, rewriteLinks, WARN_UPLOAD_BYTES, type AgentsMove, type FileEntry, type SettingsView, type Vault, type VaultEvent, type VaultStatus } from '@karpathy/shared';
+import { MAX_UPLOAD_BYTES, rewriteLinks, WARN_UPLOAD_BYTES, type AgentsMove, type FileEntry, type OpenPage, type SettingsView, type Vault, type VaultEvent, type VaultStatus } from '@karpathy/shared';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError, api, errorText } from './lib/api';
 import { prepare } from './lib/attach';
@@ -517,6 +517,8 @@ function useAppState() {
   pageModeRef.current = pageMode;
   /** The mode a file of this vault shows in (#126); places are remembered and restored in it. */
   const modeOf = useCallback((path: string, binary = false) => viewMode(fileKind(path, binary), modeRef.current, pageModeRef.current), []);
+  /** The file open now, sent with each chat message so the AI can ask for it (#143); none while no file is open. */
+  const openPage = useCallback((): OpenPage | undefined => (note && !note.deleted ? { path: note.path, mode: modeOf(note.path, !!note.binary), unsaved: note.dirty } : undefined), [note, modeOf]);
   const [propsView, setPropsViewState] = useState<PropsView>(() => {
     try { const v = localStorage.getItem(PROPS_VIEW_KEY); return v === 'closed' || v === 'yaml' ? v : 'open'; } catch { return 'open'; }
   });
@@ -883,7 +885,7 @@ function useAppState() {
     vaults, reloadVaults, settings, setSettings, active, activeId, setActiveId, usable,
     status, setStatus, pull, pulling, files, paths, refreshFiles, changesNonce, mediaEpoch,
     agentsMove, dismissAgentsMove: () => setAgentsMove(null), commandsNonce,
-    note, currentText, openNote, isEditing, closeNote, forgetVault, editDraft, flush, uploadToNote, reloadNote, overwriteNote, deleteNote, newNote, stale, setStale,
+    note, openPage, currentText, openNote, isEditing, closeNote, forgetVault, editDraft, flush, uploadToNote, reloadNote, overwriteNote, deleteNote, newNote, stale, setStale,
     keepDeletedNote, closeDeletedNote,
     followLink, exists, readOnly, conflict, canGoBack, goBack,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain, ingestNow,

@@ -83,6 +83,15 @@ describe('mapping edge cases', () => {
     expect(writtenPaths({ ...part, state: { ...part.state, status: 'error' } }, '/vaults/a')).toEqual([]);
   });
 
+  it('suggest_next carries its prompt as suggestion; it writes and opens nothing', () => {
+    const part = { id: 'g1', tool: 'suggest_next', state: { status: 'completed', input: { prompt: 'Summarize the open points' }, output: 'suggested: Summarize the open points' } };
+    const call = mapToolPart(part, '/vaults/a');
+    expect(call).toMatchObject({ tool: 'suggest_next', status: 'completed', suggestion: 'Summarize the open points', writes: false, opens: false });
+    expect(call.path).toBeUndefined();
+    expect(mapToolPart({ id: 'r', tool: 'read', state: { status: 'completed', input: { prompt: 'x', filePath: 'a.md' } } }, '/vaults/a').suggestion).toBeUndefined();
+    expect(writtenPaths(part, '/vaults/a')).toEqual([]);
+  });
+
   it('save_url writes its filePath and keeps its url', () => {
     const part = { id: 's1', tool: 'save_url', state: { status: 'completed', input: { url: 'https://a.com/c.png', filePath: 'notes/c.png' }, output: 'saved notes/c.png (1 KB).' } };
     expect(mapToolPart(part, '/vaults/a')).toMatchObject({ tool: 'save_url', path: 'notes/c.png', url: 'https://a.com/c.png', writes: true, opens: false });

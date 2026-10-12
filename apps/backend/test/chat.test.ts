@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -316,6 +316,41 @@ describe('chat API against a real opencode container', () => {
     const t2 = await makeApp(t.remote.remoteBase, { dirs: t.dirs });
     expect(t2.store.get().queued[t.id]).toEqual([{ chatId, text: '', attachments: ['Sources/upload-x/a.png'] }]);
     await t2.vaults.close();
+  });
+
+  it('prompt with openPage keeps the chat\'s state file current, outside the vault clone (#143)', async () => {
+    const t = await setup();
+    await t.vaults.lock(t.id).acquireExclusive(); // never released: the turns stay queued
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    const p = `/vaults/${t.id}/chats/${chatId}/prompt`;
+    const state = join(vaultsDir, '.open-page', `${chatId}.json`);
+    const page = { path: 'Home.md', mode: 'write', unsaved: true };
+    expect((await t.api.post(p, { text: 'summarize this note', openPage: page })).status).toBe(202);
+    expect(JSON.parse(await readFile(state, 'utf8'))).toEqual(page);
+    // Never an untracked file in the clone.
+    expect(sh(t.vaults.vaultRootDir(t.id), 'status', '--porcelain')).toBe('');
+    // A bad path is refused and leaves the state alone.
+    for (const path of ['../x.md', '/etc/passwd', '.git/config', '']) expect((await t.api.post(p, { text: 'x', openPage: { ...page, path } })).status).toBe(400);
+    expect((await t.api.post(p, { text: 'x', openPage: { ...page, mode: 'edit' } })).status).toBe(400);
+    expect(JSON.parse(await readFile(state, 'utf8'))).toEqual(page);
+    await t.chat.remove(t.id, chatId).catch(() => undefined);
+  });
+
+  it('a prompt without openPage clears it; deleting the chat removes the file (#143)', async () => {
+    const t = await setup();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    const p = `/vaults/${t.id}/chats/${chatId}/prompt`;
+    const state = join(vaultsDir, '.open-page', `${chatId}.json`);
+    expect((await t.api.post(p, { text: 'one', openPage: { path: 'Home.md', mode: 'read', unsaved: false } })).status).toBe(202);
+    await waitIdle(t.chat, t.id, chatId);
+    expect(await readFile(state, 'utf8')).toContain('Home.md');
+    expect((await t.api.post(p, { text: 'two' })).status).toBe(202);
+    await expect(readFile(state, 'utf8')).rejects.toThrow('ENOENT');
+    await waitIdle(t.chat, t.id, chatId);
+    expect((await t.api.post(p, { text: 'three', openPage: { path: 'Other.md', mode: 'read', unsaved: false } })).status).toBe(202);
+    await waitIdle(t.chat, t.id, chatId);
+    expect((await t.api.delete(`/vaults/${t.id}/chats/${chatId}`)).status).toBe(204);
+    await expect(readFile(state, 'utf8')).rejects.toThrow('ENOENT');
   });
 
   it('attachment reaches opencode as a file part', async () => {
