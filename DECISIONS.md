@@ -2130,3 +2130,8 @@ edited: 2026-10-12
 - **Alternatives:** wait for the user (the run would stall all night); delete the Lima image cache or other apps'
   caches (more space, but not obviously mine).
 - **Consequences:** the disk is still at 99 %: the user should free space. Further image builds may fill it again.
+  Findings merged in ac0afb6: keyup copies only with Shift held and no Cmd/Ctrl (mouse/touch still copy, the
+  paste-to-replace trade-off is in `functional.md`); `current_page` answers "open, in a dot folder … read it by that
+  path" (the `read` tool reaches `.agents/`), still refusing `..`, `.git` and absolute paths; the `/vaults/.open-page`
+  literal stays with a comment (the opencode container gets no vaults-root env; the compose mount fixes it);
+  `e2e/fix-144.spec.ts` is Chromium only (WebKit refuses clipboard permissions, as `attach.spec.ts` does for drops).
