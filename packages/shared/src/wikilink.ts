@@ -9,7 +9,8 @@ export interface Wikilink {
 
 export function parseWikilink(inner: string): Wikilink {
   const bar = inner.indexOf('|');
-  const ref = bar >= 0 ? inner.slice(0, bar) : inner;
+  // `\|` is the table-safe alias bar (Obsidian): the `\` belongs to the bar, not to the target.
+  const ref = bar >= 0 ? inner.slice(0, inner[bar - 1] === '\\' ? bar - 1 : bar) : inner;
   const alias = bar >= 0 ? inner.slice(bar + 1).trim() : undefined;
   const hash = ref.indexOf('#');
   const target = (hash >= 0 ? ref.slice(0, hash) : ref).trim();

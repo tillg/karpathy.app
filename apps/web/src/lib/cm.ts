@@ -9,7 +9,7 @@ import { mountEmbed, type EmbedCtx } from './embed';
 import { commentRanges, frontmatterEndLine, inComment } from './markdown';
 import { EMBED_RE, knownNatural, mdEmbed, wikiEmbed, type Embed, type Resolved } from './media';
 import { languageFor } from './lang';
-import { WIKILINK_RE } from './wikilink';
+import { parseWikilink, WIKILINK_RE } from './wikilink';
 
 const style = HighlightStyle.define([
   { tag: tags.heading1, fontWeight: '700' },
@@ -78,7 +78,7 @@ function wikilinks(exists: (target: string) => boolean, open: (inner: string) =>
         for (const m of text.matchAll(WIKILINK_RE)) {
           const start = from + m.index;
           const inner = m[1]!;
-          const target = inner.split('|')[0]!.split('#')[0]!.trim();
+          const target = parseWikilink(inner).target;
           b.add(start, start + 2, Decoration.mark({ class: 'cm-md-mark' }));
           b.add(start + 2, start + 2 + inner.length, Decoration.mark({
             class: !target || exists(target) ? 'cm-wl' : 'cm-wl cm-wl-miss',

@@ -1,7 +1,7 @@
 ---
 title: "Domain: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-08
+edited: 2026-10-12
 ---
 
 # Domain: karpathy.app
@@ -108,6 +108,8 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Command** | A skill the chat can start by name with `/name`: a vault skill or an app skill. The UI says "command"; the code says `skill` only where it means opencode's skill. opencode's built-ins `init`, `review` and `customize-opencode` are never commands. | `Command { name, description, source, replaces? }` |
 | **Vault skill** | A skill in the vault's skill folder `.agents/skills/<name>/SKILL.md`: written by the vault author, synced by git, only in that vault, also seen by Claude Code on the Mac. Examples: `query`, `lint`, `ingest`. Palette group "This vault", tag `vault`. | `Command.source = 'vault'` |
 | **App skill** | A skill that ships in the opencode image, so every vault has it; changes only with an app release; Claude Code on the Mac doesn't see it. Today only `research`. Palette group "karpathy.app", tag `app`. | `Command.source = 'app'` |
+| **Markdown check** | The check that runs after every AI write of a note: it reads the whole file, finds Markdown Obsidian shows broken and reports it to the AI in that write's result, so the AI fixes it. It never changes or refuses a write. Two rules: **wrapped wikilink** (a `[[…]]` broken across lines) and **table pipe** (an aliased wikilink in a table row whose alias bar has no backslash before it). Frontmatter, comments and code are not checked. | `lintMarkdown`, `Finding { rule, line, text, fix }`, rules `wikilink-wrapped` / `table-wikilink-pipe` |
+| **Table-safe wikilink** | An aliased wikilink written with a backslash before the alias bar, the spelling Obsidian needs inside a table row, where a bare bar would split the cell. The backslash belongs to the bar, not to the target; the link works like the plain form. | `parseWikilink` |
 | **Replacing vault skill** | A vault skill with the same name as an app skill. The vault skill wins (the backend decides; opencode's own pick isn't stable); the app skill doesn't run as a command in that vault, and the palette says so. | `Command.replaces = true` |
 | **Skill folder** | `.agents/skills/` in the vault root: the only place a vault's skills are read from, by the palette and by the AI. Shared with other harnesses (Codex, Cursor, Gemini CLI). | `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1` |
 | **`.agents` standard** | The open, cross-harness layout a vault follows in this app: instructions in `AGENTS.md`, skills in the skill folder. Anthropic's `CLAUDE.md` / `.claude/` remain only as pointers for Claude Code on the Mac. | |

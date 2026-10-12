@@ -2,6 +2,7 @@ import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promise
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ChatEvent, ToolCall } from '@karpathy/shared';
+import { lintMarkdown } from '../../../deploy/opencode/lib/md-lint.js';
 import { createApp } from '../src/app.js';
 import { ChatService } from '../src/chat.js';
 import { OpencodeCommitMessages } from '../src/commit-message.js';
@@ -279,6 +280,47 @@ describe('@llm web access', () => {
       expect(tools.filter((x) => x.tool === 'websearch' || x.tool === 'webfetch')).toEqual([]);
     });
   }, 300_000);
+});
+
+// The check's report, as the model sees it: the write's tool parts of a chat, from opencode.
+async function writeParts(t: T, chatId: string) {
+  const res = await oc.fetch(`${oc.url}/session/${chatId}/message?directory=${t.chat.dir(t.id)}`);
+  const msgs = (await res.json()) as { parts: { type: string; tool?: string; state?: { input?: { content?: string }; output?: string } }[] }[];
+  return msgs.flatMap((m) => m.parts).filter((p) => p.type === 'tool' && ['write', 'edit', 'multiedit', 'apply_patch', 'patch'].includes(p.tool ?? ''));
+}
+
+describe('@llm Markdown check (#118)', () => {
+  // Any model, incl. the 3B dev model (which doesn't act on the report): the broken write reaches the disk and
+  // its tool result, in the real opencode session, carries the report.
+  it('@llm the report of a broken write reaches the model', async () => {
+    const t = await setup({ 'Wiki/nadine-gartner.md': '# Nadine\n' });
+    let chatId = '';
+    await withRetry(async () => {
+      // The table lines are given, so a broken row reaches the disk and the check has something to report.
+      const r = await turn(t, 'Use the write tool to create the file Wiki/people.md with these three lines:\n| Person | Role |\n|---|---|\n| [[nadine-gartner|Nadine]] | host |');
+      chatId = r.chatId;
+      if (r.tools.length === 0) throw new Inconclusive('model made no tool call');
+      if (!r.tools.some((x) => x.writes && x.status === 'completed')) throw new Inconclusive(`no completed write: ${JSON.stringify(r.tools)}`);
+    });
+    const parts = await writeParts(t, chatId);
+    const broken = parts.find((p) => lintMarkdown(p.state?.input?.content ?? '').length > 0);
+    if (!broken) throw new Error(`INCONCLUSIVE: the model wrote no broken table: ${JSON.stringify(parts.map((p) => p.state?.input))}`);
+    expect(broken.state?.output).toMatch(/Markdown problems in (\S+\/)?Wiki\/people\.md[^]*\[table-wikilink-pipe\]/);
+  }, 600_000);
+
+  // The prod model (LLM_TEST_MODEL=openrouter/…, OPENROUTER_API_KEY): a natural request, and the file ends up
+  // clean, either right away or after the report.
+  it.skipIf(!LLM_MODEL.startsWith('openrouter/'))('@llm the AI fixes broken Markdown it wrote (hosted model)', async () => {
+    const t = await setup({ 'Wiki/nadine-gartner.md': '# Nadine\n' });
+    await withRetry(async () => {
+      const r = await turn(t, 'Use the write tool to create the file Wiki/people.md with a Markdown table with the columns Person and Role. One row: Nadine, host. Link her name to the note nadine-gartner, shown as "Nadine".');
+      if (r.tools.length === 0) throw new Inconclusive('model made no tool call');
+      if (!r.tools.some((x) => x.writes && x.status === 'completed')) throw new Inconclusive(`no completed write: ${JSON.stringify(r.tools)}`);
+    });
+    const text = await readFile(join(t.vaults.vaultRootDir(t.id), 'Wiki/people.md'), 'utf8');
+    expect(lintMarkdown(text)).toEqual([]);
+    expect(text).toContain('[[nadine-gartner\\|Nadine]]');
+  }, 600_000);
 });
 
 describe('@llm AI reads and writes', () => {

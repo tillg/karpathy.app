@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-09
+edited: 2026-10-12
 ---
 
 # Architecture: karpathy.app
@@ -212,8 +212,8 @@ file would be merged *before* the project config, which is why the providers don
 `zdr: false` won in the check that found it).
 
 The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `open_url`, `save_url`, `move_to_sources`),
-`plugins/` (`known-url`), `lib/` (helpers) and `skills/` (the **app skills**, today `research`). The bake step waits for
-the four tools in the tool ids and for the plugin before it makes the dir read-only.
+`plugins/` (`known-url`, `md-lint`), `lib/` (helpers) and `skills/` (the **app skills**, today `research`). The bake step
+waits for the four tools in the tool ids and for both plugins' `ready` log lines before it makes the dir read-only.
 
 **Custom tool `open_note`** (`deploy/opencode/tools/open_note.ts`, path check in `deploy/opencode/lib/resolve-note.ts`):
 checks that `path` resolves inside `context.directory`, exists, is a file and has no dot segment, then returns
@@ -278,6 +278,56 @@ after the last user message and refuses once the per-turn cap is reached (`capFr
 `WEB_SEARCH_CAP` in `opencode.env`, rendered from `ai.web.fetch_cap` / `search_cap`, default 20; `webfetch` and `save_url` calls together count against the fetch cap). `save_url` is also in the
 plugin's `WRITE_TOOLS`: a file it saved and the AI reads back is not a known source. `open_url` has no cap: the user taps each chip. Stateless, so it survives an opencode
 restart.
+
+**Plugin `md-lint`** (`deploy/opencode/plugins/md-lint.ts`, logic in `deploy/opencode/lib/md-lint.ts`, free of opencode
+imports so the backend tests load it; #118): the **Markdown check**. A `tool.execute.after` hook for `edit`, `write`,
+`multiedit`, `apply_patch` and `patch` (`LINTED_TOOLS`; not `save_url` or `move_to_sources`). `writtenFiles` takes the
+written paths from `args.filePath` and a patch's `metadata.files[]` (`filePath`, `movePath`; the shapes `writtenPaths` in
+`harness/map.ts` reads), keeps `.md`, and resolves them against the plugin's `directory`, which is the session's vault root.
+For each file `appendReport` reads the **whole file**, runs `lintMarkdown` and appends `checkReport(path, findings)` to
+`output.output`, the tool result the model gets. A missing file or a directory is skipped; any other error is logged
+(`md-lint: <file>: …`). The check never fails a write.
+
+```mermaid
+sequenceDiagram
+  participant M as model
+  participant T as opencode write tool
+  participant P as plugin md-lint
+  participant V as vault file
+  M->>T: write Wiki/people.md
+  T->>V: write
+  T->>P: tool.execute.after(tool, args, output)
+  P->>V: read the whole file
+  P-->>T: output += "Markdown problems in Wiki/people.md … Fix them now: - line 3 [table-wikilink-pipe] …"
+  T-->>M: tool result incl. the report
+  M->>T: edit (escape the pipe), checked the same way
+```
+
+`lintMarkdown(text)` first turns CRLF into LF and blanks what isn't rendered prose to spaces, keeping newlines and
+columns: frontmatter, HTML comments, fenced code (a closing fence has the same character, at least the same length and
+no info string; the rules repeat `codeRanges` in `packages/shared/src/relink.ts`) and one-line code spans. Two rules:
+
+- `wikilink-wrapped`: `[[`, one to three line breaks with no `[` or `]` in between, then `]]`. A blank line in between
+  (also `>` only) is a paragraph break, not a finding. Fix: put the whole link on one line.
+- `table-wikilink-pipe`: in a table (a run of lines starting with `|`, also after a `>` prefix, with a delimiter row),
+  a `[[…]]` whose alias `|` isn't escaped. Fix: `\|` for every such bar.
+
+Known limits, no finding: tables without a leading `|`, code spans over several lines, indented code blocks, `[[…]]` in
+clipped non-Markdown. A small model may ignore the report: the 3B dev model does, and then the file stays as it wrote it.
+
+The app reads the table-safe `[[target\|alias]]` like `[[target|alias]]`: `parseWikilink` (shared, used by backlinks,
+the graph and Read mode), the rename rewrite (`rewriteLinks` keeps the `\|`), `wikiEmbed` (`apps/web/src/lib/media.ts`)
+and the editor's live preview (`apps/web/src/lib/cm.ts`). In a GFM table, `marked` unescapes `\|` before the wikilink
+tokenizer runs.
+
+Decisions (spec change `md-lint-on-write`, #118):
+
+| Decision | Alternatives considered | Why |
+|---|---|---|
+| Report after the write, to the model | refuse a broken `write` (built, measured, dropped); silent auto-fix; a lint tool the model may call; a rule in the agent prompt | Deterministic on every write; the model fixes it with full context. A refused `write` left no file at all with a model that doesn't retry; an auto-fix makes the model's view of the file stale; a tool can be skipped; a prompt rule costs tokens every turn. |
+| Whole-file check | only the lines the write changed | Old breaks heal when the AI touches a page; patch tools give no clean before/after. Clipped `Sources/` has no findings today. |
+| Two own rules, no linter | markdownlint (MD056 + custom rules), rumdl, remark-lint, Obsidian Linter | As of 2026-10 none knows Obsidian wikilinks well enough: markdownlint flags the table case only as "too many cells" and has no rule for wrapped links; the custom rules would be the same regexes, plus ~9 MB in the image. |
+| Invisible to the user | a badge on the tool chip | The correcting edit already shows as one more chip. |
 
 ### Ingest service (`deploy/ingest`)
 

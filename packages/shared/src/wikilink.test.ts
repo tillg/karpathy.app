@@ -9,6 +9,10 @@ describe('parseWikilink', () => {
     expect(parseWikilink('index')).toEqual({ target: 'index' });
     expect(parseWikilink('#Local heading')).toEqual({ target: '', heading: 'Local heading' });
   });
+  it('escaped alias pipe: the table-safe [[target\\|alias]] (#118)', () => {
+    expect(parseWikilink('nadine-gartner\\|Nadine')).toEqual({ target: 'nadine-gartner', alias: 'Nadine' });
+    expect(parseWikilink('a/b#Plot\\|the plot')).toEqual({ target: 'a/b', heading: 'Plot', alias: 'the plot' });
+  });
   it('labels with alias or last segment', () => {
     expect(wikilinkLabel(parseWikilink('a/b/c|Alias'))).toBe('Alias');
     expect(wikilinkLabel(parseWikilink('a/b/c#h'))).toBe('c');

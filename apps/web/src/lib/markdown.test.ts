@@ -80,6 +80,14 @@ describe('toHtml', () => {
     expect(html).toContain('<a href="#" class="wl" data-target="concepts/llm-wiki|the wiki">the wiki</a>');
     expect(html).toContain('<a href="#" class="wl miss" data-target="nope">nope</a>');
   });
+  it('#118 an aliased wikilink in a table row, written with the escaped pipe', () => {
+    const html = toHtml('| Person | Rolle |\n|---|---|\n| [[nadine-gartner\\|Nadine]] | kommt |\n', (t) => t === 'nadine-gartner');
+    const row = new DOMParser().parseFromString(html, 'text/html').querySelectorAll('tbody tr td');
+    expect(row).toHaveLength(2);
+    const a = row[0]!.querySelector('a.wl')!;
+    expect(a.className).toBe('wl');
+    expect(a.textContent).toBe('Nadine');
+  });
 });
 
 describe('renderMarkdown (Obsidian syntax)', () => {
