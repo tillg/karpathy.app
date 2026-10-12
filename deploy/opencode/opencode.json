@@ -44,6 +44,7 @@
           "*.opencode/*": "deny"
         },
         "open_note": "allow",
+        "current_page": "allow",
         "open_url": "allow",
         "save_url": "allow",
         "move_to_sources": "allow"
@@ -55,6 +56,7 @@
       "permission": {
         "edit": "deny",
         "open_note": "allow",
+        "current_page": "allow",
         "open_url": "allow"
       }
     },
