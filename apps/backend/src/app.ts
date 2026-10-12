@@ -6,7 +6,7 @@ import { aiUnavailable, type ChatService } from './chat.js';
 import { fallbackMessage, type CommitMessages } from './commit-message.js';
 import type { ConfigStore } from './config-store.js';
 import type { GitHubToken } from './github-token.js';
-import { PathError } from './paths.js';
+import { normalizeRel, PathError } from './paths.js';
 import { callIngest, type IngestEndpoint } from './ingest.js';
 import { HttpError, type Vaults } from './vaults.js';
 
@@ -63,8 +63,21 @@ const patchSettings = z.object({
 const putFile = z.object({ content: z.string(), version: z.string().nullable(), force: z.boolean().optional() });
 const commitBody = z.object({ message: z.string().min(1).max(10_000), paths: z.array(z.string()).optional() });
 const resolveBody = z.object({ path: z.string().min(1), choice: z.enum(['mine', 'theirs', 'both']) });
+// The file open in the UI (#143): a vault path like any other, checked here and again by the AI's current_page tool.
+const openPage = z.object({
+  path: z.string().max(1000).transform((p, ctx) => {
+    try {
+      return normalizeRel(p);
+    } catch (e) {
+      ctx.addIssue({ code: 'custom', message: (e as Error).message });
+      return z.NEVER;
+    }
+  }),
+  mode: z.enum(['read', 'write']),
+  unsaved: z.boolean(),
+}).strict();
 const promptBody = z
-  .object({ text: z.string().trim().max(100_000), attachments: z.array(z.string().min(1).max(1000)).max(MAX_ATTACHMENTS, { error: `At most ${MAX_ATTACHMENTS} files per message` }).optional() })
+  .object({ text: z.string().trim().max(100_000), openPage: openPage.optional(), attachments: z.array(z.string().min(1).max(1000)).max(MAX_ATTACHMENTS, { error: `At most ${MAX_ATTACHMENTS} files per message` }).optional() })
   .refine((b) => b.text.length > 0 || (b.attachments?.length ?? 0) > 0, { error: 'Write a prompt or attach a file' });
 
 // An Instagram username (letters, digits, `.` and `_`, at most 30), never a path: the ingest service uses it in file names.
@@ -312,7 +325,7 @@ export function createApp(d: AppDeps) {
   });
   api.post('/vaults/:id/chats/:chatId/prompt', async (req, res) => {
     const b = promptBody.parse(req.body);
-    await chat().prompt(req.params.id!, req.params.chatId!, b.text, b.attachments);
+    await chat().prompt(req.params.id!, req.params.chatId!, b.text, b.attachments, b.openPage);
     res.status(202).json({ queued: true });
   });
   api.get('/vaults/:id/chats/:chatId/stream', async (req, res) => {
