@@ -137,6 +137,9 @@ edited: 2026-10-12
   - [23:30 — #137: a recipe that imports this Mac's Instagram session, run against prod after the deploy](#run-2026-10-12-2325-2)
   - [00:05 — Baseline: main is green except the load-flaky api.test.ts; it must pass alone at low load before a merge](#run-2026-10-12-2325-3)
   - [00:20 — #134 is a web fix: chips and the Ingest button reload commands on a skill-file change](#run-2026-10-12-2325-4)
+  - [00:35 — #142: save_url gets an optional `note` that it appends the embed to, after wording alone failed 0/6](#run-2026-10-12-2325-5)
+  - [01:05 — Restart Rancher Desktop after the Mac's disk filled up; reclaim only build cache](#run-2026-10-12-2325-6)
+  - [01:05 — Merge #142 at 6/12 on its e2e and ship it; the issue stays open](#run-2026-10-12-2325-7)
 - [2026-10-12 23:32 — Build the high-priority enhancements (#147, #144, #128, #143, #145, #146), release and deploy to prod](#run-2026-10-12-2332)
   - [23:45 — Small issues are tweaks, tool-adding issues are full changes; "archive" closes the issue either way](#run-2026-10-12-2332-1)
   - [23:45 — Share main with the parallel bug-fix run: fetch before every merge, version picked at release time](#run-2026-10-12-2332-2)
@@ -1879,6 +1882,55 @@ edited: 2026-10-12
 - **Alternatives:** the backend stale flag (no effect: nothing re-asks the backend); polling the list.
 - **Consequences:** a skill in a folder above the vault root (clone root of a sub-root vault) isn't watched, so it still
   shows after the next pull only. `fake-api.tsx` gained `emit()` for event-driven component tests.
+
+## 00:35 — #142: save_url gets an optional `note` that it appends the embed to, after wording alone failed 0/6 {#run-2026-10-12-2325-5}
+
+- **Status:** open
+- **Context:** #142; the first fix (save_url's description and result text say "now edit the note and add
+  `![[path]]`", plus refusing `: * " \ < > | ?` in any path segment, which stops `Ideas.md:img.png`) is on
+  `fix/142-embed-picture` (8ea9a1c). The e2e stayed red: 0/6 on three wordings. The dev model (qwen2.5:3b) saves the
+  picture but doesn't follow up with an `edit` of the note.
+- **Question:** stop with the wording fix, or change the tool so the task is one call?
+- **Decision:** save_url takes an optional `note` (an existing Markdown note in the vault); after the save it appends
+  `![[<saved path>]]` on its own line and reports the note as written too. A missing or non-Markdown note refuses the
+  whole call. The e2e test stays unchanged.
+- **Why:** one tool call is within what the small model does reliably (the sibling test, save only, passes); the
+  append is a narrow write the AI could already do with `edit`.
+- **Alternatives:** a bigger dev model for @llm tests (hides the problem for small models in prod configs); a hidden
+  per-turn preamble (larger change); changing the test (not allowed).
+- **Consequences:** save_url now writes into an existing note: `security.md` and `architecture.md` say so. If the
+  e2e is still red, #142 stays open with the pass rate in a comment.
+
+## 01:05 — Restart Rancher Desktop after the Mac's disk filled up; reclaim only build cache {#run-2026-10-12-2325-6}
+
+- **Status:** open
+- **Context:** at 00:50 the Mac's data volume hit 0 bytes free (896 of 926 GiB; `~/Library` 354 GiB, the Rancher VM disk
+  77 GiB); every shell command and the #142 agent failed with `ENOSPC`, and the Docker VM answered with I/O errors.
+  This run's worktrees held under 1 GiB.
+- **Question:** what to free, and may the VM be restarted while the parallel enhancements run uses it too?
+- **Decision:** removed this run's merged `fix-134` worktree; restarted Rancher Desktop (`rdctl shutdown && open -a
+  "Rancher Desktop"`, allowed by `~/.claude/CLAUDE.md`); pruned dangling images and build cache, `fstrim` in the VM.
+  Free space after: 18 GiB. Nothing of the user's or the other run's deleted; no volume prune.
+- **Why:** the VM was already failing for both runs; the restart is the documented remedy.
+- **Alternatives:** wait for the user to free space (blocks the run for hours).
+- **Consequences:** the other run's dev stacks were stopped by the restart and need `just dev up` again. The user was
+  told via ntfy to free disk space; 18 GiB fills again with a few image rebuilds.
+
+## 01:05 — Merge #142 at 6/12 on its e2e and ship it; the issue stays open {#run-2026-10-12-2325-7}
+
+- **Status:** open
+- **Overrides:** the task — "When all tests are ok, commit, push, merge to main" (the @llm e2e for #142 isn't ok)
+- **Context:** `fix/142-embed-picture` (c48d0cf): unit and container tests green; the e2e embed test passes 6 of 12
+  runs with the dev model (0 of 18 on `main`), its sibling 10 of 12. The rest is the 3b model printing the call as text
+  or asking for the URL.
+- **Question:** merge an improvement whose own e2e is still flaky, or leave it on the branch?
+- **Decision:** merge once `just check` is green (the e2e was red before: no new failures), ship it in the release,
+  keep #142 open with a comment and the pass rate.
+- **Why:** it removes the broken file names (`Ideas.md:img.png`) and makes the one-call path available to every model;
+  bigger prod models benefit most.
+- **Alternatives:** leave it unmerged (prod keeps the broken names); change the test (not allowed).
+- **Consequences:** follow-up in #142: a stronger dev model for @llm tests, or a retry like the sibling test (needs the
+  user's OK to change the test).
 
 # 2026-10-12 23:32 — Build the high-priority enhancements (#147, #144, #128, #143, #145, #146), release and deploy to prod {#run-2026-10-12-2332}
 
