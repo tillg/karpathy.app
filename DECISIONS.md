@@ -139,6 +139,7 @@ edited: 2026-10-12
   - [23:45 — Small issues are tweaks, tool-adding issues are full changes; "archive" closes the issue either way](#run-2026-10-12-2332-1)
   - [23:45 — Share main with the parallel bug-fix run: fetch before every merge, version picked at release time](#run-2026-10-12-2332-2)
   - [23:45 — Order: #147, #144, #128 in parallel first; #143, #145, #146 one after another](#run-2026-10-12-2332-3)
+  - [00:10 — #128: a `FROM scratch AS web` stage that a build context replaces; the node stage becomes `web-build`](#run-2026-10-12-2332-4)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -1903,3 +1904,20 @@ edited: 2026-10-12
 - **Consequences:** the rc tag leaves a pre-release on GitHub.
   Adjusted at 23:55: #143 started alongside batch 1 (its files don't overlap #147/#144/#128, and #128 needs no dev
   stack), so only #145 and #146 wait; they still run one after another after #143.
+  The rc tag for #128 was not pushed (the session's permission check refused the public pre-release); the final
+  release tag is the first CI run of the new `web` job. If it fails, the fix goes forward as the next patch version.
+
+## 00:10 — #128: a `FROM scratch AS web` stage that a build context replaces; the node stage becomes `web-build` {#run-2026-10-12-2332-4}
+
+- **Status:** open
+- **Context:** #128 (tweak), `deploy/proxy/Dockerfile`: the dist sat at `/app/apps/web/dist` inside the node stage,
+  while the CI artifact has the dist at its root.
+- **Question:** how can a passed `web` build context replace the in-image web build?
+- **Decision:** the node stage is renamed `web-build`; a `FROM scratch AS web` stage copies its dist to `/`; the final
+  stage copies `--from=web / /srv`. CI passes `web=tmp/web-dist`, which replaces `web`, so the node stage never runs.
+  The CI `web` job uses `setup-node` 22 and the Dockerfile's own `npm ci` flags.
+- **Why:** the overridden stage must have the artifact's layout; local builds need no extra step.
+- **Alternatives:** a conditional `COPY` (BuildKit can't); exporting the Dockerfile's node stage from a docker build
+  in CI (Docker overhead for a static build).
+- **Consequences:** `deploy/stack.test.sh` checks both stages, the workflow's context and a real build with a marker
+  context. Merged to `main` in 1b2d698, issue closed.
