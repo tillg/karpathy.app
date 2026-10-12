@@ -1784,3 +1784,4 @@ edited: 2026-10-12
   (never).
 - **Consequences:** if both services are down the test still fails, as it should. Rollback of the prod deploy:
   `just deploy hetzner 0.0.19`.
+  Deployed 14:29 (`just deploy hetzner 0.0.21`: failed=0, smoke ok); prod `/api/health` reports `0.0.21`.
