@@ -1,7 +1,7 @@
 ---
 feature: 145-next-prompt-suggestion
 title: "Proposal: next-prompt suggestion"
-status: applying
+status: applied
 order: 1
 created: 2026-10-13
 edited: 2026-10-13

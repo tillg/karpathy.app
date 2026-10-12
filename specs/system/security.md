@@ -1,7 +1,7 @@
 ---
 title: "Security: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-08
+edited: 2026-10-13
 ---
 
 # Security: karpathy.app
@@ -131,11 +131,11 @@ GitHub, opencode password, provider keys), only its own two.
 - **App skills come only from the image** (`/opt/opencode-config/opencode/skills/`, read-only, root-owned like the tools),
   never from a vault. A vault skill of the same name only replaces it in that vault; the backend decides the clash, and the
   AI's `skill` tool may still load either.
-- **The custom tools, `open_note`, `open_url`, `save_url` and `move_to_sources`, come from the image**, never from a vault: they sit in a root-owned,
+- **The custom tools, `open_note`, `open_url`, `suggest_next`, `save_url` and `move_to_sources`, come from the image**, never from a vault: they sit in a root-owned,
   read-only global config dir (`XDG_CONFIG_HOME=/opt/opencode-config`), pre-populated at build so opencode installs nothing at
   runtime. `open_note` checks the path lexically and by `stat` inside the session directory, refuses dot-segments, reads no
   content and changes nothing. `open_url` fetches nothing and returns `offered <url>` for an http(s) URL (see
-  [Web access](#web-access)). Both are allowed for `vault-readonly` too. `save_url` is the one custom tool that writes: it
+  [Web access](#web-access)). `suggest_next` reads and writes nothing (it only trims the text and refuses an empty or over-160-character one); the web app shows it as plain text in the composer and never sends it by itself. `open_note`, `open_url` and `suggest_next` are allowed for `vault-readonly` too. `save_url` is the one custom tool that writes: it
   is allowed for `vault` only, and only a known URL becomes a new media file or PDF (see [Web access](#web-access)). `move_to_sources`, also
   `vault` only, can only rename `Input/<name>` to a new `Sources/<name>` ([Ingest service](#ingest-service)). opencode *would* load tools from a vault's
   `.opencode/tools/`; the harness-config rule below is what stops that.
