@@ -291,3 +291,11 @@ describe('nextSuggestion (#145)', () => {
     expect(nextSuggestion([user('u'), ai('a', call('s1', 'Good'), call('s2', 'x', 'error'))], 'idle')).toBe('Good');
   });
 });
+
+describe('suggest_next in the chat (#145)', () => {
+  it('turns() hides its call from the chips and keeps the others', () => {
+    const tool = (id: string, name: string): ChatMessage['parts'][number] => ({ type: 'tool', id, call: { id, tool: name, status: 'completed', writes: false, suggestion: 'x' } });
+    const t = turns([{ id: 'a', role: 'assistant', createdAt: 1, parts: [tool('r', 'read'), { type: 'text', id: 't', text: 'Done' }, tool('s', 'suggest_next')] }]);
+    expect(t[0]!.role === 'assistant' && t[0]!.parts.map((p) => p.id)).toEqual(['r', 't']);
+  });
+});

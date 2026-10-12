@@ -23,7 +23,7 @@ E2E steps run against this checkout's stack (`just dev up` first, `just dev down
 - [ ] `nextSuggestion(messages, turn)` picks the live suggestion
   - Test first: `apps/web/src/lib/chat.test.ts` › latest call wins; none while running/queued; none after a user message; ignores error and empty — fails today: no function
   - Verify: `npx vitest run apps/web/src/lib/chat.test.ts` → green
-- [ ] Composer ghost text, Tab and tap accept, hidden chip
+- [x] Composer ghost text, Tab and tap accept, hidden chip
   - Test first: `apps/web/src/components/Suggestion.test.tsx` › ghost shows while text empty, disappears on typing; Tab accepts (not sent); tap accepts; `Parts` renders no chip for `suggest_next` — fails today: no component
   - Verify: `npx vitest run apps/web/src/components/Suggestion.test.tsx` → green
 - [x] Standing instruction: tool description tells the model when to call it

@@ -125,11 +125,13 @@ export type Turn =
 
 /**
  * The chat as the user reads it (#63, pure): the harness makes one assistant message per tool
- * step, so consecutive assistant messages merge into one turn with one header.
+ * step, so consecutive assistant messages merge into one turn with one header. A suggest_next call
+ * has no chip: the composer shows it as ghost text (#145).
  */
 export function turns(messages: ChatMessage[]): Turn[] {
   const out: Turn[] = [];
-  for (const m of messages) {
+  for (const raw of messages) {
+    const m = { ...raw, parts: raw.parts.filter((p) => !(p.type === 'tool' && p.call.tool === 'suggest_next')) };
     const last = out.at(-1);
     if (m.role === 'user') out.push({ role: 'user', id: m.id, message: m });
     else if (last?.role === 'assistant') {
@@ -233,6 +235,10 @@ export function nextSuggestion(messages: ChatMessage[], turn: ChatView['turn']):
   }
   return null;
 }
+
+/** Tab, plain: accepts the suggestion (Shift+Tab and shortcuts keep their meaning). */
+export const isAcceptKey = (e: { key: string; shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }) =>
+  e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
 
 /** The composer's context meter (#140): the newest AI reply that has tokens, and the model it ran with. */
 export function lastContext(messages: ChatMessage[]): { usage: ContextUsage; model?: string } | null {

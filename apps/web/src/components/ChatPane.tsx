@@ -6,13 +6,14 @@ import { loadChips, localStamp, saveChips, type Chip, type ChipDraft } from '../
 import { chipCommands, filterCommands, paletteQuery, recentCommands, recordCommand } from '../lib/commands';
 import { mountEmbed } from '../lib/embed';
 import { mediaKind } from '../lib/media';
-import { adoptQueued, applyChatEvent, changedPaths, lastContext, newOpens, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
+import { adoptQueued, applyChatEvent, changedPaths, isAcceptKey, lastContext, newOpens, nextSuggestion, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
 import { readNdjson } from '../lib/ndjson';
 import { chatTime } from '../lib/time';
 import { useApp } from '../store';
 import { AttachButton } from './AttachButton';
 import { ContextMeter } from './ContextMeter';
 import { Icon } from './Icon';
+import { Ghost } from './Suggestion';
 import { Markdown } from './NotePane';
 import { VaultSwitcher } from './VaultSwitcher';
 
@@ -307,6 +308,9 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
   const scroller = useRef<HTMLDivElement>(null);
   const model = (settings?.model ?? '').split('/').pop() ?? '';
   const busy = chat?.turn === 'queued' || chat?.turn === 'running';
+  // The AI's suggested next prompt (#145): ghost text while the composer is empty and no turn runs.
+  const suggestion = useMemo(() => (chat && !busy && !pending ? nextSuggestion(chat.messages, chat.turn) : null), [chat, busy, pending]);
+  const ghost = online && suggestion && !text ? suggestion : null;
   // Screen readers hear turn changes and the finished reply, not every streamed delta (issue #45).
   const [said, setSaid] = useState('');
   const prevTurn = useRef<ChatView['turn'] | undefined>(undefined);
@@ -373,7 +377,21 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
       el.setSelectionRange(next.length, next.length);
     });
   };
+  /** Puts the suggestion in the composer, focused, cursor at the end; sends nothing. */
+  const acceptGhost = () => {
+    if (!ghost) return;
+    setText(ghost);
+    requestAnimationFrame(() => {
+      const el = composer.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(ghost.length, ghost.length);
+      el.style.height = '';
+      el.style.height = `${Math.min(120, el.scrollHeight)}px`;
+    });
+  };
   const onComposerKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (ghost && isAcceptKey(e)) { e.preventDefault(); acceptGhost(); return; }
     if (paletteOpen) {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
@@ -470,12 +488,15 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
         )}
         <div className="inrow">
           {online && !conflict && <AttachButton testid="chat-attach" multiple up onFiles={(f, cam) => void addFiles(f, cam)} />}
-          <textarea ref={composer} data-testid="chat-composer" rows={1} placeholder={online ? 'Ask about your vault…' : 'Chat needs a connection'}
-            value={text} disabled={!online} aria-label="Message"
-            aria-autocomplete="list" aria-controls={paletteOpen ? 'command-palette' : undefined}
-            aria-activedescendant={paletteOpen ? `cmd-${paletteItems[Math.min(paletteActive, paletteItems.length - 1)]!.name}` : undefined}
-            onChange={(e) => { setText(e.target.value); e.target.style.height = ''; e.target.style.height = `${Math.min(120, e.target.scrollHeight)}px`; }}
-            onKeyDown={onComposerKey} />
+          <div className="inwrap">
+            <textarea ref={composer} data-testid="chat-composer" rows={1} placeholder={ghost ? '' : online ? 'Ask about your vault…' : 'Chat needs a connection'}
+              value={text} disabled={!online} aria-label="Message"
+              aria-autocomplete="list" aria-controls={paletteOpen ? 'command-palette' : undefined}
+              aria-activedescendant={paletteOpen ? `cmd-${paletteItems[Math.min(paletteActive, paletteItems.length - 1)]!.name}` : undefined}
+              onChange={(e) => { setText(e.target.value); e.target.style.height = ''; e.target.style.height = `${Math.min(120, e.target.scrollHeight)}px`; }}
+              onKeyDown={onComposerKey} />
+            <Ghost text={ghost} onAccept={acceptGhost} />
+          </div>
           {busy
             ? <button className="send stop" data-testid="chat-stop" aria-label="Stop" onClick={() => void stop()}><Icon n="stop_fill" size={16} /></button>
             : <button className="send" data-testid="chat-send" aria-label="Send" disabled={(!text.trim() && !draft.chips.length) || uploading > 0 || !online} onClick={() => void send()}><Icon n="arrow_up" size={20} /></button>}

@@ -388,7 +388,13 @@ a.tc { text-decoration: none; cursor: pointer; }
 #app.tablet .move-notice { left: 16px; transform: none; width: min(380px, calc(100% - 432px)); z-index: 30; }
 #app.wide .move-notice { left: 296px; transform: none; width: min(460px, calc(100% - 692px)); }
 .mn-acts { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; font-size: 13px; color: var(--label2); }
+.inwrap { flex: 1; min-width: 0; position: relative; display: flex; }
 .inrow textarea { flex: 1; min-width: 0; resize: none; border: .5px solid var(--sep); background: var(--bg2); border-radius: 20px; padding: 8px 14px; font-size: 16px; outline: none; max-height: 120px; line-height: 1.35; }
+.ghost { position: absolute; inset: 0 12px 0 0; display: flex; align-items: center; gap: 8px; padding-left: 14.5px; pointer-events: none; }
+.ghost-t { flex: 1; min-width: 0; font-size: 16px; line-height: 1.35; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ghost-use { pointer-events: auto; flex: none; min-height: 28px; padding: 0 10px; border-radius: 14px; background: var(--bg); border: .5px solid var(--sep); color: var(--tint); font: 600 12px var(--mono); white-space: nowrap; }
+.ghost-tap { display: none; }
+@media (hover: none) { .ghost-tab { display: none; } .ghost-tap { display: inline; } }
 .send { width: 36px; height: 36px; border-radius: 50%; background: var(--tint); color: var(--on-tint); display: flex; align-items: center; justify-content: center; flex: none; margin-bottom: 1px; }
 .send.stop { background: var(--badge); color: #fff; } /* --badge: white on it ≥ 4.5:1 in both themes (#51) */
 .grp { margin: 0 16px 22px; background: var(--bg2); border-radius: 12px; overflow: hidden; }
