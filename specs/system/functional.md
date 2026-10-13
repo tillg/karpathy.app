@@ -335,7 +335,7 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
 - **The AI opens notes** when asked ("show me my reading list"): on the wide layout right away, on a phone or in the
   tablet overlay when the reply is done, never while the user is editing (then a notice "AI opened …" and the chip).
   Reloading a chat never reopens anything; a wrong path goes back to the AI as a tool error. Works in conflict too.
-- **Images** (#146): the AI can interpret images of the vault and attached ones through its `look_at_image` tool, which asks a separate vision model (`ai.vision_model`; production `mistralai/mistral-small-2603` via ZDR providers) and returns its description; the chat shows a `look_at_image <path>` chip. PDFs and SVGs are not supported.
+- **Images** (#146): the AI can interpret images of the vault and attached ones through its `look_at_image` tool, which asks a separate vision model (`ai.vision_model`; production `mistralai/mistral-medium-3-5` via ZDR providers) and returns its description; the chat shows a `look_at_image <path>` chip. PDFs and SVGs are not supported.
 - **Suggested next prompt** (#145): at the end of a reply the AI may call `suggest_next`; the text shows greyed out in the
   empty composer (no chip) with a small "↹ Tab" button on keyboard devices and "Tap to use" on touch. **Tab** (or a tap)
   puts it into the composer and sends nothing; **Enter** sends it. Typing, sending or a new turn removes it; clearing the

@@ -27,9 +27,9 @@ describe('deploy/settings', () => {
 
   it("today's effective values", () => {
     const hetzner = loadSettings('hetzner', { overlay: false });
-    expect(hetzner.ai).toMatchObject({ gateway: 'openrouter', model: 'openrouter/z-ai/glm-5.3', vision_model: 'openrouter/mistralai/mistral-small-2603' });
+    expect(hetzner.ai).toMatchObject({ gateway: 'openrouter', model: 'openrouter/z-ai/glm-5.3', vision_model: 'openrouter/mistralai/mistral-medium-3-5' });
     // The vision model is routed like the chat model: ZDR providers only.
-    expect(hetzner.gateways.openrouter!.models!['mistralai/mistral-small-2603']).toEqual({
+    expect(hetzner.gateways.openrouter!.models!['mistralai/mistral-medium-3-5']).toEqual({
       options: { provider: { order: ['mistral/zdr', 'mistral'], only: ['mistral/zdr', 'mistral'], zdr: true, data_collection: 'deny' } },
     });
     expect(hetzner.proxy).toMatchObject({ domain: 'app.karpathy.app', tls: 'dns', dns: { provider: 'godaddy', api_token: { secret: 'dns_api_token' } } });
@@ -67,7 +67,7 @@ describe('deploy/settings', () => {
     const files = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean)
       // History and tests (their fixtures name models on purpose) are not settings.
       .filter((f) => !/^(specs\/|DECISIONS\.md$|deploy\/settings\/)/.test(f) && !/(\.test\.(ts|sh)|\.spec\.ts)$|(^|\/)test\//.test(f));
-    const only = ['openrouter/z-ai/glm-5.3', 'qwen2.5:3b', 'qwen3-vl:2b', 'mistralai/mistral-small-2603', 'ollama.internal:11434/v1', 'anthropic/claude-sonnet-5'];
+    const only = ['openrouter/z-ai/glm-5.3', 'qwen2.5:3b', 'qwen3-vl:2b', 'mistralai/mistral-medium-3-5', 'ollama.internal:11434/v1', 'anthropic/claude-sonnet-5'];
     const hits = files.flatMap((f) => {
       let text: string;
       try { text = readFileSync(root + f, 'utf8'); } catch { return []; }

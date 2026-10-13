@@ -35,7 +35,7 @@ describe('renderOpencodeEnv', () => {
       WEB_SEARCH_CAP: '20',
       OPENCODE_MODEL: 'openrouter/z-ai/glm-5.3',
       VISION_BASE_URL: 'https://openrouter.ai/api/v1',
-      VISION_MODEL: 'mistralai/mistral-small-2603',
+      VISION_MODEL: 'mistralai/mistral-medium-3-5',
       VISION_API_KEY: 'sk-or-#1 "x"',
       VISION_REQUEST_OPTIONS: JSON.stringify({ provider: { order: ['mistral/zdr', 'mistral'], only: ['mistral/zdr', 'mistral'], zdr: true, data_collection: 'deny' } }),
     });
