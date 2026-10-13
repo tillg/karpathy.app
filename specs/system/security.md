@@ -253,6 +253,17 @@ prod proxy adds a strict **CSP** (`default-src 'self'`, `script-src 'self'`, `ob
 - **Open** (PDF only) navigates a new tab to a blob the app typed `application/pdf`, so only the PDF viewer can show
   it; no `frame-src` or `object-src` relaxation.
 
+**HTML pages** (`.html` / `.htm` in Read mode, #126) are untrusted documents:
+
+- `preparePage` sanitizes the whole document with DOMPurify (scripts, event handlers, `javascript:` URLs, forms,
+  frames, objects, embeds, `<base>` and `<meta http-equiv>` removed; only `<style>` and `style=` kept), inlines vault
+  stylesheets as `<style>` and vault images as `data:` URLs (fetched with the token by the app, never by the page,
+  never outside the vault root), and turns remote images into links: no remote request, no tracking pixel.
+- The result is shown in an `<iframe srcdoc>` with `sandbox` **without** `allow-scripts` and `allow-same-origin`: no
+  code runs and the frame has an opaque origin, so even a sanitizer miss can't read the token, storage or DOM. It
+  inherits the app's CSP. Only user-activated top navigation (vault links to app routes) and popups (external links,
+  `noopener noreferrer`) are allowed.
+
 **Properties and the schema file** come from the vault too: property values and heading texts render as React text
 (links through the same resolver as wikilinks), never as HTML. `.karpathy/schema.json` is checked by hand (known
 kinds, strings only) and can only change which fields and flags the form shows; rule lookups never reach

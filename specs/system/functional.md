@@ -173,9 +173,33 @@ flowchart LR
     S -->|Name| N[A → Z or Z → A]
     S -->|Last changed| D[by the filter's date,<br/>folders by newest inside,<br/>undated last]
 ```
-- **Create a note** (path prompt, `.md` added if missing, starts as `# <title>`). Refused for existing names, names
-  that differ only by case, and invalid names.
-- **Delete a note** (recoverable until the next commit). On a media or binary file the button says "Delete file".
+- **Create a note** (path prompt; a typed extension is kept, e.g. `run.py`, otherwise `.md` is added). Only a note
+  starts as `# <title>`; any other text file starts empty. Refused for existing names, names that differ only by
+  case, and invalid names.
+- **Delete a note** (recoverable until the next commit). On any file that isn't a note (code, HTML, media, binary) the
+  button says "Delete file".
+- **File kinds** (#126): what the note pane shows follows the file's kind by name ([File kinds](domain.md#file-kinds)):
+  notes get everything below; HTML pages and code files are described under **HTML pages** and **Code files**; `.svg`
+  is a media file and shows as an image.
+- **Code files** (#126): any text file that isn't a note or HTML page (`.py`, `.sh`, `.json`, `.txt`, `Dockerfile`, …)
+  opens in the editor with syntax highlighting chosen by file name (CodeMirror's language list, each language loaded
+  lazily and precached for offline); an unknown name is plain text with every line break as written. One view: no
+  Write/Read toggle, no outline, no properties form, no live preview, no wikilink or embed decorations, no attach.
+  Find-in-file, Delete ("Delete file") and autosave work as for notes; the title keeps its extension. Opening one
+  changes no sticky mode.
+- **HTML pages** (#126): `.html` / `.htm` files have the Write/Read toggle on their own sticky **page mode** (Read for
+  a new browser; toggling on a page never changes the notes' mode, and the other way round). Write: the editor with
+  HTML highlighting. Read: the page rendered in a sandboxed frame filling the note pane; its own `<style>` and inline
+  styles apply, stylesheets and images from the vault (relative paths, never outside the vault) are inlined (images up
+  to 10 MB), links to vault files open in the app (the back arrow returns), other links in a new tab. Never runs:
+  scripts, forms, plugins; remote images and stylesheets don't load (a remote image shows as a link). A search hit or
+  AI open at a line shows the page's source for that opening; the page mode stays.
+- **Back arrow** (#139): a ↩ button in the note header, on every layout, shown only while the previous history entry is
+  another file of the same vault opened in this tab (any kind); tooltip `Back to <file name>`. It does exactly what
+  browser Back does (`history.back()`): the previous file opens at the place it was left. Not shown on the first file
+  of a session, after a reload into a deep link, or when Back would leave the app or switch the vault. On the phone
+  it sits next to the ‹ Files / Search / Changes button (which still leaves the note and drops its label while the
+  arrow shows); the phone header has no ✦ chat toggle (the Chat tab does the same).
 - **Write mode** (default for a new browser): Markdown with live preview, find-in-note; embeds show as a block below
   their line, the `![[…]]` text stays editable. The frontmatter shows as the properties form (below), or as a block
   of raw lines in the YAML view.
@@ -227,7 +251,8 @@ flowchart LR
   `%%comments%%` hidden, footnotes, task markers ☑ / ☐, media embeds (below), `![[note]]` as a link (no
   transclusion).
 - **Sticky mode:** the Write/Read mode the user last chose holds for every note opened afterwards (tree, search,
-  links, chat chips, AI opens) and after a reload, per browser. Opening a media or binary file doesn't change it.
+  links, chat chips, AI opens) and after a reload, per browser. Opening a code, media or binary file doesn't change
+  it; HTML pages have their own (see **HTML pages**).
 - **Media embeds** `![[photo.png]]`, `![[clip.mp4|300]]` (width in px, any media kind), `![alt](img/a.png)`: images,
   videos (inline, also on iPhone) and audio show in Read mode, in Write mode and in chat replies. PDFs and other files
   show a file card (name, size, Download; Open for a PDF, in the browser's viewer in a new tab). Media over 50 MB shows
@@ -320,8 +345,16 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   large main column and the note in the 380 px side column, and back. Nothing is lost on a swap (streaming, typed
   text, cursor, scroll, undo); the browser remembers the choice across reloads; closing the chat keeps it.
 - **Chat list** per vault (full first-prompt title, cut by the column width with the full title as tooltip;
-  running/queued marker, time; delete); **new chat**; **resume** any chat, also on
-  another device mid-turn.
+  running/queued marker, **last entry**, context bar; delete); **new chat**; **resume** any chat, also on
+  another device mid-turn. The last entry (time of the chat's last message, #140) shows in the device's format as
+  the time today, date and time this year, date with year and time before (`en-US`: `02:22 PM`, `Oct 3, 02:22 PM`,
+  `Oct 3, 2025, 02:22 PM`); the list is sorted by it, newest first. Under the title a thin **context bar** shows the
+  share of the model's context window the chat's last AI reply used; no bar before the first AI reply or when the
+  model's window is unknown.
+- **Context meter** (#140): above the composer, once a reply has tokens, at every fill level: the bar plus numbers
+  (`3,560 / 16,384`, in the browser's number format), tooltip `22 % of <model>'s context · drops when the chat is
+  compacted`. It updates live while a reply streams. Window unknown → only `3,560 tokens`, no bar. Color: normal below
+  70 %, warning from 70 %, critical from 90 %.
 - **Send** (Enter; Shift+Enter for a newline) and **Stop**. One turn runs per vault at a time; others wait
   ("Waiting for other chat…" / "Waiting for sync…").
 - **Streaming reply** with Markdown and wikilinks, collapsible "Thinking", **tool chips** for files read, changed and
@@ -576,7 +609,7 @@ sequenceDiagram
 | Bearer token (once per device) | — |
 | Vault config: repo, branch, root, name (+ "create folders" yes/no) | A cloned vault, an inline error, or the missing-folders question; a clone error after the check |
 | GitHub token (typed, to save or to test) | Masked state (last 4), token test result per account and vault |
-| Note text (Markdown, any UTF-8 text file) | Saved file + new version; rendered HTML in Read mode |
+| Text file (note, HTML page, code file) | Saved file + new version; a note rendered from Markdown or an HTML page in a sandboxed frame (Read mode); a code file highlighted |
 | Media and other files in the vault (never edited) | Images, video and audio players; file cards with Open (PDF) / Download |
 | Photos and PDFs from the device (Attach button, drop, chat composer) | A new file in the page's own folder or a `Sources/upload-…/` folder; an embed, or a chip sent with the prompt |
 | Search query | Grouped hits with line snippets |
@@ -642,6 +675,13 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
   explicit folder creation, no automatic pull (only the count updates on its own), no per-chat model,
   no chat rename, no global keyboard shortcuts.
 - Native `prompt()` / `confirm()` dialogs for new note, delete, discard, remove vault and delete chat.
+- **Text files other than notes** (#126): no language servers, linting, formatting or line numbers; a language chunk
+  that can't load (offline, not yet cached) leaves the file as plain text. HTML Read mode runs no scripts (that needs
+  vault pages on a separate origin, a later change) and loads nothing remote; the frame scrolls itself. CSV and JSON
+  show as code, not as a table or tree. UI texts still say "note" for any text file ("Create note", the note pane's
+  label), except Delete and the back arrow's tooltip. No forward arrow.
+- **Chat list right after a backend start:** the first list fetches each chat's last messages once (four at a time),
+  so it is slower with many chats; a chat whose fetch failed shows its updated time and no bar until the next list.
 - Chat is disabled in vaults that contain `.opencode/`, `opencode.json` or `opencode.jsonc`.
 - A save on page exit only works for notes under about 60 KB (browser keepalive limit); the local draft covers the rest.
 - Search skips files ignored by `.gitignore` and hidden files; capped at 200 hits.

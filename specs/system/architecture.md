@@ -109,6 +109,34 @@ flowchart LR
   For the outline and the properties form the handle also has `outline()` (headings from the syntax tree),
   `selectionText()`, `applyChange(change, expect)`, and the props `onFrontmatter`, `hideFrontmatter`,
   `onRevealFrontmatter`, `onSelection`; see [Outline and properties](#outline-and-properties).
+  The prop `kind: 'note' | 'code'` picks the extension set: `note` is the above; `code` (code files and an HTML page's
+  Write mode) is `codeView(path)`: a `language` compartment, empty first and filled with the language's support once
+  its lazy chunk loads (text shows at once, colors a moment later; a chunk that can't load leaves plain text),
+  `defaultHighlightStyle`, line wrapping, a monospace class, and **none** of live Markdown, wikilinks, embeds,
+  frontmatter hiding or the drop handler. EOL handling, history, search, `readOnly`, autosave and drafts are shared.
+  See [Text files](#text-files).
+- **File kinds** (`lib/lang.ts`, #126): `fileKind(path, binary)` is the one place that decides — `media` when
+  `mediaKind(path)` (so `.svg` is media although its bytes are text), else `binary`, else `note` (`.md`/`.markdown`),
+  `html` (`.html`/`.htm`) or `code`. `languageFor(path)` = `LanguageDescription.matchFilename` over
+  `@codemirror/language-data` (extensions and full names like `Dockerfile`), `null` = plain text. `NotePane` routes by
+  kind: `media`/`binary` → `MediaView`; `code` → the editor only (no toggle, outline, properties, attach; title keeps
+  the extension; "Delete file"); `html` → toggle on `pageMode`, Write = code view, Read = `HtmlView`. `newNote` writes
+  `# <title>` only for a note. See [Text files](#text-files).
+- **Back arrow** (`store.tsx` `syncRoute`, `NotePane`, #139): every file route's history entry carries
+  `{ prev: <path left> | null }` (`prev` only when the entry left is a file route of the same vault; a replace keeps
+  the replaced entry's `prev`; `popstate` fills it in for entries the browser made itself, `history.state === null`).
+  The store's `canGoBack` follows `history.state?.prev` after every `syncRoute` and `popstate`; `goBack()` =
+  `history.back()`, and the existing `popstate` handler opens the file and restores its place. The header button
+  `data-testid="note-back"` (icon `arrow_uturn_left`, tooltip `Back to <file name>`) shows while `canGoBack`; on the
+  phone it sits after `data-testid="back"`, which then drops its label, and the phone header has no ✦ chat toggle.
+- **Chat list and context meter** (`ChatPane`, `components/ContextMeter.tsx`, `lib/time.ts`, #140): rows show
+  `chatTime(lastEntryAt ?? updatedAt)` (time today, date + time this year, date with year + time before, in the
+  browser's locale) and a `bar` meter, in the backend's order. `Conversation` shows the `full` meter above the
+  composer from the last assistant message with `context`; `applyChatEvent` replaces message info on `message`
+  events, so it follows the stream. `ContextMeter` (`bar` / `full`): a 3 px `role="meter"` track (`aria-valuenow/max`),
+  `full` adds `used / limit` via `Intl.NumberFormat(locale)` and the tooltip `<p> % of <model>'s context · drops when
+  the chat is compacted`; level classes ok < 70 % ≤ warn < 90 % ≤ crit (theme tokens); no limit → `full` shows
+  `<used> tokens`, `bar` renders nothing.
 - **Outline and note info** (`lib/outline.ts`, `lib/noteinfo.ts`, `OutlinePanel`): see
   [Outline and properties](#outline-and-properties).
 - **Properties form** (`lib/frontmatter.ts`, `lib/schema.ts`, `PropertiesPanel`, `Linked`): see
@@ -122,8 +150,9 @@ flowchart LR
   `TreeMenu` is the header's icon button with a menu of `menuitemradio` groups.
 - **Input count and Ingest button** (`lib/tree.ts` `inputCount`, `FileTree.tsx`, `Shell.tsx`, store `ingestNow`): see
   [Ingest](#ingest).
-- **Mode preference** (`store.tsx`): `mode` is read from and written to localStorage `karpathy.mode`; `openNote` never
-  changes it. An in-memory `places` map (`vault\0path` → scroll top, top line, mode) is filled when a note is left
+- **Mode preference** (`store.tsx`): `mode` (notes) is read from and written to localStorage `karpathy.mode`,
+  `pageMode` (HTML pages, default `read`) to `karpathy.pageMode`; `switchMode` writes the one that matches the open
+  file's kind, and `openNote` never changes either. An in-memory `places` map (`vault\0path` → scroll top, top line, mode) is filled when a note is left
   and restored on Back/Forward; `lib/place.ts` maps between source lines and Read-mode blocks.
 - **Renderer** (`lib/markdown.ts`): `marked` with extensions (wikilinks and embeds, highlights, footnotes; callouts and
   task markers via renderer overrides; `%%comments%%` stripped outside code) + DOMPurify for Read mode and chat text. A
@@ -177,7 +206,8 @@ on its own ([deployment.md › Website](deployment.md#website)).
 | `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`, and `fetch` and `refresh` through `tryShared`, which never queues; exclusive: every other git operation). `fetch` and `refresh` are quiet: they don't change `busy`. `holds(label)` tells whether a shared holder with that label exists. |
 | `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events. |
 | `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. Also the command list (`commands()`, name-clash rule, skill stamp and refresh) and command turns (`instructionsFor`) ([Commands](#commands)). |
-| `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface (`commands(dir)`, `refresh(dir)` next to prompt, models and events) and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`; `ToolCall.suggestion` is set from the `prompt` of `suggest_next`; `ToolCall.url` is set for `webfetch`, `open_url` and `save_url` (also in `WRITE_TOOLS`, so a download is a changed file and gets an AI stamp). `move_to_sources` is in `WRITE_TOOLS` too: its chip path is `Sources/<name>`, `writtenPaths` reports every moved file's old and new path from the tool's `metadata.files`. |
+| `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface (`commands(dir)`, `refresh(dir)` next to prompt, models and events) and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`; `ToolCall.suggestion` is set from the `prompt` of `suggest_next`; `ToolCall.url` is set for `webfetch`, `open_url` and `save_url` (also in `WRITE_TOOLS`, so a download is a changed file and gets an AI stamp). `move_to_sources` is in `WRITE_TOOLS` too: its chip path is `Sources/<name>`, `writtenPaths` reports every moved file's old and new path from the tool's `metadata.files`. Context usage (#140): `mapMessageInfo` sets an assistant message's `context.used` from its `tokens` (`total`, else input + output + reasoning + cache read + write; 0 → none), and the harness adds `context.limit` by the message's model on chat load and stream, from `ModelLimits`. See [Chat context usage](#chat-context-usage). |
+| `harness/context-cache.ts` | Pure (#140): `lastEntries(sessions, cache, fetchLast)` gives each listed chat its `lastEntryAt` (newest message, any role) and `context` (last assistant message), fetching `session.messages(limit 4)` only for sessions whose `time.updated` moved (concurrency 4, a failed fetch retried next list), and sorts by `lastEntryAt ?? updatedAt`, newest first; `ModelLimits` caches each model's `limit.context` from `models()` and reloads on an unknown model. |
 | `harness/command.ts` | Pure: `parseCommand`, `expandCommand`, `withoutBaseDir`, `commandInstructions`. |
 | `commit-message.ts` | Proposes commit messages with a throwaway, tool-less session; marked as a running proposal so a skill refresh doesn't cut it off. |
 | `config-store.ts` | Atomic, serialized writes to `/config/config.json`; also holds the GitHub token set in the app. Knows the deployment's default model (`defaultModel`) and stores the model only as `modelOverride` while it differs from it ([Settings](#settings)). |
@@ -948,6 +978,95 @@ cache remembered from an earlier load when there is one, so Back lands without l
   tab's location becomes a blob re-typed `application/pdf`, so only the browser's PDF viewer can show it.
 - **Tap on an image** calls `onOpen(path)` → `store.openNote`, which pushes a history entry.
 
+## Text files
+
+Notes, HTML pages and code files (#126); the kind comes from `fileKind` ([Web app](#web-app-appsweb)).
+
+```mermaid
+flowchart TB
+    NP[NotePane.tsx] --> LG[lib/lang.ts<br/>fileKind + languageFor]
+    NP --> ED[Editor.tsx<br/>kind note: liveMarkdown<br/>kind code: codeView]
+    ED --> LD["@codemirror/language-data<br/>one lazy chunk per language"]
+    NP --> HV[components/HtmlView.tsx<br/>sandboxed srcdoc frame]
+    HV --> HP[lib/html-page.ts<br/>preparePage]
+    HP -->|"load(path): GET /raw (Bearer)"| R[backend raw route]
+```
+
+- **Code view:** see the Editor bullet in [Web app](#web-app-appsweb). The PWA precache (`**/*.js`) includes the
+  language chunks on purpose, so code files color offline too.
+- **Preparing an HTML page** — `preparePage(html, ctx)`, pure apart from the injected `load(path)`:
+  1. Parse with `DOMParser`, sanitize with DOMPurify (`WHOLE_DOCUMENT`, `<style>` and `style=` kept): drops
+     `<script>`, event handlers, `javascript:` URLs, `<form>`, `<iframe>`, `<object>`, `<embed>`, `<base>`,
+     `<meta http-equiv>`.
+  2. `<link rel="stylesheet">` to a vault file → its text as `<style>`; remote or missing stylesheets removed.
+  3. `<img src>` / `<source src>` to a vault file → a `data:` URL (up to 10 MB, else only the alt text); remote
+     images → a link with the alt text, as in notes.
+  4. `<a href>`: external → `target="_blank" rel="noopener noreferrer"`; a vault path → `#/<vault>/<path>` with
+     `target="_top"`; `#anchor` stays.
+  5. Relative paths resolve against the page's folder and never outside the vault root (the embeds' check).
+- **Showing it** — `<iframe sandbox="allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
+  srcdoc=… title=<file name>>`. No `allow-scripts`, no `allow-same-origin`: the page runs no code and has an opaque
+  origin, so it can't reach the app's token, storage or DOM even if sanitizing missed something. `srcdoc` inherits the
+  app's CSP (`img-src 'self' data: blob:`, `style-src 'self' 'unsafe-inline'`), which is why images go in as `data:`
+  and stylesheets inline; the e2e `cspGuard` fails on any violation. The frame fills the pane
+  (`calc(100dvh - 190px)`) and scrolls itself (an opaque frame can't be measured). A vault link navigates the top
+  window to its hash route, so `popstate` opens the file and the back arrow works from a page too. Re-prepared when
+  the text changes or the mode switches to Read; a later preparation keeps the old page until the new one is ready;
+  one that fails shows a short message.
+
+```mermaid
+flowchart LR
+    T[file text] --> S[DOMPurify<br/>no scripts/forms/frames]
+    S --> L[vault CSS → inline style]
+    S --> I[vault images → data: URLs<br/>remote → links]
+    S --> A[links: vault → app route, external → new tab]
+    L & I & A --> F["iframe sandbox (no scripts,<br/>opaque origin) srcdoc"]
+```
+
+### Back arrow
+
+```mermaid
+stateDiagram-v2
+    [*] --> NoArrow: first file / reload / deep link
+    NoArrow --> Arrow: push file B (prev = A)
+    Arrow --> Arrow: push file C (prev = B)
+    Arrow --> NoArrow: Back to an entry with prev = null
+    Arrow --> Arrow: Back to an entry with prev ≠ null
+    Arrow --> NoArrow: switch vault (prev = null)
+```
+
+A reload restores `history.state` of the current entry, so the arrow is still right after a reload mid-session.
+Details: the Back arrow bullet in [Web app](#web-app-appsweb).
+
+## Chat context usage
+
+#140. Shared types (`packages/shared`): `ContextUsage { used: number; limit?: number }`; `ChatMessage.context?`
+(assistant messages), `ChatSummary.context?` (from the last assistant message) and `ChatSummary.lastEntryAt?` (time
+of the last message, any role). `updatedAt` stays opencode's updated time; the list shows `lastEntryAt ?? updatedAt`.
+
+```mermaid
+sequenceDiagram
+    participant W as ChatList (poll 3 s)
+    participant B as ChatService.list
+    participant H as OpencodeHarness
+    participant O as opencode
+    W->>B: GET /vaults/:id/chats
+    B->>H: listSessions(dir)
+    H->>O: session.list(roots, 200)
+    loop sessions with time.updated ≠ cached (4 at a time)
+      H->>O: session.messages(id, limit 4)
+    end
+    H-->>B: [{id, title, updatedAt, lastEntryAt, context}] newest first
+    B-->>W: + turn state
+```
+
+- **Used:** the last AI reply's tokens (what opencode's TUI shows as context), not a sum: each request re-sends the
+  conversation. After a compaction it drops.
+- **Limit:** the window of the model that reply ran with (`ModelLimits`, from `models()` = the provider config in
+  `deploy/settings/`, e.g. `qwen2.5:3b … limit: { context: 16384 }`), never a table in the app.
+- **Cache:** `lastEntries` keeps one entry per session in memory (dies with the process); a cold start loads each
+  chat once, afterwards normally only the chat that changed.
+
 ## Uploads
 
 ```mermaid
@@ -1020,8 +1139,8 @@ flowchart LR
   (≤ 2000 × 2000 px, 5 MB) and replaces what the model can't read with an "ERROR: Cannot read …" note.
 - **History:** `mapPart` maps a `file` part with a `filename` to `ChatPart { type: 'file', path, mime }`; the `data:`
   URL never reaches the browser.
-- **Model input:** `Harness.models()` returns `{ id, input: { image, pdf } }` from opencode's
-  `capabilities.input`; `GET`/`PATCH /settings` add `modelInput` for the current model, `null` when opencode doesn't
+- **Model input:** `Harness.models()` returns `{ id, input: { image, pdf }, limit }` from opencode's
+  `capabilities.input` and `limit.context` (missing or 0 → unknown); `GET`/`PATCH /settings` add `modelInput` for the current model, `null` when opencode doesn't
   answer within 3 s or doesn't list it.
 
 ## Attach preflight
@@ -1566,9 +1685,30 @@ The ones that shape the whole system:
   AI can re-read and link the file, a PDF in `Sources/` stays ingestible. The backend checks the path, because
   opencode reads a `file:` URL without its own directory check. A text-only model gets opencode's "cannot read" note
   rather than us filtering the part.
+- **File kind by name, after the media table** (#126): "note" means Markdown; every other text file is an HTML page
+  or a code file, with one language dependency (`@codemirror/language-data`, lazy per language) instead of a second
+  highlighter. Predictable from what the user sees; content sniffing was dropped.
+- **HTML pages render inert** (#126): sanitized, vault resources inlined, in a frame without `allow-scripts` or
+  `allow-same-origin`. Scripts would need vault pages on a separate origin (own hostname, certificate, token
+  handling): a later change. Rendering into the app's DOM was dropped (CSS leaks both ways), as was serving the page
+  from `/raw` in the frame (the bearer token can't ride on a frame `src`).
+- **The back arrow is browser Back** (#139): history entries carry `{ prev }`, the arrow calls `history.back()`; an
+  in-app stack would drift from browser Back, swipe-back and reloads (the bugs of #5).
+- **Context usage = the last reply's tokens against its model's window from the provider config** (#140): no
+  per-model table in the app (provider-agnostic), no sum of replies (overcounts), not the default model's window (a
+  chat may have run on another model). The chat list fetches last messages lazily per changed session rather than
+  tracking only the stream, so chats from before a backend start or another device show too.
 
 ## Testing
 
+- **Text files, back arrow, chat context tests** (#126, #139, #140): units `lang.test.ts` (the kind table, languages,
+  plain fallback), `Editor.test.tsx` (code kind: no wikilinks, highlighting), `html-page.test.ts` (sanitizing, CSS and
+  image inlining, remote → link, link rewriting, `../` outside the vault), `HtmlView.test.tsx`, `store.test.tsx`
+  (new text files, `prev`/`canGoBack`, `pageMode`), `route.test.ts`, `time.test.ts`, `ContextMeter.test.tsx`,
+  `chat.test.ts`; backend `harness-map.test.ts` (tokens → used, model limits) and `context-cache.test.ts` (fetch only
+  changed sessions, last entry, sort; a plain `fetchLast`, no SDK mock); e2e `code-files.spec.ts`,
+  `html-pages.spec.ts` (sandbox, no script run, `cspGuard`), `back-arrow.spec.ts` (desktop and `@iphone`) and
+  `chat-context.spec.ts` (`n / 16,384` with the dev model).
 - **Outline and properties tests:** units `outline.test.ts`, `noteinfo.test.ts`, `schema.test.ts`,
   `frontmatter.test.ts` (incl. the demo vault's 212 `Wiki/` frontmatters set-and-back, add-and-remove, byte for byte)
   and `frontmatter.prop.test.ts` (fast-check, 1,000 runs per property: stringify identity, every edit refused or

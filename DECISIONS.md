@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-12
+edited: 2026-10-13
 ---
 
 **Contents**
@@ -1780,7 +1780,7 @@ edited: 2026-10-12
 
 ## 14:05 — Re-run the release's failed check job once: the httpbin.org egress test timed out {#run-2026-10-12-1404-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** release workflow run 38246350857 for tag `v0.0.20` (change `ui-issues-126-139-140`): the only failure
   is `egress.test.ts › redirect to internal refused` with `wget: download timed out` on
   `http://httpbin.org/redirect-to?...`; the same test failed and passed alone twice locally today.
@@ -1796,7 +1796,7 @@ edited: 2026-10-12
 
 ## 14:12 — Egress redirect test: try httpbin.org, then postman-echo.com; release 0.0.21 instead of 0.0.20 {#run-2026-10-12-1404-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `~/.claude/CLAUDE.md` — never make tests pass by changing them without explicit permission
 - **Context:** release `v0.0.20` (change `ui-issues-126-139-140`): the re-run's only failure was
   `egress.test.ts › redirect to internal refused`, because httpbin.org is down (503). The test needs a *public*
@@ -1831,7 +1831,7 @@ edited: 2026-10-12
 
 ## 23:30 — Each bug is a `/spec:tweak` on its own branch; "archive" means the issue closes with the fix on main {#run-2026-10-12-2325-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** open issues labelled `bug`: #142, #137, #134 (#136, a flaky test without the label, is left out).
   None has a `specs/changes/<name>/`, so `/spec:archive` has nothing to archive per bug.
 - **Question:** what does "/spec:archive the bugs" mean for bugs without a change directory?

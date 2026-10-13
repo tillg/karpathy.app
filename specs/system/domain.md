@@ -38,9 +38,13 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Settings dialog** | Where the user edits the server-wide settings and the GitHub token and reads the version. Opened from the sidebar gear only. Holds nothing per vault. Rule of thumb: what applies to every vault is a setting; anything with a vault id belongs to the Vaults dialog. | `adminOpen.view = 'settings'`, `SettingsDialog` |
 | **Active vault** | The one vault the UI is currently scoped to. | web `store.tsx` |
 | **Vault state** | `cloning` → `ready` or `clone-failed`; `ready` ↔ `conflict`. The attach preflight comes before the vault exists, so it is not a state. | `VaultState` |
-| **Vault file** | Any file in the vault: a note, a media file or a binary file. The file tree, Delete, the Changes list and commits work on vault files. *Avoid:* note (for anything that isn't text), document, item. | `FileEntry`; web store `note` (identifier kept) |
-| **Note** | A vault file that is UTF-8 text, usually `.md`. Only notes can be edited and have a Write/Read mode. | `FileContent.binary === false` |
-| **Media file** | A vault file whose extension is in the media table: an image, video or audio file. Shown, never edited; may be created by an upload or by the AI's media download. Every media file is binary, not every binary file is a media file. *Avoid:* attachment, asset, resource. | `mediaKind(path)` → `image` · `video` · `audio` · `null` |
+| **Vault file** | Any file in the vault: a text file (note, HTML page, code file), a media file or a binary file. The file tree, Delete, the Changes list and commits work on vault files. *Avoid:* note (for anything that isn't Markdown), document, item. | `FileEntry`; web store `note` (identifier kept) |
+| **Text file** | A vault file the backend reads as text (no NUL byte, valid UTF-8) that is not a media file. Every text file can be edited. Kinds, by name: note, HTML page, code file. *Avoid:* note (for a text file that isn't Markdown). | `fileKind(path, binary)` (web `lib/lang.ts`) |
+| **Note** | A text file named `*.md` / `*.markdown` (any case). Only notes get live preview, the properties form, the outline, wikilinks, embeds and the note graph. *Avoid:* Markdown note (just "note"). | `fileKind(…) === 'note'` |
+| **HTML page** | A text file named `*.html` / `*.htm`. Two modes: Write (the source, highlighted) and Read (the page rendered in a sandboxed frame: no scripts, forms or remote resources; vault images and stylesheets inlined). | `fileKind(…) === 'html'`; web `HtmlView` |
+| **Code file** | Any other text file, incl. `.txt` and `.mdx`. Shown in the editor with the language picked from its name, or as plain text. One view, no modes; its title keeps the extension. | `fileKind(…) === 'code'` |
+| **Language** | The syntax that colors a code file or an HTML page's source, found by file name (extension or a full name like `Dockerfile`). None found → plain text. | `languageFor(path)` (`@codemirror/language-data`) |
+| **Media file** | A vault file whose extension is in the media table: an image, video or audio file. Shown, never edited; may be created by an upload or by the AI's media download. The media table decides before the text check, so an `.svg` is a media file although its bytes are text. *Avoid:* attachment, asset, resource. | `mediaKind(path)` → `image` · `video` · `audio` · `null` |
 | **Media kind** | `image`, `video` or `audio`, from the extension alone (case-insensitive), never from content sniffing. Decides the HTML element and the Content-Type the backend sends. | `MEDIA` (`packages/shared/src/media.ts`) |
 | **Binary file** | A vault file that isn't text and isn't a media file (`.pdf`, `.zip`, …). Shown as a file card. | `FileContent.binary && !mediaKind(path)` |
 | **Embed** | Markdown that asks for a file to be shown inside a note: `![[target]]`, `![[target\|300]]` (width in px) or `![alt](path)`. Showing it never changes the note. *Avoid:* attachment (that's the file), inline image, transclusion (embedding a note's text, not built). | web `lib/media.ts` `parseEmbed` |
@@ -63,6 +67,11 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Model input** | What the chat's model reads besides text: images, PDFs, both or neither, from opencode's model list. An attachment the model can't read reaches it only as a note that it couldn't read the file. | `SettingsView.modelInput` |
 | **Version (of a file)** | The first 16 hex characters of the SHA-256 of a file's content. Saves, deletes and discards carry the version they started from. | `files.ts` `versionOf` |
 | **Chat** | A resumable conversation with the AI, bound to exactly one vault; its reach is that vault's root. *Avoid:* session, thread, conversation. | one opencode session |
+| **Last entry (chat)** | The time of the chat's last message (user or AI), shown with date and time in the chat list, which is sorted by it (newest first). While unknown (its fetch failed) the chat's updated time stands in; a rename doesn't change it. | `ChatSummary.lastEntryAt` |
+| **Context window** | The most tokens the chat's model takes in one request: opencode's `limit.context` of the model, from the provider config, never from a table in the app. May be unknown. | `ContextUsage.limit` |
+| **Context used** | The tokens of the chat's **last AI reply** (input + output + reasoning + cache read + cache write): what the next request starts from. Measured against the window of the model that reply ran with. | `ContextUsage.used` |
+| **Context usage** | *used / window* of a chat, e.g. `3,560 / 16,384`; only *used* when the window is unknown. Levels: normal < 70 % ≤ warning < 90 % ≤ critical. | `ContextUsage`; web `ContextMeter` |
+| **Compaction** | opencode summarizing a long chat to free its context; the next reply's context used drops, and the meter's tooltip says so. | opencode |
 | **Turn** | One user prompt in a chat plus everything the AI reads and changes in response. States `idle`, `queued` (waiting for another turn or for the sync), `running`. | `TurnState` |
 | **Consulted file / changed file / opened note** | The three tool-chip kinds of a turn: files the AI read (read tools), wrote (edit/write/patch tools), or asked the app to show (`open_note`). An opened note is neither consulted nor changed: opening reads and writes nothing. | `ToolCall.writes`, `ToolCall.opens` |
 | **Open page** | The file the user has open in the note pane when a prompt is sent: vault-root-relative path, view mode (`read` / `write`) and whether it has unsaved edits; none while nothing is open. A snapshot per chat, replaced by every prompt; it is not updated mid-turn. | `OpenPage` (shared), `<vaults>/.open-page/<chatId>.json` |
@@ -91,13 +100,16 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Main column / side column** | On the wide layout (≥ 1024 px, chat open): the main column is the flexible one in the middle, the side column the fixed 380 px one on the right. | CSS `#app.wide` |
 | **Main pane** | Which of note and chat is in the main column: **note in main** (default) or **chat in main**; the other is in the side column. A per-browser preference, not part of a vault or a chat. *Avoid:* focus (taken by keyboard focus), mode, layout. | web `chatMain`; localStorage `karpathy.chatMain` |
 | **Swap button** | The round ⇄ button on the divider between main and side column, at the top; toggles the main pane. Icon only; its label says what a click does ("Move chat to main column" / "Move note to main column"). | `data-testid="main-swap"` |
-| **Write mode / Read mode** | Write mode: raw Markdown with live preview, editable; the mode of a new browser. Read mode: the rendered, non-editable view. Media and binary files have no mode. *Avoid:* edit mode, source mode, preview. | web `NotePane` |
+| **Write mode / Read mode** | Notes and HTML pages have both. Write mode: the editable source (a note's raw Markdown with live preview, a page's highlighted HTML). Read mode: the rendered, non-editable view (a note through Markdown, a page in a sandboxed frame). Code, media and binary files have no mode. *Avoid:* edit mode, source mode, preview. | web `NotePane` |
 | **Tree sort** | How the file tree orders each folder: criterion `name` or `changed` (**Last changed**) and direction `asc`/`desc`. Picking a criterion sets its natural direction (A → Z, newest first). *Avoid:* order by, view. | web `TreeSort`; localStorage `karpathy.treeSort` |
 | **Tree filter** | Whose changes the tree shows: `any`, `ai`, `human`. A file matches when it has a date for that author; folders show when a match is inside. The filter also chooses which date **Last changed** means (last modified / by AI / by human). *Avoid:* view, scope. | web `TreeFilter`; localStorage `karpathy.treeFilter` |
 | **Folder rank** | Under Last changed: the newest Last-changed date of any matching file inside the folder, at any depth; a folder without one goes last. | web `buildTree` |
-| **Mode preference** | The Write/Read mode the user last chose. It applies to every note opened afterwards (tree, search, links, chat chips, AI opens) and survives a reload. One per browser, not per vault or note. *Avoid:* default mode. | web store `mode`; localStorage `karpathy.mode` |
+| **Mode preference** | The Write/Read mode the user last chose on a note. It applies to every note opened afterwards (tree, search, links, chat chips, AI opens) and survives a reload; Write for a new browser. One per browser, not per vault or note. *Avoid:* default mode. | web store `mode`; localStorage `karpathy.mode` |
+| **Page mode preference** | The Write/Read mode last chosen on an HTML page; applies to every HTML page opened afterwards and survives a reload; Read for a new browser. Toggling on a page never changes the mode preference, and the other way round. | web store `pageMode`; localStorage `karpathy.pageMode` |
 | **Hit position** | Where an opened note should land: a line (search hit) or a heading (`[[note#heading]]`). Write mode puts the cursor on the line; Read mode scrolls to the rendered top-level block that contains the line and briefly highlights it. | store `note.goto`; Read-mode blocks carry `data-line` |
 | **Place** | Where the user left a note: scroll position and mode. Back to a note seen in this session restores it; switching Write ↔ Read keeps the same source line. In memory only. | store `places`; web `lib/place.ts` |
+| **File history** | The in-app part of the browser history of this tab: one entry per vault file opened in the note pane (any kind) by a tree tap, link, search hit, chip or AI open. Outline jumps and moves into an own folder replace the entry instead of adding one. | `history.state = { prev }` (store `syncRoute`) |
+| **Previous file** | The file of the history entry just before the current one, if that entry is a file of **the same vault**. The back arrow (↩) shows only while there is one and does exactly what browser Back does. *Avoid:* previous note, previous page. | store `canGoBack` / `goBack` |
 | **Web access** | The global setting, on by default. On: the AI may web search and web fetch in every vault. Off: it has neither tool. | `Settings.webAccess` |
 | **Web search / web fetch** | One call of `websearch` (a query to the search backend, results with titles, URLs and page text) or `webfetch` (one URL downloaded as Markdown, text or an image into the chat). Never just "search" (that's the user's vault search) or "fetch". | `ToolCall.query`, `ToolCall.url` |
 | **Known URL** | A URL that appears verbatim in the chat as the model saw it: user messages and earlier tool outputs (notes read, results, fetched pages; a truncated output counts as its preview). Only known URLs may be fetched or offered as a link; scheme/host case, default port and fragment don't matter, path and query must match. The hidden instructions of a command turn count as user text, so a URL written in a skill is known. | `deploy/opencode/lib/known-url.ts` |
@@ -332,6 +344,62 @@ Modeled on Obsidian's accepted formats, limited to what browsers can play:
 | PDF | `pdf` | File card with **Open** (new tab) and **Download** |
 | Anything else non-text | | File card with **Download** |
 
+### File kinds
+
+Kind by name, not content: the media table first (`.svg` → media), then the backend's text check, then the name.
+
+| Name | Kind |
+|---|---|
+| `a.md`, `A.MD`, `a.markdown` | note |
+| `a.html`, `a.htm` | HTML page |
+| `a.mdx`, `a.txt`, `a.py`, `Dockerfile`, `a.unknown` | code file (`.txt`, `.unknown`: plain text) |
+| `a.svg`, `a.png` | media file |
+| `a.pdf`, `a.zip`, text that isn't UTF-8 | binary file |
+
+```mermaid
+classDiagram
+    class VaultFile {
+      path
+      binary
+    }
+    class TextFile {
+      editable
+    }
+    class Note {
+      modes: Write | Read
+      frontmatter
+      outline
+    }
+    class CodeFile {
+      language?
+    }
+    class HtmlPage {
+      modes: Write | Read
+    }
+    class MediaFile
+    class BinaryFile
+    VaultFile <|-- TextFile : text, not in media table
+    VaultFile <|-- MediaFile : media table (incl. .svg)
+    VaultFile <|-- BinaryFile : other bytes
+    TextFile <|-- Note : .md / .markdown
+    TextFile <|-- HtmlPage : .html / .htm
+    TextFile <|-- CodeFile : any other name
+    class Chat {
+      lastEntry
+      contextUsage?
+    }
+    class AIReply {
+      model
+      tokens
+    }
+    class Model {
+      contextWindow?
+    }
+    Chat "1" --> "*" AIReply
+    AIReply --> Model
+    Chat ..> AIReply : contextUsage = last reply's tokens / its model's window
+```
+
 ### Where an upload lands
 
 ```mermaid
@@ -483,13 +551,34 @@ stateDiagram-v2
     Write --> Write: open any note, reload
     Read --> Read: open any note, reload
     note right of Read
-      Opening a media or binary file
-      shows the file and leaves the
+      Opening a code, media or binary
+      file shows the file and leaves the
       preference unchanged.
     end note
 ```
 
-No navigation changes the mode; only the Write/Read toggle does.
+No navigation changes the mode; only the Write/Read toggle does. HTML pages follow the same machine on their own
+**page mode preference**, starting in Read; a toggle on one kind never changes the other's. A hit position in an HTML
+page (search hit, AI open at a line) shows its source for that opening, and the page mode preference stays.
+
+### Back to the previous file
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant N as Note pane
+    participant H as Browser history
+    U->>N: open A.md (tree)
+    N->>H: push #/v/A.md {prev: null}
+    U->>N: tap [[B]]
+    N->>H: push #/v/B.md {prev: "A.md"}
+    Note over N: arrow shown (B's entry names a previous file)
+    U->>N: tap ↩
+    N->>H: history.back()
+    H-->>N: popstate #/v/A.md
+    N->>U: A.md at the place it was left
+    Note over N: arrow hidden (A's entry has prev: null)
+```
 
 ### Jump to a heading
 
@@ -784,6 +873,14 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
 
 ## Rules and constraints
 
+- **File kind by name, not content:** `notes.md` is a note even if it holds code, `notes.txt` a code file even if it
+  holds Markdown (table in [File kinds](#file-kinds)).
+- **A rendered HTML page is inert:** its Read mode never runs scripts, submits forms or contacts other hosts, and sees
+  nothing of the app (no token, no storage). What can't load shows as a link or is left out.
+- **Back = browser Back:** the back arrow keeps no stack of its own, so arrow, browser Back, swipe-back and the mouse's
+  back button always agree; it shows only for a previous file of the same vault.
+- **Context per reply's model:** a chat's context usage is its last AI reply's tokens against the window of the model
+  that reply ran with; once a chat has such a reply, the composer always shows the meter.
 - **The AI never commits or pushes** ([ADR 0001](../../docs/adr/0001-user-triggered-commits.md)); only the user's
   commit does, and it records **all** uncommitted changes of the vault root (no partial staging).
 - **Everything is scoped to the vault root:** file access, search, git status/diff/add, and the AI's session
