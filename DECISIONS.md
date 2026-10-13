@@ -159,6 +159,8 @@ edited: 2026-10-12
   - [01:35 — #146: Mistral Small 2603 via ZDR as the vision model, reached by a `look_at_image` tool; the chat model stays](#run-2026-10-12-2332-12)
   - [01:38 — Release both runs' work as v0.0.22, gated by CI's full check](#run-2026-10-12-2332-13)
   - [01:41 — Retro: ignore `.worktrees/`; the other findings stay notes](#run-2026-10-12-2332-14)
+  - [01:55 — The vision model's own prefix names its gateway (a dev overlay switching only `ai.gateway` broke)](#run-2026-10-12-2332-15)
+  - [02:20 — Vision model Mistral Medium 3.5 instead of Small 2603 (429 upstream on prod); release v0.0.23](#run-2026-10-12-2332-16)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2255,3 +2257,39 @@ edited: 2026-10-12
 - **Alternatives:** a guard in `deploy/dev.sh` against starting a stack from the main checkout while worktrees exist
   (the main checkout is a legitimate place to run a stack).
 - **Consequences:** none at runtime.
+
+## 01:55 — The vision model's own prefix names its gateway (a dev overlay switching only `ai.gateway` broke) {#run-2026-10-12-2332-15}
+
+- **Status:** open
+- **Context:** change `146-image-model` (already archived): the parallel run found `deploy/stack.test.sh` failing
+  "render dev/prodtest", because its overlay sets `ai: { gateway: openrouter, model: … }` and the vision model
+  `ollama/qwen3-vl:2b` had to be on `ai.gateway`. A developer switching dev to OpenRouter would hit the same.
+- **Question:** require overlays to set both, or loosen the rule?
+- **Decision:** `ai.vision_model` may be on any configured gateway, the one its `<gateway>/` prefix names; endpoint,
+  key and options come from that gateway, and the dev relay's `OLLAMA_UPSTREAM` falls back to it. Test-first in
+  `packages/settings/test`; merged in 6618bdf (`Refs #146`), shipped in v0.0.23.
+- **Why:** an overlay that only switches the chat gateway is a normal thing to do; the vision model has its own prefix.
+- **Alternatives:** keep the same-gateway rule and fix only the test (the user would hit it next).
+- **Consequences:** this reverses part of decision 12 ("it must be on the chat model's gateway"). Prod settings were
+  never affected, so v0.0.22 was deployed without it.
+
+## 02:20 — Vision model Mistral Medium 3.5 instead of Small 2603 (429 upstream on prod); release v0.0.23 {#run-2026-10-12-2332-16}
+
+- **Status:** open
+- **Context:** v0.0.22 deployed to prod at 01:58 (`just deploy hetzner 0.0.22`: failed=0, smoke "Running release is
+  v0.0.22", `/api/health` 0.0.22). A test chat in `demo-vault` asking about `Sources/media/coffee-chemex.jpg` showed
+  the plumbing works (`look_at_image` ran, reached OpenRouter through the egress proxy) but every call got HTTP 429
+  "mistralai/mistral-small-2603 is temporarily rate-limited upstream … add your own key"; also 5 minutes later and
+  with a direct request from the Mac using the prod key. The same request to `mistralai/mistral-medium-3-5` with the
+  identical ZDR routing answered (provider Mistral) twice; `gemma-4-31b-it` with `zdr: true` also answered
+  (SambaNova), `qwen3.6-flash` has no ZDR endpoint.
+- **Question:** wait for the upstream limit, or switch the model?
+- **Decision:** switch the prod vision model to `openrouter/mistralai/mistral-medium-3-5`, same routing
+  (`only: [mistral/zdr, mistral]`, `zdr: true`, `data_collection: deny`); test-first in `packages/settings/test`,
+  merged in 39bcff7 (`Refs #146`), released as `v0.0.23` and deployed.
+- **Why:** the same provider and privacy routing as decided in decision 12; it answers now; images are rare, so its
+  higher price (about 1.5 / 7.5 USD per million tokens vs 0.15 / 0.6) matters little.
+- **Alternatives:** wait (unknown, the feature is dead until then); `gemma-4-31b-it` via any ZDR provider (cheaper,
+  but a third-party host instead of Mistral); bring our own Mistral key to OpenRouter (the user's call).
+- **Consequences:** rollback: `just deploy hetzner 0.0.22` (Small 2603) or `0.0.21` (no image tool). The test chat in
+  `demo-vault` is deleted after the check.
