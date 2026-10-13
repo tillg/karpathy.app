@@ -351,10 +351,10 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   `Oct 3, 2025, 02:22 PM`); the list is sorted by it, newest first. Under the title a thin **context bar** shows the
   share of the model's context window the chat's last AI reply used; no bar before the first AI reply or when the
   model's window is unknown.
-- **Context meter** (#140): above the composer, once a reply has tokens, at every fill level: the bar plus numbers
-  (`3,560 / 16,384`, in the browser's number format), tooltip `22 % of <model>'s context · drops when the chat is
-  compacted`. It updates live while a reply streams. Window unknown → only `3,560 tokens`, no bar. Color: normal below
-  70 %, warning from 70 %, critical from 90 %.
+- **Context meter** (#140): above the composer, once a reply has tokens, at every fill level: the bar plus short
+  numbers (`4K / 16K`, `29K / 1M`; exact below 1,000; browser's number format), tooltip `22 % of <model>'s context ·
+  drops when the chat is compacted`. It updates live while a reply streams. Window unknown → only `4K tokens`, no
+  bar. Color: normal below 70 %, warning from 70 %, critical from 90 %.
 - **Send** (Enter; Shift+Enter for a newline) and **Stop**. One turn runs per vault at a time; others wait
   ("Waiting for other chat…" / "Waiting for sync…").
 - **Streaming reply** with Markdown and wikilinks, collapsible "Thinking", **tool chips** for files read, changed and

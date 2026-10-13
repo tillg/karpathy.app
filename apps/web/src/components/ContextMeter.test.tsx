@@ -8,10 +8,22 @@ afterEach(cleanup);
 describe('ContextMeter (#140)', () => {
   it('full: used / limit and the meter value', () => {
     render(<ContextMeter usage={{ used: 3560, limit: 16384 }} variant="full" model="ollama/some-model" locale="en-US" />);
-    expect(screen.getByTestId('context-meter').textContent).toContain('3,560 / 16,384');
+    expect(screen.getByTestId('context-meter').textContent).toContain('4K / 16K');
     const m = screen.getByRole('meter');
     expect(m.getAttribute('aria-valuenow')).toBe('3560');
     expect(m.getAttribute('aria-valuemax')).toBe('16384');
+  });
+
+  it('numbers are short: K below a million, M from there, plain below 1,000', () => {
+    const text = (used: number, limit: number) => {
+      render(<ContextMeter usage={{ used, limit }} variant="full" locale="en-US" />);
+      const t = screen.getByTestId('context-meter').textContent;
+      cleanup();
+      return t;
+    };
+    expect(text(29465, 1048576)).toBe('29K / 1M');
+    expect(text(512, 200000)).toBe('512 / 200K');
+    expect(text(999700, 2500000)).toBe('1M / 2.5M');
   });
 
   it('levels: ok below 70 %, warn from 70 %, crit from 90 %', () => {
@@ -35,16 +47,17 @@ describe('ContextMeter (#140)', () => {
   it('numbers follow the locale', () => {
     render(<ContextMeter usage={{ used: 3560, limit: 16384 }} variant="full" model="ollama/some-model" locale="de-DE" />);
     const m = screen.getByTestId('context-meter');
-    expect(m.textContent).toContain('3.560 / 16.384');
+    render(<ContextMeter usage={{ used: 3560, limit: 2500000 }} variant="full" model="ollama/some-model" locale="de-DE" />);
+    expect(screen.getAllByTestId('context-meter')[1]!.textContent).toBe('4K / 2,5M');
     expect(m.getAttribute('title')).toMatch(/^22\s%/);
     cleanup();
     render(<ContextMeter usage={{ used: 3560 }} variant="full" locale="de-DE" />);
-    expect(screen.getByTestId('context-meter').textContent).toBe('3.560 tokens');
+    expect(screen.getByTestId('context-meter').textContent).toBe('4K tokens');
   });
 
   it('no limit: full shows only the tokens, bar renders nothing', () => {
     render(<ContextMeter usage={{ used: 3560 }} variant="full" locale="en-US" />);
-    expect(screen.getByTestId('context-meter').textContent).toBe('3,560 tokens');
+    expect(screen.getByTestId('context-meter').textContent).toBe('4K tokens');
     expect(screen.queryByRole('meter')).toBeNull();
     cleanup();
     const { container } = render(<ContextMeter usage={{ used: 3560 }} variant="bar" />);

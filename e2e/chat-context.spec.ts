@@ -21,9 +21,9 @@ test('@llm a turn fills the context meter; the chat list shows the time, a bar a
 
   // The composer: used / the dev model's window, from the provider config.
   const meter = page.getByTestId('context-meter');
-  // Numbers in the browser's locale: 16,384 / 16.384 / 16 384.
-  await expect(meter).toHaveText(/^[\d.,\s\u202f]+ \/ 16[.,\s\u202f]?384$/, { timeout: 30_000 });
-  const used = Number((await meter.textContent())!.split(' / ')[0]!.replace(/\D/g, ''));
+  // Short numbers: e.g. 4K / 16K.
+  await expect(meter).toHaveText(/^\d+K? \/ 16K$/, { timeout: 30_000 });
+  const used = Number(await meter.getByRole('meter').getAttribute('aria-valuenow'));
   expect(used).toBeGreaterThan(0);
   await expect(meter.getByRole('meter')).toHaveAttribute('aria-valuemax', '16384');
 
