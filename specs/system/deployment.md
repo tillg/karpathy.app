@@ -131,13 +131,13 @@ runs without role `app`); role `app` asserts it equals the rendered `DOMAIN` and
 
 | Target | Model |
 |---|---|
-| `local` | The native Ollama on the Mac (`ollama/qwen2.5:3b`, `just ollama install`), the same one the dev stacks use, through the VM stack's `ollama-relay` to `192.168.5.2:11434` (Lima's address for the host, forwarded to the Mac's loopback). Role `app` checks on the controller that Ollama answers and has the model, else stops with "run `just ollama install`". |
+| `local` | The native Ollama on the Mac (`ollama/qwen2.5:3b`, `just ollama install`; not yet migrated to omlx, which the dev stacks use), through the VM stack's `ollama-relay` to `192.168.5.2:11434` (Lima's address for the host, forwarded to the Mac's loopback). Role `app` checks on the controller that Ollama answers and has the model, else stops with "run `just ollama install`". |
 | `hetzner` | OpenRouter `z-ai/glm-5.3`, routed to zero-data-retention hosts (the central default). |
 
 Not targets, and not deployed by the playbook: the **dev stacks** on the Mac (stack N, project `karpathy-app-N`,
 on https://localhost:80N0, started with `just dev up [N]`) and their **paired prodtest** (the prod images built
 locally as `karpathy-app-N-prodtest` on https://localhost:80N5, `just prodtest`). They are the environments `dev`
-and `prodtest`; both use the native Ollama on the Mac as the model unless a developer's local overlay picks another
+and `prodtest`; both use the native omlx on the Mac as the model unless a developer's local overlay picks another
 gateway. Details: [architecture.md](architecture.md#dev-stacks).
 
 ## The playbook

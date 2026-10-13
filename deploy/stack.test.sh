@@ -109,13 +109,19 @@ checkout() { local d; d=$(mktemp -d); git -C "$d" init -q; echo "$d"; }
 (
   fails=0
   source "$here/stack.sh"
-  stack_ollama_ready http://127.0.0.1:1 && bad "stack_ollama_ready is false for a dead URL" "true" || ok "stack_ollama_ready is false for a dead URL"
-  # Needs the machine's native Ollama: skipped, not failed, where none runs.
-  if nc -z 127.0.0.1 11434 2>/dev/null; then
-    stack_ollama_ready http://127.0.0.1:11434 && ok "stack_ollama_ready is true for 127.0.0.1:11434" \
-      || bad "stack_ollama_ready is true for 127.0.0.1:11434" "false"
-  else echo "skip stack_ollama_ready against 127.0.0.1:11434 (no native Ollama: just ollama install)"
-  fi
+  d=$(mktemp -d)
+  printf 'DEFAULT_MODEL=openrouter/x\n' > "$d/hosted.env"
+  stack_model_ready "$d/hosted.env" && ok "stack_model_ready: a hosted gateway needs no model server" || bad "stack_model_ready: a hosted gateway needs no model server" "false"
+  printf 'OLLAMA_UPSTREAM=host.docker.internal:1\n' > "$d/dead.env"
+  stack_model_ready "$d/dead.env" 2>/dev/null && bad "stack_model_ready is false when nothing answers at the relay's upstream" "true" \
+    || ok "stack_model_ready is false when nothing answers at the relay's upstream"
+  # Any HTTP answer counts: a model server that wants a key (omlx) answers 401 without one.
+  port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
+  python3 -m http.server "$port" --bind 127.0.0.1 --directory "$d" >/dev/null 2>&1 & srv=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10; do nc -z 127.0.0.1 "$port" 2>/dev/null && break; sleep 0.2; done
+  printf 'OLLAMA_UPSTREAM=host.docker.internal:%s\n' "$port" > "$d/up.env"
+  stack_model_ready "$d/up.env" && ok "stack_model_ready: the Mac's side of host.docker.internal answers" || bad "stack_model_ready: the Mac's side of host.docker.internal answers" "false"
+  kill "$srv"; rm -rf "$d"
   exit "$fails"
 ) || fails=$((fails + 1))
 (
@@ -155,7 +161,7 @@ checkout() { local d; d=$(mktemp -d); git -C "$d" init -q; echo "$d"; }
     eq "$env: opencode.env key survives verbatim" "$(get 'c.services.opencode.environment.OPENROUTER_API_KEY===`sk-or-#1 "x" $$y`')" true
     eq "$env: model from the settings" "$(get 'c.services.opencode.environment.OPENCODE_MODEL')" openrouter/z-ai/glm-5.3
     relay=$([ "$env" = dev ] && echo ollama || echo ollama-bridge)
-    eq "$env: the Ollama relay's upstream from the settings" "$(get "c.services[\"$relay\"].environment.OLLAMA_UPSTREAM")" host.docker.internal:11434
+    eq "$env: the relay's upstream from the settings (omlx)" "$(get "c.services[\"$relay\"].environment.OLLAMA_UPSTREAM")" host.docker.internal:8000
   done
   rm -rf "$dir" "$out" "$store"
   exit "$fails"

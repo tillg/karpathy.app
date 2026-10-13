@@ -58,7 +58,7 @@ flowchart LR
 |---|---|
 | Web | React 19, Vite 8, TypeScript, CodeMirror 6 (`lang-markdown`, own live-preview decorations), `marked` 18 + DOMPurify, vite-plugin-pwa (Workbox), framework7-icons. No router library (hash routes), no state library (one context hook). |
 | Backend | Node 22, Express, TypeScript run with `tsx` (no build step), zod validation, chokidar, `@opencode-ai/sdk` v2, `git` and `ripgrep` binaries. |
-| Agent harness | `opencode serve` 1.18.25 (pinned image `ghcr.io/anomalyco/opencode`), provider-agnostic; gateway and default model per environment from `deploy/settings/` (OpenRouter `z-ai/glm-5.3` in production, the native Ollama `qwen2.5:3b` in dev, prodtest, tests and on `local`). |
+| Agent harness | `opencode serve` 1.18.25 (pinned image `ghcr.io/anomalyco/opencode`), provider-agnostic; gateway and default model per environment from `deploy/settings/` (OpenRouter `z-ai/glm-5.3` in production, the native omlx `Qwen3-Coder-30B-A3B-Instruct-4bit` in dev and prodtest, Ollama `qwen2.5:3b` in tests and on `local`). |
 | Proxy | Caddy 2.10 built with a `caddy-dns/<provider>` module (GoDaddy) for DNS-01. |
 | Shared | `packages/shared`: TypeScript types for the API (no runtime schemas). |
 | Settings | `packages/settings`: zod schema, loader, secret resolution and renderer for `deploy/settings/` (YAML), run with `tsx` as `just settings …` ([Settings](#settings)). |
@@ -1302,7 +1302,8 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 |---|---|---|
 | GitHub | Vault repos; fine-grained token as an HTTP extra header, never in `.git/config`; `api.github.com/user` for the token test | in use |
 | LLM providers (OpenRouter in production, any via opencode) | Model behind opencode, chosen as the environment's gateway in `deploy/settings/`; keys only in the rendered `opencode.env` | OpenRouter `z-ai/glm-5.3` on zero-data-retention hosts in production |
-| Ollama | Dev, prodtest and the `local` target (native on the Mac, `just ollama install`); CI and integration LLM tests (container; models from `deploy/settings/test.yaml`) | in use |
+| omlx | Dev and prodtest (native on the Mac: MLX server, Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models`; `Qwen3-Coder-30B-A3B-Instruct-4bit`, vision `Qwen3-VL-4B-Instruct-4bit`) | in use |
+| Ollama | The `local` target (native on the Mac, `just ollama install`); CI and integration LLM tests (container; models from `deploy/settings/test.yaml`) | in use |
 | Exa | Web search backend (opencode `websearch`, MCP at `mcp.exa.ai`); optional `EXA_API_KEY`, else the anonymous, rate-limited endpoint | in use |
 | Gmail (via `gog`) | The ingest profiles' labels: read, relabel; OAuth client and refresh token copied from the Mac by `just ingest-auth` | built; no profile enabled in production yet |
 | Instagram (via instascraper / instagrapi) | Posts and Reels behind Instagram links in mails; password login from Settings › Instagram | built; the real login not yet tried from the server |
@@ -1328,7 +1329,7 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
   opencode password); provider keys, `EXA_API_KEY` and the web caps come from `opencode.env`.
 - **Dev** (`compose.dev.yml`, `just dev up [N]`): numbered dev stacks side by side, one per checkout; stack N on
   https://localhost:80N0 with Caddy's internal CA, Vite with HMR (`web` service), bind-mounted sources, local bare
-  repos as remotes (`dev.yaml`: `git.remote_base: file:///remotes/`), the native Ollama on the Mac as the model
+  repos as remotes (`dev.yaml`: `git.remote_base: file:///remotes/`), the native omlx on the Mac as the model
   unless the developer's `dev.local.yaml` picks another gateway. The `ingest` service mounts the whole `vaults` volume,
   idles (no profiles in `dev.yaml`) and has the fake Instagram login; `just dev up` first runs
   `deploy/ingest/fetch-source.sh` for its build context. Details: [Dev stacks](#dev-stacks).
@@ -1356,7 +1357,7 @@ port block 80N0–80N9 (vocabulary: [domain.md](domain.md#development)).
 
 ```mermaid
 flowchart TD
-    J["justfile<br/>dev · e2e · prodtest · ollama"] --> D["deploy/dev.sh"]
+    J["justfile<br/>dev · e2e · prodtest"] --> D["deploy/dev.sh"]
     J --> L
     D --> L["deploy/stack.sh<br/>resolve N · ownership · ports<br/>settings_render · settings_legacy_check"]
     L -->|"docker compose ls -a"| DK[(Docker daemon)]
@@ -1367,7 +1368,7 @@ flowchart TD
     R -->|"--env-file"| P
     D -->|"-p karpathy-app-N<br/>STACK · PROXY_PORT · BACKEND_PORT"| C["compose.yml + compose.dev.yml<br/>proxy :80N0 · backend 127.0.0.1:80N1"]
     J -->|"-p karpathy-app-N-prodtest<br/>PRODTEST_PORT"| P["compose.yml + compose.prodtest.yml<br/>proxy :80N5"]
-    C -->|"ollama relay (/v1 only)<br/>→ OLLAMA_UPSTREAM"| OL[("native Ollama<br/>127.0.0.1:11434")]
+    C -->|"ollama relay (/v1 only)<br/>→ OLLAMA_UPSTREAM"| OL[("native omlx<br/>127.0.0.1:8000")]
     P -->|"ollama-bridge relay (/v1 only)"| OL
     E["e2e/stack.ts"] -->|"read"| F
     E --> H["e2e/helpers.ts · global-setup.ts<br/>playwright.config.ts"]
@@ -1389,11 +1390,11 @@ flowchart TD
 - **`deploy/dev.sh up [N] | down | logs | ps | token | stacks`** runs
   `docker compose -p karpathy-app-N -f compose.yml -f compose.dev.yml` (`-p` overrides `name: karpathy-app`, so prod
   is untouched). `up` refuses a stack another checkout owns or whose ports a stranger holds (naming the owner and
-  the first free stack), a second stack while this checkout holds one, and a missing native Ollama; it may take
+  the first free stack), a second stack while this checkout holds one, and a model server that does not answer (`stack_model_ready`, for a gateway with a relay upstream); it may take
   over an orphan, refuses a leftover hand-edited `deploy/.env` or `deploy/opencode.env` (`settings_legacy_check`:
   names their keys, never values, and where each goes now), creates the dev secrets, renders this checkout's
   `deploy/settings/` for `dev` into `tmp/settings/dev/` (`settings_render`; a missing secret or invalid setting stops
-  it before compose), remembers N, pulls the default model if it is an Ollama one Ollama lacks, and prints URL and
+  it before compose), remembers N, pulls the default model if it is an `ollama/*` one Ollama lacks, and prints URL and
   token. Compose gets `--env-file ../tmp/settings/dev/.env` whenever that file exists, so a stack started before
   the settings can still go down. `just prodtest up` does the same for `prodtest` (secrets in
   `tmp/prodtest/secrets/`, plus any `deploy/secrets/*_api_key` for a hosted gateway). `down` keeps the
@@ -1402,22 +1403,26 @@ flowchart TD
 - **Images per stack.** The dev services reset `image:`, so compose names them `karpathy-app-N-<service>` and
   parallel builds never overwrite each other's images. Prodtest still uses `ghcr…:dev` tags, shared across
   checkouts (known risk).
-- **Native Ollama.** The dev model runs on the Mac, not in a container: `just ollama install` sets up the
-  LaunchAgent `app.karpathy.ollama` (`ollama serve` from Homebrew, `OLLAMA_HOST=127.0.0.1:11434`,
-  `OLLAMA_CONTEXT_LENGTH=16384`, Metal GPU, models in `~/.ollama`); `status` and `uninstall` go with it. It refuses
-  when another server already answers on 11434 (it would lack the context length). One Ollama serves every stack
-  and every prodtest, and the `local` target's VM as well. Containers reach the Mac's loopback as
-  `host.docker.internal`.
+- **Native omlx.** The dev model runs on the Mac, not in a container: omlx (`brew install omlx`, MLX-based,
+  OpenAI-compatible) as the Homebrew service `omlx` (`brew services start omlx`, or `omlx start`) on `127.0.0.1:8000`,
+  Apple GPU, models in `~/.omlx/models/<dir name = model id>` (`hf download mlx-community/… --local-dir …`). Its
+  API-key check is off (`auth.skip_api_key_verification: true` in `~/.omlx/settings.json`) because it listens on
+  loopback only; `memory.memory_guard_tier: aggressive` lets the 16.8 GB coder model load. One omlx serves every stack
+  and every prodtest. `dev.sh` checks it before compose (`stack_model_ready` in `deploy/stack.sh`): whatever
+  `OLLAMA_UPSTREAM` points at (`host.docker.internal` mapped to `127.0.0.1`) must answer any HTTP status on
+  `/v1/models`; a gateway without a relay upstream (hosted) skips the check. Containers reach the Mac's loopback as
+  `host.docker.internal`. The `local` target's VM still uses a native Ollama (`just ollama install|uninstall|status`,
+  LaunchAgent `app.karpathy.ollama` on `127.0.0.1:11434`, `OLLAMA_CONTEXT_LENGTH=16384`), not yet migrated.
 - **Ollama relay.** Each stack keeps a small Caddy (`ollama` in dev, `ollama-bridge` in prodtest, `ollama-relay` on
   the `local` target, all `deploy/proxy/Caddyfile.ollama-relay`) on the `internal` network (alias `ollama.internal`)
-  and `egress`. opencode's provider config (the `ollama` gateway's `base_url`, `http://ollama.internal:11434/v1`, in
-  `OPENCODE_CONFIG_CONTENT`) and `NO_PROXY` use that name. The upstream is `{$OLLAMA_UPSTREAM}`, the gateway's
-  `relay_upstream` in the rendered `.env`: `host.docker.internal:11434` (the compose default) for dev and prodtest,
+  and `egress`. opencode's provider config (the gateway's `base_url`, `http://ollama.internal:11434/v1` for `omlx` and `ollama` alike, in
+  `OPENCODE_CONFIG_CONTENT`; the names are historical) and `NO_PROXY` use that name. The upstream is `{$OLLAMA_UPSTREAM}`, the gateway's
+  `relay_upstream` in the rendered `.env`: `host.docker.internal:8000` (the `omlx` gateway) for dev and prodtest,
   `192.168.5.2:11434` on `local` (Lima's user-mode address for the host, which forwards to the Mac's loopback, so
   Ollama stays bound to `127.0.0.1`).
-  The relay passes only `/v1/*` and answers 403 to the rest, so Ollama's admin API (pull, delete, create) stays out
+  The relay passes only `/v1/*` and answers 403 to the rest, so the model server's admin API (Ollama's pull, delete, create; omlx's management API) stays out
   of a prompt-injected AI's reach. It rewrites `Host` to `localhost:11434`, because a loopback-bound Ollama answers
-  403 to any other `Host` (its DNS-rebinding guard).
+  403 to any other `Host` (its DNS-rebinding guard); harmless for omlx.
 - **Stack label.** The dev `web` service sets `VITE_STACK=N`; `brandName()` (`apps/web/src/lib/brand.ts`) makes the
   vault switcher's brand `karpathy #N`. The prod PWA is built without it and keeps `karpathy.app`, as do the token
   screen, the chat author line and `<title>`.
@@ -1465,8 +1470,8 @@ flowchart TB
 
 | Key | Holds | Overridden by |
 |---|---|---|
-| `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | `dev`, `prodtest`, `test`, `local`: `ollama`, `ollama/qwen2.5:3b` |
-| `ai.vision_model` | The vision model of `look_at_image` (required; `<gateway>/<model>` on any configured gateway, named by its own prefix — so switching only `ai.gateway` in an overlay keeps it valid; the gateway's kind must speak the OpenAI chat API, and the dev relay's `OLLAMA_UPSTREAM` falls back to the vision gateway's): `openrouter/mistralai/mistral-medium-3-5` (Mistral Small 2603 was rate-limited upstream for the shared OpenRouter key, HTTP 429), with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY` and `VISION_REQUEST_OPTIONS` (the model's `options`, merged into the request) into `opencode.env`. | `dev`, `prodtest`, `test`, `local`: `ollama/qwen3-vl:2b` |
+| `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | `dev`, `prodtest`: `omlx`, `omlx/Qwen3-Coder-30B-A3B-Instruct-4bit`; `test`, `local`: `ollama`, `ollama/qwen2.5:3b` |
+| `ai.vision_model` | The vision model of `look_at_image` (required; `<gateway>/<model>` on any configured gateway, named by its own prefix — so switching only `ai.gateway` in an overlay keeps it valid; the gateway's kind must speak the OpenAI chat API, and the dev relay's `OLLAMA_UPSTREAM` falls back to the vision gateway's): `openrouter/mistralai/mistral-medium-3-5` (Mistral Small 2603 was rate-limited upstream for the shared OpenRouter key, HTTP 429), with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY` and `VISION_REQUEST_OPTIONS` (the model's `options`, merged into the request) into `opencode.env`. | `dev`, `prodtest`: `omlx/Qwen3-VL-4B-Instruct-4bit`; `test`, `local`: `ollama/qwen3-vl:2b` |
 | `ai.web` | `access` (default of the Web access switch), `fetch_cap`, `search_cap` (20 each), `exa_api_key` (optional secret) | — |
 | `auth` | `bearer_token`, `opencode_password` (secret references) | — |
 | `git` | `remote_base` (`https://github.com/`), `author` (`name`, `email`), `github_token` (optional secret) | `dev`, `prodtest`, `local`: `file:///remotes/`; author per environment; `hetzner`: author as secrets `git_author_name` / `git_author_email` |
@@ -1475,7 +1480,7 @@ flowchart TB
 | `commit_reminder_threshold` | Default of the commit reminder (4) | — |
 | `files.visible_dot_dirs` | Dot-folders the file tree shows (`[.agents]`; names start with `.`, never `.git`) | — |
 | `ingest` | `defaults` (ingest-email options: `max_per_poll` 20, `resolve_max_urls_per_mail` 5, `run_interval_s` 900) and `profiles` (`{}`: the loop idles). A profile: `vault` (backend vault id), optional `root`, `label`, `account` and `allowed_senders` (each may be a secret reference, so no personal data lands in the public repo), optional `settings` (ingest-email options) | only `hetzner` may set profiles (none yet; a test asserts `dev`, `local`, `prodtest` and `test` have none) |
-| `gateways.<id>` | `kind`, `name`, `base_url`, `relay_upstream`, `api_key`, `models` (opencode's per-model config, passed through): `openrouter` (built-in kind; `z-ai/glm-5.3` with its zero-data-retention provider routing) and `ollama` (`openai-compatible`, base URL `http://ollama.internal:11434/v1`, `qwen2.5:3b` and `qwen3-vl:2b` with limits) | `local`: `ollama.relay_upstream: 192.168.5.2:11434` |
+| `gateways.<id>` | `kind`, `name`, `base_url`, `relay_upstream`, `api_key`, `models` (opencode's per-model config, passed through): `openrouter` (built-in kind; `z-ai/glm-5.3` with its zero-data-retention provider routing) `omlx` (`openai-compatible`, "omlx (dev)", the same base URL, `relay_upstream: host.docker.internal:8000`, `Qwen3-Coder-30B-A3B-Instruct-4bit` and `Qwen3-VL-4B-Instruct-4bit` with `limit: { context: 16384, output: 4096 }`) and `ollama` (`openai-compatible`, base URL `http://ollama.internal:11434/v1`, `qwen2.5:3b` and `qwen3-vl:2b` with limits) | `local`: `ollama.relay_upstream: 192.168.5.2:11434` |
 
 **Load and validate** (`packages/settings`, plain TypeScript run with `tsx`, deps `yaml` and `zod`):
 
@@ -1578,18 +1583,18 @@ The ones that shape the whole system:
   check must be re-run. Backend and opencode run as the same uid so files the AI writes stay committable.
 - **Commit message proposals go through opencode** (agent `commit-message`, a throwaway session that is deleted
   afterwards), not a second LLM client, because only opencode holds provider keys.
-- **Runtime = docker compose in dev and prod**, nothing native in dev except the dev Ollama. Rancher Desktop bind
+- **Runtime = docker compose in dev and prod**, nothing native in dev except the dev model server (omlx). Rancher Desktop bind
   mounts deliver no inotify events, so the dev `web` and `backend` containers poll for source changes.
 - **Numbered dev stacks, one scheme** (80N0, no stack 0 on 8443): two port schemes is what the hand-written
   `tmp/compose.*.yml` overrides showed going wrong (a missing `HMR_CLIENT_PORT`, shared image tags, commands
   hitting the wrong stack). The remembered stack per checkout beats `STACK=N` on every command, which is how agents
   end up on the wrong stack; a bare `up` takes the first free stack rather than always stack 1. Ownership comes from
   Docker plus the other worktrees' claims, not a separate registry that could go stale.
-- **One native Ollama for all dev stacks, a relay per stack:** an Ollama container per stack duplicates memory and
-  models, and a shared container is still CPU-only in the Rancher VM. The relay is a Caddy with a `/v1` allowlist,
-  not raw socat: socat exposed the admin API, and since Ollama runs on the Mac, `/api/pull` from an "insecure"
-  registry could have made the Mac request LAN or loopback addresses the egress proxy forbids. Cost: a host
-  dependency (`brew install ollama`).
+- **One native model server for all dev stacks (omlx), a relay per stack:** a model container per stack duplicates memory and
+  models, and a container is CPU-only in the Rancher VM, while MLX uses the Mac's GPU. The relay is a Caddy with a `/v1` allowlist,
+  not raw socat: socat exposed the admin API, and a model server on the Mac that can pull from an "insecure"
+  registry (Ollama's `/api/pull`) could have made the Mac request LAN or loopback addresses the egress proxy forbids. Cost: a host
+  dependency (`brew install omlx`). The relay kept its Ollama names; it started out in front of Ollama.
 - **One settings directory, rendered for each component** (#133): before it, the model alone sat in nine places
   (compose defaults and overrides, `group_vars`, `env.j2`, `dev-ollama.json`, the config store) and a persisted Admin
   choice silently pinned it. A central file plus sparse environment files shows what makes an environment different;
@@ -1747,12 +1752,13 @@ The ones that shape the whole system:
   pasted URL, one constructed URL refused.
 - **`@llm` rules:** prompts name the tool explicitly; assertions check tool events and the file system, never answer
   text; a turn without any tool call fails as *inconclusive*, not as passed; at most one retry.
-- **Model in dev and CI:** Ollama `qwen2.5:3b` (`deploy/settings/dev.yaml`, `test.yaml`) with
-  `OLLAMA_CONTEXT_LENGTH=16384` and a matching context limit in the `ollama` gateway's model config. Ollama otherwise truncates opencode's prompt to about 2k tokens silently, and the model
+- **Model in dev and CI:** dev and prodtest run omlx `Qwen3-Coder-30B-A3B-Instruct-4bit` (vision `Qwen3-VL-4B-Instruct-4bit`),
+  CI and `test.yaml` Ollama `qwen2.5:3b`. Both have a matching context limit of 16384 in their gateway's model config
+  (omlx: `limit: { context: 16384, output: 4096 }`; Ollama also runs with `OLLAMA_CONTEXT_LENGTH=16384`). Ollama otherwise truncates opencode's prompt to about 2k tokens silently, and the model
   then ignores `AGENTS.md` and misuses tools. The vision test uses `qwen3-vl:2b` (`test.yaml` `ai.vision_model`, `LLM_VISION_MODEL` overrides it; declared with
   `modalities.input: [text, image]`); Ollama's `qwen2.5vl` has no tool support, so opencode refuses every turn with
-  it. Both models must be where the tests' Ollama finds them (CI pulls both into `ollama-models`; the dev stacks use
-  the native Ollama's `~/.ollama`, and `just dev up` pulls the dev model); a missing model fails the test
+  it. Both models must be where the tests' Ollama finds them (CI pulls both into `ollama-models`); the dev stacks'
+  models are the files in omlx's `~/.omlx/models`; a missing model fails the test
   fast as *inconclusive: no tool call*. The test container declares image input on the not-pulled `DEAD_MODEL_2`, so `modelInput` is tested without
   a model run.
 - **Command and move tests:** default tier: `command.test.ts` (parse, expand; a `` !`id -u` `` stays literal),

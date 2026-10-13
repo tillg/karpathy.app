@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dev stack N (1-9): https://localhost:80N0 (Caddy internal CA), hot reload, the Mac's native Ollama as the model.
+# Dev stack N (1-9): https://localhost:80N0 (Caddy internal CA), hot reload, the model from deploy/settings/ (dev.yaml: omlx on the Mac).
 # Usage: deploy/dev.sh [up [N]|down|logs|ps|token|stacks]  (or `just dev [...]`)
 # `up` without N reuses this checkout's stack (tmp/dev/stack, its claim), else takes the first free one;
 # `down` releases it.
@@ -26,7 +26,6 @@ case "${1:-up}" in
       echo "this checkout holds stack $old: just dev down first" >&2; exit 1
     fi
     stack_disk_ok .. 10 || exit 1
-    stack_ollama_ready http://127.0.0.1:11434 || { echo "no Ollama on 127.0.0.1:11434: just ollama install" >&2; exit 1; }
     settings_legacy_check || exit 1
     mkdir -p secrets ../tmp/dev/remotes
     [ -s secrets/bearer_token ] || openssl rand -hex 24 > secrets/bearer_token
@@ -37,6 +36,7 @@ case "${1:-up}" in
     # deploy/settings/ (dev.yaml, your dev.local.yaml) → tmp/settings/dev/, which compose reads.
     settings_render dev secrets || exit 1
     SETTINGS_ENV=../tmp/settings/dev/.env
+    stack_model_ready "$SETTINGS_ENV" || exit 1
     stack_remember "$n"
     # An Ollama model (~2 GB) lives with the native Ollama, pulled once for all stacks.
     model=$(sed -n 's/^DEFAULT_MODEL=//p' ../tmp/settings/dev/.env)

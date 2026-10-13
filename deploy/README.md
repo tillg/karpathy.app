@@ -87,7 +87,7 @@ when the whole box is gone.
 
 | Stack | URL | What it's for | Start |
 |---|---|---|---|
-| **dev** stack N (1–9) | https://localhost:80N0 | Working on the code: sources bind-mounted, hot reload, the Mac's native Ollama as the model; one per checkout, side by side (`just dev stacks`) | `just dev up [N]` |
+| **dev** stack N (1–9) | https://localhost:80N0 | Working on the code: sources bind-mounted, hot reload, the Mac's native omlx as the model; one per checkout, side by side (`just dev stacks`) | `just dev up [N]` |
 | **prodtest** | https://localhost:80N5 | The prod images built from the working tree, paired with dev stack N | `just prodtest` |
 | **local** target | https://localhost:9444 | A released version on an Ubuntu VM (Lima) sized like the server: tests the whole playbook | `just vm up`, `just deploy local` |
 | **hetzner** target | https://app.karpathy.app | Production: Hetzner server, reachable only over Tailscale | `just deploy hetzner` |
@@ -105,7 +105,7 @@ managed by Ansible.
 |---|---|
 | `just install` | `npm install` for the workspace (after a clone or in a fresh worktree). |
 | `just dev [up [N]\|down\|logs\|ps\|token\|stacks]` | This checkout's dev stack N on :80N0 (`up` without N: the remembered one, else the first free); `stacks` lists who owns which stack; `token` prints the access token. |
-| `just ollama install\|uninstall\|status` | The dev model server: native Ollama on 127.0.0.1:11434 as a LaunchAgent, shared by all dev stacks (`brew install ollama` first). |
+| `just ollama install\|uninstall\|status` | Native Ollama on 127.0.0.1:11434 as a LaunchAgent (`brew install ollama` first). No longer the dev default (dev and prodtest use omlx, `brew services start omlx`); still what the `local` target expects. |
 | `just check` | Lint, typecheck, the unit + integration tests and the dev-stack tooling tests. |
 | `just test [args]` | The unit + integration tests only. |
 | `just e2e [args]` | Playwright against this checkout's dev stack. |

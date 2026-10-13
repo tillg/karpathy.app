@@ -20,7 +20,8 @@ const SECRETS = {
 
 describe('renderOpencodeProviders', () => {
   it("reproduces today's provider configs", () => {
-    expect(renderOpencodeProviders(loadSettings('dev', { overlay: false }))).toEqual({ provider: JSON.parse(fixture('dev-ollama.json')).provider });
+    expect(renderOpencodeProviders(loadSettings('test', { overlay: false }))).toEqual({ provider: JSON.parse(fixture('dev-ollama.json')).provider });
+    expect(renderOpencodeProviders(loadSettings('dev', { overlay: false }))).toEqual({ provider: JSON.parse(fixture('dev-omlx.json')).provider });
     expect(renderOpencodeProviders(loadSettings('hetzner', { overlay: false }))).toEqual(JSON.parse(fixture('opencode-openrouter.json')));
   });
 });
@@ -46,7 +47,7 @@ describe('renderOpencodeEnv', () => {
     expect(Object.keys(dev).sort()).toEqual(['OPENCODE_CONFIG_CONTENT', 'OPENCODE_MODEL', 'VISION_BASE_URL', 'VISION_MODEL', 'WEB_FETCH_CAP', 'WEB_SEARCH_CAP']);
     // The relay on the stack's network, no key, no request options.
     expect(dev.VISION_BASE_URL).toBe('http://ollama.internal:11434/v1');
-    expect(dev.VISION_MODEL).toBe('qwen3-vl:2b');
+    expect(dev.VISION_MODEL).toBe('Qwen3-VL-4B-Instruct-4bit');
   });
 
   it("the vision endpoint comes from the vision model's own gateway", () => {
@@ -96,13 +97,14 @@ describe('renderComposeEnv', () => {
     expect(hetzner.OLLAMA_UPSTREAM).toBeUndefined();
     expect(hetzner.SETTINGS_DIR).toBeUndefined();
     const dev = env(renderComposeEnv(loadSettings('dev', { overlay: false }), {}, { settingsDir: '../tmp/settings/dev' }));
-    expect(dev).toMatchObject({ OLLAMA_UPSTREAM: 'host.docker.internal:11434', SETTINGS_DIR: '../tmp/settings/dev', GIT_AUTHOR_NAME: 'Dev User' });
+    expect(dev).toMatchObject({ OLLAMA_UPSTREAM: 'host.docker.internal:8000', SETTINGS_DIR: '../tmp/settings/dev', GIT_AUTHOR_NAME: 'Dev User' });
   });
 });
 
 describe('OLLAMA_UPSTREAM', () => {
-  it('where the relay finds Ollama, only for the ollama gateway', () => {
-    expect(env(renderComposeEnv(loadSettings('dev', { overlay: false }), {})).OLLAMA_UPSTREAM).toBe('host.docker.internal:11434');
+  it('where the relay finds the model server, only for a gateway on the Mac', () => {
+    expect(env(renderComposeEnv(loadSettings('test', { overlay: false }), {})).OLLAMA_UPSTREAM).toBe('host.docker.internal:11434');
+    expect(env(renderComposeEnv(loadSettings('dev', { overlay: false }), {})).OLLAMA_UPSTREAM).toBe('host.docker.internal:8000');
     expect(env(renderComposeEnv(loadSettings('local', { overlay: false }), {})).OLLAMA_UPSTREAM).toBe('192.168.5.2:11434');
     expect(env(renderComposeEnv(loadSettings('hetzner', { overlay: false }), SECRETS)).OLLAMA_UPSTREAM).toBeUndefined();
   });

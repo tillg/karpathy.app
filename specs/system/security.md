@@ -278,12 +278,13 @@ kinds, strings only) and can only change which fields and flags the form shows; 
 - opencode's snapshots, sharing and auto-update are off; its version is pinned.
 - **Dev stacks on the Mac** (prod is unchanged): besides the proxy on 80N0, the backend's HTTP API is published on
   `127.0.0.1:80N1` only, for debugging; opencode and web stay unpublished on the internal network. The dev model
-  is the native Ollama, bound to `127.0.0.1:11434`. opencode reaches it only through the stack's Ollama relay
-  (`ollama.internal`), which passes `/v1/*` (the OpenAI-compatible API) and answers 403 to everything else, so a
-  prompt-injected AI can't use Ollama's admin API (pull, delete, create); a pull from an "insecure" registry would
-  otherwise make the Mac itself request LAN or loopback addresses the egress proxy forbids. The `local` target's VM
-  uses the same relay (`ollama-relay`) to the same Ollama, reached at `192.168.5.2:11434` (Lima's forward to the
-  Mac's loopback), so Ollama never binds a LAN address.
+  is the native omlx, bound to `127.0.0.1:8000`; its API-key check is off (`auth.skip_api_key_verification`) because
+  it listens on loopback only. opencode reaches it only through the stack's relay (`ollama.internal`, a historical
+  name), which passes `/v1/*` (the OpenAI-compatible API) and answers 403 to everything else, so a
+  prompt-injected AI can't use the server's admin API (model management, settings); with Ollama a pull from an
+  "insecure" registry would otherwise make the Mac itself request LAN or loopback addresses the egress proxy
+  forbids. The `local` target's VM still uses a native Ollama: the same relay (`ollama-relay`) to
+  `192.168.5.2:11434` (Lima's forward to the Mac's loopback), so Ollama never binds a LAN address.
 - **Production server:** reachable only over Tailscale. The Hetzner firewall blocks all inbound traffic; the app,
   Beszel and Gatus bind the tailnet IP. SSH takes keys only, no root login. The operator logs in as `ops` (sudo);
   uid 1000, the app's user, has no login, no sudo and no Docker access, so a container breakout doesn't reach root

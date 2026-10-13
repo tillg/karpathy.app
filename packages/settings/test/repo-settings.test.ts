@@ -46,7 +46,7 @@ describe('deploy/settings', () => {
 
     for (const env of ['dev', 'prodtest']) {
       const s = loadSettings(env, { overlay: false });
-      expect(s.ai.vision_model).toBe('ollama/qwen3-vl:2b');
+      expect(s.ai).toMatchObject({ gateway: 'omlx', model: 'omlx/Qwen3-Coder-30B-A3B-Instruct-4bit', vision_model: 'omlx/Qwen3-VL-4B-Instruct-4bit' });
       expect(s.git.remote_base).toBe('file:///remotes/');
       expect(s.proxy.tls).toBe('internal');
     }

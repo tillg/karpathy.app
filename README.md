@@ -188,10 +188,14 @@ UI layout prototypes from the MVP design (layout 07 was built) —
 ## Running it
 
 Everything runs in docker compose (on this Mac: Rancher Desktop), except the dev model: one native
-Ollama on the Mac (Metal GPU), shared by all dev stacks. Set it up once with `brew install ollama` and
-`just ollama install` (a LaunchAgent on 127.0.0.1:11434; `just ollama status|uninstall`).
+[omlx](https://github.com/jundot/omlx) (MLX, OpenAI-compatible) on the Mac, shared by all dev stacks. Set it up once with
+`brew install omlx` and `brew services start omlx` (a Homebrew service on 127.0.0.1:8000), then download the models
+into `~/.omlx/models/` with omlx's own Python, e.g. `HF_HUB_DISABLE_XET=1 "$(brew --prefix omlx)/libexec/bin/python3" -c 'from huggingface_hub import snapshot_download as d; d("mlx-community/Qwen3-VL-4B-Instruct-4bit", local_dir="'"$HOME"'/.omlx/models/Qwen3-VL-4B-Instruct-4bit")'`
+(same for `Qwen3-Coder-30B-A3B-Instruct-4bit`). omlx listens on loopback only, so its API-key check is off
+(`auth.skip_api_key_verification: true` in `~/.omlx/settings.json`); `memory.memory_guard_tier: aggressive` lets the
+16.8 GB coder model load. The `local` target still expects a native Ollama (`just ollama install|uninstall|status`).
 
-**Dev** (hot reload, the model from `deploy/settings/dev.yaml`: the native Ollama). Several dev stacks run side by side,
+**Dev** (hot reload, the model from `deploy/settings/dev.yaml`: the native omlx). Several dev stacks run side by side,
 one per checkout (main clone or worktree): stack N (1–9) is on https://localhost:80N0, and its header
 reads `karpathy #N`.
 
@@ -204,7 +208,7 @@ just dev down
 ```
 
 Stack N owns the ports 80N0–80N9: 80N0 the app, 80N1 the backend (http, loopback), 80N5 the
-paired prodtest. Each stack's `ollama` service is only a relay to the native Ollama. The number is remembered in `tmp/dev/stack`; `just e2e` and
+paired prodtest. Each stack's `ollama` service (the name is historical) is only a relay to the native omlx. The number is remembered in `tmp/dev/stack`; `just e2e` and
 `just prodtest` use it.
 
 `just` lists all commands (`brew install just`); they wrap `deploy/dev.sh` and npm. Deploying
@@ -270,7 +274,7 @@ npm run typecheck
 ```
 
 `just check` runs lint, typecheck, `npm test` and the stack tooling's tests (`deploy/stack.test.sh`,
-`e2e/stack.unit.ts`; they need Docker, and test against the native Ollama when it runs).
+`e2e/stack.unit.ts`; they need Docker; the model check is tested against a throwaway local HTTP server).
 
 To run the e2e suite against the **prod images** (https://localhost:80N5, paired with this
 checkout's dev stack N): `just prodtest`, `just prodtest e2e [playwright args]`, `just prodtest down`; details in the header of `deploy/compose.prodtest.yml`: `E2E_BASE_URL`, `E2E_TOKEN_FILE` and `E2E_BACKEND_CONTAINER`

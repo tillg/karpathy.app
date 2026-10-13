@@ -213,8 +213,8 @@ alone (project `karpathy-app`), not numbered stacks.
 | **Orphan stack** | A project `karpathy-app-N` whose owning checkout was deleted. Any checkout's `just dev up N` may take it over. | `stack_state` |
 | **Remembered stack** | The number in `<checkout>/tmp/dev/stack`, written by `just dev up` and deleted by `just dev down`. Every later `dev`, `e2e` and `prodtest` command in that checkout uses it. A checkout holds at most one stack. | `stack_resolve`, `stack_remember` |
 | **Paired prodtest** | The prod images as project `karpathy-app-N-prodtest` on 80N5, taking N from the checkout's dev stack (remembered in `tmp/prodtest/stack` while it runs, so it outlives `just dev down`). | `just prodtest` |
-| **Native Ollama** | The dev LLM server on the Mac itself (LaunchAgent `app.karpathy.ollama`, `127.0.0.1:11434`, Metal GPU, models in `~/.ollama`), shared by all stacks and their prodtests. An outside service, like a cloud provider. | `just ollama install` |
-| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native Ollama and answers 403 to everything else. The `local` target has one too (`ollama-relay`). Where it finds Ollama is the gateway's `relay_upstream` (`OLLAMA_UPSTREAM`): `host.docker.internal:11434` from a dev stack, `192.168.5.2:11434` from the Lima VM. | `deploy/proxy/Caddyfile.ollama-relay` |
+| **Native omlx** | The dev LLM server on the Mac itself (omlx, an MLX-based OpenAI-compatible server; Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models/<model id>`), shared by all stacks and their prodtests. An outside service, like a cloud provider. The `local` target still uses a native Ollama (`just ollama install`). | `brew services start omlx` |
+| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native model server (omlx in dev and prodtest; the names are historical) and answers 403 to everything else. The `local` target has one too (`ollama-relay`, to Ollama). Where it finds the server is the gateway's `relay_upstream` (`OLLAMA_UPSTREAM`): `host.docker.internal:8000` (omlx) from a dev stack, `192.168.5.2:11434` from the Lima VM. | `deploy/proxy/Caddyfile.ollama-relay` |
 | **Stack label** | `karpathy #N`, the header brand (vault switcher) on dev stack N, so a browser tab shows which stack it is. Everywhere else the brand is `karpathy.app`. | `lib/brand.ts` › `brandName` |
 
 ### Settings
@@ -433,7 +433,7 @@ more.
 | **Public web** | Serves fetched pages; untrusted. |
 | **Obsidian / other git clients** | Change the same GitHub repo from other devices; their changes arrive on the next pull and can cause a conflict. |
 | **GitHub** | Hosts the vault repos; the backend clones, fetches and pushes with the GitHub token, and asks `GET /user` to test it. |
-| **LLM provider** (the environment's gateway: OpenRouter in production; the native Ollama on the Mac in dev, prodtest and on `local`) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
+| **LLM provider** (the environment's gateway: OpenRouter in production; the native omlx on the Mac in dev and prodtest, the native Ollama on `local`) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
 
 ## Processes
 
