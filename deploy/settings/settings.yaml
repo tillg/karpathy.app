@@ -8,7 +8,7 @@ ai:
   gateway: openrouter            # a key of `gateways`
   model: openrouter/z-ai/glm-5.3 # the default model; Admin may override it per installation
   # Looks at images for the chat model (tool look_at_image, #146). Same gateway; must speak the OpenAI chat API.
-  vision_model: openrouter/mistralai/mistral-small-2603
+  vision_model: openrouter/mistralai/mistral-medium-3-5
   web:
     access: true                 # default of the Admin "web access" switch
     fetch_cap: 20                # per-turn limits on the AI's web calls
@@ -49,7 +49,7 @@ gateways:
             only: [mistral/zdr, mistral, fireworks, together, parasail]
             zdr: true
             data_collection: deny
-      mistralai/mistral-small-2603:  # the vision model: images and tools, ZDR endpoint
+      mistralai/mistral-medium-3-5:  # the vision model: images and tools, ZDR endpoint
         options:
           provider:
             order: [mistral/zdr, mistral]
