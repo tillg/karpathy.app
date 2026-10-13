@@ -24,3 +24,18 @@ test('144 selecting text in the editor copies it and shows "Copied"', async ({ p
   await page.waitForTimeout(300);
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('keep-me');
 });
+
+test('144 selecting text in Read mode copies it too', async ({ page, context, api, vault, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Chromium only: WebKit refuses clipboard-read/clipboard-write permissions');
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await api.write(vault.id, 'CopyRead144.md', '# CopyRead144\n\ngamma delta\n');
+  await openApp(page, vault.id);
+  await openNote(page, 'CopyRead144.md');
+  await page.getByTestId('mode-read').click();
+
+  await page.evaluate(() => navigator.clipboard.writeText('x'));
+  await page.getByTestId('read-view').getByText('gamma delta').dblclick({ position: { x: 8, y: 8 } }); // on "gamma", not the paragraph's empty middle
+  await expect(page.getByTestId('toast')).toHaveText('Copied');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).not.toBe('x');
+  expect(['gamma', 'delta']).toContain((await page.evaluate(() => navigator.clipboard.readText())).trim());
+});
