@@ -1950,6 +1950,8 @@ edited: 2026-10-12
   PROD" is met by v0.0.22.
 - **Alternatives:** release v0.0.22 myself and let them take v0.0.23 (two deploys within an hour).
 - **Consequences:** rollback, if needed: `just deploy hetzner 0.0.21`.
+  Deployed by the enhancements run at 01:58 (23:58:57Z); checked here: prod `/api/health` reports `0.0.22`. Demo guide
+  line for #134 pushed (karpathy_demo_wiki 2668ef7).
 
 ## 01:55 — Retro: `just dev up` refuses with less than 10 GiB free {#run-2026-10-12-2325-9}
 
