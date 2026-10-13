@@ -57,6 +57,23 @@ export function callsThisTurn(messages: Message[], tool: string): number {
   return n;
 }
 
+/**
+ * A fetched page's relative links (`[x](/p)`, `href="/p"`), resolved against the page URL, one per line.
+ * The targets come from the page, not the model, so they're as known as the page's absolute links.
+ */
+function resolvedLinks(page: string, base: string): string {
+  const targets = [...page.matchAll(/\]\(\s*(?:<([^>]+)>|([^)\s]+))|href\s*=\s*["']([^"']+)["']/gi)].map((m) => m[1] ?? m[2] ?? m[3]);
+  return targets
+    .flatMap((t) => {
+      try {
+        return [new URL(t!, base).href];
+      } catch {
+        return [];
+      }
+    })
+    .join('\n');
+}
+
 const WRITE_TOOLS = ['edit', 'write', 'apply_patch', 'patch', 'multiedit', 'save_url'];
 const SOURCE_TOOLS = ['read', 'webfetch', 'websearch'];
 
@@ -85,6 +102,8 @@ export function knownTexts(messages: Message[]): string[] {
         const file = p.tool === 'read' && typeof input.filePath === 'string' ? input.filePath : null;
         if (file !== null && (written.some((w) => samePath(w, file)) || patches.some((t) => t.includes(file)))) continue;
         out.push(p.state.output);
+        const links = p.tool === 'webfetch' && typeof input.url === 'string' ? resolvedLinks(p.state.output, input.url) : '';
+        if (links) out.push(links);
       }
     }
   }

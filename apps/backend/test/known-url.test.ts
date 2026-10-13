@@ -134,6 +134,18 @@ describe('knownTexts', () => {
     ];
     expect(knownTexts(patched)).toEqual(['x']);
   });
+  it("a webfetch page's relative links count, resolved against the fetched URL", () => {
+    const page = 'Menu [Anfahrt](/de/anfahrt) [Zimmer](zimmer "Rooms") ![](</img/a b.png>) <a href="../kontakt?x=1">K</a> [cdn](//cdn.com/f.pdf)';
+    const texts = knownTexts([user('x'), call('webfetch', { url: 'https://www.zirmerhof.com/de/' }, page)]);
+    for (const url of ['https://www.zirmerhof.com/de/anfahrt', 'https://www.zirmerhof.com/de/zimmer', 'https://www.zirmerhof.com/img/a%20b.png', 'https://www.zirmerhof.com/kontakt?x=1', 'https://cdn.com/f.pdf']) {
+      expect(isKnownUrl(url, texts), url).toBe(true);
+    }
+    expect(isKnownUrl('https://www.zirmerhof.com/de/geschichte', texts)).toBe(false);
+  });
+  it('relative links resolve only in webfetch output, not in read or websearch output', () => {
+    const texts = knownTexts([user('x'), call('read', { filePath: 'notes/A.md', url: 'https://a.com/' }, '[a](/p)'), call('websearch', { query: 'q' }, '[b](/q)')]);
+    expect(isKnownUrl('https://a.com/p', texts)).toBe(false);
+  });
   it('a read of another file after a write still counts', () => {
     const messages = [user('x'), call('write', { filePath: 'notes/New.md' }), call('read', { filePath: 'notes/Links.md' }, 'https://a.com/')];
     expect(knownTexts(messages)).toEqual(['x', 'https://a.com/']);
