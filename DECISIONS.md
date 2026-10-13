@@ -2293,3 +2293,8 @@ edited: 2026-10-12
   but a third-party host instead of Mistral); bring our own Mistral key to OpenRouter (the user's call).
 - **Consequences:** rollback: `just deploy hetzner 0.0.22` (Small 2603) or `0.0.21` (no image tool). The test chat in
   `demo-vault` is deleted after the check.
+  v0.0.23 built green (run 38326667668) but is **not deployed**: from about 02:40 the prod host stopped answering
+  over Tailscale and HTTPS (`tailscale ping` no reply, rx 0), came back briefly at 02:48 (still 0.0.22, healthy) and
+  dropped again during the deploy (both `just deploy hetzner 0.0.23` runs ended UNREACHABLE after a few read-only
+  tasks, changed=0). No Hetzner API token on the Mac to look further; the user was told via ntfy. Prod runs v0.0.22,
+  whose image tool gets 429s until 0.0.23 is deployed.
