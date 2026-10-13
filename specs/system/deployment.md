@@ -1,7 +1,7 @@
 ---
 title: "Deployment: releases, targets and operations"
 created: 2026-10-02
-edited: 2026-10-12
+edited: 2026-10-13
 ---
 
 # Deployment: releases, targets and operations
@@ -335,7 +335,11 @@ flowchart LR
   `karpathy-app` or `karpathy-monitoring` isn't running or is unhealthy. The only way to notice the
   whole box gone: healthchecks.io raises the alert after 5 min period + 5 min grace. A stuck ingest loop (last-run
   file older than 20 min) makes the `ingest` container unhealthy, so Beszel and the heartbeat report it like any
-  other container.
+  other container. The ping body is `version X.Y.Z`, the running backend's image tag.
+- **healthchecks.io → ntfy** (set up by hand, one check per target): the ntfy integration sends the DOWN alerts
+  (priority for up events: Disabled); a webhook integration sends the UP alert, so it can carry the ping body: up
+  URL `https://ntfy.sh/<topic>`, POST, headers `Title: $NAME is UP` and `Tags: green_circle`, body
+  `We are up again: $BODY`; the down URL stays empty.
 - **ntfy**: one random topic per target on ntfy.sh, no account; alerts carry system names and numbers,
   never note content. `just ntfy-topic <target>` copies it.
 - RAM: about 20 MB for hub and agent. The Beszel agent has the Docker socket, which makes it

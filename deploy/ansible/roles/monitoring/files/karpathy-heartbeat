@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Pings the healthchecks.io check in /etc/karpathy-heartbeat.url; /fail (with the reason) as soon as a
 # container of karpathy-app or karpathy-monitoring isn't running, or is unhealthy (specs/system/deployment.md).
+# The ping body is the running release (the backend's image tag), so healthchecks.io's "is UP" alert can name it.
 set -uo pipefail
 url="$(cat /etc/karpathy-heartbeat.url)"
+image="$(docker ps --filter label=com.docker.compose.project=karpathy-app --filter label=com.docker.compose.service=backend --format '{{.Image}}' | head -n 1)"
+version="${image##*:}"
+version="${version:-unknown}"
 problems=""
 for project in karpathy-app karpathy-monitoring; do
   states="$(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Names}} {{.State}} {{.Status}}')"
@@ -14,7 +18,7 @@ for project in karpathy-app karpathy-monitoring; do
   done <<< "$states"
 done
 if [ -n "$problems" ]; then
-  curl -fsS -m 10 --retry 3 --data-raw "$problems" "$url/fail" >/dev/null
+  curl -fsS -m 10 --retry 3 --data-raw "${problems}version $version" "$url/fail" >/dev/null
 else
-  curl -fsS -m 10 --retry 3 "$url" >/dev/null
+  curl -fsS -m 10 --retry 3 --data-raw "version $version" "$url" >/dev/null
 fi

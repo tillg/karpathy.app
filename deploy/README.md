@@ -139,7 +139,7 @@ managed by Ansible.
 | `just token <target>` | Copies the target's access token to the clipboard. |
 | `just token <target> --qr` | Also prints a QR code of the login link `<app url>/#token=…`: scan it on the iPad or phone and the app opens, logged in. The QR code is a credential: don't screenshot or share it. |
 | `just ingest-auth <target> <email>` | Gives the target's ingest service Gmail access: pipes this Mac's gog OAuth client (`gog auth credentials`) and the account's refresh token (Keychain, from `gog auth add <email>`) into its container. Nothing is printed or stored on the way. `dev` = this checkout's dev stack. |
-| `just ntfy-topic <target>` | Copies the target's ntfy alert topic to the clipboard, to subscribe to it in the ntfy app (and in healthchecks.io's ntfy integration). `dev` copies the dev-progress topic (`karpathy-development-…`, Keychain item `karpathy-ntfy-dev`; agents post progress there, never on the alert topics). |
+| `just ntfy-topic <target>` | Copies the target's ntfy alert topic to the clipboard, to subscribe to it in the ntfy app (and in healthchecks.io's ntfy and webhook integrations, see below). `dev` copies the dev-progress topic (`karpathy-development-…`, Keychain item `karpathy-ntfy-dev`; agents post progress there, never on the alert topics). |
 
 **Operations**
 
@@ -223,6 +223,10 @@ the app.
    `tag:server`, pre-approved, single-use.
 3. `just secrets hetzner`: GoDaddy key, GitHub token, OpenRouter key, the Tailscale key, the
    healthchecks.io ping URL, the git author. Subscribe to the printed ntfy topic on your phone.
+   In healthchecks.io, give the check two integrations to that topic: ntfy for DOWN (priority for up
+   events: Disabled), and a webhook for UP that names the running version: up URL
+   `https://ntfy.sh/<topic>`, POST, headers `Title: $NAME is UP` and `Tags: green_circle`, body
+   `We are up again: $BODY` (the heartbeat's ping body is `version X.Y.Z`); down URL empty.
 4. `just deploy hetzner --bootstrap <public-ip>`. At the end root login is off and the server is
    on the tailnet as `karpathy`; you and Ansible log in as `ops` (sudo); `deploy`, the app's own
    user (uid 1000), has no login.
