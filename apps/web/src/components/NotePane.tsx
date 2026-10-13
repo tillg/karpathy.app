@@ -12,6 +12,7 @@ import { applies, validate } from '../lib/schema';
 import { currentHeading, outlineOfText } from '../lib/outline';
 import { scrollToLine, topBlockLine } from '../lib/place';
 import { incomingView } from '../lib/incoming';
+import { readSelectionText, selectionCopier } from '../lib/copy-select';
 import { parseWikilink, resolveWikilink } from '../lib/wikilink';
 import { useApp } from '../store';
 import { AttachButton } from './AttachButton';
@@ -82,10 +83,16 @@ function PropValue({ k, v }: { k: string; v: FieldValue }) {
   return <span className="pv chips">{v.map((item, i) => <span className="chip" key={i}><Linked text={item} bare={bare} /></span>)}</span>;
 }
 
-function ReadView({ text }: { text: string }) {
+function ReadView({ text, onCopied }: { text: string; onCopied(): void }) {
   const { frontmatter, body } = splitFrontmatter(text);
+  const latest = useRef(onCopied);
+  latest.current = onCopied;
+  // Copy on select (#144), as in Write mode: from the gesture handler itself, the rendered text of the selection.
+  const copy = useMemo(() => selectionCopier(() => latest.current()), []);
+  const copySelection = (e: { currentTarget: Element }) => copy(readSelectionText(e.currentTarget));
   return (
-    <div className="read" data-testid="read-view">
+    <div className="read" data-testid="read-view" onMouseUp={copySelection} onTouchEnd={copySelection}
+      onKeyUp={(e) => { if (e.shiftKey && !e.metaKey && !e.ctrlKey) copySelection(e); }}>
       {frontmatter !== null && (
         <div className="props">
           {frontmatterFields(frontmatter).map(([k, v], i) => <div className="prop" key={`${k}${i}`}><span>{k}</span><PropValue k={k} v={v} /></div>)}
@@ -407,7 +414,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
                   hideFrontmatter={showForm} onFrontmatter={(f) => setFmFor({ key: noteKey!, fm: f })} onRevealFrontmatter={() => setYamlFor(note.path)} />
               : kind === 'html'
                 ? <HtmlView key={note.path} vault={s.activeId!} path={note.path} text={s.currentText()} paths={s.paths} />
-                : <ReadView text={s.currentText()} />}
+                : <ReadView text={s.currentText()} onCopied={() => s.toast('Copied')} />}
             <div className="dfoot" data-testid="save-state">
               {note.uploading ? 'Uploading…' : note.saving ? 'Saving…' : note.dirty ? '● Unsaved changes' : 'Saved'}{readOnly ? ' · read-only' : ''}
             </div>

@@ -179,13 +179,14 @@ flowchart LR
 - **Write mode** (default for a new browser): Markdown with live preview, find-in-note; embeds show as a block below
   their line, the `![[…]]` text stays editable. The frontmatter shows as the properties form (below), or as a block
   of raw lines in the YAML view.
-- **Copy on select** (#144, Write mode only): selecting text in the editor copies it to the clipboard at once, like a
+- **Copy on select** (#144, Write and Read mode): selecting text in the editor copies it to the clipboard at once, like a
   terminal, and the toast says "Copied". It fires when the gesture ends (mouse up, touch end, key up while Shift is held,
   i.e. shift+arrows/home/end/page), because Safari only allows the clipboard write inside that event. Cmd/Ctrl
   combos (select-all, find next) never copy. Trade-off: a mouse or touch selection (double-click a word) overwrites
   the clipboard, so "copy a URL, select text, paste to replace" pastes the selection; select first, then copy. An empty selection
   and a selection already copied aren't copied again (clearing it first re-arms the copy). A refused clipboard write
-  (no secure context, no permission) is silent. Read mode keeps the browser's normal select and copy.
+  (no secure context, no permission) is silent. Read mode does the same on the rendered page (same gestures and rules):
+  it copies the selection's visible text (e.g. "AeroPress", not `[[aeropress]]`), and only a selection inside the page.
 - **Outline and note info** (#79): the list button in the note header (notes only, left of Write/Read) shows the
   note's headings, indented by level, the same in both modes; headings in code, the frontmatter and `%%comments%%`
   aren't listed. A tap jumps there: Write mode scrolls the heading's line to the top without moving the cursor or
