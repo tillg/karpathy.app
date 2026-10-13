@@ -142,6 +142,8 @@ edited: 2026-10-12
   - [01:05 — Merge #142 at 6/12 on its e2e and ship it; the issue stays open](#run-2026-10-12-2325-7)
   - [01:40 — One release for both runs: the enhancements run tags and deploys v0.0.22](#run-2026-10-12-2325-8)
   - [01:55 — Retro: `just dev up` refuses with less than 10 GiB free](#run-2026-10-12-2325-9)
+  - [02:10 — No open-ended e2e testing tonight: 8.5 GiB free disk](#run-2026-10-12-2325-10)
+  - [02:10 — Appended to DECISIONS.md and resolved merge conflicts by script](#run-2026-10-12-2325-11)
 - [2026-10-12 23:32 — Build the high-priority enhancements (#147, #144, #128, #143, #145, #146), release and deploy to prod](#run-2026-10-12-2332)
   - [23:45 — Small issues are tweaks, tool-adding issues are full changes; "archive" closes the issue either way](#run-2026-10-12-2332-1)
   - [23:45 — Share main with the parallel bug-fix run: fetch before every merge, version picked at release time](#run-2026-10-12-2332-2)
@@ -1966,7 +1968,33 @@ edited: 2026-10-12
   image builds).
 - **Consequences:** a fixed 10 GiB, no setting: raise it in `dev.sh` if 10 turns out too low. Also found:
   `stack.test.sh` "render dev/prodtest" fail on `main` since #146 (vision model vs. an openrouter gateway); reported to
-  the enhancements run, which owns it.
+  the enhancements run, which owns it. Fixed by it in 6618bdf; `stack.test.sh` all passed on 3ada173.
+
+## 02:10 — No open-ended e2e testing tonight: 8.5 GiB free disk {#run-2026-10-12-2325-10}
+
+- **Status:** open
+- **Context:** `/autonomous` step 5 (test end-to-end until the user returns). The disk is at 8.5 GiB free after the
+  other run's builds, below the 10 GiB that `just dev up` now requires (decision 9).
+- **Question:** start a stack and test anyway?
+- **Decision:** no; report now. Prod is checked by version (`/api/health` 0.0.22) and the other run's deploy smoke test.
+- **Why:** a full disk broke the Docker VM once tonight; test data stays off prod.
+- **Alternatives:** lower the guard for one run; e2e against prod (test data on prod: not allowed).
+- **Consequences:** #134 and #142 are covered by unit, integration and (for #142) the 12 dev-stack e2e runs, not by a
+  prod click-through.
+
+## 02:10 — Appended to DECISIONS.md and resolved merge conflicts by script {#run-2026-10-12-2325-11}
+
+- **Status:** open
+- **Overrides:** `/autonomous` and `decisions.md` — edit `DECISIONS.md` and spec files with the Edit/Write tools only
+- **Context:** the run header and decisions 2–4 were appended with a shell heredoc; the `DECISIONS.md` conflict with
+  the parallel run and the `architecture.md` / `security.md` merge conflicts on `fix/142-embed-picture` were resolved
+  with a short Python script (keep both sides).
+- **Question:** n/a (found in the retro).
+- **Decision:** leave the content as it is; every later Edit linted the whole file and reported only the old warning
+  on line 1641.
+- **Why:** the content is lint-clean; rewriting it would only churn history.
+- **Alternatives:** redo the edits through Edit.
+- **Consequences:** none beyond this note.
 
 # 2026-10-12 23:32 — Build the high-priority enhancements (#147, #144, #128, #143, #145, #146), release and deploy to prod {#run-2026-10-12-2332}
 
