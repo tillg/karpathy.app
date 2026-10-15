@@ -8,7 +8,7 @@ import { UsageSection } from './UsageSection';
 const sums = (o: Partial<UsageReport['total']> = {}) => ({ input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0, ...o });
 const report = (n: number, costKnown: boolean): UsageReport => ({
   days: Array.from({ length: n }, (_, i) => ({ date: `2026-10-${String(i + 1).padStart(2, '0')}`, ...sums({ input: 1000 }) })),
-  byModel: [{ model: 'anthropic/claude-sonnet-5.5', ...sums({ input: 1_000_000, output: 100_000, reasoning: 50_000, cacheRead: 40_000, cacheWrite: 10_000, cost: costKnown ? 3.861 : 0 }) }],
+  byModel: [{ model: 'acme/model-a', ...sums({ input: 1_000_000, output: 100_000, reasoning: 50_000, cacheRead: 40_000, cacheWrite: 10_000, cost: costKnown ? 3.861 : 0 }) }],
   byVault: [{ vault: 'v1', name: 'My life', chats: 14, ...sums({ input: 1_000_000, output: 100_000, reasoning: 50_000, cacheRead: 40_000, cacheWrite: 10_000, cost: costKnown ? 3.861 : 0 }) }],
   total: sums({ input: 1_000_000, output: 100_000, reasoning: 50_000, cacheRead: 40_000, cacheWrite: 10_000, cost: costKnown ? 3.861 : 0 }),
   costKnown,
@@ -44,7 +44,7 @@ describe('Admin › Usage', () => {
     const output = await tile('Output');
     expect(output.textContent).toContain('150K');
     expect(output.textContent).toContain('13 %');
-    const model = within(screen.getByText('anthropic/claude-sonnet-5.5').closest('tr')!).getAllByRole('cell').map((c) => c.textContent);
+    const model = within(screen.getByText('acme/model-a').closest('tr')!).getAllByRole('cell').map((c) => c.textContent);
     expect(model.slice(1, 4)).toEqual(['1M', '150K', '50K']);
     const vault = within(screen.getByText('My life').closest('tr')!).getAllByRole('cell').map((c) => c.textContent);
     expect(vault.slice(0, 3)).toEqual(['My life', '14', '1.2M']);

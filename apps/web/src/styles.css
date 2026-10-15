@@ -658,6 +658,7 @@ a.tc { text-decoration: none; cursor: pointer; }
 .admin-inner { max-width: 780px; padding: 18px 24px 40px; }
 #admin-mode.phone .admin-inner { padding: 12px 16px 40px; }
 #admin-mode.phone .lt { margin: 8px 20px 10px; }
+#admin-mode.phone .admin-inner > .lt { margin-left: 0; margin-right: 0; }
 .admin-list { margin: 0 16px; background: var(--bg2); border-radius: 12px; overflow: hidden; }
 .admin-list a { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 14px; position: relative; color: var(--label); text-decoration: none; }
 .admin-list a + a::before { content: ""; position: absolute; top: 0; left: 50px; right: 0; height: .5px; background: var(--sep); }
@@ -710,13 +711,15 @@ details.nums .num { text-align: right; font-variant-numeric: tabular-nums; }
 .status .f7-icons { width: auto; font-size: 14px; color: inherit; }
 .status.ok { background: var(--add); color: var(--green-ink); }
 .status.warn { background: var(--warn); color: var(--orange-ink); }
+.status.bad { background: var(--del); color: var(--red-ink); }
+.status.off { background: var(--fill); color: var(--label2); }
 
 /* Deployment secrets table (admin mode) */
 .tbl-wrap { background: var(--bg2); border-radius: 12px; padding: 4px 14px 12px; margin: 0 0 12px; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 15px; }
 .tbl th { text-align: left; font-size: 12px; font-weight: 600; color: var(--label2); padding: 8px 8px 6px 0; }
 .tbl td { padding: 9px 8px 9px 0; border-top: .5px solid var(--sep); vertical-align: top; }
-.tbl .num { text-align: right; padding-right: 0; }
+.tbl .num { text-align: right; padding-left: 8px; padding-right: 0; }
 .tbl-wrap .muted { margin: 10px 0 0; }
 .show-phone { display: none; }
 #admin-mode.phone .hide-phone { display: none; }

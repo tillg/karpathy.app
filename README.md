@@ -31,10 +31,19 @@ opencode runs headless as a server and brings a provider-agnostic loop, file too
 skills, `AGENTS.md`/`CLAUDE.md`, and MCP. Only the frontend (editor + chat) and a thin
 backend (file API + opencode client + git sync) get built.
 
+**Admin mode** (#150). Everything that configures or watches the installation lives in a mode of its own,
+apart from notes and chat: the gear in the sidebar opens it, **Done** goes back to where you were. Six sections:
+**General** (commit reminder, version), **Vaults** (add, edit, remove), **Secrets & keys** (GitHub token,
+Instagram login, and whether each deployment secret is set — never its value), **AI** (model, web access),
+**Usage** (LLM tokens per day, model and vault, with cost when the provider reports it) and **Server** (CPU,
+memory, load and disk over 1 h / 24 h / 7 d, sampled by the backend every 30 s). Wide screens show the sections in
+a left rail; the phone shows a list, and each section has only "‹ Admin" back to it. Switching vaults stays in the
+vault menu of the normal (user) mode: a first step towards separate User and Admin roles.
+
 ## Sync
 
-Every vault is a **GitHub repo**. In the app's **Vaults** dialog (vault menu → **Manage vaults…**) you configure which repos
-are your vaults; the backend clones them. Your and the AI's edits stay uncommitted until
+Every vault is a **GitHub repo**. In admin mode's **Vaults** section (vault menu → **Manage vaults…**) you configure
+which repos are your vaults; the backend clones them. Your and the AI's edits stay uncommitted until
 you hit **Commit & Push**. Obsidian mobile and desktop are attached to the same remotes. No second sync system.
 
 **Vault structure.** A vault root has a `Sources/` folder (immutable source documents) and a
@@ -42,15 +51,15 @@ you hit **Commit & Push**. Obsidian mobile and desktop are attached to the same 
 Lowercase `sources/` and `wiki/` count too. When you add a repo, the app checks it before attaching
 anything: is it reachable with the token, do the branch and root exist, and are `Sources/` and `Wiki/`
 there? If folders are missing, it offers to create them (as uncommitted `.gitkeep` files). If you
-decline, the vault is not attached. The `(?)` in the **Vaults** dialog explains this in the app.
+decline, the vault is not attached. The `(?)` in the **Vaults** section explains this in the app.
 
-**GitHub token.** One token is used for every vault. Set or replace it in **Settings** (the gear in the sidebar), and
+**GitHub token.** One token is used for every vault. Set or replace it in admin mode › **Secrets & keys**, and
 check it with **Test token**, which shows whose token it is, its expiry, and whether each vault's repo
 is reachable. The app shows only its last 4 characters. Without a token set in the app, the
 backend uses the `github_token` secret of the deployment.
 
-**Web access.** The AI can search the web and read pages. It is on by default; switch it off under
-Settings (the gear) → Web access (one switch for all vaults). Each search and page read shows as a
+**Web access.** The AI can search the web and read pages. It is on by default; switch it off in
+admin mode › AI → Web access (one switch for all vaults). Each search and page read shows as a
 chip in the chat (`searched the web: "…"`, `fetched example.com/post`); a fetched chip opens the page.
 Searches go to Exa. An Exa key (secret `exa_api_key`: `deploy/secrets/exa_api_key` in dev) is optional;
 without it Exa's anonymous endpoint is used, which is rate-limited, so set a key in production
@@ -115,9 +124,9 @@ New sources (mails, links, Instagram posts) are fetched on the server, no Mac ne
   feeds which vault is `ingest.profiles` in [`deploy/settings/`](deploy/settings/) (empty = idle; only the
   production settings may have profiles, dev and test stacks never read a real label).
 - **Gmail access**: `just ingest-auth <target> <email>` copies this Mac's gog OAuth client and the account's refresh
-  token into the target's ingest service. **Instagram**: Settings › Instagram, username and password (plus a 2FA code
-  if Instagram asks); the server logs in and keeps only the session. "Expired — Reconnect" there, and a notice in the
-  Vaults list, when Instagram rejected it.
+  token into the target's ingest service. **Instagram**: admin mode › Secrets & keys › Instagram, username and password (plus a
+  2FA code if Instagram asks); the server logs in and keeps only the session. "Expired — Reconnect" there, and a notice
+  in the Vaults section, when Instagram rejected it.
 
 ## Status
 
@@ -228,7 +237,7 @@ Manage Website Data → `localhost`) and enter the token again.
 Dev stacks clone from local bare repos under `tmp/dev/remotes/<owner>/<name>.git` (`git.remote_base:
 file:///remotes/` in `deploy/settings/dev.yaml`; the e2e suite creates its repos there). To clone from GitHub
 instead, set `git: { remote_base: https://github.com/ }` in `deploy/settings/dev.local.yaml` and put a token
-into `deploy/secrets/github_token` (or set one under Settings in the app).
+into `deploy/secrets/github_token` (or set one in the app: admin mode › Secrets & keys).
 
 ### Settings
 
@@ -255,7 +264,7 @@ model:
 ai: { gateway: openrouter, model: openrouter/<model> }   # plus the key in deploy/secrets/openrouter_api_key
 ```
 
-The model in the settings is the default; one picked under Settings in the app overrides it until you choose
+The model in the settings is the default; one set in the app (admin mode › AI) overrides it until you choose
 **Use default** again. The old hand-edited `deploy/.env` and `deploy/opencode.env` are no longer read:
 `just dev up` names their keys and where each one goes now.
 

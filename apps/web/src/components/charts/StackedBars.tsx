@@ -1,6 +1,9 @@
+import { useLayoutEffect, useState } from 'react';
 import { NoData, useTip } from './Tip';
 
-const W = 700, H = 200, PL = 40, PB = 22, PT = 8;
+const H = 200, PL = 40, PB = 22, PT = 8;
+/** Narrowest gap between two day labels before every other one is dropped. */
+const LABEL_GAP = 44;
 
 export interface StackedBarsProps {
   rows: { label: string; values: Record<string, number> }[];
@@ -14,11 +17,26 @@ export interface StackedBarsProps {
 /** One stack per row (day), one segment per series; hover shows the row's numbers in a tooltip. */
 export function StackedBars({ rows, series, format, label }: StackedBarsProps) {
   const tip = useTip();
+  // Drawn at the wrapper's real width, so the labels keep their font size on a phone instead of shrinking with a
+  // scaled-down viewBox.
+  const [W, setW] = useState(700);
+  useLayoutEffect(() => {
+    const el = tip.ref.current;
+    if (!el) return;
+    const measure = () => { if (el.clientWidth) setW(el.clientWidth); };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [tip.ref, rows.length]);
   if (!rows.length) return <NoData />;
   const val = (r: StackedBarsProps['rows'][number], k: string) => r.values[k] ?? 0;
   const total = (r: StackedBarsProps['rows'][number]) => series.reduce((a, s) => a + val(r, s.key), 0);
   const max = Math.max(...rows.map(total)) * 1.1 || 1;
   const bw = (W - PL) / rows.length;
+  const every = Math.ceil(LABEL_GAP / bw); // 1 = every day labelled; the last day always is
+  const labelled = (i: number) => (rows.length - 1 - i) % every === 0;
   const y = (v: number) => PT + (H - PT - PB) * (1 - v / max);
   return (
     <div className="chart-wrap" ref={tip.ref}>
@@ -42,7 +60,7 @@ export function StackedBars({ rows, series, format, label }: StackedBarsProps) {
                 acc += val(r, s.key);
                 return <rect className="seg" key={s.key} x={x} y={y1} width={w} height={Math.max(0, y0 - y1)} fill={s.color} stroke="var(--bg2)" strokeWidth={1} />;
               })}
-              <text x={x + w / 2} y={H - 6} textAnchor="middle">{r.label}</text>
+              {labelled(i) && <text x={x + w / 2} y={H - 6} textAnchor="middle">{r.label}</text>}
               <rect className="hit" x={PL + i * bw} y={0} width={bw} height={H - PB} fill="transparent"
                 onPointerMove={(e) => tip.show(e, `${r.label} · ${series.map((s) => `${s.label} ${format(val(r, s.key))}`).join(' · ')}`)} />
             </g>

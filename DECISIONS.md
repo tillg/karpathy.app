@@ -2353,6 +2353,14 @@ edited: 2026-10-15
   still runs. Open on resume: step 15 (verify the spec, read screenshots, full `just e2e` and a baseline comparison of
   unrelated failures), step 16 (README, demo run book), the review (known: first metrics sample reports CPU 0 %),
   archive, retro.
+  Resumed 17:13, **paused again at 17:36** (moving). Done since: the new `e2e/admin-mode.spec.ts` (10 cases, green on
+  desktop and iphone; its CSS-fix cases seen red without the CSS), the phone bar chart drawn at its real width
+  (labels were 6 px), README and the demo run book's chapter 3 (demo vault edit uncommitted, pushed only after the
+  release). The "unexplained" fixture swap was the Worker's fix for `repo-settings.test.ts` › "model literals live
+  only in deploy/settings/" (it scans `.test.tsx`): now a fictional `acme/model-a`. `just check` was green apart from
+  that test; the full `just e2e` was stopped after 164 tests (2 failed, both `@llm` desktop specs:
+  `ai-suggest-next`, `fix-106`). Open: finish the full `just e2e` and the baseline check of the `@llm` failures, tick
+  steps 15 and 16, the review, archive, retro.
 
 ## 12:58 — Baseline: two backend timing tests fail only under load; gate merges on lint, typecheck and the touched workspaces {#run-2026-10-15-1244-3}
 
