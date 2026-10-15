@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { parseEnv } from 'node:util';
 import { loadSettings, renderBackendSettings, renderComposeEnv, renderIngestConfig, renderOpencodeEnv, renderOpencodeProviders } from '../src/index.js';
 import { backendSettingsSchema } from '../../../apps/backend/src/settings.js';
-import { tempDir } from './helpers.js';
+import { CENTRAL, tempDir } from './helpers.js';
 
 const fixture = (name: string) => readFileSync(new URL(`fixtures/${name}`, import.meta.url), 'utf8');
 const env = (text: string) => parseEnv(text) as Record<string, string>;
@@ -17,6 +17,9 @@ const SECRETS = {
   git_author_name: 'Jane Doe',
   git_author_email: 'jane@example.com',
 };
+
+// The strict backend schema accepts the `secrets` manifest only from step 6 on.
+const withoutSecrets = ({ secrets: _secrets, ...rest }: Record<string, unknown>) => rest;
 
 describe('renderOpencodeProviders', () => {
   it("reproduces today's provider configs", () => {
@@ -124,9 +127,34 @@ describe('renderBackendSettings', () => {
     expect(s.commit_reminder_threshold).toBe(4);
     expect(s.files).toEqual({ visible_dot_dirs: ['.agents'] });
     for (const e of ['dev', 'prodtest', 'test', 'local', 'hetzner'])
-      expect(() => backendSettingsSchema.parse(JSON.parse(renderBackendSettings(loadSettings(e, { overlay: false }), SECRETS))), e).not.toThrow();
+      expect(() => backendSettingsSchema.parse(withoutSecrets(JSON.parse(renderBackendSettings(loadSettings(e, { overlay: false }), SECRETS)))), e).not.toThrow();
     for (const name of ['bearer_token', 'opencode_password', 'github_token', 'dns_api_token', 'openrouter_api_key'])
       expect(json).not.toContain(SECRETS[name as keyof typeof SECRETS]);
+  });
+});
+
+describe('renderBackendSettings secrets manifest', () => {
+  it('settings.json lists every referenced secret of the active gateway with component, purpose, optional and set, never a value', () => {
+    const dir = tempDir({
+      'settings.yaml': CENTRAL,
+      'x.yaml': 'ai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3, vision_model: openrouter/z-ai/glm-5.3 }\n',
+    });
+    const settings = loadSettings('x', { dir });
+    const store = { ...SECRETS, exa_api_key: undefined };
+    const json = renderBackendSettings(settings, store);
+    const { secrets } = JSON.parse(json);
+    expect(secrets).toEqual([
+      { name: 'exa_api_key', component: 'opencode', purpose: 'Web search (Exa)', optional: true, set: false },
+      { name: 'bearer_token', component: 'backend', purpose: 'App login token', optional: false, set: true },
+      { name: 'opencode_password', component: 'backend, opencode', purpose: 'opencode password', optional: false, set: true },
+      { name: 'github_token', component: 'backend', purpose: 'GitHub token (fallback)', optional: true, set: true },
+      { name: 'dns_api_token', component: 'proxy', purpose: 'DNS for certificates', optional: true, set: true },
+      { name: 'openrouter_api_key', component: 'opencode', purpose: 'Gateway openrouter API key', optional: false, set: true },
+    ]);
+    for (const v of Object.values(SECRETS)) expect(json).not.toContain(v);
+    // An unset optional secret is absent from the store, not an error; the exa key set flips `set`.
+    const withExa = JSON.parse(renderBackendSettings(settings, { ...store, exa_api_key: 'exa-SECRET' }));
+    expect(withExa.secrets[0].set).toBe(true);
   });
 });
 
