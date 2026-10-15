@@ -1,7 +1,7 @@
 ---
 feature: admin-mode
 title: "Plan: admin mode"
-status: proposed
+status: applying
 order: 4
 created: 2026-10-15
 edited: 2026-10-15
@@ -30,7 +30,7 @@ flowchart LR
 
 ## Admin mode shell (web)
 
-- [ ] Parse and format the admin route `#admin` / `#admin/<section>`
+- [x] Parse and format the admin route `#admin` / `#admin/<section>`
   - Depends on: none
   - Test first: `apps/web/src/lib/route.test.ts` › "admin routes": `parseRoute('#admin/usage')` gives `{ admin: 'usage', vault: null, path: null }`, `#admin` gives `admin: ''` (list), an unknown section gives `general`, `#/admin/x` stays a vault route; `formatAdminRoute('ai')` gives `#admin/ai`. Fails today: no admin form exists.
   - Verify: `npm test -w apps/web -- route` → green; `npm test -w apps/web` → all green
