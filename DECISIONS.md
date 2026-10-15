@@ -2339,6 +2339,8 @@ edited: 2026-10-15
 - **Alternatives:** sequential (simpler, about three times longer); symlink `node_modules` (fast, but wrong
   workspace resolution).
 - **Consequences:** Workers never start dev stacks; e2e is verified only at steps 4 and 15 in the main tree.
+  Changed at 13:40: step 4's Worker runs its own dev stack from its worktree (`just dev up`, the project's
+  per-checkout stacks), so the main tree stays free for merges; it takes the stack down when done.
 
 ## 12:58 — Baseline: two backend timing tests fail only under load; gate merges on lint, typecheck and the touched workspaces {#run-2026-10-15-1244-3}
 

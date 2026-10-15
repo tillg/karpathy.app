@@ -83,7 +83,7 @@ flowchart LR
 
 ## Server metrics
 
-- [ ] `MetricsSampler` takes a sample every 30 s and keeps 7 days in memory and `metrics.jsonl`
+- [x] `MetricsSampler` takes a sample every 30 s and keeps 7 days in memory and `metrics.jsonl`
   - Depends on: none
   - Test first: `apps/backend/test/metrics.test.ts` (injected clock and readers, temp dir): › "CPU % from the difference of two cpu-time readings", › "appends one JSON line per sample", › "on start drops samples older than 7 days and skips a torn last line", › "hourly compaction rewrites the file without the old samples", › "range 24h is bucket-averaged to at most 240 points". Fails today: no module.
   - Verify: `npm test -w apps/backend -- metrics` → green; `npm test -w apps/backend` → all green
