@@ -76,7 +76,7 @@ flowchart LR
   - Depends on: none
   - Test first: `apps/web/src/components/charts/charts.test.tsx` › "Sparkline draws one path over the points, labels min/max and the latest value", › "StackedBars draws one stack per day with one rect per series", › "both render a `<details>` table with the same numbers", › "empty data shows 'No data yet'". Fails today: no components.
   - Verify: `npm test -w apps/web -- charts` → green; `npm test -w apps/web` → all green
-- [ ] Usage section: range switch, totals, per-day bars, per-model and per-vault tables
+- [x] Usage section: range switch, totals, per-day bars, per-model and per-vault tables
   - Depends on: 3, 9, 10
   - Test first: `apps/web/src/components/UsageSection.test.tsx` › "7 d / 30 d refetch with ?days=", › "totals in short numbers (29K, 1.2M)", › "cost column only when costKnown", › "shows 'Counts the chats that still exist.'". Fails today: no section.
   - Verify: `npm test -w apps/web -- UsageSection` → green; `npm test -w apps/web` → all green
