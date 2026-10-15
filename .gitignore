@@ -29,6 +29,7 @@ specs/**/*.html
 !specs/research/features/feature-report.html
 !specs/01_mvp/layouts/*.html
 !specs/research/browser-only/spikes/**/*.html
+!specs/changes/*/ui/*-mockup.html
 /index.html
 !specs/**/*-report.html
 /DECISIONS.html

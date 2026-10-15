@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Admin mode draft</title>
+<!-- Draft of the admin mode UI for specs/changes/admin-mode (issue #150). Static mockup with sample data, not app code.
+     Tokens copied from apps/web/src/styles.css; chart series colors from the dataviz reference palette (validated). -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/framework7-icons@5.0.5/css/framework7-icons.css">
+<style>
+:root {
+  --bg: #f2f2f7; --bg2: #fff; --paper: #fff; --sb: #f2f2f7;
+  --label: #0b0d12; --label2: #636366; --label3: #8a8a8e;
+  --sep: rgba(60,60,67,.2); --fill: rgba(120,120,128,.12); --fill2: rgba(120,120,128,.07);
+  --tint: #1f4db8; --tint-soft: rgba(31,77,184,.12); --on-tint: #fff; --brand: #0f1e33;
+  --mat: rgba(249,249,251,.78); --green: #28a745; --red: #e5484d; --orange: #f59e0b;
+  --green-ink: #146c33; --red-ink: #b91c1c; --orange-ink: #8f5200;
+  --add: rgba(40,167,69,.12); --del: rgba(229,72,77,.12); --warn: rgba(245,158,11,.14);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --grid: rgba(60,60,67,.12);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #000; --bg2: #1c1c1e; --paper: #111113; --sb: #1a1a1c;
+    --label: #f5f5f7; --label2: rgba(235,235,245,.6); --label3: #7c7c80;
+    --sep: rgba(84,84,88,.55); --fill: rgba(120,120,128,.26); --fill2: rgba(120,120,128,.14);
+    --tint: #86abff; --tint-soft: rgba(134,171,255,.16); --on-tint: #0b1530; --brand: #dbe6ff;
+    --mat: rgba(28,28,30,.74); --green: #3ddc84; --red: #ff7a7a;
+    --green-ink: #3ddc84; --red-ink: #ff7a7a; --orange-ink: #f59e0b;
+    --add: rgba(61,220,132,.14); --del: rgba(255,107,107,.14);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --grid: rgba(235,235,245,.12);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #000; --bg2: #1c1c1e; --paper: #111113; --sb: #1a1a1c;
+  --label: #f5f5f7; --label2: rgba(235,235,245,.6); --label3: #7c7c80;
+  --sep: rgba(84,84,88,.55); --fill: rgba(120,120,128,.26); --fill2: rgba(120,120,128,.14);
+  --tint: #86abff; --tint-soft: rgba(134,171,255,.16); --on-tint: #0b1530; --brand: #dbe6ff;
+  --mat: rgba(28,28,30,.74); --green: #3ddc84; --red: #ff7a7a;
+  --green-ink: #3ddc84; --red-ink: #ff7a7a; --orange-ink: #f59e0b;
+  --add: rgba(61,220,132,.14); --del: rgba(255,107,107,.14);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --grid: rgba(235,235,245,.12);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--label); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+input { font: inherit; color: var(--label); }
+.f7-icons { font-size: 22px; line-height: 1; }
+
+/* ---------- admin shell ---------- */
+.admin { display: flex; height: 100dvh; overflow: hidden; }
+.rail { flex: none; width: 232px; background: var(--sb); border-right: .5px solid var(--sep); display: flex; flex-direction: column; padding: 0 10px 12px; }
+.rail-h { height: 52px; display: flex; align-items: center; gap: 8px; padding: 0 6px; font-weight: 700; font-size: 15px; color: var(--brand); }
+.mode-pill { font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; padding: 3px 8px; border-radius: 10px; background: var(--brand); color: var(--bg2); }
+.rail a { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 10px; border-radius: 10px; color: var(--label); text-decoration: none; font-size: 15px; margin-bottom: 2px; }
+.rail a .f7-icons { color: var(--tint); font-size: 20px; width: 22px; text-align: center; }
+.rail a:hover { background: var(--fill2); }
+.rail a[aria-current="page"] { background: var(--tint); color: var(--on-tint); font-weight: 600; }
+.rail a[aria-current="page"] .f7-icons { color: var(--on-tint); }
+.rail .sp { flex: 1; }
+.rail .who { font-size: 12px; color: var(--label2); padding: 8px 10px 0; border-top: .5px solid var(--sep); line-height: 1.4; }
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+.bar { flex: none; height: 52px; display: flex; align-items: center; gap: 4px; padding: 0 8px 0 20px; background: var(--mat); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 .5px 0 var(--sep); }
+.bar h1 { font-size: 17px; margin: 0; font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar .back { text-decoration: none; display: none; align-items: center; color: var(--tint); font-size: 17px; padding: 0 8px 0 0; height: 40px; }
+.ib { height: 36px; display: inline-flex; align-items: center; gap: 4px; padding: 0 12px; border-radius: 10px; color: var(--tint); font-weight: 600; font-size: 16px; }
+.ib:hover { background: var(--fill2); }
+.content { flex: 1; overflow-y: auto; }
+.inner { max-width: 780px; padding: 18px 24px 40px; }
+
+/* ---------- shared bits from the app ---------- */
+.gh { display: flex; align-items: center; justify-content: space-between; margin: 22px 4px 8px; font-size: 13px; font-weight: 600; color: var(--label2); text-transform: uppercase; letter-spacing: .3px; }
+.gh:first-child { margin-top: 4px; }
+.card { background: var(--bg2); border-radius: 12px; padding: 14px 16px; }
+.card + .card { margin-top: 10px; }
+.muted { color: var(--label2); font-size: 14px; line-height: 1.45; margin: 4px 0; }
+.mono { font-family: var(--mono); font-size: 13px; }
+.form { display: flex; flex-direction: column; gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--label2); font-weight: 500; }
+.field input { height: 40px; border: .5px solid var(--sep); background: var(--bg); border-radius: 10px; padding: 0 12px; font-size: 16px; outline: none; }
+.field input:focus { border-color: var(--tint); }
+.acts { display: flex; justify-content: flex-end; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn { white-space: nowrap; height: 36px; padding: 0 14px; border-radius: 18px; background: var(--tint); color: var(--on-tint); font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.btn.g { background: var(--fill); color: var(--tint); }
+.btn.sm { height: 32px; padding: 0 12px; font-size: 13px; }
+.btn.danger { background: var(--fill); color: var(--red-ink); }
+.kv { display: grid; grid-template-columns: 120px 1fr; gap: 6px 12px; font-size: 15px; }
+.kv dt { color: var(--label2); } .kv dd { margin: 0; }
+.switch-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.switch-row label { font-size: 15px; font-weight: 500; }
+.switch { appearance: none; -webkit-appearance: none; flex: none; width: 51px; height: 31px; margin: 0; border-radius: 16px; background: var(--sep); position: relative; cursor: pointer; }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .15s; }
+.switch:checked { background: var(--tint); } .switch:checked::after { transform: translateX(20px); }
+.model-default { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-top: -4px; }
+.seg { display: inline-flex; background: var(--fill); border-radius: 9px; padding: 2px; gap: 2px; }
+.seg button { height: 30px; padding: 0 12px; border-radius: 7px; font-size: 13.5px; font-weight: 500; }
+.seg button.on { background: var(--bg2); box-shadow: 0 1px 3px rgba(0,0,0,.14); }
+.status { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 11px; white-space: nowrap; }
+.status .f7-icons { font-size: 14px; }
+.status.ok { background: var(--add); color: var(--green-ink); }
+.status.bad { background: var(--del); color: var(--red-ink); }
+.status.off { background: var(--fill); color: var(--label2); }
+.status.warn { background: var(--warn); color: var(--orange-ink); }
+.banner { padding: 10px 14px; border-radius: 12px; background: var(--warn); font-size: 14px; line-height: 1.4; margin-bottom: 10px; display: flex; gap: 8px; }
+
+/* lists */
+.list { background: var(--bg2); border-radius: 12px; overflow: hidden; }
+.li { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 14px; position: relative; text-decoration: none; color: var(--label); }
+.li + .li::before { content: ""; position: absolute; top: 0; left: 50px; right: 0; height: .5px; background: var(--sep); }
+.li .ic { width: 24px; text-align: center; color: var(--tint); }
+.li .tx { flex: 1; min-width: 0; }
+.li .nm { font-size: 16px; }
+.li .sub { font-size: 13px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li .chev { color: var(--label3); font-size: 16px; }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: 12px; font-weight: 600; color: var(--label2); text-transform: uppercase; letter-spacing: .3px; padding: 0 8px 6px; }
+td { padding: 9px 8px; border-top: .5px solid var(--sep); vertical-align: middle; }
+td.num, th.num { text-align: right; }
+.tbl-wrap { overflow-x: auto; }
+
+/* stats + charts */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.tile { background: var(--bg2); border-radius: 12px; padding: 12px 14px; }
+.tile .k { font-size: 12.5px; color: var(--label2); font-weight: 500; }
+.tile .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.tile .s { font-size: 12px; color: var(--label2); margin-top: 2px; }
+.row-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.chart-card { background: var(--bg2); border-radius: 12px; padding: 12px 14px 8px; position: relative; }
+.chart-card h3 { margin: 0; font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+.chart-card h3 .cur { font-variant-numeric: tabular-nums; }
+.chart-card .sub { font-size: 12px; color: var(--label2); margin: 2px 0 6px; }
+svg.chart { display: block; width: 100%; overflow: visible; }
+svg.chart text { font-size: 11px; fill: var(--label2); font-family: var(--font); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--label2); margin: 4px 0 6px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.tip { position: absolute; pointer-events: none; background: var(--label); color: var(--bg2); font-size: 12px; padding: 5px 8px; border-radius: 7px; white-space: nowrap; transform: translate(-50%, -110%); opacity: 0; transition: opacity .1s; z-index: 5; font-variant-numeric: tabular-nums; }
+details.nums { margin-top: 6px; font-size: 13px; }
+details.nums summary { color: var(--tint); cursor: pointer; font-weight: 500; }
+.foot { font-size: 12.5px; color: var(--label2); margin-top: 10px; display: flex; gap: 6px; }
+
+/* phone list view only */
+.phone-list { display: none; }
+.bar-pill { display: none; margin-right: 10px; }
+@media (max-width: 699px) { body.at-list .bar-pill { display: inline-block; } }
+.lt { font-size: 32px; font-weight: 700; margin: 6px 4px 14px; }
+
+.rail a span.s { display: none; }
+/* tablet: icon rail */
+@media (max-width: 1023px) {
+  .rail { width: 76px; padding: 0 8px 12px; }
+  .rail-h .nmx, .rail a span.l, .rail .who { display: none; }
+  .rail-h { justify-content: center; padding: 0; }
+  .rail a { flex-direction: column; justify-content: center; height: 56px; gap: 2px; padding: 0; font-size: 10.5px; }
+  .rail a span.s { display: block; }
+}
+@media (max-width: 860px) { .charts { grid-template-columns: 1fr; } }
+/* phone: list → pushed section */
+@media (max-width: 699px) {
+  .rail { display: none; }
+  .inner { padding: 12px 16px 40px; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  body.at-list .phone-list { display: block; }
+  body.at-list .section { display: none; }
+.show-phone { display: none; color: var(--label2); font-size: 12px; margin-top: 2px; }
+@media (max-width: 699px) { .show-phone { display: block; } }
+  body.at-list .bar h1 { visibility: hidden; }
+  body:not(.at-list) .bar .back { display: inline-flex; }
+  body:not(.at-list) .bar .ib { display: none; } /* strict: inside a section only "‹ Admin"; Done lives on the list */
+  .kv { grid-template-columns: 96px 1fr; }
+  .hide-phone { display: none; }
+}
+.section { display: none; }
+.show-phone { display: none; color: var(--label2); font-size: 12px; margin-top: 2px; }
+@media (max-width: 699px) { .show-phone { display: block; } }
+.section.on { display: block; }
+</style>
+</head>
+<body>
+<div class="admin">
+  <nav class="rail" aria-label="Admin sections">
+    <div class="rail-h"><span class="nmx">karpathy.app</span><span class="mode-pill">Admin</span></div>
+    <div id="rail-links"></div>
+    <div class="sp"></div>
+    <div class="who">Admin mode: settings for this installation, all vaults and all users.</div>
+  </nav>
+  <div class="main">
+    <header class="bar">
+      <span class="mode-pill bar-pill">Admin</span>
+      <a class="back" href="#list"><i class="f7-icons">chevron_left</i>Admin</a>
+      <h1 id="title">General</h1>
+      <button class="ib" title="Back to your notes (Esc)"><span>Done</span></button>
+    </header>
+    <div class="content"><div class="inner">
+
+      <!-- phone: section list -->
+      <div class="phone-list">
+        <div class="lt">Admin</div>
+        <div class="list" id="phone-links"></div>
+        <p class="muted" style="margin:14px 4px">Settings for this installation, all vaults and all users. Done goes back to your notes.</p>
+      </div>
+
+      <!-- General -->
+      <section class="section" id="s-general">
+        <div class="gh">Commits</div>
+        <div class="card form">
+          <label class="field"><span>Commit reminder after (changed files)</span><input type="number" value="4"></label>
+          <div class="acts"><button class="btn">Save</button></div>
+        </div>
+        <div class="gh">Version</div>
+        <div class="card">
+          <dl class="kv">
+            <dt>Server</dt><dd>1.42.0</dd>
+            <dt>App (PWA)</dt><dd>1.42.0</dd>
+            <dt>Built</dt><dd>Oct 14, 09:12 PM</dd>
+            <dt>Deployed</dt><dd>Oct 15, 08:03 AM</dd>
+          </dl>
+        </div>
+      </section>
+
+      <!-- Vaults -->
+      <section class="section" id="s-vaults">
+        <div class="gh">Vaults <button class="btn g sm" title="What is a vault?"><i class="f7-icons" style="font-size:15px">question_circle</i>What is a vault?</button></div>
+        <div class="banner"><i class="f7-icons" style="font-size:18px">exclamationmark_triangle</i><span>Instagram disconnected — 3 links waiting. <a href="#secrets" style="color:var(--tint);font-weight:600">Reconnect in Secrets &amp; keys</a></span></div>
+        <div class="list">
+          <a class="li" href="#vaults"><i class="f7-icons ic">book</i><span class="tx"><div class="nm">My life</div><div class="sub mono">tillg/mylife · main</div></span><span class="status ok"><i class="f7-icons">checkmark_alt</i>Ready</span><i class="f7-icons chev">chevron_right</i></a>
+          <a class="li" href="#vaults"><i class="f7-icons ic">book</i><span class="tx"><div class="nm">Karpathy demo</div><div class="sub mono">tillg/karpathy_demo_wiki · main</div></span><span class="status ok"><i class="f7-icons">checkmark_alt</i>Ready</span><i class="f7-icons chev">chevron_right</i></a>
+          <a class="li" href="#vaults"><i class="f7-icons ic">book</i><span class="tx"><div class="nm">Frechen</div><div class="sub mono">tillg/frechen · main · /wiki</div></span><span class="status warn"><i class="f7-icons">arrow_2_circlepath</i>Cloning…</span><i class="f7-icons chev">chevron_right</i></a>
+        </div>
+        <div class="acts" style="margin-top:12px"><button class="btn"><i class="f7-icons" style="font-size:16px">plus</i>Add vault</button></div>
+        <p class="muted" style="margin-top:14px">Switching between vaults stays in your notes (the vault menu). Here you add, edit and remove them.</p>
+      </section>
+
+      <!-- Secrets & keys -->
+      <section class="section" id="s-secrets">
+        <div class="gh">GitHub</div>
+        <div class="card form">
+          <label class="field"><span>GitHub token (all vaults)</span><input type="password" placeholder="•••• abcd"></label>
+          <div class="acts"><button class="btn g">Test token</button><button class="btn danger">Remove</button><button class="btn">Save token</button></div>
+          <p class="muted" style="margin:0"><i class="f7-icons" style="font-size:14px;color:var(--green)">checkmark_alt</i> Works — signed in as <b>tillg</b>, expires 2027-01-31</p>
+        </div>
+        <div class="gh">Instagram</div>
+        <div class="card form">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+            <span style="font-size:15px">Expired: Instagram rejected the session of <b>@till</b> — 3 links waiting</span>
+            <span class="status bad"><i class="f7-icons">xmark</i>Expired</span>
+          </div>
+          <div class="acts"><button class="btn">Reconnect</button></div>
+        </div>
+        <div class="gh">Deployment secrets <span class="status ok" style="text-transform:none;letter-spacing:0"><i class="f7-icons">checkmark_alt</i>5 of 6 set</span></div>
+        <div class="card tbl-wrap">
+          <table>
+            <thead><tr><th>Purpose</th><th class="hide-phone">Secret</th><th class="hide-phone">Used by</th><th class="num">Status</th></tr></thead>
+            <tbody>
+              <tr><td>App login token<div class="show-phone mono">bearer_token</div></td><td class="mono hide-phone">bearer_token</td><td class="hide-phone">backend</td><td class="num"><span class="status ok"><i class="f7-icons">checkmark_alt</i>Set</span></td></tr>
+              <tr><td>Gateway openrouter API key<div class="show-phone mono">openrouter_api_key</div></td><td class="mono hide-phone">openrouter_api_key</td><td class="hide-phone">opencode</td><td class="num"><span class="status ok"><i class="f7-icons">checkmark_alt</i>Set</span></td></tr>
+              <tr><td>opencode password<div class="show-phone mono">opencode_password</div></td><td class="mono hide-phone">opencode_password</td><td class="hide-phone">backend, opencode</td><td class="num"><span class="status ok"><i class="f7-icons">checkmark_alt</i>Set</span></td></tr>
+              <tr><td>GitHub token (fallback)<div class="show-phone mono">github_token</div></td><td class="mono hide-phone">github_token</td><td class="hide-phone">backend</td><td class="num"><span class="status ok"><i class="f7-icons">checkmark_alt</i>Set</span></td></tr>
+              <tr><td>Web search (Exa)<div class="show-phone mono">exa_api_key</div></td><td class="mono hide-phone">exa_api_key</td><td class="hide-phone">opencode</td><td class="num"><span class="status off"><i class="f7-icons">minus</i>Not set (optional)</span></td></tr>
+              <tr><td>DNS for certificates<div class="show-phone mono">dns_api_token</div></td><td class="mono hide-phone">dns_api_token</td><td class="hide-phone">proxy</td><td class="num"><span class="status ok"><i class="f7-icons">checkmark_alt</i>Set</span></td></tr>
+            </tbody>
+          </table>
+          <p class="muted" style="margin:10px 0 0">Set per deployment (<span class="mono">deploy/settings</span> and the secret store). The app shows whether each one is set, never its value.</p>
+        </div>
+      </section>
+
+      <!-- AI -->
+      <section class="section" id="s-ai">
+        <div class="gh">Model</div>
+        <div class="card form">
+          <label class="field"><span>Model (server-wide, provider/model)</span><input value="openrouter/anthropic/claude-sonnet-5.5" class="mono" spellcheck="false"></label>
+          <div class="model-default"><span class="muted mono">Default: openrouter/z-ai/glm-5.3</span><button class="btn g sm">Use default</button></div>
+        </div>
+        <div class="gh">Web</div>
+        <div class="card">
+          <div class="switch-row">
+            <div><label for="wa">Web access</label><p class="muted">Lets the AI search the web (via Exa) and read pages you or it found. Each search and page is shown in the chat.</p></div>
+            <input id="wa" class="switch" type="checkbox" role="switch" checked>
+          </div>
+        </div>
+        <div class="acts" style="margin-top:12px"><button class="btn">Save</button></div>
+        <p class="muted" style="margin-top:12px">Provider keys live on the server only; see Secrets &amp; keys for whether they are set.</p>
+      </section>
+
+      <!-- Usage -->
+      <section class="section" id="s-usage">
+        <div class="row-h">
+          <div class="seg" role="tablist" aria-label="Range"><button class="on">7 days</button><button>30 days</button></div>
+          <span class="muted" style="margin:0">Oct 9 – Oct 15</span>
+        </div>
+        <div class="tiles" id="usage-tiles"></div>
+        <div class="gh">Tokens per day</div>
+        <div class="chart-card" id="usage-bars"></div>
+        <div class="gh">By model</div>
+        <div class="card tbl-wrap"><table id="by-model"></table></div>
+        <div class="gh">By vault</div>
+        <div class="card tbl-wrap"><table id="by-vault"></table></div>
+        <div class="foot"><i class="f7-icons" style="font-size:15px">info_circle</i><span>Counts the chats that still exist; a deleted chat drops out. Cost as reported by the provider.</span></div>
+      </section>
+
+      <!-- Server -->
+      <section class="section" id="s-server">
+        <div class="row-h">
+          <div class="seg" role="tablist" aria-label="Range"><button>1 hour</button><button class="on">24 hours</button><button>7 days</button></div>
+          <span class="muted" style="margin:0">sampled every 30 s · updated 12 s ago</span>
+        </div>
+        <div class="list" style="margin-bottom:10px">
+          <div class="li"><i class="f7-icons ic">bolt_horizontal</i><span class="tx"><div class="nm">AI harness (opencode)</div><div class="sub">answers in 18 ms</div></span><span class="status ok"><i class="f7-icons">checkmark_alt</i>Up</span></div>
+          <div class="li"><i class="f7-icons ic">timer</i><span class="tx"><div class="nm">Backend uptime</div><div class="sub">since Oct 15, 08:03 AM (deploy)</div></span><span class="muted" style="margin:0">7 h 41 min</span></div>
+        </div>
+        <div class="charts" id="server-charts"></div>
+        <div class="foot"><i class="f7-icons" style="font-size:15px">info_circle</i><span>The machine the backend runs on. Alerts (disk, memory, down) still go to your phone via ntfy.</span></div>
+      </section>
+
+    </div></div>
+  </div>
+</div>
+
+<script>
+const SECTIONS = [
+  { id: 'general', label: 'General', icon: 'slider_horizontal_3', sum: 'Commit reminder, version 1.42.0' },
+  { id: 'vaults', label: 'Vaults', icon: 'book', sum: '3 vaults · 1 cloning' },
+  { id: 'secrets', label: 'Secrets & keys', short: 'Secrets', icon: 'lock_shield', sum: '5 of 6 set · Instagram expired' },
+  { id: 'ai', label: 'AI', icon: 'sparkles', sum: 'claude-sonnet-5.5 · web on' },
+  { id: 'usage', label: 'Usage', icon: 'chart_bar', sum: '2.3M tokens this week · $4.17' },
+  { id: 'server', label: 'Server', icon: 'speedometer', sum: 'CPU 21 % · disk 43 %' },
+];
+const $ = (s) => document.querySelector(s);
+$('#rail-links').innerHTML = SECTIONS.map(s => `<a href="#${s.id}" data-id="${s.id}"><i class="f7-icons">${s.icon}</i><span class="l">${s.label}</span><span class="s">${s.short || s.label}</span></a>`).join('');
+$('#phone-links').innerHTML = SECTIONS.map(s => `<a class="li" href="#${s.id}"><i class="f7-icons ic">${s.icon}</i><span class="tx"><div class="nm">${s.label}</div><div class="sub">${s.sum}</div></span><i class="f7-icons chev">chevron_right</i></a>`).join('');
+
+// ---- sample data (deterministic) ----
+let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'K' : String(Math.round(n));
+const days = ['Oct 9', 'Oct 10', 'Oct 11', 'Oct 12', 'Oct 13', 'Oct 14', 'Oct 15'];
+const usage = days.map((d, i) => ({ d, input: Math.round(120e3 + rnd() * 160e3 + (i === 4 ? 120e3 : 0)), output: Math.round(14e3 + rnd() * 22e3), cache: Math.round(40e3 + rnd() * 90e3) }));
+const sum = (k) => usage.reduce((a, r) => a + r[k], 0);
+const total = sum('input') + sum('output') + sum('cache');
+$('#usage-tiles').innerHTML = [
+  ['Total tokens', fmt(total), '7 days'], ['Input', fmt(sum('input')), Math.round(sum('input') / total * 100) + ' %'],
+  ['Output', fmt(sum('output')), Math.round(sum('output') / total * 100) + ' %'], ['Cost', '$4.17', 'reported by OpenRouter'],
+].map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+
+const table = (el, head, rows) => { $(el).innerHTML = `<thead><tr>${head.map((h, i) => `<th class="${i ? 'num' : ''}">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td class="${i ? 'num' : ''}">${c}</td>`).join('')}</tr>`).join('')}</tbody>`; };
+table('#by-model', ['Model', 'Input', 'Output', 'Cache', 'Cost'], [
+  ['<span class="mono">anthropic/claude-sonnet-5.5</span>', '1.1M', '118K', '512K', '$3.86'],
+  ['<span class="mono">z-ai/glm-5.3</span>', '214K', '19K', '88K', '$0.27'],
+  ['<span class="mono">mistralai/mistral-medium-3-5</span>', '22K', '3K', '—', '$0.04'],
+]);
+table('#by-vault', ['Vault', 'Chats', 'Tokens', 'Cost'], [
+  ['My life', '14', '1.3M', '$2.95'], ['Karpathy demo', '6', '512K', '$1.02'], ['Frechen', '2', '108K', '$0.20'],
+]);
+
+// ---- tooltip helper ----
+function tipFor(card) { let t = card.querySelector('.tip'); if (!t) { t = document.createElement('div'); t.className = 'tip'; card.appendChild(t); } return t; }
+
+// ---- stacked bars ----
+function stackedBars(el, rows, series) {
+  const W = 700, H = 200, pl = 40, pb = 22, pt = 8, max = Math.max(...rows.map(r => series.reduce((a, s) => a + r[s.k], 0))) * 1.1;
+  const bw = (W - pl) / rows.length, y = (v) => pt + (H - pt - pb) * (1 - v / max);
+  let g = '';
+  for (let i = 0; i <= 3; i++) { const v = max / 3 * i, yy = y(v); g += `<line x1="${pl}" x2="${W}" y1="${yy}" y2="${yy}" stroke="var(--grid)"/><text x="${pl - 6}" y="${yy + 4}" text-anchor="end">${fmt(v)}</text>`; }
+  rows.forEach((r, i) => {
+    let acc = 0; const x = pl + i * bw + bw * 0.22, w = bw * 0.56;
+    series.forEach((s, j) => {
+      const y0 = y(acc), y1 = y(acc + r[s.k]); acc += r[s.k];
+      const top = j === series.length - 1, h = Math.max(0, y0 - y1 - 2);
+      g += top ? `<path d="M${x},${y0 - 2} V${y1 + 4} q0,-4 4,-4 H${x + w - 4} q4,0 4,4 V${y0 - 2} Z" fill="var(${s.c})"/>` : `<rect x="${x}" y="${y1}" width="${w}" height="${h}" fill="var(${s.c})"/>`;
+    });
+    g += `<rect class="hit" data-i="${i}" x="${pl + i * bw}" y="0" width="${bw}" height="${H - pb}" fill="transparent"/><text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${r.d}</text>`;
+  });
+  const card = $(el);
+  card.innerHTML = `<div class="legend">${series.map(s => `<span><i style="background:var(${s.c})"></i>${s.l}</span>`).join('')}</div><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Tokens per day, stacked by kind">${g}</svg>
+    <details class="nums"><summary>Show numbers</summary><table><thead><tr><th>Day</th>${series.map(s => `<th class="num">${s.l}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr><td>${r.d}</td>${series.map(s => `<td class="num">${fmt(r[s.k])}</td>`).join('')}</tr>`).join('')}</tbody></table></details>`;
+  const svg = card.querySelector('svg'), tip = tipFor(card);
+  svg.addEventListener('mousemove', (e) => {
+    const hit = e.target.closest('.hit'); if (!hit) { tip.style.opacity = 0; return; }
+    const r = rows[+hit.dataset.i], b = card.getBoundingClientRect();
+    tip.innerHTML = `<b>${r.d}</b> · ${series.map(s => `${s.l} ${fmt(r[s.k])}`).join(' · ')}`;
+    tip.style.left = (e.clientX - b.left) + 'px'; tip.style.top = (e.clientY - b.top) + 'px'; tip.style.opacity = 1;
+  });
+  svg.addEventListener('mouseleave', () => tip.style.opacity = 0);
+}
+stackedBars('#usage-bars', usage, [{ k: 'input', l: 'Input', c: '--s1' }, { k: 'cache', l: 'Cache read', c: '--s3' }, { k: 'output', l: 'Output', c: '--s2' }]);
+
+// ---- sparklines (one series each) ----
+function series(n, base, amp, drift = 0) { const a = []; let v = base; for (let i = 0; i < n; i++) { v += (rnd() - .5) * amp + drift; v = Math.max(base * .3, v); a.push(v); } return a; }
+const N = 240, cpu = series(N, 14, 6).map((v, i) => v + (i > 150 && i < 165 ? 45 : 0)).map(v => Math.min(100, v));
+const metrics = [
+  { t: 'CPU', unit: '%', data: cpu, max: 100, cur: (d) => Math.round(d.at(-1)) + ' %', sub: 'all cores' },
+  { t: 'Memory', unit: 'GB', data: series(N, 2.4, .08, .0015), max: 4, cur: (d) => d.at(-1).toFixed(1) + ' / 4 GB', sub: 'used of total' },
+  { t: 'Load', unit: '', data: series(N, .35, .08), max: null, cur: (d) => d.at(-1).toFixed(2), sub: '1-minute average, 2 cores' },
+  { t: 'Disk · vaults', unit: 'GB', data: series(N, 8.1, .01, .002), max: 20, cur: (d) => d.at(-1).toFixed(1) + ' / 20 GB · ' + Math.round(d.at(-1) / 20 * 100) + ' %', sub: '/srv/vaults' },
+  { t: 'Disk · system', unit: 'GB', data: series(N, 15.6, .01, .001), max: 38, cur: (d) => d.at(-1).toFixed(1) + ' / 38 GB · ' + Math.round(d.at(-1) / 38 * 100) + ' %', sub: 'config volume, images, logs' },
+];
+const hours = (i) => { const m = Math.round((N - 1 - i) * 6); return m === 0 ? 'now' : (m >= 60 ? Math.floor(m / 60) + ' h ' : '') + (m % 60 ? (m % 60) + ' min' : '') + ' ago'; };
+$('#server-charts').innerHTML = metrics.map((m, k) => `<div class="chart-card" id="m${k}"><h3><span>${m.t}</span><span class="cur">${m.cur(m.data)}</span></h3><div class="sub">${m.sub}</div><svg class="chart" viewBox="0 0 320 84" role="img" aria-label="${m.t} over the last 24 hours"></svg><details class="nums"><summary>Show numbers</summary><p class="muted">min ${Math.min(...m.data).toFixed(1)} · max ${Math.max(...m.data).toFixed(1)} · latest ${m.data.at(-1).toFixed(1)} (240 points, 6-min buckets)</p></details></div>`).join('');
+metrics.forEach((m, k) => {
+  const card = $('#m' + k), svg = card.querySelector('svg'), W = 320, H = 84, pt = 4, pb = 16;
+  const top = m.max ?? Math.max(...m.data) * 1.25, x = (i) => i / (N - 1) * W, y = (v) => pt + (H - pt - pb) * (1 - v / top);
+  const d = m.data.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('');
+  const peak = m.data.indexOf(Math.max(...m.data));
+  svg.innerHTML = `<line x1="0" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--grid)"/>${m.max ? `<line x1="0" x2="${W}" y1="${y(m.max)}" y2="${y(m.max)}" stroke="var(--grid)" stroke-dasharray="3 3"/>` : ''}
+    <path d="${d} L${W},${y(0)} L0,${y(0)} Z" fill="var(--s1)" opacity=".12"/><path d="${d}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round"/>
+    <text x="0" y="${H - 2}">24 h ago</text><text x="${W}" y="${H - 2}" text-anchor="end">now</text>
+    <circle cx="${x(peak)}" cy="${y(m.data[peak])}" r="3" fill="var(--s1)" stroke="var(--bg2)" stroke-width="2"/>
+    <line class="cross" x1="0" x2="0" y1="${pt}" y2="${H - pb}" stroke="var(--label3)" stroke-width="1" opacity="0"/><circle class="dot" r="4" fill="var(--s1)" stroke="var(--bg2)" stroke-width="2" opacity="0"/>`;
+  const tip = tipFor(card), cross = svg.querySelector('.cross'), dot = svg.querySelector('.dot');
+  svg.addEventListener('mousemove', (e) => {
+    const r = svg.getBoundingClientRect(), i = Math.max(0, Math.min(N - 1, Math.round((e.clientX - r.left) / r.width * (N - 1))));
+    const cx = x(i), cy = y(m.data[i]); cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('opacity', 1);
+    dot.setAttribute('cx', cx); dot.setAttribute('cy', cy); dot.setAttribute('opacity', 1);
+    const b = card.getBoundingClientRect(); tip.textContent = `${m.data[i].toFixed(m.unit === '%' ? 0 : 1)}${m.unit ? ' ' + m.unit : ''} · ${hours(i)}`;
+    tip.style.left = (e.clientX - b.left) + 'px'; tip.style.top = (r.top - b.top + cy / H * r.height) + 'px'; tip.style.opacity = 1;
+  });
+  svg.addEventListener('mouseleave', () => { tip.style.opacity = 0; cross.setAttribute('opacity', 0); dot.setAttribute('opacity', 0); });
+});
+
+// ---- routing: #<section>, #list (phone list) ----
+function route() {
+  const phone = matchMedia('(max-width: 699px)').matches;
+  let id = location.hash.slice(1);
+  const atList = phone && (!id || id === 'list');
+  if (!SECTIONS.some(s => s.id === id)) id = 'general';
+  document.body.classList.toggle('at-list', atList);
+  document.querySelectorAll('.section').forEach(s => s.classList.toggle('on', s.id === 's-' + id));
+  document.querySelectorAll('.rail a').forEach(a => a.toggleAttribute('aria-current', a.dataset.id === id) || a.setAttribute('aria-current', 'page'));
+  document.querySelectorAll('.rail a').forEach(a => { if (a.dataset.id === id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  $('#title').textContent = SECTIONS.find(s => s.id === id).label;
+  document.title = 'Admin mode draft';
+}
+addEventListener('hashchange', route); addEventListener('resize', route); route();
+</script>
+</body>
+</html>
