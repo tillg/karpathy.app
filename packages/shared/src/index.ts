@@ -314,3 +314,29 @@ export interface ApiError {
 export * from './media.js';
 export * from './wikilink.js';
 export * from './relink.js';
+
+/** One reading of the server (admin mode, Server section); taken every 30 s by the backend. */
+export interface MetricsSample {
+  /** Epoch ms. */
+  at: number;
+  /** Busy share of all CPUs since the previous sample, 0-100. */
+  cpu: number;
+  memUsed: number;
+  memTotal: number;
+  /** 1-minute load average. */
+  load1: number;
+  vaultsUsed: number;
+  vaultsTotal: number;
+  configUsed: number;
+  configTotal: number;
+  opencodeUp: boolean;
+}
+
+/** `GET /metrics?range=`: `samples` is bucket-averaged to at most 240 points. */
+export interface MetricsReport {
+  samples: MetricsSample[];
+  latest: MetricsSample | null;
+  /** Backend uptime in seconds. */
+  uptimeS: number;
+  intervalS: number;
+}
