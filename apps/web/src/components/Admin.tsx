@@ -5,6 +5,7 @@ import { useApp } from '../store';
 import { Modal } from './Dialogs';
 import { Icon } from './Icon';
 import { InstagramNotice, InstagramSettings } from './InstagramSettings';
+import { SecretTable } from './SecretTable';
 
 interface Form { name: string; repo: string; branch: string; root: string }
 const emptyForm: Form = { name: '', repo: '', branch: 'main', root: '' };
@@ -339,6 +340,7 @@ export function SecretsSection() {
       <GitHubTokenForm />
       <div className="gh">Instagram</div>
       <InstagramSettings />
+      <SecretTable />
     </>
   );
 }

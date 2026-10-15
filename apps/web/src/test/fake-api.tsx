@@ -27,6 +27,7 @@ export function fakeApi(opts: { files?: FileEntry[]; status?: Partial<VaultStatu
   const routes: Record<string, Answer> = {
     'GET /api/vaults': [{ id: VAULT, repo: 'o/r', branch: 'main', state: 'ready' }],
     'GET /api/settings': { commitReminderThreshold: 20, model: 'x/y', webAccess: false, githubToken: { source: 'none', last4: null }, modelInput: null },
+    'GET /api/settings/secrets': { secrets: [] },
     [`POST /api/vaults/${VAULT}/open`]: statusOf(opts.status),
     [`GET /api/vaults/${VAULT}/files`]: opts.files ?? [],
     [`GET /api/vaults/${VAULT}/commands`]: [],
