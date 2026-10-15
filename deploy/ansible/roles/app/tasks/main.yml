@@ -331,6 +331,11 @@
       - "{{ app_root }}/shared/compose.target.yml"
   when: app_compose_present
 
+- name: The release running before this deploy
+  ansible.builtin.stat:
+    path: "{{ app_root }}/current"
+  register: app_current_before
+
 - name: Current release → v{{ app_release }}
   ansible.builtin.file:
     src: releases/v{{ app_release }}
@@ -362,6 +367,17 @@
 - name: Smoke check
   ansible.builtin.include_tasks: smoke.yml
   when: not ansible_check_mode
+
+# A new version on the target (not a redeploy of the running one) is announced on its ntfy topic.
+- name: Announce v{{ app_release }} on ntfy
+  ansible.builtin.uri:
+    url: https://ntfy.sh/{{ ntfy_topic }}
+    method: POST
+    headers:
+      Title: "karpathy-{{ target }}: v{{ app_release }} deployed"
+      Tags: rocket
+    body: "{{ ('Was ' ~ (app_current_before.stat.lnk_target | basename) ~ '. ') if app_current_before.stat.islnk | default(false) else '' }}Smoke check passed."
+  when: not ansible_check_mode and app_current_before.stat.lnk_target | default('') != 'releases/v' ~ app_release
 
 # Retention counts the most recently *deployed* releases, so a rollback target stays.
 - name: Mark the release as just deployed, v{{ app_release }}

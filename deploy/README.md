@@ -75,7 +75,8 @@ when the whole box is gone.
 - **A deployment** is one `just deploy <target> [version]`. The playbook brings the host to the
   desired state (users, SSH hardening, Docker, the vaults filesystem, Tailscale), switches it to
   the release and ends with a **smoke check**: all containers healthy, `/api/health` reachable
-  through the proxy, and it reports the requested version. Running it again changes nothing.
+  through the proxy, and it reports the requested version. A new version on the target is then
+  announced on its ntfy topic ("karpathy-hetzner: v0.0.26 deployed"). Running it again changes nothing.
 - **Rollback** is a deployment of an older version. Each release's `compose.yml` stays on the
   host under `/opt/karpathy.app/releases/`, and `current` points at the running one.
 - **Monitoring** is deployed with the app as its own compose project: Beszel (host and container
