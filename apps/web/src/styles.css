@@ -624,3 +624,42 @@ a.tc { text-decoration: none; cursor: pointer; }
 .props-addbtn { min-height: 40px; padding: 0 12px; margin: 2px 4px 4px; border-radius: 8px; color: var(--tint); font-weight: 600; font-size: 14px; }
 .props-addbtn:hover:not(:disabled) { background: var(--fill2); }
 .props-addrow { grid-template-columns: 1fr auto; }
+
+/* ===== admin mode (#150): replaces the panes; rail (wide, tablet) or section list (phone) ===== */
+#app[hidden] { display: none; }
+#admin-mode { position: relative; flex: 1; min-height: 0; display: flex; overflow: hidden; padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.admin-rail { flex: none; width: 232px; display: flex; flex-direction: column; padding: 0 10px 12px; background: var(--sb); border-right: .5px solid var(--sep); overflow-y: auto; }
+.rail-h { flex: none; height: 52px; display: flex; align-items: center; gap: 8px; padding: 0 6px; font-weight: 700; font-size: 15px; color: var(--brand); }
+.mode-pill { font-size: 11px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; padding: 3px 8px; border-radius: 10px; background: var(--brand); color: var(--bg2); }
+.admin-rail a { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 10px; margin-bottom: 2px; border-radius: 10px; color: var(--label); text-decoration: none; font-size: 15px; }
+.admin-rail a .f7-icons { color: var(--tint); font-size: 20px; width: 22px; }
+.admin-rail a:hover { background: var(--fill2); }
+.admin-rail a[aria-current="page"] { background: var(--tint); color: var(--on-tint); font-weight: 600; }
+.admin-rail a[aria-current="page"] .f7-icons { color: var(--on-tint); }
+.admin-rail .sp { flex: 1; }
+.admin-rail .who { font-size: 12px; line-height: 1.4; color: var(--label2); padding: 8px 10px 0; border-top: .5px solid var(--sep); }
+.admin-rail .s { display: none; }
+#admin-mode.tablet .admin-rail { width: 76px; padding: 0 8px 12px; }
+#admin-mode.tablet .rail-h { justify-content: center; padding: 0; }
+#admin-mode.tablet .rail-h .nmx, #admin-mode.tablet .admin-rail .l, #admin-mode.tablet .admin-rail .who { display: none; }
+#admin-mode.tablet .admin-rail a { flex-direction: column; justify-content: center; height: 56px; gap: 2px; padding: 0; font-size: 10.5px; }
+#admin-mode.tablet .admin-rail .s { display: block; }
+.admin-main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+.admin-main .bar { padding-left: 20px; }
+.admin-main .bar .bar-title { flex: none; padding: 0; margin: 0; }
+.admin-main .bar .mode-pill { margin-right: 10px; }
+.admin-main .bar .back { padding-left: 0; }
+#admin-mode.phone .admin-main .bar { padding-left: 8px; }
+.admin-content { flex: 1; overflow-y: auto; padding-top: 52px; overscroll-behavior: contain; }
+.admin-inner { max-width: 780px; padding: 18px 24px 40px; }
+#admin-mode.phone .admin-inner { padding: 12px 16px 40px; }
+#admin-mode.phone .lt { margin: 8px 20px 10px; }
+.admin-list { margin: 0 16px; background: var(--bg2); border-radius: 12px; overflow: hidden; }
+.admin-list a { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 8px 14px; position: relative; color: var(--label); text-decoration: none; }
+.admin-list a + a::before { content: ""; position: absolute; top: 0; left: 50px; right: 0; height: .5px; background: var(--sep); }
+.admin-list .f7-icons { color: var(--tint); font-size: 22px; }
+.admin-list .f7-icons:last-child { color: var(--label3); font-size: 16px; }
+.admin-list .tx { flex: 1; min-width: 0; }
+.admin-list b { display: block; font-weight: 400; font-size: 16px; }
+.admin-list small { display: block; font-size: 13px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.admin-note { margin: 14px 20px; }
