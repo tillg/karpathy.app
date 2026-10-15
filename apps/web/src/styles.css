@@ -13,6 +13,7 @@
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   --tabh: calc(50px + env(safe-area-inset-bottom));
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --grid: rgba(60,60,67,.12);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -25,6 +26,7 @@
     --graph-1: #3ddc84; --graph-2: #c792ea; --graph-3: #ff7eb6; --graph-4: #3bc9db; --graph-5: #ffd43b; --graph-6: #bcaaa4;
     --green-ink: #3ddc84; --red-ink: #ff7a7a; --orange-ink: #f59e0b;
     --add: rgba(61,220,132,.14); --del: rgba(255,107,107,.14); --shadow: 0 12px 40px rgba(0,0,0,.6);
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --grid: rgba(235,235,245,.12);
     color-scheme: dark;
   }
 }
@@ -663,3 +665,18 @@ a.tc { text-decoration: none; cursor: pointer; }
 .admin-list b { display: block; font-weight: 400; font-size: 16px; }
 .admin-list small { display: block; font-size: 13px; color: var(--label2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .admin-note { margin: 14px 20px; }
+
+/* Charts (admin mode): inline SVG, series colors only on marks, text in text tokens */
+.chart-wrap { position: relative; }
+.chart { display: block; width: 100%; height: auto; font-size: 11px; fill: var(--label2); font-variant-numeric: tabular-nums; touch-action: pan-y; }
+.chart-stats { margin: 2px 0 0; font-size: 12px; color: var(--label2); font-variant-numeric: tabular-nums; }
+.chart-empty { margin: 8px 0; font-size: 13px; color: var(--label2); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--label2); margin: 4px 0 6px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.tip { position: absolute; pointer-events: none; background: var(--label); color: var(--bg2); font-size: 12px; padding: 5px 8px; border-radius: 7px; white-space: nowrap; transform: translate(-50%, -110%); z-index: 5; font-variant-numeric: tabular-nums; }
+details.nums { margin-top: 6px; font-size: 13px; }
+details.nums summary { color: var(--tint); cursor: pointer; font-weight: 500; }
+details.nums table { border-collapse: collapse; margin-top: 6px; }
+details.nums th, details.nums td { padding: 3px 12px 3px 0; text-align: left; font-weight: 400; }
+details.nums th { color: var(--label2); }
+details.nums .num { text-align: right; font-variant-numeric: tabular-nums; }

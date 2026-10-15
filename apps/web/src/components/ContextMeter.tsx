@@ -1,4 +1,5 @@
 import type { ContextUsage } from '@karpathy/shared';
+import { shortNumber } from '../lib/chat';
 
 /**
  * How full a chat's context is (#140): `bar` is the thin track in the chat list, `full` adds the numbers
@@ -7,8 +8,7 @@ import type { ContextUsage } from '@karpathy/shared';
  */
 export function ContextMeter({ usage, variant, model, locale }: { usage: ContextUsage; variant: 'bar' | 'full'; model?: string; locale?: string }) {
   const { used, limit } = usage;
-  const fmt = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
-  const num = (x: number) => x < 1000 ? fmt.format(x) : Math.round(x / 1000) < 1000 ? `${Math.round(x / 1000)}K` : `${fmt.format(x / 1e6)}M`;
+  const num = (x: number) => shortNumber(x, locale);
   if (!limit) return variant === 'full' ? <div className="ctx-meter" data-testid="context-meter">{num(used)} tokens</div> : null;
   const share = used / limit;
   const level = share >= 0.9 ? 'crit' : share >= 0.7 ? 'warn' : 'ok';
