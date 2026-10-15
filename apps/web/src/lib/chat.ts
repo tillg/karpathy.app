@@ -259,3 +259,9 @@ export function attachWarning(input: ModelInput | null | undefined, path: string
   if (!input || !isPdf(path) || input.pdf) return null;
   return `${model} can’t see PDFs: the AI only gets the file’s path`;
 }
+
+/** Short numbers (`950`, `29K`, `1.5M`), in the given locale; the context meter and the admin charts share it. */
+export function shortNumber(x: number, locale?: string): string {
+  const fmt = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+  return x < 1000 ? fmt.format(x) : Math.round(x / 1000) < 1000 ? `${Math.round(x / 1000)}K` : `${fmt.format(x / 1e6)}M`;
+}
