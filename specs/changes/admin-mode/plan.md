@@ -57,7 +57,7 @@ flowchart LR
   - Depends on: 5
   - Test first: `apps/backend/test/settings.test.ts` › "settings.json without `secrets` loads as []" and `apps/backend/test/api.test.ts` › "GET /settings/secrets returns the manifest; github_token carries source and last4 from GitHubToken". Fails today: unknown key and 404.
   - Verify: `npm test -w apps/backend -- settings api` → green; `npm test -w apps/backend` → all green
-- [ ] Secret status table in the Secrets & keys section
+- [x] Secret status table in the Secrets & keys section
   - Depends on: 3, 6
   - Test first: `apps/web/src/components/SecretTable.test.tsx` › "one row per secret: purpose, name, component, Set / Missing / Not set (optional)", › "a missing required secret is flagged", › "the phone list row summarizes 'N of M set'". Fails today: no component.
   - Verify: `npm test -w apps/web -- SecretTable` → green; `npm test -w apps/web` → all green
