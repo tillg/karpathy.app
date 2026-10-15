@@ -94,4 +94,76 @@ describe('admin mode', () => {
     await waitFor(() => expect(location.hash).toBe('#/v2'));
     expect(screen.getByTestId('vault-switcher')).toBeTruthy();
   });
+
+  describe('sections hold the moved forms', () => {
+    const SETTINGS = { commitReminderThreshold: 20, model: 'x/y', defaultModel: 'p/default', modelOverridden: true, webAccess: false, githubToken: { source: 'none', last4: null }, modelInput: null };
+    const VAULTS = [{ id: VAULT, name: 'One', repo: 'o/r', branch: 'main', root: '', state: 'ready' }];
+    const inAdmin = async (section: string, routes: Record<string, unknown> = {}) => {
+      const api = open({ 'GET /api/settings': SETTINGS, 'GET /api/vaults': VAULTS, 'GET /api/health': { backend: 'ok', opencode: 'ok', version: '9.9.9', built: null, deployed: null }, 'GET /api/ingest/instagram': { state: 'not-connected', waitingLinks: 0 }, ...routes });
+      await noteOpen(api);
+      fireEvent.click(await screen.findByTestId('open-settings'));
+      await waitFor(() => expect(location.hash).toBe('#admin/general'));
+      if (section !== 'general') fireEvent.click(screen.getByTestId(`admin-nav-${section}`));
+      return api;
+    };
+    const sec = (id: string) => within(screen.getByTestId(`admin-section-${id}`));
+    const patches = (api: { calls: { call: string; body: unknown }[] }) => api.calls.filter((c) => c.call === 'PATCH /api/settings').map((c) => c.body);
+
+    it('General: threshold + versions; Save sends only the threshold', async () => {
+      const api = await inAdmin('general', { 'PATCH /api/settings': (b: object) => ({ ...SETTINGS, ...b }) });
+      expect(((await sec('general').findByTestId('settings-threshold')) as HTMLInputElement).value).toBe('20');
+      expect((await sec('general').findByTestId('version-server')).textContent).toBe('9.9.9');
+      expect(sec('general').queryByTestId('settings-model')).toBeNull();
+      fireEvent.change(sec('general').getByTestId('settings-threshold'), { target: { value: '30' } });
+      fireEvent.click(sec('general').getByTestId('settings-save'));
+      await waitFor(() => expect(patches(api)).toEqual([{ commitReminderThreshold: 30 }]));
+    });
+
+    it('Vaults: list + Add vault; vault details are a sub-view', async () => {
+      await inAdmin('vaults');
+      expect((await sec('vaults').findAllByTestId('admin-vault'))).toHaveLength(1);
+      fireEvent.click(sec('vaults').getByTestId('admin-open-add'));
+      expect(sec('vaults').getByTestId('admin-add').textContent).toBe('Add vault');
+      fireEvent.click(sec('vaults').getByTestId('admin-back'));
+      fireEvent.click(await sec('vaults').findByTestId('admin-vault'));
+      expect(sec('vaults').getByTestId('vault-details')).toBeTruthy();
+    });
+
+    it('Secrets & keys: GitHub token form and Instagram', async () => {
+      await inAdmin('secrets');
+      expect(sec('secrets').getByTestId('token-input')).toBeTruthy();
+      expect(await sec('secrets').findByTestId('ig-status')).toBeTruthy();
+    });
+
+    it('AI: model, default, web access; Save sends only model and webAccess', async () => {
+      const api = await inAdmin('ai', { 'PATCH /api/settings': (b: object) => ({ ...SETTINGS, ...b }) });
+      expect(((await sec('ai').findByTestId('settings-model')) as HTMLInputElement).value).toBe('x/y');
+      expect(sec('ai').getByTestId('settings-model-default').textContent).toMatch(/p\/default/);
+      expect(sec('ai').queryByTestId('settings-threshold')).toBeNull();
+      fireEvent.click(sec('ai').getByTestId('settings-model-reset'));
+      fireEvent.click(sec('ai').getByTestId('settings-web-access'));
+      fireEvent.click(sec('ai').getByTestId('settings-save'));
+      await waitFor(() => expect(patches(api)).toEqual([{ model: 'p/default', webAccess: true }]));
+    });
+
+    it('"Manage vaults…" opens #admin/vaults; "Edit vault" opens that vault\'s details', async () => {
+      await inAdmin('general');
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+      await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
+      fireEvent.click(await screen.findByTestId('vault-switcher'));
+      fireEvent.click(await screen.findByTestId('manage-vaults'));
+      await waitFor(() => expect(location.hash).toBe('#admin/vaults'));
+      expect(await sec('vaults').findAllByTestId('admin-vault')).toHaveLength(1);
+      expect(sec('vaults').queryByTestId('vault-details')).toBeNull();
+    });
+
+    it('the vault-failed "Edit vault" opens the vault details', async () => {
+      history.replaceState(null, '', `#/${VAULT}`);
+      fakeApi({ routes: { 'GET /api/settings': SETTINGS, 'GET /api/vaults': [{ ...VAULTS[0], state: 'clone-failed', error: 'boom' }], [`POST /api/vaults/${VAULT}/open`]: { state: 'clone-failed' } } });
+      renderApp(<Shell />);
+      fireEvent.click(await screen.findByTestId('manage-vaults-cta'));
+      await waitFor(() => expect(location.hash).toBe('#admin/vaults'));
+      expect((await sec('vaults').findByTestId('vault-details')).getAttribute('data-vault')).toBe(VAULT);
+    });
+  });
 });

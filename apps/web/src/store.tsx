@@ -539,10 +539,6 @@ function useAppState() {
     // Without dates in use, modifications don't refetch the listing: its dates may be stale.
     if (usesDates(v)) void refreshFiles();
   }, [refreshFiles]);
-  /** Open admin modal: the vaults dialog (`vault` opens that vault's details instead of the list) or the settings dialog. */
-  const [adminOpen, setAdminOpenState] = useState<false | { view: 'vaults'; vault?: string } | { view: 'settings' }>(false);
-  const setAdminOpen = useCallback((open: false | 'vaults' | 'settings', vault?: string) =>
-    setAdminOpenState(open === false ? false : open === 'settings' ? { view: 'settings' } : { view: 'vaults', vault }), []);
   const [commitOpen, setCommitOpen] = useState(false);
   /** The graph is shown in the note pane, over the open note (which stays as it was); opening a note closes it. */
   const [graphOpen, setGraphOpenState] = useState(false);
@@ -763,10 +759,12 @@ function useAppState() {
   /** The entries admin mode pushed remember the user-mode hash and how many of them Done has to leave. */
   type AdminState = RouteState & { adminFrom?: string; adminDepth?: number };
   const applyAdmin = useCallback((a: AdminSection | '' | null) => { adminRef.current = a; setAdmin(a); }, []);
-  /** Opens admin mode: General on wide screens and tablets, the section list on the phone. */
-  const openAdmin = useCallback(async () => {
+  /** Opens admin mode: `section`, else General on wide screens and tablets and the section list on the phone. `vaultId` opens that vault's details in Vaults. */
+  const [adminVault, setAdminVault] = useState<string | null>(null);
+  const openAdmin = useCallback(async (section?: AdminSection, vaultId?: string) => {
     if (!(await leave())) return;
-    const to = phone ? '' : 'general';
+    setAdminVault(vaultId ?? null);
+    const to = section ?? (phone ? '' : 'general');
     history.pushState({ prev: null, adminFrom: location.hash, adminDepth: 1 } satisfies AdminState, '', formatAdminRoute(to));
     applyAdmin(to);
   }, [leave, phone, applyAdmin]);
@@ -927,7 +925,7 @@ function useAppState() {
     followLink, exists, readOnly, conflict, canGoBack, goBack,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain, ingestNow,
     schema: schema?.vault === activeId ? schema.schema : DEFAULT_SCHEMA,
-    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, adminOpen, setAdminOpen, admin, openAdmin, setAdminSection, adminUp, closeAdmin, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
+    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, admin, adminVault, openAdmin, setAdminSection, adminUp, closeAdmin, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
   };
 }
 

@@ -3,7 +3,6 @@ import { flushSync } from 'react-dom';
 import { incomingView } from '../lib/incoming';
 import { buildTree, inputCount } from '../lib/tree';
 import { useApp } from '../store';
-import { Admin } from './Admin';
 import { AdminMode } from './AdminMode';
 import { ChatPane } from './ChatPane';
 import { CommitDialog } from './CommitDialog';
@@ -110,7 +109,6 @@ export function Shell() {
           onClick={() => { s.setSidebarOpen(false); s.setChatOpen(false); }} />
       </div>
       {s.admin !== null && <AdminMode />}
-      {s.adminOpen && <Admin />}
       {s.commitOpen && <CommitDialog />}
       <StaleDialog />
       <ReminderDialog />
