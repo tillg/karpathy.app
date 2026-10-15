@@ -33,45 +33,6 @@ check:
 settings *args:
     @node_modules/.bin/tsx packages/settings/src/cli.ts {{args}}
 
-# The dev LLM, native on this Mac (Metal GPU) and shared by all dev stacks: `just ollama install|uninstall|status`
-ollama action:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    label=app.karpathy.ollama
-    plist=~/Library/LaunchAgents/$label.plist
-    case "{{action}}" in
-      install)
-        bin=$(brew --prefix ollama 2>/dev/null || true)/bin/ollama
-        [ -x "$bin" ] || { echo "Ollama missing: brew install ollama" >&2; exit 1; }
-        launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
-        # Another server on 11434 (Ollama.app, brew services) would answer instead, without the context length below.
-        ! curl -sf -m 2 http://127.0.0.1:11434/api/version >/dev/null \
-          || { echo "something else already serves 127.0.0.1:11434 (Ollama.app? brew services stop ollama): stop it first" >&2; exit 1; }
-        mkdir -p ~/Library/LaunchAgents ~/Library/Logs
-        # Loopback only; containers reach it via host.docker.internal. Ollama's default context
-        # (a few k tokens) silently cuts opencode's system prompt (#57).
-        printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
-          '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
-          '<plist version="1.0"><dict>' \
-          "<key>Label</key><string>$label</string>" \
-          "<key>ProgramArguments</key><array><string>$bin</string><string>serve</string></array>" \
-          '<key>EnvironmentVariables</key><dict>' \
-          '<key>OLLAMA_HOST</key><string>127.0.0.1:11434</string>' \
-          '<key>OLLAMA_CONTEXT_LENGTH</key><string>16384</string>' \
-          '</dict>' \
-          '<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>' \
-          "<key>StandardOutPath</key><string>$HOME/Library/Logs/ollama.log</string>" \
-          "<key>StandardErrorPath</key><string>$HOME/Library/Logs/ollama.log</string>" \
-          '</dict></plist>' > "$plist"
-        launchctl bootstrap "gui/$(id -u)" "$plist"
-        for _ in $(seq 50); do curl -sf http://127.0.0.1:11434/api/version >/dev/null && break; sleep 0.2; done
-        curl -sf http://127.0.0.1:11434/api/version >/dev/null || { echo "Ollama did not start: see ~/Library/Logs/ollama.log" >&2; exit 1; }
-        echo "installed: Ollama on 127.0.0.1:11434, log ~/Library/Logs/ollama.log" ;;
-      uninstall) launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true; rm -f "$plist"; echo uninstalled ;;
-      status) curl -sf http://127.0.0.1:11434/api/version >/dev/null && echo "running ($(ollama list | tail -n +2 | awk '{print $1}' | paste -sd ' ' -))" || { echo "not running: just ollama install" >&2; exit 1; } ;;
-      *) echo "usage: just ollama install|uninstall|status" >&2; exit 1 ;;
-    esac
-
 # Unit + integration tests (needs Docker); extra args go to the test runner
 test *args:
     npm test -- {{args}}
@@ -129,49 +90,13 @@ release version:
     sleep 5
     gh run list --workflow release.yml --limit 1 --json url --jq '.[0].url'
 
-# Local deploy target VM (Lima): `just vm up` (create once, then start), `down` (stop), `reset` (recreate), `ssh [-- cmd]`
-[positional-arguments]
-vm action *args:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    shift
-    name=karpathy-vm
-    up() {
-      mkdir -p tmp/dev/remotes
-      if limactl list -q | grep -qx "$name"; then limactl start "$name"
-      else limactl start --tty=false --name "$name" --set ".mounts[0].location = \"$PWD/tmp/dev/remotes\"" deploy/lima/karpathy-vm.yaml
-      fi
-    }
-    case "{{action}}" in
-      up) up ;;
-      down) limactl stop "$name" ;;
-      reset) limactl delete -f "$name" 2>/dev/null || true; up ;;
-      ssh) [ "${1:-}" = "--" ] && shift; limactl shell "$name" "$@" ;;
-      *) echo "usage: just vm [up|down|reset|ssh [-- cmd]]" >&2; exit 1 ;;
-    esac
-
-# Deploy a release to a target (local|hetzner): `just deploy local [X.Y.Z] [--only app|monitoring]`
+# Deploy a release to a target (hetzner): `just deploy hetzner [X.Y.Z] [--only app|monitoring]`
 deploy target *args:
     deploy/ansible/deploy.sh run {{target}} {{args}}
 
 # Dry run of `just deploy` (check mode with diff): changes nothing
 deploy-check target *args:
     deploy/ansible/deploy.sh check {{target}} {{args}}
-
-# Playwright suite (minus @llm) against a deployed target; only `local` (the VM on https://localhost:9444)
-deploy-e2e target *args:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    [ "{{target}}" = local ] || { echo "deploy-e2e runs against local only" >&2; exit 1; }
-    mkdir -p tmp/local && umask 077
-    deploy/ansible/vault-get.sh local vault_bearer_token > tmp/local/bearer_token
-    url=https://localhost:9444
-    # The release the PWA and the server must report: E2E_EXPECT_VERSION, else what the server runs.
-    version=${E2E_EXPECT_VERSION:-$(curl -sfk -H "Authorization: Bearer $(cat tmp/local/bearer_token)" $url/api/health | jq -r .version)}
-    echo "e2e against $url, release $version"
-    E2E_BASE_URL=$url E2E_TOKEN_FILE=tmp/local/bearer_token E2E_EXPECT_VERSION="$version" \
-      E2E_DOCKER="limactl shell karpathy-vm sudo docker" E2E_BACKEND_CONTAINER=karpathy-app-backend-1 \
-      npx playwright test --grep-invert @llm {{args}}
 
 # Copy a target's access token to the clipboard; `--qr` also prints a login QR code for a phone/iPad
 token target *flag:

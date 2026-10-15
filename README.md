@@ -200,7 +200,7 @@ Everything runs in docker compose (on this Mac: Rancher Desktop), except the dev
 into `~/.omlx/models/` with omlx's own Python, e.g. `HF_HUB_DISABLE_XET=1 "$(brew --prefix omlx)/libexec/bin/python3" -c 'from huggingface_hub import snapshot_download as d; d("mlx-community/Qwen3-VL-4B-Instruct-4bit", local_dir="'"$HOME"'/.omlx/models/Qwen3-VL-4B-Instruct-4bit")'`
 (same for `Qwen3-Coder-30B-A3B-Instruct-4bit`). omlx listens on loopback only, so its API-key check is off
 (`auth.skip_api_key_verification: true` in `~/.omlx/settings.json`); `memory.memory_guard_tier: aggressive` lets the
-16.8 GB coder model load. The `local` target still expects a native Ollama (`just ollama install|uninstall|status`).
+16.8 GB coder model load.
 
 **Dev** (hot reload, the model from `deploy/settings/dev.yaml`: the native omlx). Several dev stacks run side by side,
 one per checkout (main clone or worktree): stack N (1–9) is on https://localhost:80N0, and its header
@@ -219,8 +219,8 @@ paired prodtest. Each stack's `ollama` service (the name is historical) is only 
 `just prodtest` use it.
 
 `just` lists all commands (`brew install just`); they wrap `deploy/dev.sh` and npm. Deploying
-also needs `brew install lima ansible ansible-lint qrencode jq` (the local target VM, the playbook,
-the login QR code and the deploy scripts).
+also needs `brew install ansible ansible-lint qrencode jq` (the playbook, the login QR code and the
+deploy scripts).
 
 Notes open at `https://localhost:80N0/#/<vault>/<path>` (Back/Forward work). Binary files
 (images, PDFs, …) are listed but not editable. A vault whose clone failed can be retried
@@ -241,7 +241,7 @@ into `deploy/secrets/github_token` (or set one under Settings in the app).
 
 Every app setting lives in [`deploy/settings/`](deploy/settings/) (#133): `settings.yaml` holds each setting with
 the value all environments share, and `<env>.yaml` only what an environment changes: `dev` (dev stacks),
-`prodtest`, `test` (CI and integration tests), `local` (the VM target) and `hetzner` (production). Among them:
+`prodtest`, `test` (CI and integration tests) and `hetzner` (production). Among them:
 the LLM gateway and model (`ai.gateway`, `ai.model`, `gateways`), domain and TLS, timezone, git remote and
 commit author, the web caps, and the dot-folders the file tree shows (`files.visible_dot_dirs`).
 
@@ -305,7 +305,7 @@ procedure: [`deploy/README.md`](deploy/README.md).** The short version:
 
 ```sh
 just release 0.3.0            # tag v0.3.0 → images on GHCR + GitHub release
-just deploy hetzner 0.3.0     # put it on the server (`local`: the test VM on https://localhost:9444)
+just deploy hetzner 0.3.0     # put it on the server
 just token hetzner --qr       # log a phone or iPad in by scanning a QR code
 ```
 

@@ -186,7 +186,7 @@ Terms for running the app, not for using it ([deployment.md](deployment.md)).
 | **Release** | A git tag `vX.Y.Z` with the five images CI built from it and the `compose.yml` attached to the GitHub release. Never changes once published; a tag whose images failed to build isn't one. *Avoid:* build, deployment. | `.github/workflows/release.yml` |
 | **Pre-release** | A release from a `vX.Y.Z-rc.N` tag, from any commit. Deployable by name, never GitHub's "Latest" or `:latest`. | `guard` job |
 | **Version (of a release)** | `X.Y.Z`, the tag without the `v`; also the image tag and what `/api/health` reports. Local builds report `dev`. | `APP_VERSION` |
-| **Target** | A named place a release is deployed to: `local` (the Lima VM) or `hetzner`. One host with its own secrets (Ansible Vault) and host provisioning (inventory); its app settings are the **environment** of the same name (`deploy/settings/<target>.yaml`). Every target is an environment, not every environment a target. *Avoid:* stage, server. | `deploy/ansible/inventories/<target>`, `deploy/settings/<target>.yaml` |
+| **Target** | A named place a release is deployed to: today only `hetzner`. One host with its own secrets (Ansible Vault) and host provisioning (inventory); its app settings are the **environment** of the same name (`deploy/settings/<target>.yaml`). Every target is an environment, not every environment a target. *Avoid:* stage, server. | `deploy/ansible/inventories/<target>`, `deploy/settings/<target>.yaml` |
 | **Deployment** | One `just deploy <target> [version]`: brings the host to the desired state, starts the release, ends with the smoke check. *Avoid:* rollout, ship. | `site.yml` |
 | **Current release** | The release a target runs now; earlier ones stay for rollback. | `/opt/karpathy.app/current` |
 | **Rollback** | A deployment of an older release, with today's playbook. | — |
@@ -213,8 +213,8 @@ alone (project `karpathy-app`), not numbered stacks.
 | **Orphan stack** | A project `karpathy-app-N` whose owning checkout was deleted. Any checkout's `just dev up N` may take it over. | `stack_state` |
 | **Remembered stack** | The number in `<checkout>/tmp/dev/stack`, written by `just dev up` and deleted by `just dev down`. Every later `dev`, `e2e` and `prodtest` command in that checkout uses it. A checkout holds at most one stack. | `stack_resolve`, `stack_remember` |
 | **Paired prodtest** | The prod images as project `karpathy-app-N-prodtest` on 80N5, taking N from the checkout's dev stack (remembered in `tmp/prodtest/stack` while it runs, so it outlives `just dev down`). | `just prodtest` |
-| **Native omlx** | The dev LLM server on the Mac itself (omlx, an MLX-based OpenAI-compatible server; Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models/<model id>`), shared by all stacks and their prodtests. An outside service, like a cloud provider. The `local` target still uses a native Ollama (`just ollama install`). | `brew services start omlx` |
-| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native model server (omlx in dev and prodtest; the names are historical) and answers 403 to everything else. The `local` target has one too (`ollama-relay`, to Ollama). Where it finds the server is the gateway's `relay_upstream` (`OLLAMA_UPSTREAM`): `host.docker.internal:8000` (omlx) from a dev stack, `192.168.5.2:11434` from the Lima VM. | `deploy/proxy/Caddyfile.ollama-relay` |
+| **Native omlx** | The dev LLM server on the Mac itself (omlx, an MLX-based OpenAI-compatible server; Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models/<model id>`), shared by all stacks and their prodtests. An outside service, like a cloud provider. | `brew services start omlx` |
+| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native model server (omlx in dev and prodtest; the names are historical) and answers 403 to everything else. Where it finds the server is the gateway's `relay_upstream` (`OLLAMA_UPSTREAM`): `host.docker.internal:8000` (omlx) from a dev stack. | `deploy/proxy/Caddyfile.ollama-relay` |
 | **Stack label** | `karpathy #N`, the header brand (vault switcher) on dev stack N, so a browser tab shows which stack it is. Everywhere else the brand is `karpathy.app`. | `lib/brand.ts` › `brandName` |
 
 ### Settings
@@ -224,7 +224,7 @@ Terms for configuring the app per environment ([architecture.md](architecture.md
 | Term | Meaning | In code |
 |---|---|---|
 | **Setting** | A value an operator chooses per environment and the app reads at start: gateway, model, domain, TLS mode, timezone, git identity and remote base, web caps, visible dot-dirs, ingest profiles, which secret each component needs. Never changed by the app itself. *Avoid:* config (that's `config.json`, runtime state). | `Settings` (`packages/settings`) |
-| **Environment** | A named way the stack runs: `dev` (dev stack N), `prodtest`, `test` (CI and the backend's integration tests), `local` (the Lima VM target) and `hetzner` (production). It exists exactly when `deploy/settings/<env>.yaml` exists. Every target is an environment; not every environment is a target. | `environments()` |
+| **Environment** | A named way the stack runs: `dev` (dev stack N), `prodtest`, `test` (CI and the backend's integration tests) and `hetzner` (production). It exists exactly when `deploy/settings/<env>.yaml` exists. Every target is an environment; not every environment is a target. | `environments()` |
 | **Central settings file** | `deploy/settings/settings.yaml`, committed: every setting with the value all environments share. Must validate on its own as complete settings. | `settingsSchema` |
 | **Environment file** | `deploy/settings/<env>.yaml`, committed: the same shape, but only what that environment overrides (all keys optional, unknown keys still fail). | `partialSettingsSchema` |
 | **Local overlay** | Optional, gitignored `deploy/settings/dev.local.yaml` or `prodtest.local.yaml`: one developer's own choices on top (e.g. "use OpenRouter"). Never read for `test` or a target (a `local.local.yaml` or `hetzner.local.yaml` is an error) and ignored by the tests (`--no-local`). Replaces the hand-edited `deploy/.env`. | `loadSettings(env, { overlay })` |
@@ -433,7 +433,7 @@ more.
 | **Public web** | Serves fetched pages; untrusted. |
 | **Obsidian / other git clients** | Change the same GitHub repo from other devices; their changes arrive on the next pull and can cause a conflict. |
 | **GitHub** | Hosts the vault repos; the backend clones, fetches and pushes with the GitHub token, and asks `GET /user` to test it. |
-| **LLM provider** (the environment's gateway: OpenRouter in production; the native omlx on the Mac in dev and prodtest, the native Ollama on `local`) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
+| **LLM provider** (the environment's gateway: OpenRouter in production; the native omlx on the Mac in dev and prodtest) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
 
 ## Processes
 
@@ -993,7 +993,7 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
   rewritten through a temp file and a rename); once ready, the item belongs to the AI and the user.
 - **The pull never moves `Input/`:** its dirty check and stash leave `Input/` out, so waiting items stay where they are
   (the ingest service bind-mounts the folder) while the pull fast-forwards around them.
-- **Only production reads real mail:** dev stacks, prodtest, tests and `local` have no ingest profiles (the service
+- **Only production reads real mail:** dev stacks, prodtest and tests have no ingest profiles (the service
   idles), so no other stack takes mails from a real label first.
 - **Vault content stays in its language;** the ingest pipeline adds no translation.
 - **Single user:** one bearer token, one git identity, one server-wide model.

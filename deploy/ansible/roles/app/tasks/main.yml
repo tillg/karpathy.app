@@ -291,36 +291,6 @@
   register: app_provider_keys
   no_log: true
 
-# The native Ollama on the Mac, through a /v1-only relay (as in dev), when the target's gateway is Ollama.
-- name: Ollama relay config
-  ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../proxy/Caddyfile.ollama-relay"
-    dest: "{{ app_root }}/shared/Caddyfile.ollama-relay"
-    mode: "0644"
-  register: app_relay_config
-  when: app_settings_env.OLLAMA_UPSTREAM is defined
-
-- name: The Mac's Ollama answers and has {{ app_settings_env.DEFAULT_MODEL }}
-  ansible.builtin.uri:
-    url: http://127.0.0.1:11434/api/show
-    method: POST
-    body_format: json
-    body: { model: "{{ app_settings_env.DEFAULT_MODEL | regex_replace('^ollama/', '') }}" }
-    timeout: 5
-  register: app_ollama
-  failed_when: false
-  check_mode: false
-  delegate_to: localhost
-  become: false
-  run_once: true
-  when: app_settings_env.OLLAMA_UPSTREAM is defined
-
-- name: Ollama is ready for {{ target }}
-  ansible.builtin.assert:
-    that: app_ollama.status == 200
-    fail_msg: "no Ollama with {{ app_settings_env.DEFAULT_MODEL }} on this Mac: run `just ollama install` (and `ollama pull …`)"
-  when: app_settings_env.OLLAMA_UPSTREAM is defined
-
 # Pull before switching `current`, so a failed pull leaves it on the running release.
 - name: Pull the images of v{{ app_release }}
   community.docker.docker_compose_v2_pull:
@@ -357,7 +327,7 @@
     # Containers read secrets and env files at start: a rotated one needs a recreate.
     recreate: >-
       {{ 'always' if app_secrets is changed or app_opencode_password is changed or app_provider_keys is changed
-         or app_relay_config is changed or app_ingest_secrets is changed or app_ingest_config is changed else 'auto' }}
+         or app_ingest_secrets is changed or app_ingest_config is changed else 'auto' }}
     remove_orphans: true
     wait: true
     wait_timeout: 300

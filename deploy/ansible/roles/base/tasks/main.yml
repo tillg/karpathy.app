@@ -85,7 +85,7 @@
 # Hardening ends root and password logins: on a server, the login user's key must be in place first.
 - name: The login user can log in before root and passwords are switched off
   ansible.builtin.assert:
-    that: target == 'local' or admin_authorized_keys | length > 0
+    that: admin_authorized_keys | length > 0
     fail_msg: "admin_authorized_keys is empty: hardening sshd now would lock you out of {{ target }}"
 
 # sshd uses the first value it reads: 10- comes before cloud-init's 50-cloud-init.conf.

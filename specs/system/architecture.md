@@ -441,7 +441,7 @@ Ollama host). Gotcha: `::ffff:0:0/96` or `0.0.0.0/8` in the ACL make Squid read 
 Serves the built PWA from `/srv` with SPA fallback, proxies `/api/*` to the backend unbuffered (`flush_interval -1`),
 sets CSP and security headers (`img-src` and `media-src` allow `blob:` for media embeds; `frame-src` and
 `object-src` stay closed), and gets its certificate by DNS-01 (`TLS_MODE=dns`; GoDaddy, with a 90 s wait for
-GoDaddy's nameservers) or from Caddy's internal CA (`TLS_MODE=internal`: dev, prodtest and the `local` target).
+GoDaddy's nameservers) or from Caddy's internal CA (`TLS_MODE=internal`: dev and prodtest).
 `DOMAIN`, `TLS_MODE` and `DNS_PROVIDER` come from the rendered `.env` (settings `proxy.domain`, `proxy.tls`,
 `proxy.dns.provider`). A
 plain-HTTP site on `127.0.0.1:8081` answers the container healthcheck.
@@ -1176,7 +1176,7 @@ sequenceDiagram
 - The preflight clone is blobless, depth 1 and without checkout (commits and trees only, small even for media-heavy
   vaults), made in a random `pre-*` dir under `<vaultsDir>/.preflight/` on the vaults volume, and always removed.
   `Vaults.init()` removes `.preflight/` at startup (leftovers of a crash). The clone is killed after 60 s. It also
-  works against `file://` remotes (setting `git.remote_base`, `file:///remotes/` in dev, prodtest and on `local`) in
+  works against `file://` remotes (setting `git.remote_base`, `file:///remotes/` in dev and prodtest) in
   tests and dev.
 - **Folder check:** `git ls-tree HEAD[:<root>]`; only entries of type tree count, so a *file* named `Wiki` is missing.
   Names match case-insensitively; missing ones are created as `Sources/` / `Wiki/`. A root that isn't in the tree
@@ -1303,7 +1303,7 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 | GitHub | Vault repos; fine-grained token as an HTTP extra header, never in `.git/config`; `api.github.com/user` for the token test | in use |
 | LLM providers (OpenRouter in production, any via opencode) | Model behind opencode, chosen as the environment's gateway in `deploy/settings/`; keys only in the rendered `opencode.env` | OpenRouter `z-ai/glm-5.3` on zero-data-retention hosts in production |
 | omlx | Dev and prodtest (native on the Mac: MLX server, Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models`; `Qwen3-Coder-30B-A3B-Instruct-4bit`, vision `Qwen3-VL-4B-Instruct-4bit`) | in use |
-| Ollama | The `local` target (native on the Mac, `just ollama install`); CI and integration LLM tests (container; models from `deploy/settings/test.yaml`) | in use |
+| Ollama | CI and integration LLM tests (container; models from `deploy/settings/test.yaml`) | in use |
 | Exa | Web search backend (opencode `websearch`, MCP at `mcp.exa.ai`); optional `EXA_API_KEY`, else the anonymous, rate-limited endpoint | in use |
 | Gmail (via `gog`) | The ingest profiles' labels: read, relabel; OAuth client and refresh token copied from the Mac by `just ingest-auth` | built; no profile enabled in production yet |
 | Instagram (via instascraper / instagrapi) | Posts and Reels behind Instagram links in mails; password login from Settings › Instagram | built; the real login not yet tried from the server |
@@ -1344,7 +1344,7 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 - **Website** (`.github/workflows/pages.yml`): the site test, then `_site/` to GitHub Pages on every push to `main`
   that touches `site/`, `assets/icons/` or the app's stylesheet.
 - **Releases and production:** a tag `vX.Y.Z` builds the images (amd64 + arm64) to GHCR; the Ansible playbook
-  deploys a release to a **target**: `local` (a Lima VM on the Mac, https://localhost:9444) or `hetzner` (a
+  deploys a release to a **target**: `hetzner` (a
   Hetzner CPX22 reachable only over Tailscale, https://app.karpathy.app, running since 2026-10-02), with
   monitoring (Beszel, Gatus, a healthchecks.io heartbeat, alerts via ntfy). All of it:
   [deployment.md](deployment.md).
@@ -1411,15 +1411,12 @@ flowchart TD
   and every prodtest. `dev.sh` checks it before compose (`stack_model_ready` in `deploy/stack.sh`): whatever
   `OLLAMA_UPSTREAM` points at (`host.docker.internal` mapped to `127.0.0.1`) must answer any HTTP status on
   `/v1/models`; a gateway without a relay upstream (hosted) skips the check. Containers reach the Mac's loopback as
-  `host.docker.internal`. The `local` target's VM still uses a native Ollama (`just ollama install|uninstall|status`,
-  LaunchAgent `app.karpathy.ollama` on `127.0.0.1:11434`, `OLLAMA_CONTEXT_LENGTH=16384`), not yet migrated.
-- **Ollama relay.** Each stack keeps a small Caddy (`ollama` in dev, `ollama-bridge` in prodtest, `ollama-relay` on
-  the `local` target, all `deploy/proxy/Caddyfile.ollama-relay`) on the `internal` network (alias `ollama.internal`)
+  `host.docker.internal`.
+- **Ollama relay.** Each stack keeps a small Caddy (`ollama` in dev, `ollama-bridge` in prodtest, both
+  `deploy/proxy/Caddyfile.ollama-relay`) on the `internal` network (alias `ollama.internal`)
   and `egress`. opencode's provider config (the gateway's `base_url`, `http://ollama.internal:11434/v1` for `omlx` and `ollama` alike, in
   `OPENCODE_CONFIG_CONTENT`; the names are historical) and `NO_PROXY` use that name. The upstream is `{$OLLAMA_UPSTREAM}`, the gateway's
-  `relay_upstream` in the rendered `.env`: `host.docker.internal:8000` (the `omlx` gateway) for dev and prodtest,
-  `192.168.5.2:11434` on `local` (Lima's user-mode address for the host, which forwards to the Mac's loopback, so
-  Ollama stays bound to `127.0.0.1`).
+  `relay_upstream` in the rendered `.env`: `host.docker.internal:8000` (the `omlx` gateway) for dev and prodtest.
   The relay passes only `/v1/*` and answers 403 to the rest, so the model server's admin API (Ollama's pull, delete, create; omlx's management API) stays out
   of a prompt-injected AI's reach. It rewrites `Host` to `localhost:11434`, because a loopback-bound Ollama answers
   403 to any other `Host` (its DNS-rebinding guard); harmless for omlx.
@@ -1465,22 +1462,22 @@ flowchart TB
 ```
 
 **Files.** `settings.yaml` (central: every setting with the shared value), one committed environment file each for
-`dev`, `prodtest`, `test`, `local` and `hetzner` (only what differs), and the gitignored local overlays
+`dev`, `prodtest`, `test` and `hetzner` (only what differs), and the gitignored local overlays
 `dev.local.yaml` / `prodtest.local.yaml`. The keys:
 
 | Key | Holds | Overridden by |
 |---|---|---|
-| `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | `dev`, `prodtest`: `omlx`, `omlx/Qwen3-Coder-30B-A3B-Instruct-4bit`; `test`, `local`: `ollama`, `ollama/qwen2.5:3b` |
-| `ai.vision_model` | The vision model of `look_at_image` (required; `<gateway>/<model>` on any configured gateway, named by its own prefix — so switching only `ai.gateway` in an overlay keeps it valid; the gateway's kind must speak the OpenAI chat API, and the dev relay's `OLLAMA_UPSTREAM` falls back to the vision gateway's): `openrouter/mistralai/mistral-medium-3-5` (Mistral Small 2603 was rate-limited upstream for the shared OpenRouter key, HTTP 429), with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY` and `VISION_REQUEST_OPTIONS` (the model's `options`, merged into the request) into `opencode.env`. | `dev`, `prodtest`: `omlx/Qwen3-VL-4B-Instruct-4bit`; `test`, `local`: `ollama/qwen3-vl:2b` |
+| `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | `dev`, `prodtest`: `omlx`, `omlx/Qwen3-Coder-30B-A3B-Instruct-4bit`; `test`: `ollama`, `ollama/qwen2.5:3b` |
+| `ai.vision_model` | The vision model of `look_at_image` (required; `<gateway>/<model>` on any configured gateway, named by its own prefix — so switching only `ai.gateway` in an overlay keeps it valid; the gateway's kind must speak the OpenAI chat API, and the dev relay's `OLLAMA_UPSTREAM` falls back to the vision gateway's): `openrouter/mistralai/mistral-medium-3-5` (Mistral Small 2603 was rate-limited upstream for the shared OpenRouter key, HTTP 429), with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY` and `VISION_REQUEST_OPTIONS` (the model's `options`, merged into the request) into `opencode.env`. | `dev`, `prodtest`: `omlx/Qwen3-VL-4B-Instruct-4bit`; `test`: `ollama/qwen3-vl:2b` |
 | `ai.web` | `access` (default of the Web access switch), `fetch_cap`, `search_cap` (20 each), `exa_api_key` (optional secret) | — |
 | `auth` | `bearer_token`, `opencode_password` (secret references) | — |
-| `git` | `remote_base` (`https://github.com/`), `author` (`name`, `email`), `github_token` (optional secret) | `dev`, `prodtest`, `local`: `file:///remotes/`; author per environment; `hetzner`: author as secrets `git_author_name` / `git_author_email` |
+| `git` | `remote_base` (`https://github.com/`), `author` (`name`, `email`), `github_token` (optional secret) | `dev`, `prodtest`: `file:///remotes/`; author per environment; `hetzner`: author as secrets `git_author_name` / `git_author_email` |
 | `proxy` | `domain` (`localhost`), `tls` (`internal` \| `dns`), `dns.provider` (`godaddy`), `dns.api_token` (optional secret) | `hetzner`: `app.karpathy.app`, `dns`, token required |
-| `timezone` | `Etc/UTC` | `local`, `hetzner`: `Europe/Berlin` |
+| `timezone` | `Etc/UTC` | `hetzner`: `Europe/Berlin` |
 | `commit_reminder_threshold` | Default of the commit reminder (4) | — |
 | `files.visible_dot_dirs` | Dot-folders the file tree shows (`[.agents]`; names start with `.`, never `.git`) | — |
-| `ingest` | `defaults` (ingest-email options: `max_per_poll` 20, `resolve_max_urls_per_mail` 5, `run_interval_s` 900) and `profiles` (`{}`: the loop idles). A profile: `vault` (backend vault id), optional `root`, `label`, `account` and `allowed_senders` (each may be a secret reference, so no personal data lands in the public repo), optional `settings` (ingest-email options) | only `hetzner` may set profiles (none yet; a test asserts `dev`, `local`, `prodtest` and `test` have none) |
-| `gateways.<id>` | `kind`, `name`, `base_url`, `relay_upstream`, `api_key`, `models` (opencode's per-model config, passed through): `openrouter` (built-in kind; `z-ai/glm-5.3` with its zero-data-retention provider routing) `omlx` (`openai-compatible`, "omlx (dev)", the same base URL, `relay_upstream: host.docker.internal:8000`, `Qwen3-Coder-30B-A3B-Instruct-4bit` and `Qwen3-VL-4B-Instruct-4bit` with `limit: { context: 16384, output: 4096 }`) and `ollama` (`openai-compatible`, base URL `http://ollama.internal:11434/v1`, `qwen2.5:3b` and `qwen3-vl:2b` with limits) | `local`: `ollama.relay_upstream: 192.168.5.2:11434` |
+| `ingest` | `defaults` (ingest-email options: `max_per_poll` 20, `resolve_max_urls_per_mail` 5, `run_interval_s` 900) and `profiles` (`{}`: the loop idles). A profile: `vault` (backend vault id), optional `root`, `label`, `account` and `allowed_senders` (each may be a secret reference, so no personal data lands in the public repo), optional `settings` (ingest-email options) | only `hetzner` may set profiles (none yet; a test asserts `dev`, `prodtest` and `test` have none) |
+| `gateways.<id>` | `kind`, `name`, `base_url`, `relay_upstream`, `api_key`, `models` (opencode's per-model config, passed through): `openrouter` (built-in kind; `z-ai/glm-5.3` with its zero-data-retention provider routing) `omlx` (`openai-compatible`, "omlx (dev)", the same base URL, `relay_upstream: host.docker.internal:8000`, `Qwen3-Coder-30B-A3B-Instruct-4bit` and `Qwen3-VL-4B-Instruct-4bit` with `limit: { context: 16384, output: 4096 }`) and `ollama` (`openai-compatible`, base URL `http://ollama.internal:11434/v1`, `qwen2.5:3b` and `qwen3-vl:2b` with limits) | — |
 
 **Load and validate** (`packages/settings`, plain TypeScript run with `tsx`, deps `yaml` and `zod`):
 

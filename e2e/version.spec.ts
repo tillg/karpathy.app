@@ -1,6 +1,6 @@
 import { expect, openApp, openSettings, test } from './helpers';
 
-// Dev and prodtest builds report `dev`; a deployed release reports its version (deploy-e2e sets it).
+// Dev and prodtest builds report `dev`; a deployed release reports its version (E2E_EXPECT_VERSION).
 const expected = process.env.E2E_EXPECT_VERSION ?? 'dev';
 
 test('settings dialog shows the server and the PWA version', async ({ page }) => {

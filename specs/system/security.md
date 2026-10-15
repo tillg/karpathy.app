@@ -283,8 +283,7 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   name), which passes `/v1/*` (the OpenAI-compatible API) and answers 403 to everything else, so a
   prompt-injected AI can't use the server's admin API (model management, settings); with Ollama a pull from an
   "insecure" registry would otherwise make the Mac itself request LAN or loopback addresses the egress proxy
-  forbids. The `local` target's VM still uses a native Ollama: the same relay (`ollama-relay`) to
-  `192.168.5.2:11434` (Lima's forward to the Mac's loopback), so Ollama never binds a LAN address.
+  forbids.
 - **Production server:** reachable only over Tailscale. The Hetzner firewall blocks all inbound traffic; the app,
   Beszel and Gatus bind the tailnet IP. SSH takes keys only, no root login. The operator logs in as `ops` (sudo);
   uid 1000, the app's user, has no login, no sudo and no Docker access, so a container breakout doesn't reach root
