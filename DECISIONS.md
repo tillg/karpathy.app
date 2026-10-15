@@ -167,6 +167,7 @@ edited: 2026-10-15
   - [12:58 — Baseline: two backend timing tests fail only under load; gate merges on lint, typecheck and the touched workspaces](#run-2026-10-15-1244-3)
   - [12:58 — Hold step 5 until step 6: the backend's strict schema would reject the new `secrets` key](#run-2026-10-15-1244-4)
   - [15:15 — Rewrite 15 e2e specs to reach the forms through admin mode; `fix-24` discards the saved draft before removing](#run-2026-10-15-1244-5)
+  - [19:25 — Review triage: fix the defects and the dead code, adjust the spec where it promised more than the data has](#run-2026-10-15-1244-6)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2419,3 +2420,33 @@ edited: 2026-10-15
   Also found by the rewrite: phone admin bar buttons were 40 px, below the 44 px touch target — now 44 px. The Worker
   restarted Rancher Desktop once (`rdctl shutdown`, the port forwarder had died), which also restarted the other
   checkouts' stacks (`~/git/karpathy_app` stacks 1 and 3).
+
+## 19:25 — Review triage: fix the defects and the dead code, adjust the spec where it promised more than the data has {#run-2026-10-15-1244-6}
+
+- **Status:** open
+- **Context:** `admin-mode`, `/spec:adversarial-code-review 6ee3251` (three axes). Nobody to ask which findings to act
+  on.
+- **Question:** which findings get fixed now, which are left?
+- **Decision:** fix, test-first:
+  - Defects: one failing vault no longer breaks `/api/usage`; usage counts child (subagent) sessions and every
+    session, not the newest 200 roots; a session whose last reply hasn't finished isn't cached; Escape in admin mode
+    stays in admin mode (no hidden-pane handlers, not from inside a text field); `github_token` shows Set when the
+    app holds a token, with its source; the sampler takes its first sample at start with a primed CPU reading, never
+    returns more than 240 points, survives an unreadable history file, writes it 0600; the Server section pauses while
+    the page is hidden and doesn't re-render the charts every second; Done after deleting the active vault doesn't
+    bounce through it; the Vaults section forgets the preselected vault; the usage bars include cache writes.
+  - Spec: the Vaults section says switching stays in the vault menu; the bucket-average test uses varying values;
+    the 24 h metrics test no longer does 2,880 real appends (it timed out under load).
+  - Standards: remove what the change orphaned (`Modal`'s `wide`/`focusTitle`, `.modal.wide`, `.modal-body …` rules
+    the sections now need as `.admin-inner` rules, e.g. the "All vaults" back link and `.gh` spacing); the Server
+    section polls at the backend's `intervalS`; share the token-total and disk-percent helpers; `MetricsRange` and
+    `UsageDays` types in `@karpathy/shared`.
+  - Spec text changed instead of code (`ui.md`): the opencode status has no latency (the sample stores up or down);
+    "Show numbers" on a sparkline lists min, max and latest; the second disk is the config volume.
+- **Why:** the defects are real failure paths (a 500 for every vault, under-counted tokens, lost input on Escape);
+  the spec items are cheap; the latency and full-series table would need new data for little value.
+- **Alternatives:** fix everything the Standards axis named (split `Admin.tsx`, a `useReport` hook, named admin
+  states, `GitHubToken.status()`): judgement calls, left as-is to keep the change surgical.
+- **Consequences:** left open: `Admin.tsx` size, the sections' cloned fetch effect, single-letter names, the "Missing"
+  pill that can't occur while the renderer refuses a missing required secret, `last4` of the GitHub token (allowed by
+  domain.md), the `fix-24` coverage gap (decision 5).
