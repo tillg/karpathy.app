@@ -157,6 +157,8 @@ function useAppState() {
   const pendingRoute = useRef<{ vault: string; path: string } | null>(
     initialRoute.current.vault && initialRoute.current.path ? { vault: initialRoute.current.vault, path: initialRoute.current.path } : null);
   const [activeId, setActiveIdState] = useState<string | null>(() => initialRoute.current.vault ?? localStorage.getItem(ACTIVE_KEY));
+  const vaultsRef = useRef(vaults);
+  vaultsRef.current = vaults;
   const activeRef = useRef(activeId);
   activeRef.current = activeId;
   /** Admin mode (#150), from the hash: null = user mode, '' = the section list (the phone's top level). */
@@ -761,13 +763,15 @@ function useAppState() {
   const applyAdmin = useCallback((a: AdminSection | '' | null) => { adminRef.current = a; setAdmin(a); }, []);
   /** Opens admin mode: `section`, else General on wide screens and tablets and the section list on the phone. `vaultId` opens that vault's details in Vaults. */
   const [adminVault, setAdminVault] = useState<string | null>(null);
+  const clearAdminVault = useCallback(() => setAdminVault(null), []);
   const openAdmin = useCallback(async (section?: AdminSection, vaultId?: string) => {
     if (!(await leave())) return;
     setAdminVault(vaultId ?? null);
+    if (!phone && !wide) setSidebarOpen(false); // the tablet overlay sidebar holds the gear; it would cover the page on return
     const to = section ?? (phone ? '' : 'general');
     history.pushState({ prev: null, adminFrom: location.hash, adminDepth: 1 } satisfies AdminState, '', formatAdminRoute(to));
     applyAdmin(to);
-  }, [leave, phone, applyAdmin]);
+  }, [leave, phone, wide, applyAdmin]);
   /** Wide and tablet replace the entry; on the phone the list → section step is a push. */
   const setAdminSection = useCallback((section: AdminSection) => {
     const st = history.state as AdminState | null;
@@ -809,6 +813,8 @@ function useAppState() {
       const r = parseRoute(location.hash);
       applyAdmin(r.admin);
       if (r.admin !== null || !r.vault) return;
+      // A vault that was removed since (Done after deleting the active one): stay where we are.
+      if (vaultsRef.current && !vaultsRef.current.some((v) => v.id === r.vault)) { syncRoute(true); return; }
       // An entry the browser made, not the app (a link in a rendered HTML page, an edited URL): it remembers
       // the file open until now, so the back arrow returns there (#139).
       if (history.state === null && r.path)
@@ -925,7 +931,7 @@ function useAppState() {
     followLink, exists, readOnly, conflict, canGoBack, goBack,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain, ingestNow,
     schema: schema?.vault === activeId ? schema.schema : DEFAULT_SCHEMA,
-    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, admin, adminVault, openAdmin, setAdminSection, adminUp, closeAdmin, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
+    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, admin, adminVault, clearAdminVault, openAdmin, setAdminSection, adminUp, closeAdmin, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
   };
 }
 

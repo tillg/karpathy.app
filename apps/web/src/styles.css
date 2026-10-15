@@ -412,14 +412,12 @@ a.tc { text-decoration: none; cursor: pointer; }
 .modal-scrim { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.28); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fade .2s; }
 @keyframes fade { from { opacity: 0; } }
 .modal { width: min(460px, 100%); max-height: 100%; display: flex; flex-direction: column; background: var(--bg); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; animation: pop .2s ease-out; }
-.modal.wide { width: min(600px, 100%); height: min(760px, 100%); }
 .modal-bar { flex: none; display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 8px 0 20px; border-bottom: .5px solid var(--sep); background: var(--mat); }
 .modal-bar h2 { font-size: 17px; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal-bar h2:focus { outline: none; }
 #admin-mode h1:focus { outline: none; }
 .modal-body { flex: 1; overflow: auto; padding: 14px 20px 20px; }
 .modal-body p { line-height: 1.45; margin: 4px 0 10px; }
-.modal-body .gh { margin: 18px 0 8px; }
 .ta-wrap { position: relative; }
 .ta-wrap textarea { width: 100%; border: .5px solid var(--sep); background: var(--bg2); border-radius: 12px; padding: 10px 12px; font: 14px/1.45 var(--mono); outline: none; resize: vertical; }
 .ta-spin { position: absolute; right: 12px; top: 12px; }
@@ -446,7 +444,7 @@ a.tc { text-decoration: none; cursor: pointer; }
 .vrow-btn { display: block; width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer; }
 .vrow-btn:hover { background: var(--fill); }
 .vrow-btn .f7-icons { color: var(--label2); }
-.modal-body .back { display: inline-flex; align-items: center; gap: 2px; min-height: 32px; margin-bottom: 6px; text-decoration: none; }
+.admin-inner .back { display: inline-flex; align-items: center; gap: 2px; min-height: 32px; margin-bottom: 6px; text-decoration: none; }
 .gh .help { height: 32px; min-width: 32px; }
 .token-result { display: flex; flex-direction: column; gap: 4px; font-size: 14px; background: var(--bg2); border-radius: 10px; padding: 10px 12px; overflow-wrap: anywhere; }
 .token-result > div { display: flex; align-items: baseline; gap: 6px; }
@@ -524,8 +522,7 @@ a.tc { text-decoration: none; cursor: pointer; }
 .tab-badge { position: absolute; top: -4px; right: -10px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--badge); color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 @media (max-width: 699px) {
   .modal-scrim { padding: 0; align-items: flex-end; }
-  .modal, .modal.wide { width: 100%; height: auto; max-height: calc(100% - 20px); border-radius: 14px 14px 0 0; }
-  .modal.wide { height: calc(100% - 20px); }
+  .modal { width: 100%; height: auto; max-height: calc(100% - 20px); border-radius: 14px 14px 0 0; }
   .sides { grid-template-columns: 1fr; }
   #toast { bottom: calc(var(--tabh) + 16px); }
 }
@@ -657,6 +654,8 @@ a.tc { text-decoration: none; cursor: pointer; }
 .admin-content { flex: 1; overflow-y: auto; padding-top: 52px; overscroll-behavior: contain; }
 .admin-inner { max-width: 780px; padding: 18px 24px 40px; }
 #admin-mode.phone .admin-inner { padding: 12px 16px 40px; }
+.admin-inner p { line-height: 1.45; margin: 4px 0 10px; }
+.admin-inner .gh { margin: 18px 0 8px; }
 #admin-mode.phone .lt { margin: 8px 20px 10px; }
 #admin-mode.phone .admin-inner > .lt { margin-left: 0; margin-right: 0; }
 .admin-list { margin: 0 16px; background: var(--bg2); border-radius: 12px; overflow: hidden; }

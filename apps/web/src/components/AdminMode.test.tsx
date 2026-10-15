@@ -95,6 +95,45 @@ describe('admin mode', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('open-settings')));
   });
 
+  it('Escape in admin mode does not close the graph underneath', async () => {
+    const api = open();
+    await noteOpen(api);
+    fireEvent.click(await screen.findByTestId('open-graph'));
+    await waitFor(() => expect((screen.getByTestId('graph-pane') as HTMLElement).hidden).toBe(false));
+    fireEvent.click(screen.getByTestId('open-settings'));
+    await waitFor(() => expect(location.hash).toBe('#admin/general'));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
+    expect((screen.getByTestId('graph-pane') as HTMLElement).hidden).toBe(false);
+  });
+
+  it('Escape in an admin text field keeps admin mode and the typed text', async () => {
+    const api = open({ 'GET /api/settings': { commitReminderThreshold: 20, model: 'x/y', webAccess: false, githubToken: { source: 'none', last4: null }, modelInput: null } });
+    await noteOpen(api);
+    fireEvent.click(await screen.findByTestId('open-settings'));
+    const field = (await screen.findByTestId('settings-threshold')) as HTMLInputElement;
+    fireEvent.change(field, { target: { value: '33' } });
+    fireEvent.keyDown(field, { key: 'Escape' });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(location.hash).toBe('#admin/general');
+    expect((screen.getByTestId('settings-threshold') as HTMLInputElement).value).toBe('33');
+  });
+
+  it('tablet: opening admin mode from the overlay sidebar closes it, and Escape returns focus to the sidebar toggle', async () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: false, media: q, addEventListener: () => {}, removeEventListener: () => {} }));
+    const api = open();
+    await noteOpen(api);
+    fireEvent.click(await screen.findByTestId('sidebar-toggle'));
+    const gear = await screen.findByTestId('open-settings');
+    gear.focus();
+    fireEvent.click(gear);
+    await waitFor(() => expect(location.hash).toBe('#admin/general'));
+    expect(document.getElementById('scrim')!.className).not.toContain('on');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('sidebar-toggle')));
+  });
+
   it('the vault switcher stays in user mode and switches vaults as before; admin mode shows none', async () => {
     const api = open({
       'GET /api/vaults': [{ id: VAULT, name: 'One', repo: 'o/r', branch: 'main', state: 'ready' }, { id: 'v2', name: 'Two', repo: 'o/s', branch: 'main', state: 'ready' }],
@@ -148,6 +187,12 @@ describe('admin mode', () => {
       expect(sec('vaults').getByTestId('vault-details')).toBeTruthy();
     });
 
+    it('Vaults: a muted line says that switching vaults stays in user mode', async () => {
+      await inAdmin('vaults');
+      await sec('vaults').findAllByTestId('admin-vault');
+      expect(sec('vaults').getByText('Switching between vaults stays in your notes (the vault menu). Here you add, edit and remove them.').className).toContain('muted');
+    });
+
     it('Secrets & keys: GitHub token form and Instagram', async () => {
       await inAdmin('secrets');
       expect(sec('secrets').getByTestId('token-input')).toBeTruthy();
@@ -183,6 +228,18 @@ describe('admin mode', () => {
       fireEvent.click(await screen.findByTestId('manage-vaults-cta'));
       await waitFor(() => expect(location.hash).toBe('#admin/vaults'));
       expect((await sec('vaults').findByTestId('vault-details')).getAttribute('data-vault')).toBe(VAULT);
+    });
+
+    it('the vault details open once: a later visit to Vaults shows the list', async () => {
+      history.replaceState(null, '', `#/${VAULT}`);
+      fakeApi({ routes: { 'GET /api/settings': SETTINGS, 'GET /api/vaults': [{ ...VAULTS[0], state: 'clone-failed', error: 'boom' }], [`POST /api/vaults/${VAULT}/open`]: { state: 'clone-failed' } } });
+      renderApp(<Shell />);
+      fireEvent.click(await screen.findByTestId('manage-vaults-cta'));
+      await screen.findByTestId('vault-details');
+      fireEvent.click(screen.getByTestId('admin-nav-general'));
+      fireEvent.click(screen.getByTestId('admin-nav-vaults'));
+      expect(await sec('vaults').findAllByTestId('admin-vault')).toHaveLength(1);
+      expect(sec('vaults').queryByTestId('vault-details')).toBeNull();
     });
   });
 });

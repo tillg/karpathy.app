@@ -173,3 +173,31 @@ describe('vault commands (#134)', () => {
     await waitFor(() => expect(app.commandsNonce).toBe(before + 1));
   });
 });
+
+describe('Done after deleting the active vault (#150)', () => {
+  it('going back to the deleted vault\'s route does not make it active again', async () => {
+    const v = (id: string) => ({ id, name: id, repo: `o/${id}`, branch: 'main', root: '', state: 'ready' });
+    let list = [v(VAULT), v('v2')];
+    fakeApi({ routes: {
+      'GET /api/vaults': () => list,
+      'POST /api/vaults/v2/open': { state: 'ready', changedCount: 0, inputChangedCount: 0, unpushedCount: 0, incomingCount: 0, incomingPaths: [], busy: 'none', conflictPaths: [] },
+      'GET /api/vaults/v2/files': [], 'GET /api/vaults/v2/commands': [], 'GET /api/vaults/v2/chats': [],
+    } });
+    history.replaceState(null, '', `#/${VAULT}`);
+    const seen: (string | null)[] = [];
+    function Spy() { app = useApp(); seen.push(app.activeId); return null; }
+    renderApp(<Spy />);
+    await waitFor(() => expect(app.activeId).toBe(VAULT));
+    await act(() => app.openAdmin('vaults', VAULT));
+    list = [v('v2')];
+    await act(() => app.reloadVaults());
+    await waitFor(() => expect(app.activeId).toBe('v2'));
+    const from = seen.length;
+    act(() => app.closeAdmin());
+    await waitFor(() => expect(app.admin).toBeNull());
+    await new Promise((r) => setTimeout(r, 100));
+    expect(seen.slice(from)).not.toContain(VAULT);
+    expect(app.activeId).toBe('v2');
+    expect(location.hash).toBe('#/v2');
+  });
+});
