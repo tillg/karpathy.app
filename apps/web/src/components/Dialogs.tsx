@@ -23,7 +23,7 @@ function syncInert() {
  * forces the title), and back to the opener on close. Tab stays inside, Escape closes, the rest
  * of the page is inert.
  */
-export function Modal({ title, onClose, children, wide, testid, className, focusTitle }: { title: string; onClose(): void; children: ReactNode; wide?: boolean; testid?: string; className?: string; focusTitle?: boolean }) {
+export function Modal({ title, onClose, children, testid, className, focusTitle }: { title: string; onClose(): void; children: ReactNode; testid?: string; className?: string; focusTitle?: boolean }) {
   const titleId = useId();
   const scrim = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -68,7 +68,7 @@ export function Modal({ title, onClose, children, wide, testid, className, focus
 
   return createPortal(
     <div className="modal-scrim" ref={scrim} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={`modal${wide ? ' wide' : ''}${className ? ` ${className}` : ''}`} ref={box} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid={testid}>
+      <div className={`modal${className ? ` ${className}` : ''}`} ref={box} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid={testid}>
         <div className="modal-bar"><h2 id={titleId} tabIndex={-1}>{title}</h2><button className="ib txt" onClick={onClose}>Close</button></div>
         <div className="modal-body">{children}</div>
       </div>

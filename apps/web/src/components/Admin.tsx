@@ -350,10 +350,12 @@ export function AiSection() {
 }
 
 export function VaultsSection() {
-  const { vaults, reloadVaults, setAdminSection, adminVault } = useApp();
+  const { vaults, reloadVaults, setAdminSection, adminVault, clearAdminVault } = useApp();
   const [view, setView] = useState<View>(adminVault ? { kind: 'details', id: adminVault } : { kind: 'list' });
   const [help, setHelp] = useState(false);
   useEffect(() => { void reloadVaults(); }, [reloadVaults]);
+  // The vault to show is used once: later visits to Vaults start at the list.
+  useEffect(() => { clearAdminVault(); }, [clearAdminVault]);
   const list = () => setView({ kind: 'list' });
   const current = view.kind === 'details' ? vaults?.find((v) => v.id === view.id) : undefined;
   return (
@@ -370,6 +372,7 @@ export function VaultsSection() {
           <InstagramNotice open={() => setAdminSection('secrets')} />
           {vaults?.length === 0 && <p className="muted">No vaults yet. Each vault is an existing GitHub repo.</p>}
           {vaults?.map((v) => <VaultRow key={v.id} v={v} open={() => setView({ kind: 'details', id: v.id })} />)}
+          <p className="muted">Switching between vaults stays in your notes (the vault menu). Here you add, edit and remove them.</p>
           <div className="acts">
             <button className="btn" data-testid="admin-open-add" onClick={() => setView({ kind: 'add' })}>Add vault</button>
           </div>

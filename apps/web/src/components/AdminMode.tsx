@@ -7,8 +7,8 @@ import { useApp } from '../store';
 import { AiSection, GeneralSection, SecretsSection, VaultsSection } from './Admin';
 import { Icon } from './Icon';
 import { secretsSummary } from './SecretTable';
-import { ServerSection } from './ServerSection';
-import { money, UsageSection } from './UsageSection';
+import { diskPercent, ServerSection } from './ServerSection';
+import { money, tokens, UsageSection } from './UsageSection';
 
 const SECTIONS: Record<AdminSection, { label: string; short?: string; icon: string; sub: string }> = {
   general: { label: 'General', icon: 'slider_horizontal_3', sub: 'Commit reminder, version' },
@@ -36,7 +36,9 @@ export function AdminMode() {
   useEffect(() => { heading.current?.focus(); }, [page]);
   useEffect(() => () => {
     setTimeout(() => {
-      const back = opener instanceof HTMLElement && opener.isConnected && opener !== document.body ? opener : document.querySelector<HTMLElement>('[data-testid="open-settings"]');
+      const ok = (el: Element | null): el is HTMLElement => el instanceof HTMLElement && el.isConnected && el !== document.body && !el.closest('[inert], [hidden]');
+      // The opener, else the gear; on a tablet the sidebar holding them is closed again, so its toggle.
+      const back = [opener, document.querySelector('[data-testid="open-settings"]'), document.querySelector('[data-testid="sidebar-toggle"]')].find(ok);
       back?.focus();
     }, 0);
   }, [opener]);
@@ -44,8 +46,8 @@ export function AdminMode() {
     if (!list) return;
     api.health().then((h) => setVersion(h.version), () => {});
     api.secrets().then((r) => setSecrets(secretsSummary(r.secrets)), () => {});
-    api.metrics('1h').then((r) => r.latest && setServer(`CPU ${Math.round(r.latest.cpu)} % · disk ${r.latest.vaultsTotal ? Math.round((r.latest.vaultsUsed / r.latest.vaultsTotal) * 100) : 0} %`), () => {});
-    api.usage(7).then((r) => setUsage(`${shortNumber(r.total.input + r.total.output + r.total.reasoning + r.total.cacheRead + r.total.cacheWrite)} tokens this week${r.costKnown ? ` · ${money(r.total.cost)}` : ''}`), () => {});
+    api.metrics('1h').then((r) => r.latest && setServer(`CPU ${Math.round(r.latest.cpu)} % · disk ${diskPercent(r.latest)} %`), () => {});
+    api.usage(7).then((r) => setUsage(`${shortNumber(tokens(r.total))} tokens this week${r.costKnown ? ` · ${money(r.total.cost)}` : ''}`), () => {});
   }, [list]);
   /** Phone list summaries: real data where it is at hand, else the static text. */
   const sub = (s: AdminSection) =>
@@ -62,6 +64,9 @@ export function AdminMode() {
     if (phone) return;
     const k = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
+      // Escape in a text field is the field's (it would lose the typed input).
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || t.matches('input, textarea, select'))) return;
       closeAdmin();
     };
     addEventListener('keydown', k);
