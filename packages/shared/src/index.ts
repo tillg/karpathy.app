@@ -306,6 +306,27 @@ export type ChatEvent =
   | { type: 'text-delta'; messageId: string; partId: string; delta: string }
   | { type: 'error'; message: string };
 
+/** Token and cost sums (`GET /usage`). */
+export interface UsageSums {
+  input: number;
+  output: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+}
+
+export interface UsageReport {
+  /** One entry per day of the range in the server's timezone, zeros included, oldest first. */
+  days: ({ date: string } & UsageSums)[];
+  byModel: ({ model: string } & UsageSums)[];
+  /** `vault` is the vault id; `chats` counts the chats with usage in the range. */
+  byVault: ({ vault: string; name: string; chats: number } & UsageSums)[];
+  total: UsageSums;
+  /** False when every cost is 0 (the provider reports none): the UI hides the cost column. */
+  costKnown: boolean;
+}
+
 export interface ApiError {
   error: string;
   code?: string;

@@ -319,6 +319,23 @@ describe('vault admin', () => {
     expect((await none.api.get('/settings/secrets')).body).toEqual({ secrets: [] });
   });
 
+  it('GET /usage?days=5 is 400', async () => {
+    const t = await makeApp('file:///nowhere/', { deps: { usage: { report: async () => { throw new Error('unreachable'); } } } });
+    const r = await t.api.get('/usage?days=5');
+    expect(r.status).toBe(400);
+    expect(r.body.code).toBe('bad-days');
+    expect((await t.api.get('/usage?days=')).status).toBe(400);
+  });
+
+  it('GET /usage defaults to 7 days and passes 30 through', async () => {
+    const asked: number[] = [];
+    const empty = { days: [], byModel: [], byVault: [], total: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, costKnown: false };
+    const t = await makeApp('file:///nowhere/', { deps: { usage: { report: async (d) => (asked.push(d), empty) } } });
+    expect((await t.api.get('/usage')).body).toEqual(empty);
+    expect((await t.api.get('/usage?days=30')).status).toBe(200);
+    expect(asked).toEqual([7, 30]);
+  });
+
   it('a token sent to the test route is masked in later messages, though never saved', async () => {
     const t = await makeApp('file:///nowhere/');
     const typed = 'ghp_typedtypedtypedtypedtyped1234';
