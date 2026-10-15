@@ -2345,6 +2345,14 @@ edited: 2026-10-15
   Step 13's merge conflicted in `apps/web/src/test/fake-api.tsx` (two new fixtures on adjacent lines): aborted and
   redone serially in the main tree (the Worker's backend files plus the two web lines by hand). Its gate first ran
   at load average 96 (step 4's stack and Playwright) and timed out everywhere; re-run at load 18, green.
+  **Paused at 16:11 at the user's request** (moving offline), 14 of 16 steps done and pushed (`49fab53`). Step 15's
+  Worker was stopped mid-way, its full `just e2e` run killed. Left uncommitted in the main tree: the new
+  `e2e/admin-mode.spec.ts` (7 cases, unverified), CSS fixes from its screenshot review in `apps/web/src/styles.css`
+  (phone heading margin, `.status.bad/.off`, table padding) and an unexplained model-name swap in
+  `UsageSection.test.tsx` (check before keeping). Screenshots and `just check` logs: `tmp/admin-mode/`. Dev stack 4
+  still runs. Open on resume: step 15 (verify the spec, read screenshots, full `just e2e` and a baseline comparison of
+  unrelated failures), step 16 (README, demo run book), the review (known: first metrics sample reports CPU 0 %),
+  archive, retro.
 
 ## 12:58 — Baseline: two backend timing tests fail only under load; gate merges on lint, typecheck and the touched workspaces {#run-2026-10-15-1244-3}
 
