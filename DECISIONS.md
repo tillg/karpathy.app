@@ -2327,6 +2327,9 @@ edited: 2026-10-15
 - **Alternatives:** a branch `autonomous/admin-mode` and a PR (keeps `main` clean until review, but no CI-tested
   release path differs, and the parallel-step merges already land on the current branch).
 - **Consequences:** every step is on `origin/main` as soon as it is green; a bad step is reverted forward.
+  Changed at 19:35 on the user's request ("make this in its own branch"): from `3a4d1f5` on, the work goes to branch
+  `feat/150-admin-mode` (review fixes, steps 15 and 16, archive) and into `main` through one PR. Steps 1–14 and the
+  first part of step 15 stay on `main` (moving them would rewrite pushed history).
 
 ## 12:48 — Apply with `--parallel`: Workers in `.worktrees/`, each with its own `npm ci`; e2e steps in the main tree {#run-2026-10-15-1244-2}
 
