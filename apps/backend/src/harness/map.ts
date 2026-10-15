@@ -154,6 +154,41 @@ export function mapMessages(list: unknown[], root: string): ChatMessage[] {
   });
 }
 
+/** One assistant message's token use and cost, for the usage report (admin mode). */
+export interface UsageRow {
+  /** ms since epoch */
+  created: number;
+  /** `provider/model` */
+  model: string;
+  input: number;
+  output: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+}
+
+/** A session's messages (`{ info, parts }`) → one row per assistant message that carries tokens; metadata only, never text. */
+export function usageRows(list: unknown[]): UsageRow[] {
+  const n = (v: unknown) => (typeof v === 'number' ? v : 0);
+  return list.flatMap((m) => {
+    const info = obj(obj(m).info);
+    if (info.role !== 'assistant' || !info.tokens) return [];
+    const t = obj(info.tokens);
+    const cache = obj(t.cache);
+    return [{
+      created: n(obj(info.time).created),
+      model: `${str(info.providerID) ?? ''}/${str(info.modelID) ?? ''}`,
+      input: n(t.input),
+      output: n(t.output),
+      reasoning: n(t.reasoning),
+      cacheRead: n(cache.read),
+      cacheWrite: n(cache.write),
+      cost: n(info.cost),
+    }];
+  });
+}
+
 /** One opencode bus event → zero or one harness event. `root` = the vault root as opencode sees it. */
 export function mapEvent(raw: unknown, root: string): HarnessEvent | null {
   const e = obj(raw);

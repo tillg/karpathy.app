@@ -1,7 +1,7 @@
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2/client';
 import type { ChatMessage, ChatSummary, ModelInput } from '@karpathy/shared';
 import { lastEntries, ModelLimits, type LastEntryCache } from './context-cache.js';
-import { mapEvent, mapMessages, mapModels, withLimit, writtenPaths, type HarnessEvent } from './map.js';
+import { mapEvent, mapMessages, mapModels, usageRows, withLimit, writtenPaths, type HarnessEvent, type UsageRow } from './map.js';
 
 export type AgentName = 'vault' | 'vault-readonly' | 'commit-message';
 
@@ -46,6 +46,8 @@ export interface Harness {
   createSession(dir: string, title?: string): Promise<string>;
   sessionExists(dir: string, id: string): Promise<boolean>;
   messages(dir: string, id: string): Promise<ChatMessage[]>;
+  /** Token use and cost per assistant message of a session. */
+  sessionUsage(dir: string, id: string): Promise<UsageRow[]>;
   deleteSession(dir: string, id: string): Promise<void>;
   setTitle(dir: string, id: string, title: string): Promise<void>;
   prompt(dir: string, id: string, input: PromptInput): Promise<void>;
@@ -125,6 +127,10 @@ export class OpencodeHarness implements Harness {
     const list = mapMessages(unwrap(await this.c.session.messages({ directory: dir, sessionID: id }), 'session.messages'), dir);
     await this.modelLimits.know(list.map((m) => m.model));
     return list.map((m) => withLimit(m, this.modelLimits.limits));
+  }
+
+  async sessionUsage(dir: string, id: string) {
+    return usageRows(unwrap(await this.c.session.messages({ directory: dir, sessionID: id }), 'session.messages'));
   }
 
   async deleteSession(dir: string, id: string) {
