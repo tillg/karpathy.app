@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { shortNumber } from '../lib/chat';
 import { brandName } from '../lib/brand';
 import { ADMIN_SECTIONS, formatAdminRoute, type AdminSection } from '../lib/route';
 import { useApp } from '../store';
 import { AiSection, GeneralSection, SecretsSection, VaultsSection } from './Admin';
 import { Icon } from './Icon';
 import { secretsSummary } from './SecretTable';
+import { money, UsageSection } from './UsageSection';
 
 const SECTIONS: Record<AdminSection, { label: string; short?: string; icon: string; sub: string }> = {
   general: { label: 'General', icon: 'slider_horizontal_3', sub: 'Commit reminder, version' },
@@ -23,10 +25,12 @@ export function AdminMode() {
   const section: AdminSection = admin || 'general';
   const list = phone && admin === '';
   const [secrets, setSecrets] = useState<string | null>(null);
+  const [usage, setUsage] = useState<string | null>(null);
   useEffect(() => {
     if (!list) return;
     api.health().then((h) => setVersion(h.version), () => {});
     api.secrets().then((r) => setSecrets(secretsSummary(r.secrets)), () => {});
+    api.usage(7).then((r) => setUsage(`${shortNumber(r.total.input + r.total.output + r.total.reasoning + r.total.cacheRead + r.total.cacheWrite)} tokens this week${r.costKnown ? ` · ${money(r.total.cost)}` : ''}`), () => {});
   }, [list]);
   /** Phone list summaries: real data where it is at hand, else the static text. */
   const sub = (s: AdminSection) =>
@@ -34,6 +38,7 @@ export function AdminMode() {
     : s === 'vaults' && vaults ? `${vaults.length} vault${vaults.length === 1 ? '' : 's'}`
     : s === 'secrets' && secrets ? secrets
     : s === 'ai' && settings ? `${settings.model.split('/').pop()} · web ${settings.webAccess ? 'on' : 'off'}`
+    : s === 'usage' && usage ? usage
     : SECTIONS[s].sub;
 
   // Wide and tablet: Escape leaves admin mode, like Done (a modal on top takes Escape first).
@@ -90,6 +95,7 @@ export function AdminMode() {
               {section === 'vaults' && <VaultsSection />}
               {section === 'secrets' && <SecretsSection />}
               {section === 'ai' && <AiSection />}
+              {section === 'usage' && <UsageSection />}
             </div>
           )}
         </main>
