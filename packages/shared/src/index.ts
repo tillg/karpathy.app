@@ -44,6 +44,21 @@ export interface SettingsView extends Settings {
   modelInput: ModelInput | null;
 }
 
+/** One entry of `GET /settings/secrets`: a secret the deployment references, never its value. */
+export interface SecretStatus {
+  name: string;
+  /** The component that reads it (backend, opencode, ...). */
+  component: string;
+  purpose: string;
+  optional: boolean;
+  /** Non-empty as of the last settings render. */
+  set: boolean;
+  /** `github_token` only: where the token in use comes from (absent when none). */
+  source?: 'app' | 'deployment';
+  /** `github_token` only: the last 4 characters of the token in use. */
+  last4?: string;
+}
+
 /** `POST /settings/github-token/test`. */
 export interface TokenTest {
   /** GitHub accepted the token (`GET /user`). */
@@ -299,6 +314,27 @@ export type ChatEvent =
   | { type: 'text-delta'; messageId: string; partId: string; delta: string }
   | { type: 'error'; message: string };
 
+/** Token and cost sums (`GET /usage`). */
+export interface UsageSums {
+  input: number;
+  output: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
+  cost: number;
+}
+
+export interface UsageReport {
+  /** One entry per day of the range in the server's timezone, zeros included, oldest first. */
+  days: ({ date: string } & UsageSums)[];
+  byModel: ({ model: string } & UsageSums)[];
+  /** `vault` is the vault id; `chats` counts the chats with usage in the range. */
+  byVault: ({ vault: string; name: string; chats: number } & UsageSums)[];
+  total: UsageSums;
+  /** False when every cost is 0 (the provider reports none): the UI hides the cost column. */
+  costKnown: boolean;
+}
+
 export interface ApiError {
   error: string;
   code?: string;
@@ -308,3 +344,29 @@ export * from './browser-call.js';
 export * from './media.js';
 export * from './wikilink.js';
 export * from './relink.js';
+
+/** One reading of the server (admin mode, Server section); taken every 30 s by the backend. */
+export interface MetricsSample {
+  /** Epoch ms. */
+  at: number;
+  /** Busy share of all CPUs since the previous sample, 0-100. */
+  cpu: number;
+  memUsed: number;
+  memTotal: number;
+  /** 1-minute load average. */
+  load1: number;
+  vaultsUsed: number;
+  vaultsTotal: number;
+  configUsed: number;
+  configTotal: number;
+  opencodeUp: boolean;
+}
+
+/** `GET /metrics?range=`: `samples` is bucket-averaged to at most 240 points. */
+export interface MetricsReport {
+  samples: MetricsSample[];
+  latest: MetricsSample | null;
+  /** Backend uptime in seconds. */
+  uptimeS: number;
+  intervalS: number;
+}

@@ -1,4 +1,4 @@
-import { expect, makeRemote, openApp, runId, test, uid } from './helpers';
+import { closeAdmin, expect, makeRemote, openApp, runId, test, uid } from './helpers';
 
 // #22: a clone-failed vault never shows another vault's Changes; Retry re-runs the clone (#23).
 test('clone-failed vault: no foreign changes, error shown, Retry clones', async ({ page, api, vault }) => {
@@ -38,7 +38,7 @@ test('clone-failed vault: no foreign changes, error shown, Retry clones', async 
     await row.screenshot({ path: 'tmp/fix3/22-retry.png' });
     await row.getByTestId('vault-retry').click();
     await expect(row).toHaveAttribute('data-state', 'ready', { timeout: 60_000 });
-    await page.getByTestId('admin').getByRole('button', { name: 'Close', exact: true }).click();
+    await closeAdmin(page);
     await expect(page.getByTestId('changes-unavailable')).toHaveCount(0);
     await expect(page.getByTestId('commit-button')).toBeVisible();
     await expect(page.getByTestId('change-item')).toHaveCount(0);

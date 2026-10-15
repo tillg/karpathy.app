@@ -1,4 +1,4 @@
-import { breakRemote, expect, openApp, openNote, openSettings, pushFromObsidian, remoteLog, remoteShow, test, treeItem, typeAtEnd, waitSaved } from './helpers';
+import { breakRemote, closeAdmin, expect, openApp, openNote, openSettings, pushFromObsidian, remoteLog, remoteShow, test, treeItem, typeAtEnd, waitSaved } from './helpers';
 import type { Page } from '@playwright/test';
 
 const changeItem = (page: Page, path: string) => page.locator(`[data-testid="change-item"][data-path="${path}"]`);
@@ -88,11 +88,11 @@ test.describe('changes, commit & push', () => {
     const before = (await api.settings()).commitReminderThreshold;
     try {
       await openApp(page, vault.id);
-      await openSettings(page);
+      await openSettings(page, 'general');
       await page.getByTestId('settings-threshold').fill('2');
       await page.getByTestId('settings-save').click();
       await expect(page.getByTestId('toast')).toContainText('Settings saved');
-      await page.getByTestId('settings-dialog').getByRole('button', { name: 'Close', exact: true }).click();
+      await closeAdmin(page);
 
       await api.write(vault.id, 'R1.md', '# R1\n');
       await api.write(vault.id, 'R2.md', '# R2\n');

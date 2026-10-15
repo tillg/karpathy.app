@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { mapEvent, mapMessageInfo, mapMessages, mapModels, mapPart, withLimit, mapToolPart, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
+import { mapEvent, mapMessageInfo, mapMessages, mapModels, mapPart, withLimit, mapToolPart, usageRows, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
 
 // Real opencode 1.18.25 event captures from the Phase 0 spike (vault root /vaults/a).
 const raw = readFileSync(join(import.meta.dirname, 'fixtures/opencode-events.jsonl'), 'utf8')
@@ -232,5 +232,22 @@ describe('context window (#140)', () => {
     expect(withLimit({ id: 'm', role: 'assistant', createdAt: 1, model: 'x/y', context: { used: 10 } }, limits).context).toEqual({ used: 10 });
     const user = { id: 'u', role: 'user' as const, createdAt: 1, model: 'ollama/qwen2.5:3b' };
     expect(withLimit(user, limits)).toEqual(user);
+  });
+});
+
+describe('usageRows', () => {
+  it('usageRows: assistant messages give created, model id, input/output/reasoning/cache read/write and cost; user messages and messages without tokens are skipped', () => {
+    const rows = usageRows([
+      { info: { id: 'u1', role: 'user', time: { created: 1 }, model: { providerID: 'p', modelID: 'm' } }, parts: [] },
+      {
+        info: {
+          id: 'a1', role: 'assistant', providerID: 'omlx', modelID: 'qwen', time: { created: 1700000000000 }, cost: 0.25,
+          tokens: { input: 10, output: 20, reasoning: 3, cache: { read: 4, write: 5 } },
+        },
+        parts: [],
+      },
+      { info: { id: 'a2', role: 'assistant', providerID: 'omlx', modelID: 'qwen', time: { created: 2 } }, parts: [] },
+    ]);
+    expect(rows).toEqual([{ created: 1700000000000, model: 'omlx/qwen', input: 10, output: 20, reasoning: 3, cacheRead: 4, cacheWrite: 5, cost: 0.25 }]);
   });
 });

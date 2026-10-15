@@ -303,6 +303,59 @@ describe('vault admin', () => {
     expect((await none.api.get('/settings')).body.githubToken).toEqual({ source: 'none', last4: null });
   });
 
+  it('GET /settings/secrets returns the manifest; github_token carries source and last4 from GitHubToken', async () => {
+    const secrets = [
+      { name: 'github_token', component: 'backend', purpose: 'GitHub token', optional: true, set: true },
+      { name: 'exa_api_key', component: 'opencode', purpose: 'Web search (Exa)', optional: true, set: false },
+    ];
+    const { api } = await makeApp('file:///nowhere/', { githubSecret: 'ghp_secretsecretsecretsecret1111', deps: { secrets } });
+    const r = await api.get('/settings/secrets');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ secrets: [{ ...secrets[0], source: 'deployment', last4: '1111' }, secrets[1]] });
+    expect(r.text).not.toContain('ghp_secretsecret');
+    await api.put('/settings/github-token', { token: 'github_pat_abcdefghijklmnopqrstuvwxyz9876' });
+    expect((await api.get('/settings/secrets')).body.secrets[0]).toMatchObject({ source: 'app', last4: '9876' });
+    const none = await makeApp('file:///nowhere/');
+    expect((await none.api.get('/settings/secrets')).body).toEqual({ secrets: [] });
+  });
+
+  it('GET /usage?days=5 is 400', async () => {
+    const t = await makeApp('file:///nowhere/', { deps: { usage: { report: async () => { throw new Error('unreachable'); } } } });
+    const r = await t.api.get('/usage?days=5');
+    expect(r.status).toBe(400);
+    expect(r.body.code).toBe('bad-days');
+    expect((await t.api.get('/usage?days=')).status).toBe(400);
+  });
+
+  it('GET /usage defaults to 7 days and passes 30 through', async () => {
+    const asked: number[] = [];
+    const empty = { days: [], byModel: [], byVault: [], total: { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0 }, costKnown: false };
+    const t = await makeApp('file:///nowhere/', { deps: { usage: { report: async (d) => (asked.push(d), empty) } } });
+    expect((await t.api.get('/usage')).body).toEqual(empty);
+    expect((await t.api.get('/usage?days=30')).status).toBe(200);
+    expect(asked).toEqual([7, 30]);
+  });
+
+  it('GET /metrics?range=24h returns samples, latest, uptime and intervalS', async () => {
+    const sample = { at: 1, cpu: 5, memUsed: 1, memTotal: 2, load1: 0.1, vaultsUsed: 1, vaultsTotal: 2, configUsed: 1, configTotal: 2, opencodeUp: true };
+    const asked: string[] = [];
+    const report = { samples: [sample], latest: sample, uptimeS: 42, intervalS: 30 };
+    const t = await makeApp('file:///nowhere/', { deps: { metrics: { report: (r) => (asked.push(r), report) } } });
+    const r = await t.api.get('/metrics?range=24h');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual(report);
+    await t.api.get('/metrics');
+    await t.api.get('/metrics?range=7d');
+    expect(asked).toEqual(['24h', '24h', '7d']);
+  });
+
+  it('GET /metrics?range=2d is 400', async () => {
+    const t = await makeApp('file:///nowhere/', { deps: { metrics: { report: () => { throw new Error('unreachable'); } } } });
+    const r = await t.api.get('/metrics?range=2d');
+    expect(r.status).toBe(400);
+    expect(r.body.code).toBe('bad-range');
+  });
+
   it('a token sent to the test route is masked in later messages, though never saved', async () => {
     const t = await makeApp('file:///nowhere/');
     const typed = 'ghp_typedtypedtypedtypedtyped1234';

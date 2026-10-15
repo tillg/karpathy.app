@@ -191,19 +191,46 @@ async function showSidebar(page: Page) {
   if ((await page.locator('#sidebar').getAttribute('inert')) !== null) await page.getByTestId('sidebar-toggle').click();
 }
 
-/** Opens the vault manager the way the user does: vault menu → Manage vaults…. */
+export type AdminSection = 'general' | 'vaults' | 'secrets' | 'ai' | 'usage' | 'server';
+
+/** Goes to an admin section from wherever admin mode is: the rail (wide, tablet), the section list (phone) or, on a phone section, "‹ Admin" first. */
+export async function openSection(page: Page, section: AdminSection) {
+  await expect(page.locator('#admin-mode')).toBeVisible();
+  const target = page.getByTestId(`admin-section-${section}`);
+  if (!(await target.isVisible())) {
+    const row = page.getByTestId(`admin-row-${section}`);
+    if (!(await row.isVisible()) && (await page.locator('#admin-mode.phone .back').isVisible())) await page.locator('#admin-mode header .back').click();
+    await page.locator(`[data-testid="admin-nav-${section}"], [data-testid="admin-row-${section}"]`).filter({ visible: true }).click();
+  }
+  await expect(target).toBeVisible();
+  return target;
+}
+
+/** Opens the vault manager the way the user does: vault menu → Manage vaults… (admin mode, Vaults). Returns the section. */
 export async function openVaults(page: Page) {
   await showSidebar(page);
   await page.getByTestId('vault-switcher').filter({ visible: true }).first().click();
   await page.getByTestId('manage-vaults').click();
-  await expect(page.getByTestId('admin')).toBeVisible();
+  await expect(page).toHaveURL(/#admin\/vaults$/);
+  return openSection(page, 'vaults');
 }
 
-/** Opens the settings the way the user does. */
-export async function openSettings(page: Page) {
-  await showSidebar(page);
-  await page.getByTestId('open-settings').click();
-  await expect(page.getByTestId('settings-dialog')).toBeVisible();
+/** Opens `section` of admin mode the way the user does: the gear, then the section. Returns the section. Already in admin mode (e.g. after a reload): just goes to the section. */
+export async function openSettings(page: Page, section: AdminSection = 'general') {
+  if (!(await page.locator('#admin-mode').isVisible())) {
+    await showSidebar(page);
+    await page.getByTestId('open-settings').click();
+    await expect(page).toHaveURL(/#admin/);
+  }
+  return openSection(page, section);
+}
+
+/** Leaves admin mode with Done (on the phone from a section: "‹ Admin" first). */
+export async function closeAdmin(page: Page) {
+  const done = page.locator('#admin-mode').getByRole('button', { name: 'Done', exact: true });
+  if (!(await done.isVisible())) await page.locator('#admin-mode header .back').click();
+  await done.click();
+  await expect(page.locator('#admin-mode')).toHaveCount(0);
 }
 
 export const treeItem = (page: Page, path: string) => page.locator(`[data-testid="tree-item"][data-path="${path}"]`);

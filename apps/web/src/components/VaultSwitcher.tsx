@@ -5,7 +5,7 @@ import { Icon } from './Icon';
 
 /** Brand + active vault; opens a menu to switch vaults or manage them (ARIA menu button, issue #43). */
 export function VaultSwitcher({ compact }: { compact?: boolean }) {
-  const { vaults, active, setActiveId, setAdminOpen } = useApp();
+  const { vaults, active, setActiveId, openAdmin } = useApp();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -70,7 +70,7 @@ export function VaultSwitcher({ compact }: { compact?: boolean }) {
             </button>
           ))}
           <hr />
-          <button className="mi" role="menuitem" tabIndex={-1} data-testid="manage-vaults" onClick={() => { dismiss(); setAdminOpen('vaults'); }}>
+          <button className="mi" role="menuitem" tabIndex={-1} data-testid="manage-vaults" onClick={() => { dismiss(); void openAdmin('vaults'); }}>
             <span className="ck"><Icon n="rectangle_stack" size={17} /></span><span>Manage vaults…<small>Add / configure GitHub repos</small></span>
           </button>
         </div>

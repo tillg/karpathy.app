@@ -1,7 +1,7 @@
 ---
 feature: admin-mode
 title: "UI: admin mode draft"
-status: proposed
+status: applying
 order: 5
 created: 2026-10-15
 edited: 2026-10-15
@@ -100,10 +100,11 @@ vault. The footnote says that deleted chats drop out.
 
 ### Server
 
-Range **1 hour / 24 hours / 7 days**, "sampled every 30 s · updated N s ago". The AI harness status (up or down
-with latency) and the backend's uptime. One sparkline card each for CPU, memory, load, disk (vaults) and disk
-(system), showing the current value and the total. Each card has a crosshair tooltip, its peak marked and "Show
-numbers". The footnote says that alerts still come via ntfy.
+Range **1 hour / 24 hours / 7 days**, "sampled every 30 s · updated N s ago". The AI harness status (up or down;
+no latency, the sample stores only up or down) and the backend's uptime. One sparkline card each for CPU, memory,
+load, disk (vaults) and disk (config volume), showing the current value and the total. Each card has a crosshair
+tooltip, its peak marked and "Show numbers" with the range's minimum, maximum and latest value (not all 240 points).
+The footnote says that alerts still come via ntfy.
 
 ![Server section, desktop](ui/desktop-server.png)
 *Figure 5: Server*

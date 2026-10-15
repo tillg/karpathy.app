@@ -135,7 +135,7 @@ function ConflictFile({ path }: { path: string }) {
 }
 
 export function ChangesPanel() {
-  const { activeId, status, changesNonce, setCommitOpen, readOnly, toast, setStatus, online, usable, note, active, setAdminOpen, pulling } = useApp();
+  const { activeId, status, changesNonce, setCommitOpen, readOnly, toast, setStatus, online, usable, note, active, openAdmin, pulling } = useApp();
   // Tagged with its vault, so another vault's list is never shown (issue #22).
   const [loaded, setLoaded] = useState<{ vault: string; changes: Change[] } | null>(null);
   const [pushing, setPushing] = useState(false);
@@ -162,7 +162,7 @@ export function ChangesPanel() {
       <div className="changes">
         <div className="empty" data-testid="changes-unavailable">
           {active?.state === 'clone-failed'
-            ? <>Vault could not be cloned. <button className="link" onClick={() => setAdminOpen('vaults', activeId ?? undefined)}>Edit vault</button></>
+            ? <>Vault could not be cloned. <button className="link" onClick={() => void openAdmin('vaults', activeId ?? undefined)}>Edit vault</button></>
             : active ? `Vault is ${active.state}…` : 'No vault.'}
         </div>
       </div>

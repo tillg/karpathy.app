@@ -9,7 +9,7 @@ import { invalidate } from './lib/media';
 import { readNdjson } from './lib/ndjson';
 import { DEFAULT_SCHEMA, parseSchema, SCHEMA_PATH, type Schema } from './lib/schema';
 import { loadSortFilter, saveSortFilter, usesDates, type TreeSortFilter } from './lib/tree';
-import { formatRoute, parseRoute, routeState, type RouteState } from './lib/route';
+import { formatAdminRoute, formatRoute, parseRoute, routeState, type AdminSection, type RouteState } from './lib/route';
 import { fileKind, viewMode } from './lib/lang';
 import { parseWikilink, resolveWikilink } from './lib/wikilink';
 
@@ -160,6 +160,9 @@ function useAppState() {
   const [activeId, setActiveIdState] = useState<string | null>(() => initialRoute.current.vault ?? localStorage.getItem(ACTIVE_KEY));
   const activeRef = useRef(activeId);
   activeRef.current = activeId;
+  /** Admin mode (#150), from the hash: null = user mode, '' = the section list (the phone's top level). */
+  const [admin, setAdmin] = useState(initialRoute.current.admin);
+  const adminRef = useRef(admin);
   /** Set below (forgetVault); the vault list effect needs it before the note state exists. */
   const vaultGone = useRef<(id: string) => void>(() => {});
   /**
@@ -537,10 +540,6 @@ function useAppState() {
     // Without dates in use, modifications don't refetch the listing: its dates may be stale.
     if (usesDates(v)) void refreshFiles();
   }, [refreshFiles]);
-  /** Open admin modal: the vaults dialog (`vault` opens that vault's details instead of the list) or the settings dialog. */
-  const [adminOpen, setAdminOpenState] = useState<false | { view: 'vaults'; vault?: string } | { view: 'settings' }>(false);
-  const setAdminOpen = useCallback((open: false | 'vaults' | 'settings', vault?: string) =>
-    setAdminOpenState(open === false ? false : open === 'settings' ? { view: 'settings' } : { view: 'vaults', vault }), []);
   const [commitOpen, setCommitOpen] = useState(false);
   /** The graph is shown in the note pane, over the open note (which stays as it was); opening a note closes it. */
   const [graphOpen, setGraphOpenState] = useState(false);
@@ -740,7 +739,7 @@ function useAppState() {
 
   // ---- URL: #/<vault>/<path> (Back/Forward, reload) ----
   const syncRoute = useCallback((replace = false) => {
-    if (pendingRoute.current) return;
+    if (pendingRoute.current || adminRef.current !== null) return;
     const to = { vault: activeRef.current, path: noteRef.current?.path ?? null };
     const h = formatRoute(to.vault, to.path);
     if (location.hash !== h) {
@@ -756,6 +755,41 @@ function useAppState() {
     setCanGoBack(!!(history.state as RouteState | null)?.prev);
   }, []);
   const goBack = useCallback(() => history.back(), []);
+
+  // ---- admin mode (#150): `#admin` / `#admin/<section>`; the panes stay mounted underneath ----
+  /** The entries admin mode pushed remember the user-mode hash and how many of them Done has to leave. */
+  type AdminState = RouteState & { adminFrom?: string; adminDepth?: number };
+  const applyAdmin = useCallback((a: AdminSection | '' | null) => { adminRef.current = a; setAdmin(a); }, []);
+  /** Opens admin mode: `section`, else General on wide screens and tablets and the section list on the phone. `vaultId` opens that vault's details in Vaults. */
+  const [adminVault, setAdminVault] = useState<string | null>(null);
+  const openAdmin = useCallback(async (section?: AdminSection, vaultId?: string) => {
+    if (!(await leave())) return;
+    setAdminVault(vaultId ?? null);
+    const to = section ?? (phone ? '' : 'general');
+    history.pushState({ prev: null, adminFrom: location.hash, adminDepth: 1 } satisfies AdminState, '', formatAdminRoute(to));
+    applyAdmin(to);
+  }, [leave, phone, applyAdmin]);
+  /** Wide and tablet replace the entry; on the phone the list → section step is a push. */
+  const setAdminSection = useCallback((section: AdminSection) => {
+    const st = history.state as AdminState | null;
+    if (phone && adminRef.current === '') history.pushState({ ...st, adminDepth: (st?.adminDepth ?? 1) + 1 }, '', formatAdminRoute(section));
+    else history.replaceState(st, '', formatAdminRoute(section));
+    applyAdmin(section);
+  }, [phone, applyAdmin]);
+  /** Phone "‹ Admin": back to the list. */
+  const adminUp = useCallback(() => {
+    const st = history.state as AdminState | null;
+    if ((st?.adminDepth ?? 1) > 1) { history.back(); return; }
+    history.replaceState(st, '', formatAdminRoute(''));
+    applyAdmin('');
+  }, [applyAdmin]);
+  /** Done: back to where admin mode was entered; after a reload straight into admin mode, to the last vault. */
+  const closeAdmin = useCallback(() => {
+    const st = history.state as AdminState | null;
+    if (st?.adminFrom !== undefined) { history.go(-(st.adminDepth ?? 1)); return; }
+    history.replaceState({ prev: null } satisfies RouteState, '', formatRoute(activeRef.current) || location.pathname + location.search);
+    applyAdmin(null);
+  }, [applyAdmin]);
   useEffect(() => {
     syncRoute(replaceRoute.current);
     replaceRoute.current = false;
@@ -774,7 +808,8 @@ function useAppState() {
   useEffect(() => {
     const onPop = async () => {
       const r = parseRoute(location.hash);
-      if (!r.vault) return;
+      applyAdmin(r.admin);
+      if (r.admin !== null || !r.vault) return;
       // An entry the browser made, not the app (a link in a rendered HTML page, an edited URL): it remembers
       // the file open until now, so the back arrow returns there (#139).
       if (history.state === null && r.path)
@@ -792,7 +827,7 @@ function useAppState() {
     const h = () => void onPop();
     addEventListener('popstate', h);
     return () => removeEventListener('popstate', h);
-  }, [setActiveId, openNote, closeNote, syncRoute, phone, phoneTab]);
+  }, [setActiveId, openNote, closeNote, syncRoute, applyAdmin, phone, phoneTab]);
 
   // ---- event stream ----
   // While the tree sorts or filters by date (#122), a modification changes the order: refetch the
@@ -893,7 +928,7 @@ function useAppState() {
     followLink, exists, readOnly, conflict, canGoBack, goBack,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain, ingestNow,
     schema: schema?.vault === activeId ? schema.schema : DEFAULT_SCHEMA,
-    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, adminOpen, setAdminOpen, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
+    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, admin, adminVault, openAdmin, setAdminSection, adminUp, closeAdmin, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
   };
 }
 

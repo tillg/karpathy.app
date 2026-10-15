@@ -5,11 +5,12 @@ import { useApp } from '../store';
 import { Modal } from './Dialogs';
 import { Icon } from './Icon';
 import { InstagramNotice, InstagramSettings } from './InstagramSettings';
+import { SecretTable } from './SecretTable';
 
 interface Form { name: string; repo: string; branch: string; root: string }
 const emptyForm: Form = { name: '', repo: '', branch: 'main', root: '' };
 
-/** The modal's views; there is no router, the view is modal-internal state. */
+/** The Vaults section's views; there is no router, the view is section-internal state. */
 type View = { kind: 'list' } | { kind: 'details'; id: string } | { kind: 'add' };
 
 function VaultFields({ f, set, prefix }: { f: Form; set(f: Form): void; prefix: string }) {
@@ -139,42 +140,75 @@ function AddVault({ done }: { done(): void }) {
   );
 }
 
-function SettingsForm() {
-  const { settings, setSettings, toast } = useApp();
-  const [threshold, setThreshold] = useState('');
-  const [model, setModel] = useState('');
-  const [webAccess, setWebAccess] = useState(true);
+/** Saves a settings section: validates, PATCHes only its own fields, shows the result. */
+function useSettingsSave(validate: () => string | null, fields: () => Parameters<typeof api.patchSettings>[0]) {
+  const { setSettings, toast } = useApp();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (settings) { setThreshold(String(settings.commitReminderThreshold)); setModel(settings.model); setWebAccess(settings.webAccess); }
-  }, [settings]);
-  const edit = (set: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => { set(e.target.value); setSaved(false); };
   const save = async () => {
     setSaved(false);
-    const n = Number(threshold);
-    if (!/^\d+$/.test(threshold.trim()) || n < 1 || n > 1000) return setError('Commit reminder: enter a whole number between 1 and 1000.');
-    if (!model.trim()) return setError('Model: enter provider/model, or use the default.');
+    const invalid = validate();
+    if (invalid) return setError(invalid);
     setBusy(true);
     try {
-      setSettings(await api.patchSettings({ commitReminderThreshold: n, model: model.trim(), webAccess }));
+      setSettings(await api.patchSettings(fields()));
       setError(null);
       setSaved(true);
       toast('Settings saved');
     } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   };
+  return { error, saved, setSaved, busy, save };
+}
+
+function SaveRow({ s }: { s: ReturnType<typeof useSettingsSave> }) {
+  return (
+    <>
+      {s.error && <div className="form-error" role="alert" data-testid="settings-error">{s.error}</div>}
+      <div className="acts">
+        {s.saved && <span className="saved" role="status" data-testid="settings-saved"><Icon n="checkmark" size={15} />Saved</span>}
+        <button className="btn" data-testid="settings-save" disabled={s.busy} onClick={() => void s.save()}>{s.busy ? 'Saving…' : 'Save settings'}</button>
+      </div>
+    </>
+  );
+}
+
+function CommitReminderForm() {
+  const { settings } = useApp();
+  const [threshold, setThreshold] = useState('');
+  useEffect(() => { if (settings) setThreshold(String(settings.commitReminderThreshold)); }, [settings]);
+  const n = Number(threshold);
+  const s = useSettingsSave(
+    () => (!/^\d+$/.test(threshold.trim()) || n < 1 || n > 1000 ? 'Commit reminder: enter a whole number between 1 and 1000.' : null),
+    () => ({ commitReminderThreshold: n }),
+  );
   return (
     <div className="form">
       <label className="field"><span>Commit reminder after (changed files)</span>
-        <input data-testid="settings-threshold" type="number" min={1} max={1000} step={1} value={threshold} onChange={edit(setThreshold)} /></label>
+        <input data-testid="settings-threshold" type="number" min={1} max={1000} step={1} value={threshold} onChange={(e) => { setThreshold(e.target.value); s.setSaved(false); }} /></label>
+      <SaveRow s={s} />
+    </div>
+  );
+}
+
+function AiForm() {
+  const { settings } = useApp();
+  const [model, setModel] = useState('');
+  const [webAccess, setWebAccess] = useState(true);
+  useEffect(() => { if (settings) { setModel(settings.model); setWebAccess(settings.webAccess); } }, [settings]);
+  const s = useSettingsSave(
+    () => (!model.trim() ? 'Model: enter provider/model, or use the default.' : null),
+    () => ({ model: model.trim(), webAccess }),
+  );
+  return (
+    <div className="form">
       <label className="field"><span>Model (server-wide, provider/model)</span>
-        <input data-testid="settings-model" value={model} autoCapitalize="off" spellCheck={false} onChange={edit(setModel)} /></label>
+        <input data-testid="settings-model" value={model} autoCapitalize="off" spellCheck={false} onChange={(e) => { setModel(e.target.value); s.setSaved(false); }} /></label>
       {settings && (
         <div className="model-default">
           <span className="muted" data-testid="settings-model-default" data-overridden={String(settings.modelOverridden)}>Default: {settings.defaultModel}</span>
           {model.trim() !== settings.defaultModel && (
-            <button type="button" className="btn g sm" data-testid="settings-model-reset" onClick={() => { setModel(settings.defaultModel); setSaved(false); }}>Use default</button>
+            <button type="button" className="btn g sm" data-testid="settings-model-reset" onClick={() => { setModel(settings.defaultModel); s.setSaved(false); }}>Use default</button>
           )}
         </div>
       )}
@@ -184,14 +218,10 @@ function SettingsForm() {
           <p className="muted">Lets the AI search the web (via Exa) and read pages you or it found. Each search and page is shown in the chat.</p>
         </div>
         <input id="settings-web-access" className="switch" data-testid="settings-web-access" type="checkbox" role="switch" checked={webAccess}
-          onChange={(e) => { setWebAccess(e.target.checked); setSaved(false); }} />
+          onChange={(e) => { setWebAccess(e.target.checked); s.setSaved(false); }} />
       </div>
-      <p className="muted">Provider keys live on the server only; the app never sees them.</p>
-      {error && <div className="form-error" role="alert" data-testid="settings-error">{error}</div>}
-      <div className="acts">
-        {saved && <span className="saved" role="status" data-testid="settings-saved"><Icon n="checkmark" size={15} />Saved</span>}
-        <button className="btn" data-testid="settings-save" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save settings'}</button>
-      </div>
+      <p className="muted">Provider keys live on the server only; see Secrets &amp; keys for whether they are set.</p>
+      <SaveRow s={s} />
     </div>
   );
 }
@@ -292,39 +322,42 @@ function VaultHelp({ close }: { close(): void }) {
   );
 }
 
-export function Admin() {
-  const { adminOpen } = useApp();
-  return adminOpen && adminOpen.view === 'settings' ? <SettingsDialog /> : <VaultsDialog />;
+export function GeneralSection() {
+  return (
+    <>
+      <div className="gh">Commit reminder</div>
+      <CommitReminderForm />
+      <div className="gh">Version</div>
+      <Versions />
+    </>
+  );
 }
 
-function SettingsDialog() {
-  const { setAdminOpen } = useApp();
+export function SecretsSection() {
   return (
-    <Modal title="Settings" onClose={() => setAdminOpen(false)} wide testid="settings-dialog" focusTitle>
+    <>
       <div className="gh">GitHub</div>
       <GitHubTokenForm />
       <div className="gh">Instagram</div>
       <InstagramSettings />
-      <div className="gh">App</div>
-      <SettingsForm />
-      <div className="gh">Version</div>
-      <Versions />
-    </Modal>
+      <SecretTable />
+    </>
   );
 }
 
-function VaultsDialog() {
-  const { vaults, reloadVaults, setAdminOpen, adminOpen } = useApp();
-  const start = adminOpen && adminOpen.view === 'vaults' ? adminOpen.vault : undefined;
-  const [view, setView] = useState<View>(start ? { kind: 'details', id: start } : { kind: 'list' });
+export function AiSection() {
+  return <AiForm />;
+}
+
+export function VaultsSection() {
+  const { vaults, reloadVaults, setAdminSection, adminVault } = useApp();
+  const [view, setView] = useState<View>(adminVault ? { kind: 'details', id: adminVault } : { kind: 'list' });
   const [help, setHelp] = useState(false);
   useEffect(() => { void reloadVaults(); }, [reloadVaults]);
   const list = () => setView({ kind: 'list' });
   const current = view.kind === 'details' ? vaults?.find((v) => v.id === view.id) : undefined;
-  const title = view.kind === 'details' ? (current?.name ?? 'Vault') : view.kind === 'add' ? 'Add vault' : 'Vaults';
   return (
-    // Focus starts on the title, not on a field (issue #39).
-    <Modal title={title} onClose={() => setAdminOpen(false)} wide testid="admin" focusTitle>
+    <>
       {view.kind !== 'list' && (
         <button className="link back" data-testid="admin-back" onClick={list}><Icon n="chevron_left" size={15} />All vaults</button>
       )}
@@ -334,7 +367,7 @@ function VaultsDialog() {
             Vaults
             <button className="ib help" data-testid="admin-help" aria-label="What is a vault?" title="What is a vault?" onClick={() => setHelp(true)}><Icon n="question_circle" size={18} /></button>
           </div>
-          <InstagramNotice open={() => setAdminOpen('settings')} />
+          <InstagramNotice open={() => setAdminSection('secrets')} />
           {vaults?.length === 0 && <p className="muted">No vaults yet. Each vault is an existing GitHub repo.</p>}
           {vaults?.map((v) => <VaultRow key={v.id} v={v} open={() => setView({ kind: 'details', id: v.id })} />)}
           <div className="acts">
@@ -345,6 +378,6 @@ function VaultsDialog() {
       {view.kind === 'details' && (current ? <VaultDetails v={current} back={list} /> : vaults && <p className="muted">This vault no longer exists.</p>)}
       {view.kind === 'add' && <AddVault done={list} />}
       {help && <VaultHelp close={() => setHelp(false)} />}
-    </Modal>
+    </>
   );
 }

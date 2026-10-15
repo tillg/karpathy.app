@@ -12,8 +12,7 @@ test.beforeEach(({}, info) => {
 
 test('Admin › Instagram: wrong password, then connect with a code, then disconnect', async ({ page, vault }) => {
   await openApp(page, vault.id);
-  await openSettings(page);
-  const dialog = page.getByTestId('settings-dialog');
+  const dialog = await openSettings(page, 'secrets');
   await expect(dialog.getByTestId('ig-status')).toHaveText(/Not connected/);
 
   await dialog.getByTestId('ig-username').fill('twofa_e2e');

@@ -1,4 +1,4 @@
-import { expect, openApp, openNote, openVaults, test, typeAtEnd } from './helpers';
+import { closeAdmin, expect, openApp, openNote, openVaults, test, typeAtEnd } from './helpers';
 
 // #24: removing the active vault closes its note, drops its drafts and never saves into it again.
 test('removing the active vault closes its note cleanly', async ({ page, api, vault }) => {
@@ -10,6 +10,10 @@ test('removing the active vault closes its note cleanly', async ({ page, api, va
     await typeAtEnd(page, ' unsaved');
 
     await openVaults(page);
+    // Entering admin mode leaves the note, so the typed text is saved now (the dialog left it unsaved):
+    // discard it, the vault must be clean to be removed.
+    await expect.poll(async () => (await api.changes(vault.id)).map((c) => c.path)).toEqual(['Ideas.md']);
+    await api.ctx.post(`/api/vaults/${vault.id}/discard?path=Ideas.md`);
     const row = page.locator(`[data-testid="admin-vault"][data-vault="${vault.id}"]`);
     await row.click();
     await page.getByTestId('vault-details').getByTestId('vault-remove').click();
@@ -19,7 +23,7 @@ test('removing the active vault closes its note cleanly', async ({ page, api, va
     // From here on, any save would target the removed vault.
     const late: string[] = [];
     page.on('request', (r) => { if (r.method() === 'PUT' && r.url().includes(`/vaults/${vault.id}/`)) late.push(r.url()); });
-    await page.getByTestId('admin').getByRole('button', { name: 'Close', exact: true }).click();
+    await closeAdmin(page);
 
     await expect(page.getByTestId('vault-switcher')).not.toContainText(vault.id);
     await expect(page.locator('.note-title')).toHaveCount(0);

@@ -1,5 +1,5 @@
 import type { Locator } from '@playwright/test';
-import { expect, openApp, openSettings, openVaults, test, treeItem } from './helpers';
+import { closeAdmin, expect, openApp, openSettings, openVaults, test, treeItem } from './helpers';
 
 /** On screen horizontally (panes slide in/out with transforms; IntersectionObserver is unreliable here). */
 async function expectOnScreen(l: Locator) {
@@ -49,10 +49,9 @@ test.describe('phone layout', () => {
   test('@iphone admin views fit 375px without horizontal scroll', async ({ page, vault }) => {
     await page.setViewportSize({ width: 375, height: 740 });
     await openApp(page, vault.id);
-    await openVaults(page);
-    const admin = page.getByTestId('admin');
+    const admin = await openVaults(page);
     const fits = async (label: string, dialog = admin) => {
-      const body = dialog.locator('.modal-body');
+      const body = page.locator('#admin-mode .admin-content');
       await expect.poll(() => body.evaluate((e) => e.scrollWidth <= e.clientWidth), { message: `${label}: no horizontal scroll` }).toBe(true);
       const b = await dialog.boundingBox();
       expect(b!.x >= 0 && b!.x + b!.width <= 375 + 1, `${label}: dialog inside the viewport`).toBe(true);
@@ -63,13 +62,14 @@ test.describe('phone layout', () => {
     await admin.locator(`[data-testid="admin-vault"][data-vault="${vault.id}"]`).click();
     await admin.getByTestId('vault-edit').click();
     await fits('details');
-    await admin.getByRole('button', { name: 'Close', exact: true }).click();
-    await openSettings(page);
-    const settings = page.getByTestId('settings-dialog');
+    await closeAdmin(page);
+    const settings = await openSettings(page, 'secrets');
     await settings.getByTestId('token-test').click();
     await expect(settings.getByTestId('token-result')).toBeVisible({ timeout: 20_000 });
     await fits('settings', settings);
-    await settings.getByTestId('version-server').scrollIntoViewIfNeeded();
+    const general = await openSettings(page, 'general');
+    await fits('general', general);
+    await general.getByTestId('version-server').scrollIntoViewIfNeeded();
     await page.screenshot({ path: 'tmp/08/phone-settings-bottom.png', scale: 'css' });
   });
 

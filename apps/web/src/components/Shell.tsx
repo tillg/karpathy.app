@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { incomingView } from '../lib/incoming';
 import { buildTree, inputCount } from '../lib/tree';
 import { useApp } from '../store';
-import { Admin } from './Admin';
+import { AdminMode } from './AdminMode';
 import { ChatPane } from './ChatPane';
 import { CommitDialog } from './CommitDialog';
 import { MoveNotice, ReminderDialog, StaleDialog, Toast } from './Dialogs';
@@ -77,7 +77,7 @@ export function Shell() {
     <>
       {/* Page heading + banner landmark for screen readers (issue #47); the panes are main/aside. */}
       <header className="sr-only"><h1>karpathy.app{s.active ? ` — ${s.active.name}` : ''}</h1></header>
-      <div id="app" className={cls} data-sb={pos('sidebar')} data-dt={pos('detail')} data-ch={pos('chat')}>
+      <div id="app" className={cls} hidden={s.admin !== null} data-sb={pos('sidebar')} data-dt={pos('detail')} data-ch={pos('chat')}>
         <Sidebar inert={inert('sidebar')} />
         <NotePane inert={inert('detail')} />
         <ChatPane inert={inert('chat')} />
@@ -108,7 +108,7 @@ export function Shell() {
         <div id="scrim" className={!phone && !wide && (s.sidebarOpen || s.chatOpen) ? 'on' : ''}
           onClick={() => { s.setSidebarOpen(false); s.setChatOpen(false); }} />
       </div>
-      {s.adminOpen && <Admin />}
+      {s.admin !== null && <AdminMode />}
       {s.commitOpen && <CommitDialog />}
       <StaleDialog />
       <ReminderDialog />
