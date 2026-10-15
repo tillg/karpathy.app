@@ -290,7 +290,9 @@ npm run typecheck
 ```
 
 `just check` runs lint, typecheck, `npm test` and the stack tooling's tests (`deploy/stack.test.sh`,
-`e2e/stack.unit.ts`; they need Docker; the model check is tested against a throwaway local HTTP server).
+`e2e/stack.unit.ts`; they need Docker; the model check is tested against a throwaway local HTTP server). It first
+refuses to start when Docker doesn't answer or the load is above 3 per core (the container tests would only time out);
+`CHECK_IGNORE_LOAD=1 just check` runs anyway.
 
 To run the e2e suite against the **prod images** (https://localhost:80N5, paired with this
 checkout's dev stack N): `just prodtest`, `just prodtest e2e [playwright args]`, `just prodtest down`; details in the header of `deploy/compose.prodtest.yml`: `E2E_BASE_URL`, `E2E_TOKEN_FILE` and `E2E_BACKEND_CONTAINER`

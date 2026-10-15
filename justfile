@@ -19,11 +19,13 @@ site port="8099":
 
 # Lint, typecheck and unit + integration tests
 check:
+    bash deploy/check-preflight.sh
     npm run lint
     npm run typecheck
     npm test
     just settings check
     bash deploy/stack.test.sh
+    bash deploy/check-preflight.test.sh
     bash deploy/ingest/run.test.sh
     bash deploy/ingest/compose.test.sh
     bash deploy/ingest/server.test.sh
