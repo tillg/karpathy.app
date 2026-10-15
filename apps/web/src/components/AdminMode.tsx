@@ -7,6 +7,7 @@ import { useApp } from '../store';
 import { AiSection, GeneralSection, SecretsSection, VaultsSection } from './Admin';
 import { Icon } from './Icon';
 import { secretsSummary } from './SecretTable';
+import { ServerSection } from './ServerSection';
 import { money, UsageSection } from './UsageSection';
 
 const SECTIONS: Record<AdminSection, { label: string; short?: string; icon: string; sub: string }> = {
@@ -26,10 +27,12 @@ export function AdminMode() {
   const list = phone && admin === '';
   const [secrets, setSecrets] = useState<string | null>(null);
   const [usage, setUsage] = useState<string | null>(null);
+  const [server, setServer] = useState<string | null>(null);
   useEffect(() => {
     if (!list) return;
     api.health().then((h) => setVersion(h.version), () => {});
     api.secrets().then((r) => setSecrets(secretsSummary(r.secrets)), () => {});
+    api.metrics('1h').then((r) => r.latest && setServer(`CPU ${Math.round(r.latest.cpu)} % · disk ${r.latest.vaultsTotal ? Math.round((r.latest.vaultsUsed / r.latest.vaultsTotal) * 100) : 0} %`), () => {});
     api.usage(7).then((r) => setUsage(`${shortNumber(r.total.input + r.total.output + r.total.reasoning + r.total.cacheRead + r.total.cacheWrite)} tokens this week${r.costKnown ? ` · ${money(r.total.cost)}` : ''}`), () => {});
   }, [list]);
   /** Phone list summaries: real data where it is at hand, else the static text. */
@@ -39,6 +42,7 @@ export function AdminMode() {
     : s === 'secrets' && secrets ? secrets
     : s === 'ai' && settings ? `${settings.model.split('/').pop()} · web ${settings.webAccess ? 'on' : 'off'}`
     : s === 'usage' && usage ? usage
+    : s === 'server' && server ? server
     : SECTIONS[s].sub;
 
   // Wide and tablet: Escape leaves admin mode, like Done (a modal on top takes Escape first).
@@ -96,6 +100,7 @@ export function AdminMode() {
               {section === 'secrets' && <SecretsSection />}
               {section === 'ai' && <AiSection />}
               {section === 'usage' && <UsageSection />}
+              {section === 'server' && <ServerSection />}
             </div>
           )}
         </main>
