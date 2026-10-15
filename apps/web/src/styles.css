@@ -680,3 +680,15 @@ details.nums table { border-collapse: collapse; margin-top: 6px; }
 details.nums th, details.nums td { padding: 3px 12px 3px 0; text-align: left; font-weight: 400; }
 details.nums th { color: var(--label2); }
 details.nums .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Deployment secrets table (admin mode) */
+.tbl-wrap { background: var(--bg2); border-radius: 12px; padding: 4px 14px 12px; margin: 0 0 12px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 15px; }
+.tbl th { text-align: left; font-size: 12px; font-weight: 600; color: var(--label2); padding: 8px 8px 6px 0; }
+.tbl td { padding: 9px 8px 9px 0; border-top: .5px solid var(--sep); vertical-align: top; }
+.tbl .num { text-align: right; padding-right: 0; }
+.tbl-wrap .muted { margin: 10px 0 0; }
+.show-phone { display: none; }
+#admin-mode.phone .hide-phone { display: none; }
+#admin-mode.phone .show-phone { display: block; }
+.gh .status { text-transform: none; letter-spacing: 0; }

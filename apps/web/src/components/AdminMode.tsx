@@ -5,6 +5,7 @@ import { ADMIN_SECTIONS, formatAdminRoute, type AdminSection } from '../lib/rout
 import { useApp } from '../store';
 import { AiSection, GeneralSection, SecretsSection, VaultsSection } from './Admin';
 import { Icon } from './Icon';
+import { secretsSummary } from './SecretTable';
 
 const SECTIONS: Record<AdminSection, { label: string; short?: string; icon: string; sub: string }> = {
   general: { label: 'General', icon: 'slider_horizontal_3', sub: 'Commit reminder, version' },
@@ -21,11 +22,17 @@ export function AdminMode() {
   const [version, setVersion] = useState<string | null>(null);
   const section: AdminSection = admin || 'general';
   const list = phone && admin === '';
-  useEffect(() => { if (list) api.health().then((h) => setVersion(h.version), () => {}); }, [list]);
+  const [secrets, setSecrets] = useState<string | null>(null);
+  useEffect(() => {
+    if (!list) return;
+    api.health().then((h) => setVersion(h.version), () => {});
+    api.secrets().then((r) => setSecrets(secretsSummary(r.secrets)), () => {});
+  }, [list]);
   /** Phone list summaries: real data where it is at hand, else the static text. */
   const sub = (s: AdminSection) =>
     s === 'general' && version ? `version ${version}`
     : s === 'vaults' && vaults ? `${vaults.length} vault${vaults.length === 1 ? '' : 's'}`
+    : s === 'secrets' && secrets ? secrets
     : s === 'ai' && settings ? `${settings.model.split('/').pop()} · web ${settings.webAccess ? 'on' : 'off'}`
     : SECTIONS[s].sub;
 
