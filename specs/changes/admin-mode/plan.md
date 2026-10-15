@@ -91,7 +91,7 @@ flowchart LR
   - Depends on: 12
   - Test first: `apps/backend/test/api.test.ts` › "GET /metrics?range=24h returns samples, latest, uptime and intervalS", › "range=2d is 400". Fails today: 404.
   - Verify: `npm test -w apps/backend` → all green; on the dev stack `curl -sk -H "Authorization: Bearer $(cat deploy/secrets/bearer_token)" https://localhost:80N0/api/metrics?range=1h` → JSON with ≥ 1 sample after 30 s
-- [ ] Server section: range switch, sparklines for CPU, memory, load and both disks, opencode status, uptime, 30 s polling while visible
+- [x] Server section: range switch, sparklines for CPU, memory, load and both disks, opencode status, uptime, 30 s polling while visible
   - Depends on: 3, 10, 13
   - Test first: `apps/web/src/components/ServerSection.test.tsx` › "one sparkline per metric with the latest value", › "disk shows used / total and %", › "polls every 30 s only while the section is shown" (fake timers), › "opencode down shows a warning". Fails today: no section.
   - Verify: `npm test -w apps/web -- ServerSection` → green; `npm test -w apps/web` → all green
