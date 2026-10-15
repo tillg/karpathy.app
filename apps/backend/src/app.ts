@@ -8,6 +8,7 @@ import type { ConfigStore } from './config-store.js';
 import type { GitHubToken } from './github-token.js';
 import { normalizeRel, PathError } from './paths.js';
 import { callIngest, type IngestEndpoint } from './ingest.js';
+import type { UsageService } from './usage.js';
 import { HttpError, type Vaults } from './vaults.js';
 
 export interface AppDeps {
@@ -18,6 +19,7 @@ export interface AppDeps {
   /** The secret manifest from settings.json (`secrets`). */
   secrets?: SecretStatus[];
   chat?: ChatService;
+  usage?: Pick<UsageService, 'report'>;
   commitMessages?: CommitMessages;
   opencodeHealthy?: () => Promise<boolean>;
   /** The models the harness can run right now (configured + credentials): `provider/model` and what they read. */
@@ -153,6 +155,12 @@ export function createApp(d: AppDeps) {
       s.name === 'github_token' && src && src !== 'none' && t ? { ...s, source: src === 'settings' ? ('app' as const) : ('deployment' as const), last4: t.slice(-4) } : s,
     );
     res.json({ secrets });
+  });
+  api.get('/usage', async (req, res) => {
+    const days = req.query.days === undefined ? 7 : Number(req.query.days);
+    if (days !== 7 && days !== 30) throw new HttpError(400, 'days must be 7 or 30', 'bad-days');
+    if (!d.usage) throw new HttpError(404, 'not available');
+    res.json(await d.usage.report(days));
   });
   api.put('/settings/github-token', async (req, res) => {
     if (!d.githubToken) throw new HttpError(404, 'not available');

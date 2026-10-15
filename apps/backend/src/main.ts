@@ -6,6 +6,7 @@ import { ConfigStore } from './config-store.js';
 import { GitHubToken } from './github-token.js';
 import { OpencodeHarness } from './harness/opencode.js';
 import { loadBackendSettings } from './settings.js';
+import { UsageService } from './usage.js';
 import { Vaults } from './vaults.js';
 
 /** deploy/settings/, rendered by `just settings render` (compose mounts it). */
@@ -35,9 +36,14 @@ vaults.onReady = (id) => void chat.watch(id);
 vaults.beforeRemove = (id) => chat.deleteAllChats(id);
 // In the background: it may wait for a restarting opencode, and the API must be up meanwhile.
 void chat.init().catch((e) => console.warn('chat init:', (e as Error).message));
+const usage = new UsageService({
+  vaults: () => vaults.list().map((v) => ({ id: v.id, name: v.name, dir: chat.dir(v.id) })),
+  sessions: (dir) => harness.listSessions(dir),
+  usage: (dir, id) => harness.sessionUsage(dir, id),
+}, Date.now);
 const commitMessages = new OpencodeCommitMessages(vaults, store, harness, (id) => chat.dir(id));
 
-const app = createApp({ token: settings.token, vaults, store, githubToken, secrets: settings.secrets, chat, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), version: env.version, built: env.built, deployed: env.deployed,
+const app = createApp({ token: settings.token, vaults, store, githubToken, secrets: settings.secrets, chat, usage, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), version: env.version, built: env.built, deployed: env.deployed,
   // The ingest service's internal endpoint (Admin › Instagram): container wiring, the token a compose secret.
   ...(process.env.INGEST_URL && process.env.INGEST_TOKEN_FILE ? { ingest: { url: process.env.INGEST_URL, token: readFileSync(process.env.INGEST_TOKEN_FILE, 'utf8').trim() } } : {}) });
 const server = app.listen(env.port, () => console.log(`backend listening on :${env.port}`));
