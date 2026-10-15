@@ -49,11 +49,11 @@ flowchart LR
 
 ## Data sources (backend, settings)
 
-- [ ] The renderer writes the secret manifest into the backend's `settings.json`
+- [x] The renderer writes the secret manifest into the backend's `settings.json`
   - Depends on: none
   - Test first: `packages/settings/test/render.test.ts` › "settings.json lists every referenced secret of the active gateway with component, purpose, optional and set, never a value": a fixture store with `openrouter_api_key` set and `exa_api_key` empty → `set: true` / `false`; the rendered JSON contains neither secret value. Fails today: no `secrets` key.
   - Verify: `npm test -w packages/settings` → all green; `just settings check` → ok
-- [ ] `GET /api/settings/secrets` returns the manifest plus the GitHub token's source
+- [x] `GET /api/settings/secrets` returns the manifest plus the GitHub token's source
   - Depends on: 5
   - Test first: `apps/backend/test/settings.test.ts` › "settings.json without `secrets` loads as []" and `apps/backend/test/api.test.ts` › "GET /settings/secrets returns the manifest; github_token carries source and last4 from GitHubToken". Fails today: unknown key and 404.
   - Verify: `npm test -w apps/backend -- settings api` → green; `npm test -w apps/backend` → all green
@@ -61,7 +61,7 @@ flowchart LR
   - Depends on: 3, 6
   - Test first: `apps/web/src/components/SecretTable.test.tsx` › "one row per secret: purpose, name, component, Set / Missing / Not set (optional)", › "a missing required secret is flagged", › "the phone list row summarizes 'N of M set'". Fails today: no component.
   - Verify: `npm test -w apps/web -- SecretTable` → green; `npm test -w apps/web` → all green
-- [ ] Harness maps a session's assistant messages to usage rows
+- [x] Harness maps a session's assistant messages to usage rows
   - Depends on: none
   - Test first: `apps/backend/test/harness-map.test.ts` › "usageRows: assistant messages give created, model id, input/output/reasoning/cache read/write and cost; user messages and messages without tokens are skipped". Fails today: no `usageRows`.
   - Verify: `npm test -w apps/backend -- harness-map` → green; `npm test -w apps/backend` → all green
