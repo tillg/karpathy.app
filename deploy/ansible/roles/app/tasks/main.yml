@@ -339,7 +339,7 @@
   when: not ansible_check_mode
 
 # A new version on the target (not a redeploy of the running one) is announced on its ntfy topic.
-- name: Announce v{{ app_release }} on ntfy
+- name: Announce the new version on ntfy, v{{ app_release }}
   ansible.builtin.uri:
     url: https://ntfy.sh/{{ ntfy_topic }}
     method: POST
