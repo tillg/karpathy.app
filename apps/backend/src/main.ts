@@ -5,6 +5,7 @@ import { OpencodeCommitMessages } from './commit-message.js';
 import { ConfigStore } from './config-store.js';
 import { GitHubToken } from './github-token.js';
 import { OpencodeHarness } from './harness/opencode.js';
+import { MetricsSampler } from './metrics.js';
 import { loadBackendSettings } from './settings.js';
 import { UsageService } from './usage.js';
 import { Vaults } from './vaults.js';
@@ -41,15 +42,18 @@ const usage = new UsageService({
   sessions: (dir) => harness.listSessions(dir),
   usage: (dir, id) => harness.sessionUsage(dir, id),
 }, Date.now);
+const metrics = new MetricsSampler({ dir: env.configDir, vaultsDir: env.vaultsDir, configDir: env.configDir, opencodeUp: () => harness.health() });
+await metrics.start();
 const commitMessages = new OpencodeCommitMessages(vaults, store, harness, (id) => chat.dir(id));
 
-const app = createApp({ token: settings.token, vaults, store, githubToken, secrets: settings.secrets, chat, usage, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), version: env.version, built: env.built, deployed: env.deployed,
+const app = createApp({ token: settings.token, vaults, store, githubToken, secrets: settings.secrets, chat, usage, metrics, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), version: env.version, built: env.built, deployed: env.deployed,
   // The ingest service's internal endpoint (Admin › Instagram): container wiring, the token a compose secret.
   ...(process.env.INGEST_URL && process.env.INGEST_TOKEN_FILE ? { ingest: { url: process.env.INGEST_URL, token: readFileSync(process.env.INGEST_TOKEN_FILE, 'utf8').trim() } } : {}) });
 const server = app.listen(env.port, () => console.log(`backend listening on :${env.port}`));
 
 const shutdown = () => {
   server.close();
+  metrics.stop();
   chat.close();
   void vaults.close().then(() => process.exit(0));
 };

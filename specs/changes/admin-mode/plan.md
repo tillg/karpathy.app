@@ -87,7 +87,7 @@ flowchart LR
   - Depends on: none
   - Test first: `apps/backend/test/metrics.test.ts` (injected clock and readers, temp dir): › "CPU % from the difference of two cpu-time readings", › "appends one JSON line per sample", › "on start drops samples older than 7 days and skips a torn last line", › "hourly compaction rewrites the file without the old samples", › "range 24h is bucket-averaged to at most 240 points". Fails today: no module.
   - Verify: `npm test -w apps/backend -- metrics` → green; `npm test -w apps/backend` → all green
-- [ ] `GET /api/metrics?range=1h|24h|7d`, sampler started and stopped in `main.ts`
+- [x] `GET /api/metrics?range=1h|24h|7d`, sampler started and stopped in `main.ts`
   - Depends on: 12
   - Test first: `apps/backend/test/api.test.ts` › "GET /metrics?range=24h returns samples, latest, uptime and intervalS", › "range=2d is 400". Fails today: 404.
   - Verify: `npm test -w apps/backend` → all green; on the dev stack `curl -sk -H "Authorization: Bearer $(cat deploy/secrets/bearer_token)" https://localhost:80N0/api/metrics?range=1h` → JSON with ≥ 1 sample after 30 s

@@ -336,6 +336,26 @@ describe('vault admin', () => {
     expect(asked).toEqual([7, 30]);
   });
 
+  it('GET /metrics?range=24h returns samples, latest, uptime and intervalS', async () => {
+    const sample = { at: 1, cpu: 5, memUsed: 1, memTotal: 2, load1: 0.1, vaultsUsed: 1, vaultsTotal: 2, configUsed: 1, configTotal: 2, opencodeUp: true };
+    const asked: string[] = [];
+    const report = { samples: [sample], latest: sample, uptimeS: 42, intervalS: 30 };
+    const t = await makeApp('file:///nowhere/', { deps: { metrics: { report: (r) => (asked.push(r), report) } } });
+    const r = await t.api.get('/metrics?range=24h');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual(report);
+    await t.api.get('/metrics');
+    await t.api.get('/metrics?range=7d');
+    expect(asked).toEqual(['24h', '24h', '7d']);
+  });
+
+  it('GET /metrics?range=2d is 400', async () => {
+    const t = await makeApp('file:///nowhere/', { deps: { metrics: { report: () => { throw new Error('unreachable'); } } } });
+    const r = await t.api.get('/metrics?range=2d');
+    expect(r.status).toBe(400);
+    expect(r.body.code).toBe('bad-range');
+  });
+
   it('a token sent to the test route is masked in later messages, though never saved', async () => {
     const t = await makeApp('file:///nowhere/');
     const typed = 'ghp_typedtypedtypedtypedtyped1234';
