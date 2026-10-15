@@ -34,7 +34,7 @@ flowchart LR
   - Depends on: none
   - Test first: `apps/web/src/lib/route.test.ts` › "admin routes": `parseRoute('#admin/usage')` gives `{ admin: 'usage', vault: null, path: null }`, `#admin` gives `admin: ''` (list), an unknown section gives `general`, `#/admin/x` stays a vault route; `formatAdminRoute('ai')` gives `#admin/ai`. Fails today: no admin form exists.
   - Verify: `npm test -w apps/web -- route` → green; `npm test -w apps/web` → all green
-- [ ] Switch the shell between user mode and admin mode (rail on wide and tablet, section list on the phone, Done)
+- [x] Switch the shell between user mode and admin mode (rail on wide and tablet, section list on the phone, Done)
   - Depends on: 1
   - Test first: `apps/web/src/components/AdminMode.test.tsx` › "gear opens admin mode on General, Done returns to the note": `#/v/a.md` → gear → hash `#admin/general`, `nav.admin-rail` lists six sections, the note pane is gone; Done → hash `#/v/a.md`. › "phone: the section list has Done, a row pushes the section, the section has '‹ Admin' and no Done, Back returns to the list, Done on the list returns to `#/v/a.md`" (`useMedia` phone). › "switching sections replaces the history entry". › "the vault switcher stays in user mode and switches vaults as before; admin mode shows none". Fails today: the gear opens a modal.
   - Verify: `npm test -w apps/web -- AdminMode Shell` → green; `npm test -w apps/web` → all green
