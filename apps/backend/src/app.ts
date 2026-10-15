@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { MAX_ATTACHMENTS, MAX_UPLOAD_BYTES, rawType, type ModelInput, type Settings, type SettingsView, type TokenTest, type VaultEvent } from '@karpathy/shared';
+import { MAX_ATTACHMENTS, MAX_UPLOAD_BYTES, rawType, type ModelInput, type SecretStatus, type Settings, type SettingsView, type TokenTest, type VaultEvent } from '@karpathy/shared';
 import { bearerAuth } from './auth.js';
 import { aiUnavailable, type ChatService } from './chat.js';
 import { fallbackMessage, type CommitMessages } from './commit-message.js';
@@ -15,6 +15,8 @@ export interface AppDeps {
   vaults: Vaults;
   store: ConfigStore;
   githubToken?: GitHubToken;
+  /** The secret manifest from settings.json (`secrets`). */
+  secrets?: SecretStatus[];
   chat?: ChatService;
   commitMessages?: CommitMessages;
   opencodeHealthy?: () => Promise<boolean>;
@@ -143,6 +145,14 @@ export function createApp(d: AppDeps) {
   };
   api.get('/settings', async (_req, res) => {
     res.json(await settingsView());
+  });
+  api.get('/settings/secrets', (_req, res) => {
+    const src = d.githubToken?.source();
+    const t = d.githubToken?.current();
+    const secrets = (d.secrets ?? []).map((s) =>
+      s.name === 'github_token' && src && src !== 'none' && t ? { ...s, source: src === 'settings' ? ('app' as const) : ('deployment' as const), last4: t.slice(-4) } : s,
+    );
+    res.json({ secrets });
   });
   api.put('/settings/github-token', async (req, res) => {
     if (!d.githubToken) throw new HttpError(404, 'not available');

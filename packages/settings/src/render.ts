@@ -1,4 +1,5 @@
 import { visionGatewayId, type Settings } from './schema.js';
+import { secretRefs } from './secrets.js';
 
 type Secrets = Record<string, string | undefined>;
 
@@ -94,6 +95,31 @@ export function renderComposeEnv(s: Settings, secrets: Secrets, { settingsDir }:
   ]);
 }
 
+/** What each known setting path's secret is for, and which components read it (as render.ts routes it). */
+const SECRET_INFO: [RegExp, (m: RegExpMatchArray) => { component: string; purpose: string }][] = [
+  [/^gateways\.([^.]+)\.api_key$/, (m) => ({ component: 'opencode', purpose: `Gateway ${m[1]} API key` })],
+  [/^ai\.web\.exa_api_key$/, () => ({ component: 'opencode', purpose: 'Web search (Exa)' })],
+  [/^auth\.bearer_token$/, () => ({ component: 'backend', purpose: 'App login token' })],
+  [/^auth\.opencode_password$/, () => ({ component: 'backend, opencode', purpose: 'opencode password' })],
+  [/^git\.github_token$/, () => ({ component: 'backend', purpose: 'GitHub token (fallback)' })],
+  [/^git\.author\./, (m) => ({ component: 'backend', purpose: `Git ${m.input!.slice(11)}` })],
+  [/^proxy\.dns\.api_token$/, () => ({ component: 'proxy', purpose: 'DNS for certificates' })],
+  [/^ingest\./, (m) => ({ component: 'ingest', purpose: `Ingest ${m.input!.slice(7)}` })],
+];
+
+/** The secrets the settings reference (active gateway only) and whether each has a value now; never the value. */
+function secretManifest(s: Settings, secrets: Secrets) {
+  const byName = new Map<string, { name: string; component: string; purpose: string; optional: boolean; set: boolean }>();
+  for (const { name, path, optional } of secretRefs(s)) {
+    const info = SECRET_INFO.map(([re, f]) => { const m = path.match(re); return m && f(m); }).find(Boolean)
+      ?? { component: 'backend', purpose: path };
+    const prev = byName.get(name);
+    if (prev) { prev.optional &&= optional; continue; }
+    byName.set(name, { name, ...info, optional, set: Boolean(secrets[name]) });
+  }
+  return [...byName.values()];
+}
+
 /** The backend's settings.json: what the backend needs, credentials as compose secret files. */
 export function renderBackendSettings(s: Settings, secrets: Secrets): string {
   const ref = (r: { secret: string } | undefined) => {
@@ -111,6 +137,7 @@ export function renderBackendSettings(s: Settings, secrets: Secrets): string {
     ai: { model: s.ai.model, web_access: s.ai.web.access },
     commit_reminder_threshold: s.commit_reminder_threshold,
     files: s.files,
+    secrets: secretManifest(s, secrets),
   };
   return JSON.stringify(backend, null, 2) + '\n';
 }
