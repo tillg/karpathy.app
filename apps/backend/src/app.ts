@@ -76,8 +76,14 @@ const openPage = z.object({
   mode: z.enum(['read', 'write']),
   unsaved: z.boolean(),
 }).strict();
+// The sending tab (#151): its id answers the turn's browser calls; time zone and locale give the local-time line.
+const promptClient = {
+  tabId: z.string().regex(/^[A-Za-z0-9-]{8,64}$/).optional(),
+  timeZone: z.string().max(64).optional(),
+  locale: z.string().max(35).optional(),
+};
 const promptBody = z
-  .object({ text: z.string().trim().max(100_000), openPage: openPage.optional(), attachments: z.array(z.string().min(1).max(1000)).max(MAX_ATTACHMENTS, { error: `At most ${MAX_ATTACHMENTS} files per message` }).optional() })
+  .object({ text: z.string().trim().max(100_000), openPage: openPage.optional(), attachments: z.array(z.string().min(1).max(1000)).max(MAX_ATTACHMENTS, { error: `At most ${MAX_ATTACHMENTS} files per message` }).optional(), ...promptClient })
   .refine((b) => b.text.length > 0 || (b.attachments?.length ?? 0) > 0, { error: 'Write a prompt or attach a file' });
 
 // An Instagram username (letters, digits, `.` and `_`, at most 30), never a path: the ingest service uses it in file names.
@@ -214,6 +220,8 @@ export function createApp(d: AppDeps) {
     out.send({ type: 'status', status });
     const move = d.vaults.lastAgentsMove(id);
     if (move && !early.some((e) => e.type === 'agents-move')) out.send({ type: 'agents-move', ...move });
+    // Calls still waiting for a tab (#151): a reloaded tab, or a PWA back in the foreground, still answers.
+    for (const call of d.vaults.browserCalls.pending(id)) if (!early.some((e) => e.type === 'browser-call' && e.call.callId === call.callId)) out.send({ type: 'browser-call', call });
     for (const e of early) out.send(e);
     live = (e) => out.send(e);
   });
@@ -324,9 +332,14 @@ export function createApp(d: AppDeps) {
     res.status(204).end();
   });
   api.post('/vaults/:id/chats/:chatId/prompt', async (req, res) => {
-    const b = promptBody.parse(req.body);
-    await chat().prompt(req.params.id!, req.params.chatId!, b.text, b.attachments, b.openPage);
+    const { text, attachments, openPage, ...client } = promptBody.parse(req.body);
+    await chat().prompt(req.params.id!, req.params.chatId!, text, attachments, openPage, client);
     res.status(202).json({ queued: true });
+  });
+  // The answering tab's result for a browser call (#151); validated and written once by BrowserCalls.
+  api.post('/vaults/:id/chats/:chatId/browser-calls/:callId', async (req, res) => {
+    await d.vaults.browserCalls.answer(req.params.id!, req.params.chatId!, req.params.callId!, req.body);
+    res.status(204).end();
   });
   api.get('/vaults/:id/chats/:chatId/stream', async (req, res) => {
     const out = ndjson(res);

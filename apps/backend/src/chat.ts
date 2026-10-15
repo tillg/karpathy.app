@@ -1,10 +1,11 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { uploadMime, type OpenPage, type ChatDetail, type Command, type ChatEvent, type ChatSummary, type TurnState } from '@karpathy/shared';
+import { uploadMime, type PromptClient, type ToolCall, type OpenPage, type ChatDetail, type Command, type ChatEvent, type ChatSummary, type TurnState } from '@karpathy/shared';
 import type { ConfigStore } from './config-store.js';
 import { readFrontmatter } from './agents-standard.js';
 import { commandInstructions, expandCommand, parseCommand, withoutBaseDir } from './harness/command.js';
+import { localTimeLine } from './harness/local-time.js';
 import type { Harness, HarnessCommand } from './harness/opencode.js';
 import type { HarnessEvent } from './harness/map.js';
 import type { Release } from './lock.js';
@@ -13,12 +14,16 @@ import { HttpError, type Vaults } from './vaults.js';
 
 type Listener = (e: ChatEvent) => void;
 
-interface Turn {
+/** `tabId` answers the turn's browser calls (#151); time zone and locale give the local-time line when it starts. */
+interface Turn extends PromptClient {
   chatId: string;
   text: string;
   /** Vault paths of files sent with the prompt (uploaded before); checked when the turn starts. */
   attachments?: string[];
 }
+
+/** The turn without its undefined fields, as it is queued and saved. */
+const withoutUndefined = <T extends object>(o: T): T => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
 
 interface Running {
   chatId: string;
@@ -29,6 +34,8 @@ interface Running {
   interrupted?: boolean;
   readonly: boolean;
   startedAt: number;
+  /** The tab that sent the prompt: it answers the turn's browser calls (#151). */
+  tabId?: string;
   /** False while still waiting for the lock (the slot is only reserved). */
   holding: boolean;
 }
@@ -77,7 +84,7 @@ export class ChatService {
     const q = this.v.get(vaultId)?.queue ?? [];
     return this.store
       .update((c) => {
-        if (q.length) c.queued[vaultId] = q.map(({ chatId, text, attachments }) => ({ chatId, text, ...(attachments?.length ? { attachments } : {}) }));
+        if (q.length) c.queued[vaultId] = q.map(({ chatId, text, attachments, tabId, timeZone, locale }) => withoutUndefined({ chatId, text, ...(attachments?.length ? { attachments } : {}), tabId, timeZone, locale }));
         else delete c.queued[vaultId];
       })
       .catch(() => undefined);
@@ -91,6 +98,7 @@ export class ChatService {
       for (const s of await this.harness.listSessions(dir).catch(() => [])) {
         await this.harness.deleteSession(dir, s.id).catch(() => undefined);
         await removeOpenPage(this.vaults.vaultsPath(), s.id).catch(() => undefined);
+        await this.vaults.browserCalls.removeChat(vaultId, s.id).catch(() => undefined);
       }
     this.vaultRemoved(vaultId);
     await this.store.update((c) => { delete c.queued[vaultId]; });
@@ -233,16 +241,17 @@ export class ChatService {
     if (this.turnState(vaultId, chatId) !== 'idle') throw new HttpError(409, 'stop the running turn first', 'busy');
     await this.harness.deleteSession(this.dir(vaultId), chatId);
     await removeOpenPage(this.vaults.vaultsPath(), chatId);
+    await this.vaults.browserCalls.removeChat(vaultId, chatId);
   }
 
-  async prompt(vaultId: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage): Promise<void> {
+  async prompt(vaultId: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage, client: PromptClient = {}): Promise<void> {
     await this.requireChat(vaultId, chatId);
     const c = this.v.get(vaultId)!;
     if (this.turnState(vaultId, chatId) !== 'idle') throw new HttpError(409, 'this chat already has a turn running or queued', 'busy');
     // What the AI's current_page tool reports (#143); none = nothing open, never the page of an earlier prompt.
     if (openPage) await writeOpenPage(this.vaults.vaultsPath(), chatId, openPage);
     else await removeOpenPage(this.vaults.vaultsPath(), chatId);
-    c.queue.push({ chatId, text, ...(attachments?.length ? { attachments } : {}) });
+    c.queue.push(withoutUndefined({ chatId, text, ...(attachments?.length ? { attachments } : {}), ...client }));
     // 202 means the prompt survives a backend restart (#37).
     await this.saveQueue(vaultId);
     this.emit(vaultId, chatId, this.queuedEvent(vaultId));
@@ -365,6 +374,7 @@ export class ChatService {
     }
     running.readonly = this.vaults.isConflict(vaultId);
     running.startedAt = Date.now();
+    running.tabId = turn.tabId;
     this.emit(vaultId, turn.chatId, { type: 'turn', state: 'running', ...(running.readonly ? { readonly: true } : {}) });
     const settings = this.store.get().settings;
     try {
@@ -376,6 +386,7 @@ export class ChatService {
         // the agent's, so save_url (it writes) is sent false in a read-only turn.
         tools: { websearch: settings.webAccess, webfetch: settings.webAccess, save_url: settings.webAccess && !running.readonly },
         ...(instructions ? { instructions } : {}),
+        localTime: localTimeLine(new Date(), turn.timeZone, turn.locale),
         ...(turn.attachments?.length ? { files: turn.attachments.map((path) => ({ path, mime: uploadMime(path), url: pathToFileURL(posix.join(this.dir(vaultId), path)).href })) } : {}),
       });
       running.started = true;
@@ -496,6 +507,7 @@ export class ChatService {
     const { chatId, release, interrupted } = c.running;
     c.running = null;
     release();
+    void this.vaults.browserCalls.closeVault(vaultId).catch(() => undefined);
     if (interrupted)
       this.emit(vaultId, chatId, { type: 'error', message: 'The AI service restarted during this turn, so the answer may be incomplete. Send the prompt again.' });
     this.finish(vaultId, chatId);
@@ -544,6 +556,7 @@ export class ChatService {
   private endAdopted(vaultId: string, chatId: string) {
     const c = this.v.get(vaultId);
     if (!c?.adopted?.ids.delete(chatId)) return;
+    void this.vaults.browserCalls.removeChat(vaultId, chatId).catch(() => undefined);
     if (c.adopted.ids.size === 0) {
       c.adopted.release();
       c.adopted = null;
@@ -572,6 +585,7 @@ export class ChatService {
       case 'message':
         return this.emit(vaultId, e.sessionId, { type: 'message', message: e.message });
       case 'part':
+        if (e.part.type === 'tool' && e.part.call.browser && e.part.call.callId) this.browserCall(vaultId, e.sessionId, e.part.call, e.part.call.callId);
         return this.emit(vaultId, e.sessionId, { type: 'part', messageId: e.messageId, part: e.part });
       case 'text-delta':
         return this.emit(vaultId, e.sessionId, { type: 'text-delta', messageId: e.messageId, partId: e.partId, delta: e.delta });
@@ -579,6 +593,18 @@ export class ChatService {
         if (!e.aborted) this.emit(vaultId, e.sessionId, { type: 'error', message: e.message });
         return;
     }
+  }
+
+  /**
+   * A browser tool's part (#151): running → ask the turn's tab; done → the call is over. `chatId` is the part's
+   * session: a subagent's (`task`) when the tool runs there. A vault runs one turn at a time, so the running turn's
+   * tab answers either way; an adopted turn (backend restart) has no tab.
+   */
+  private browserCall(vaultId: string, chatId: string, call: ToolCall, callId: string) {
+    if (call.status === 'pending') return;
+    if (call.status !== 'running') return this.vaults.browserCalls.close(vaultId, chatId, callId);
+    const tabId = this.v.get(vaultId)?.running?.tabId ?? null;
+    this.vaults.browserCalls.open({ vaultId, chatId, callId, tool: call.tool, input: {}, tabId });
   }
 
   private emit(vaultId: string, chatId: string, e: ChatEvent) {

@@ -1,5 +1,5 @@
 import { posix } from 'node:path';
-import type { ChatMessage, ChatPart, ModelInput, ToolCall, ToolStatus } from '@karpathy/shared';
+import { BROWSER_TOOLS, type ChatMessage, type ChatPart, type ModelInput, type ToolCall, type ToolStatus } from '@karpathy/shared';
 
 /**
  * Maps opencode's wire shapes to the backend↔harness vocabulary (ACP-shaped: session /
@@ -22,6 +22,8 @@ const DENIED_PREFIX = 'The user has specified a rule which prevents you from usi
 const WRITE_TOOLS = new Set(['edit', 'write', 'apply_patch', 'patch', 'multiedit', 'save_url', 'move_to_sources']);
 /** Tools that ask the UI to show a note (deploy/opencode/tools). */
 const OPEN_TOOLS = new Set(['open_note']);
+/** Browser tools (#151): the backend asks the answering tab while the tool waits (browser-calls.ts). */
+const BROWSER_TOOL_NAMES = new Set<string>(BROWSER_TOOLS);
 
 type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => (v && typeof v === 'object' ? (v as Json) : {});
@@ -57,10 +59,13 @@ export function mapToolPart(part: Json, root: string): ToolCall {
     writes: WRITE_TOOLS.has(tool),
     opens: OPEN_TOOLS.has(tool),
     ...(path ? { path } : {}),
+    ...(BROWSER_TOOL_NAMES.has(tool) ? { browser: true, ...(str(part.callID) ? { callId: str(part.callID) } : {}) } : {}),
     ...(tool === 'suggest_next' && str(input.prompt) ? { suggestion: str(input.prompt)!.replace(/\s+/g, ' ').trim() } : {}),
     ...(tool === 'websearch' && str(input.query) ? { query: str(input.query) } : {}),
     ...((tool === 'webfetch' || tool === 'open_url' || tool === 'save_url') && str(input.url) ? { url: str(input.url) } : {}),
     ...(str(state.title) ? { title: str(state.title) } : {}),
+    // A browser tool names its own chip in its result's metadata (ToolCall carries no output).
+    ...(BROWSER_TOOL_NAMES.has(tool) && str(meta.title) ? { title: str(meta.title) } : {}),
     ...(error && status === 'error' ? { error } : {}),
   };
 }

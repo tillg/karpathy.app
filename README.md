@@ -85,6 +85,13 @@ writes or updates wiki pages that cite them, and ticks off the plan note (at mos
 **continue** for more). `/research Research/<date>-<slug>.md` resumes a plan in any chat. Everything stays
 uncommitted until you review and commit.
 
+**Time and place.** Every message carries your browser's time zone, so the AI knows your local date and time
+("today's journal entry" at 23:30 is today, not the server's tomorrow; messages without one, e.g. from the ingest
+runner, use the deployment's `timezone` setting). When a request depends on where you are ("cafés near me"), the AI
+calls `user_location`: the tab you sent the message from answers with your position, as precise as the device can
+tell (GPS: about 10 m). The browser asks once for permission; declining is fine, the AI then asks you. The chip shows
+each use and its accuracy; the position goes to the model provider and stays in that chat's history.
+
 **Vault layout: the `.agents` standard.** Vaults follow the open `.agents` standard that opencode, Codex,
 Cursor, Gemini CLI and others share: instructions in `AGENTS.md`, skills in `.agents/skills/<name>/SKILL.md`,
 rather than Anthropic's `CLAUDE.md` / `.claude/`. opencode runs with `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`,

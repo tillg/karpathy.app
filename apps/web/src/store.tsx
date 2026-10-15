@@ -1,5 +1,6 @@
 import { MAX_UPLOAD_BYTES, rewriteLinks, WARN_UPLOAD_BYTES, type AgentsMove, type FileEntry, type OpenPage, type SettingsView, type Vault, type VaultEvent, type VaultStatus } from '@karpathy/shared';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { answerBrowserCall } from './lib/browser-tools';
 import { ApiError, api, errorText } from './lib/api';
 import { prepare } from './lib/attach';
 import { recordCommand } from './lib/commands';
@@ -847,6 +848,8 @@ function useAppState() {
       void refreshFiles();
       return;
     }
+    if (e.type === 'browser-call') return void answerBrowserCall(vault, e.call);
+    if (e.type === 'browser-call-done') return;
     setChangesNonce((x) => x + 1);
     if (e.files.some((f) => f.path === SCHEMA_PATH)) void loadSchema(vault);
     // A skill written outside a pull (by the AI, a save, a service): chips and the Ingest button reload commands (#134).

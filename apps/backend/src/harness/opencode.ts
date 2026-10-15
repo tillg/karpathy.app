@@ -16,6 +16,8 @@ export interface PromptInput {
   files?: { path: string; url: string; mime: string }[];
   /** A command turn's skill instructions: sent as a hidden (synthetic) text part of the same message. */
   instructions?: string;
+  /** The user's local time (`localTimeLine`): a hidden (synthetic) text part of every prompt (#151). */
+  localTime?: string;
 }
 
 /** A skill the chat can start by name (`/name`). `template` = the skill's instructions; it stays on the server. */
@@ -32,8 +34,12 @@ const HIDDEN_COMMANDS = ['customize-opencode'];
 /** Where the image's skills live (the global config dir). */
 const APP_SKILLS_DIR = '/opt/opencode-config/';
 
-/** The prompt as opencode parts: the text (left out when empty), the hidden instructions, then one file part per attachment. */
-const promptParts = (input: PromptInput) => [
+/**
+ * The prompt as opencode parts: the hidden local time (first, so the user's request is what the model reads last),
+ * the text (left out when empty), the hidden instructions, then one file part per attachment.
+ */
+export const promptParts = (input: PromptInput) => [
+  ...(input.localTime ? [{ type: 'text' as const, text: input.localTime, synthetic: true }] : []),
   ...(input.text ? [{ type: 'text' as const, text: input.text }] : []),
   ...(input.instructions ? [{ type: 'text' as const, text: input.instructions, synthetic: true }] : []),
   ...(input.files ?? []).map((f) => ({ type: 'file' as const, mime: f.mime, filename: f.path, url: f.url })),

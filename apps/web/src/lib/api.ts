@@ -1,8 +1,10 @@
 import type {
+  BrowserCallResult,
   ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData,
   OpenPage, SearchHit, Settings, SettingsView, TokenTest, UploadResult, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
+import { clientContext, type ClientContext } from './client-context';
 import { parseLoginCode } from './login-code';
 
 const TOKEN_KEY = 'karpathy.token';
@@ -121,9 +123,19 @@ export const api = {
   chat: (id: string, chatId: string) => json<ChatDetail>('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
   deleteChat: (id: string, chatId: string) => json<void>('DELETE', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
   prompt: (id: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage) =>
-    json<{ queued: boolean }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, { text, ...(attachments?.length ? { attachments } : {}), ...(openPage ? { openPage } : {}) }),
+    json<{ queued: boolean }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, promptBody(text, attachments, openPage, clientContext())),
   chatStream: (id: string, chatId: string, signal: AbortSignal) => request('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}/stream`, undefined, signal),
   abort: (id: string, chatId: string) => json<void>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/abort`),
+  answerBrowserCall: (id: string, chatId: string, callId: string, result: BrowserCallResult) =>
+    json<void>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/browser-calls/${encodeURIComponent(callId)}`, result),
 };
+
+/** A prompt's body: the text, attachments and open page, plus the sending tab's context (#151). */
+export const promptBody = (text: string, attachments: string[] | undefined, openPage: OpenPage | undefined, ctx: ClientContext) => ({
+  text,
+  ...(attachments?.length ? { attachments } : {}),
+  ...(openPage ? { openPage } : {}),
+  ...ctx,
+});
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));

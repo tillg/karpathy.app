@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { mapEvent, mapMessageInfo, mapMessages, mapModels, withLimit, mapToolPart, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
+import { mapEvent, mapMessageInfo, mapMessages, mapModels, mapPart, withLimit, mapToolPart, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
 
 // Real opencode 1.18.25 event captures from the Phase 0 spike (vault root /vaults/a).
 const raw = readFileSync(join(import.meta.dirname, 'fixtures/opencode-events.jsonl'), 'utf8')
@@ -52,6 +52,21 @@ describe('opencode → harness mapping (real captures)', () => {
 });
 
 describe('mapping edge cases', () => {
+  it('user_location maps as a browser tool with its opencode call id (#151)', () => {
+    const part = { id: 'prt_1', callID: 'call_9', tool: 'user_location', state: { status: 'running', input: {} } };
+    expect(mapToolPart(part, '/vaults/a')).toMatchObject({ id: 'prt_1', tool: 'user_location', status: 'running', browser: true, callId: 'call_9' });
+    expect(mapToolPart({ ...part, tool: 'read' }, '/vaults/a')).not.toHaveProperty('browser');
+  });
+
+  it('a completed browser tool shows the chip title from its metadata (#151)', () => {
+    const part = { id: 'prt_1', callID: 'call_9', tool: 'user_location', state: { status: 'completed', input: {}, title: '', metadata: { title: 'used your location (±12 m)' } } };
+    expect(mapToolPart(part, '/vaults/a')).toMatchObject({ title: 'used your location (±12 m)' });
+  });
+
+  it('a synthetic text part (command instructions, the local-time line) is not shown in the chat', () => {
+    expect(mapPart({ id: 'p', type: 'text', text: "User's local time: …", synthetic: true }, '/vaults/a')).toBeNull();
+  });
+
   it('relative tool paths are resolved against the vault root (#12)', () => {
     expect(toVaultPath('./Home.md', '/vaults/a')).toBe('Home.md');
     expect(toVaultPath('notes/../Home.md', '/vaults/a')).toBe('Home.md');

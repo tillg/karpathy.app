@@ -1,6 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { Settings, VaultConfig } from '@karpathy/shared';
+import type { PromptClient, Settings, VaultConfig } from '@karpathy/shared';
 
 export interface StoredVault extends VaultConfig {
   /** True once the clone finished; a vault without it is (re)cloned on startup. */
@@ -25,7 +25,7 @@ export interface ConfigData {
   /** Per-vault unresolved Conflict paths (repo-relative), kept while the pull stash exists. */
   conflicts: Record<string, string[]>;
   /** Per-vault queued chat prompts, so a backend restart doesn't drop them (#37). */
-  queued: Record<string, { chatId: string; text: string; attachments?: string[] }[]>;
+  queued: Record<string, ({ chatId: string; text: string; attachments?: string[] } & PromptClient)[]>;
   /** GitHub token set in the app; kept out of `settings`, which GET /settings returns verbatim. */
   githubToken?: string;
 }
