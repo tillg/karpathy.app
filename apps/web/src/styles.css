@@ -416,6 +416,7 @@ a.tc { text-decoration: none; cursor: pointer; }
 .modal-bar { flex: none; display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 8px 0 20px; border-bottom: .5px solid var(--sep); background: var(--mat); }
 .modal-bar h2 { font-size: 17px; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modal-bar h2:focus { outline: none; }
+#admin-mode h1:focus { outline: none; }
 .modal-body { flex: 1; overflow: auto; padding: 14px 20px 20px; }
 .modal-body p { line-height: 1.45; margin: 4px 0 10px; }
 .modal-body .gh { margin: 18px 0 8px; }
@@ -652,6 +653,7 @@ a.tc { text-decoration: none; cursor: pointer; }
 .admin-main .bar .mode-pill { margin-right: 10px; }
 .admin-main .bar .back { padding-left: 0; }
 #admin-mode.phone .admin-main .bar { padding-left: 8px; }
+#admin-mode.phone .admin-main .bar .ib { min-width: 44px; height: 44px; }
 .admin-content { flex: 1; overflow-y: auto; padding-top: 52px; overscroll-behavior: contain; }
 .admin-inner { max-width: 780px; padding: 18px 24px 40px; }
 #admin-mode.phone .admin-inner { padding: 12px 16px 40px; }

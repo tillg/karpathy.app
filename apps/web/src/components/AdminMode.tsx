@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { shortNumber } from '../lib/chat';
 import { brandName } from '../lib/brand';
@@ -28,6 +28,18 @@ export function AdminMode() {
   const [secrets, setSecrets] = useState<string | null>(null);
   const [usage, setUsage] = useState<string | null>(null);
   const [server, setServer] = useState<string | null>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  /** What had focus when admin mode opened (the gear, or the vault switcher): Done and Escape give focus back to it. */
+  const [opener] = useState(() => document.activeElement);
+  // The section heading takes focus on entering and, on the phone, on each page change.
+  const page = phone ? admin : null;
+  useEffect(() => { heading.current?.focus(); }, [page]);
+  useEffect(() => () => {
+    setTimeout(() => {
+      const back = opener instanceof HTMLElement && opener.isConnected && opener !== document.body ? opener : document.querySelector<HTMLElement>('[data-testid="open-settings"]');
+      back?.focus();
+    }, 0);
+  }, [opener]);
   useEffect(() => {
     if (!list) return;
     api.health().then((h) => setVersion(h.version), () => {});
@@ -77,12 +89,12 @@ export function AdminMode() {
         <header className="bar">
           {list ? <><span className="mode-pill">Admin</span><span className="sp" />{done}</>
             : phone ? <button className="ib back" onClick={adminUp}><Icon n="chevron_left" size={20} />Admin</button>
-            : <><h1 className="bar-title">{SECTIONS[section].label}</h1><span className="sp" />{done}</>}
+            : <><h1 className="bar-title" ref={heading} tabIndex={-1}>{SECTIONS[section].label}</h1><span className="sp" />{done}</>}
         </header>
         <main className="admin-content" aria-label="Admin">
           {list ? (
             <>
-              <h1 className="lt">Admin</h1>
+              <h1 className="lt" ref={heading} tabIndex={-1}>Admin</h1>
               <div className="admin-list">
                 {ADMIN_SECTIONS.map((s) => (
                   <a key={s} href={formatAdminRoute(s)} data-testid={`admin-row-${s}`} onClick={go(s)}>
@@ -94,7 +106,7 @@ export function AdminMode() {
             </>
           ) : (
             <div className="admin-inner" data-testid={`admin-section-${section}`}>
-              {phone && <h1 className="lt">{SECTIONS[section].label}</h1>}
+              {phone && <h1 className="lt" ref={heading} tabIndex={-1}>{SECTIONS[section].label}</h1>}
               {section === 'general' && <GeneralSection />}
               {section === 'vaults' && <VaultsSection />}
               {section === 'secrets' && <SecretsSection />}

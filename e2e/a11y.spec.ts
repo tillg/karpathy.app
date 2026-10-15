@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { expect, makeConflict, makePlainRemote, openApp, openNote, openSettings, openVaults, pushFromObsidian, runId, test, uid } from './helpers';
+import { closeAdmin, expect, makeConflict, makePlainRemote, openApp, openNote, openSettings, openVaults, pushFromObsidian, runId, test, uid } from './helpers';
 
 // Automated WCAG 2.1 A/AA + best-practice scan (axe-core) of the main screens, light and dark
 // (issues #39–#47). Only serious/critical findings fail; moderate/minor best-practice rules
@@ -86,9 +86,9 @@ test.describe('accessibility (axe)', () => {
 
     await openVaults(page);
     await expect(page.getByTestId('admin-vault').first()).toBeVisible();
-    await scan(page, 'admin dialog');
+    await scan(page, 'admin vaults');
     await page.keyboard.press('Escape');
-    await expect(page.getByTestId('admin')).toBeHidden();
+    await expect(page.locator('#admin-mode')).toBeHidden();
 
     if (!(await page.locator('#chat').isVisible())) await page.getByTestId('chat-toggle').click();
     await expect(page.locator('#chat')).toBeVisible();
@@ -117,8 +117,7 @@ test.describe('accessibility (axe)', () => {
     const plain = `e2e-a11y-plain-${runId()}-${uid()}`;
     makePlainRemote(plain);
     await openApp(page, vault.id);
-    await openVaults(page);
-    const admin = page.getByTestId('admin');
+    const admin = await openVaults(page);
     await expect(admin.getByTestId('admin-vault').first()).toBeVisible();
     await scan(page, 'admin list');
     await admin.getByTestId('admin-help').click();
@@ -136,12 +135,12 @@ test.describe('accessibility (axe)', () => {
     await scan(page, 'missing-folders dialog');
     await page.getByTestId('folders-cancel').click();
     expect((await api.vaults()).some((v) => v.repo === `e2e/${plain}`)).toBe(false);
-    await admin.getByRole('button', { name: 'Close', exact: true }).click();
-    await openSettings(page);
-    const settings = page.getByTestId('settings-dialog');
+    await closeAdmin(page);
+    await openSettings(page, 'secrets');
+    const settings = page.getByTestId('admin-section-secrets');
     await settings.getByTestId('token-test').click();
     await expect(settings.getByTestId('token-result')).toBeVisible({ timeout: 20_000 });
-    await scan(page, 'settings with token test result');
+    await scan(page, 'secrets with token test result');
   });
 
   test('tree sort and filter menus, filter chip (#122)', async ({ page, vault }) => {

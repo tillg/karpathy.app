@@ -1,10 +1,9 @@
-import { expect, makePlainRemote, makeRemote, openApp, openSettings, openVaults, runId, test, treeItem, uid } from './helpers';
+import { closeAdmin, expect, makePlainRemote, makeRemote, openApp, openSettings, openVaults, runId, test, treeItem, uid } from './helpers';
 
 test.describe('admin area', () => {
   test('list → details → back', async ({ page, vault }) => {
     await openApp(page, vault.id);
-    await openVaults(page);
-    const admin = page.getByTestId('admin');
+    const admin = await openVaults(page);
     const row = admin.locator(`[data-testid="admin-vault"][data-vault="${vault.id}"]`);
     await expect(row).toContainText(vault.name);
     await expect(row).toContainText(`e2e/${vault.name} · main`);
@@ -24,8 +23,7 @@ test.describe('admin area', () => {
     page.on('dialog', (d) => void d.accept());
     await openApp(page);
 
-    await openVaults(page);
-    const admin = page.getByTestId('admin');
+    const admin = await openVaults(page);
     await expect(admin).toBeVisible();
     await admin.getByTestId('admin-open-add').click();
     await page.getByTestId('admin-name').fill(name);
@@ -47,7 +45,7 @@ test.describe('admin area', () => {
     expect((await api.vault(name)).name).toBe(`${name} renamed`);
 
     // Appears in the vault switcher and can be activated.
-    await admin.getByRole('button', { name: 'Close', exact: true }).click();
+    await closeAdmin(page);
     await page.getByTestId('vault-switcher').click();
     const opt = page.locator(`[data-testid="vault-option"][data-vault="${name}"]`);
     await expect(opt).toContainText(`${name} renamed`);
@@ -90,8 +88,7 @@ test.describe('admin area', () => {
     const name = `e2e-plain-${runId()}-${uid()}`;
     makePlainRemote(name);
     await openApp(page);
-    await openVaults(page);
-    const admin = page.getByTestId('admin');
+    const admin = await openVaults(page);
     await admin.getByTestId('admin-open-add').click();
     await page.getByTestId('admin-name').fill(name);
     await page.getByTestId('admin-repo').fill(`e2e/${name}`);
@@ -120,8 +117,7 @@ test.describe('admin area', () => {
 
   test('settings: GitHub token is masked; Test token lists each vault', async ({ page, api, vault }) => {
     await openApp(page, vault.id);
-    await openSettings(page);
-    const admin = page.getByTestId('settings-dialog');
+    const admin = await openSettings(page, 'secrets');
     const input = admin.getByTestId('token-input');
     const tok = `ghp_e2e${uid()}abcdefghijklmnopqrstuv`;
     await input.fill(tok);
@@ -149,7 +145,7 @@ test.describe('admin area', () => {
     expect(other).toBeTruthy();
     try {
       await openApp(page);
-      await openSettings(page);
+      const ai = await openSettings(page, 'ai');
       const model = page.getByTestId('settings-model');
       const hint = page.getByTestId('settings-model-default');
       await expect(hint).toHaveText(`Default: ${cur.defaultModel}`);
@@ -161,7 +157,7 @@ test.describe('admin area', () => {
       expect(await api.settings()).toMatchObject({ model: other, modelOverridden: true });
       // The override survives a reload.
       await page.reload();
-      await openSettings(page);
+      await openSettings(page, 'ai');
       await expect(model).toHaveValue(other);
       await expect(hint).toHaveAttribute('data-overridden', 'true');
       await page.getByTestId('settings-model-reset').click();
@@ -169,7 +165,7 @@ test.describe('admin area', () => {
       await page.getByTestId('settings-save').click();
       await expect(hint).toHaveAttribute('data-overridden', 'false');
       await expect(page.getByTestId('settings-model-reset')).toHaveCount(0);
-      await page.getByTestId('settings-dialog').screenshot({ path: 'tmp/settings-yaml/model-default.png' });
+      await ai.screenshot({ path: 'tmp/settings-yaml/model-default.png' });
       expect(await api.settings()).toMatchObject({ model: cur.defaultModel, modelOverridden: false });
     } finally {
       await api.ctx.fetch('/api/settings', { method: 'PATCH', data: { model: cur.modelOverridden ? cur.model : null } });
@@ -186,7 +182,18 @@ test.describe('admin area', () => {
     await expect(help).toContainText('Schema/');
     await help.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(help).toHaveCount(0);
-    await expect(page.getByTestId('admin')).toBeVisible();
+    await expect(page.getByTestId('admin-section-vaults')).toBeVisible();
+  });
+
+  test('reload on #admin/vaults stays in admin mode', async ({ page, vault }) => {
+    await openApp(page, vault.id);
+    const admin = await openVaults(page);
+    await expect(admin.locator(`[data-testid="admin-vault"][data-vault="${vault.id}"]`)).toBeVisible();
+    await page.reload();
+    await expect(page).toHaveURL(/#admin\/vaults$/);
+    await expect(page.locator('#admin-mode')).toBeVisible();
+    await expect(page.getByTestId('admin-section-vaults').locator(`[data-testid="admin-vault"][data-vault="${vault.id}"]`)).toBeVisible();
+    await expect(page.getByTestId('open-settings')).toBeHidden();
   });
 
   test('vault switcher switches file tree between vaults', async ({ page, api, vault }) => {

@@ -23,18 +23,18 @@ async function switchTestLocked(page: Page, api: { settings(): Promise<{ webAcce
   try {
     // No patch first: whatever earlier runs left is what a fresh vault setup shows (they all restore true).
     await openApp(page);
-    await openSettings(page);
+    const ai = await openSettings(page, 'ai');
     await expect(sw(page)).toBeChecked(); // 1. on by default
-    await page.getByTestId('settings-dialog').screenshot({ path: `tmp/web-access/${shot}-on.png`, scale: 'css' });
+    await ai.screenshot({ path: `tmp/web-access/${shot}-on.png`, scale: 'css' });
 
     await sw(page).uncheck(); // 2. off, saved, survives a reload
     await page.getByTestId('settings-save').click();
     await expect(page.getByTestId('settings-saved')).toBeVisible();
     expect((await api.settings()).webAccess).toBe(false);
     await page.reload();
-    await openSettings(page);
+    await openSettings(page, 'ai');
     await expect(sw(page)).not.toBeChecked();
-    await page.getByTestId('settings-dialog').screenshot({ path: `tmp/web-access/${shot}-off.png`, scale: 'css' });
+    await ai.screenshot({ path: `tmp/web-access/${shot}-off.png`, scale: 'css' });
 
     await sw(page).check(); // 3. back on
     await page.getByTestId('settings-save').click();

@@ -76,6 +76,25 @@ describe('admin mode', () => {
     await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
   });
 
+  it('entering admin mode focuses the section heading; Done and Escape return focus to the gear', async () => {
+    const api = open();
+    await noteOpen(api);
+    const gear = await screen.findByTestId('open-settings');
+    gear.focus();
+    fireEvent.click(gear);
+    await waitFor(() => expect(location.hash).toBe('#admin/general'));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'General' })));
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('open-settings')));
+    screen.getByTestId('open-settings').focus();
+    fireEvent.click(screen.getByTestId('open-settings'));
+    await waitFor(() => expect(location.hash).toBe('#admin/general'));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('open-settings')));
+  });
+
   it('the vault switcher stays in user mode and switches vaults as before; admin mode shows none', async () => {
     const api = open({
       'GET /api/vaults': [{ id: VAULT, name: 'One', repo: 'o/r', branch: 'main', state: 'ready' }, { id: 'v2', name: 'Two', repo: 'o/s', branch: 'main', state: 'ready' }],

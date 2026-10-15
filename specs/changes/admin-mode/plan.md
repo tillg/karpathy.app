@@ -42,7 +42,7 @@ flowchart LR
   - Depends on: 2
   - Test first: `apps/web/src/components/AdminMode.test.tsx` › "sections hold the moved forms": General has the threshold and the versions, Vaults has the vault list and **Add vault**, Secrets has the GitHub token form and Instagram, AI has the model field and Web access; "Manage vaults…" opens `#admin/vaults`; "Edit vault" opens that vault's details; each section's Save sends only its own fields (`fake-api` records the `PATCH /api/settings` body). Fails today: the sections are empty.
   - Verify: `npm test -w apps/web` → all green; `npm run typecheck` → 0 errors; `grep -rn "adminOpen\|SettingsDialog\|VaultsDialog" apps/web/src` → no match
-- [ ] Bring every e2e that reaches the dialogs to the new navigation
+- [x] Bring every e2e that reaches the dialogs to the new navigation
   - Depends on: 3
   - Test first: the dialog helpers in `e2e/helpers.ts` open admin mode (`#admin/<section>`) instead of `data-testid="admin"` / `"settings-dialog"`; the specs that use them or the test ids (`admin`, `settings-split`, `version`, `web-access`, `instagram`, `git`, `mobile`, `commands`, `a11y`, `a11y-keyboard`, `fix-16`, `fix-22`, `fix-24`) keep their assertions and change only how they get there. New cases: "reload on `#admin/vaults` stays in admin mode", and in `a11y-keyboard.spec.ts` "entering admin mode focuses the section heading, Escape or Done returns focus to the gear". They fail today because admin mode doesn't exist. This rewrites existing tests for a requested behavior change, keeping what they assert; `/spec:apply` asks for the user's OK before touching them.
   - Verify: `just e2e` → all green on desktop, ipad and iphone projects; `grep -rn 'settings-dialog\|testid="admin"' e2e` → no match

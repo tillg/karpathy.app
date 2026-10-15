@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { expect, makeConflict, openApp, openNote, openVaults, test, treeItem } from './helpers';
+import { closeAdmin, expect, makeConflict, openApp, openNote, openVaults, test, treeItem } from './helpers';
 
 // Keyboard and screen-reader behaviour (issues #39, #43, #44, #45, #46, #47).
 
@@ -68,13 +68,43 @@ test.describe('keyboard and screen readers', () => {
     await page.keyboard.press('ArrowUp');
     await expect(page.getByTestId('manage-vaults')).toBeFocused();
     await page.keyboard.press('Enter');
-    const admin = page.getByRole('dialog', { name: 'Vaults', exact: true });
+    const admin = page.locator('#admin-mode');
     await expect(admin).toBeVisible();
+    const vaultSection = page.getByTestId('admin-section-vaults');
+    await expect(vaultSection).toBeVisible();
     await expect(admin.getByRole('heading', { name: 'Vaults', exact: true })).toBeFocused();
-    await expectTabTrapped(page, 12);
+    // Admin mode is not a modal (no focus trap); the user-mode panes are hidden, so Tab and Shift+Tab never reach them.
+    for (const key of ['Tab', 'Shift+Tab']) {
+      for (let i = 0; i < 12; i++) {
+        await page.keyboard.press(key);
+        expect(await page.evaluate(() => !!document.activeElement?.closest('#app')), `${key} #${i + 1} stays out of the hidden panes`).toBe(false);
+      }
+    }
+    await admin.getByRole('heading', { name: 'Vaults', exact: true }).focus();
     await page.keyboard.press('Escape');
     await expect(admin).toBeHidden();
     await expect(trigger).toBeFocused();
+  });
+
+  test('entering admin mode focuses the section heading; Escape or Done returns focus to the gear', async ({ page, vault }) => {
+    await openApp(page, vault.id);
+    const gear = page.getByTestId('open-settings');
+    const admin = page.locator('#admin-mode');
+    // Opened from the keyboard (WebKit doesn't focus a clicked button).
+    await gear.focus();
+    await page.keyboard.press('Enter');
+    await expect(admin).toBeVisible();
+    await expect(admin.getByRole('heading', { name: 'General', exact: true })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(admin).toBeHidden();
+    await expect(gear).toBeFocused();
+
+    await page.keyboard.press('Enter');
+    await expect(admin.getByRole('heading', { name: 'General', exact: true })).toBeFocused();
+    await admin.getByRole('button', { name: 'Done', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(admin).toBeHidden();
+    await expect(gear).toBeFocused();
   });
 
   test('conflict choice is a radio group; compare dialog focuses the chosen side (#44)', async ({ page, api, vault }) => {
@@ -197,13 +227,13 @@ test.describe('keyboard and screen readers', () => {
     await minSide(page.getByTestId('mode-read'), 'Read');
     await page.getByTestId('back').click();
 
-    await openVaults(page);
-    const admin = page.getByTestId('admin');
+    const admin = await openVaults(page);
     await admin.getByTestId('admin-vault').first().click();
     await minSide(admin.getByTestId('vault-edit'), 'admin Edit');
     await minSide(admin.getByTestId('vault-remove'), 'admin Remove');
-    await minSide(admin.getByRole('button', { name: 'Close', exact: true }), 'admin Close');
-    await page.keyboard.press('Escape');
+    // The bar's button: Done on wide and tablet, "‹ Admin" on a phone section.
+    await minSide(page.locator('#admin-mode header.bar button').first(), 'admin bar button');
+    await closeAdmin(page);
 
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const duration = await page.locator('#detail').evaluate((e) => parseFloat(getComputedStyle(e).transitionDuration));
