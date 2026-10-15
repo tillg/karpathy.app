@@ -38,7 +38,7 @@ flowchart LR
   - Depends on: 1
   - Test first: `apps/web/src/components/AdminMode.test.tsx` › "gear opens admin mode on General, Done returns to the note": `#/v/a.md` → gear → hash `#admin/general`, `nav.admin-rail` lists six sections, the note pane is gone; Done → hash `#/v/a.md`. › "phone: the section list has Done, a row pushes the section, the section has '‹ Admin' and no Done, Back returns to the list, Done on the list returns to `#/v/a.md`" (`useMedia` phone). › "switching sections replaces the history entry". › "the vault switcher stays in user mode and switches vaults as before; admin mode shows none". Fails today: the gear opens a modal.
   - Verify: `npm test -w apps/web -- AdminMode Shell` → green; `npm test -w apps/web` → all green
-- [ ] Move the dialogs' content into the General, Vaults, Secrets & keys and AI sections and remove `SettingsDialog`, `VaultsDialog` and `adminOpen`
+- [x] Move the dialogs' content into the General, Vaults, Secrets & keys and AI sections and remove `SettingsDialog`, `VaultsDialog` and `adminOpen`
   - Depends on: 2
   - Test first: `apps/web/src/components/AdminMode.test.tsx` › "sections hold the moved forms": General has the threshold and the versions, Vaults has the vault list and **Add vault**, Secrets has the GitHub token form and Instagram, AI has the model field and Web access; "Manage vaults…" opens `#admin/vaults`; "Edit vault" opens that vault's details; each section's Save sends only its own fields (`fake-api` records the `PATCH /api/settings` body). Fails today: the sections are empty.
   - Verify: `npm test -w apps/web` → all green; `npm run typecheck` → 0 errors; `grep -rn "adminOpen\|SettingsDialog\|VaultsDialog" apps/web/src` → no match
@@ -72,7 +72,7 @@ flowchart LR
 
 ## Charts
 
-- [ ] `Sparkline` and `StackedBars` as inline-SVG components with a numbers table fallback
+- [x] `Sparkline` and `StackedBars` as inline-SVG components with a numbers table fallback
   - Depends on: none
   - Test first: `apps/web/src/components/charts/charts.test.tsx` › "Sparkline draws one path over the points, labels min/max and the latest value", › "StackedBars draws one stack per day with one rect per series", › "both render a `<details>` table with the same numbers", › "empty data shows 'No data yet'". Fails today: no components.
   - Verify: `npm test -w apps/web -- charts` → green; `npm test -w apps/web` → all green
