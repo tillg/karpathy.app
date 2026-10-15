@@ -101,7 +101,7 @@ export function InstagramSettings() {
   );
 }
 
-/** Vaults dialog: a notice when Instagram links wait because the session expired. */
+/** Vaults section: a notice when Instagram links wait because the session expired. */
 export function InstagramNotice({ open }: { open(): void }) {
   const [s, setS] = useState<InstagramStatus | null>(null);
   useEffect(() => { api.instagram().then(setS).catch(() => setS(null)); }, []);
@@ -109,7 +109,7 @@ export function InstagramNotice({ open }: { open(): void }) {
   return (
     <div className="banner warn" data-testid="ig-notice">
       Instagram disconnected — {linksWaiting(s.waitingLinks)}.{' '}
-      <button className="link" data-testid="ig-notice-open" onClick={open}>Reconnect in Settings</button>
+      <button className="link" data-testid="ig-notice-open" onClick={open}>Reconnect in Secrets &amp; keys</button>
     </div>
   );
 }

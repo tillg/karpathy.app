@@ -2,11 +2,11 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeApi, renderApp, setViewport } from '../test/fake-api';
-import { Admin } from './Admin';
+import { Shell } from './Shell';
 import { InstagramSettings } from './InstagramSettings';
 
 beforeEach(() => setViewport(false));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); history.replaceState(null, '', '#'); });
 
 const type = (testid: string, value: string) => fireEvent.change(screen.getByTestId(testid), { target: { value } });
 
@@ -76,12 +76,13 @@ describe('Admin › Instagram', () => {
     expect(screen.queryByTestId('ig-connect')).toBeNull();
   });
 
-  it('the vault list shows "Instagram disconnected — N links waiting" when expired, and it opens Settings', async () => {
+  it('the vault list shows "Instagram disconnected — N links waiting" when expired, and it opens Secrets & keys', async () => {
     fakeApi({ routes: { 'GET /api/ingest/instagram': { state: 'expired', account: 'tillg', waitingLinks: 2 } } });
-    renderApp(<Admin />);
+    history.replaceState(null, '', '#admin/vaults');
+    renderApp(<Shell />);
     const notice = await screen.findByTestId('ig-notice');
     expect(notice.textContent).toMatch(/Instagram disconnected — 2 links waiting/);
     fireEvent.click(screen.getByTestId('ig-notice-open'));
-    expect(await screen.findByTestId('settings-dialog')).toBeTruthy();
+    expect(await screen.findByTestId('admin-section-secrets')).toBeTruthy();
   });
 });

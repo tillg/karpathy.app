@@ -428,7 +428,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
               <p>{s.usable ? 'Pick a note from the file tree.' : s.active ? `Vault is ${s.active.state}…` : 'Add a vault to get started.'}</p>
             )}
             {(!s.active || s.active.state === 'clone-failed') && (
-              <button className="btn" data-testid="manage-vaults-cta" onClick={() => s.setAdminOpen('vaults', s.active?.id)}>{s.active ? 'Edit vault' : 'Manage vaults'}</button>
+              <button className="btn" data-testid="manage-vaults-cta" onClick={() => void s.openAdmin('vaults', s.active?.id)}>{s.active ? 'Edit vault' : 'Manage vaults'}</button>
             )}
           </div>
         )}

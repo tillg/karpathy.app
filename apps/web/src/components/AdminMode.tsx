@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { api } from '../lib/api';
 import { brandName } from '../lib/brand';
 import { ADMIN_SECTIONS, formatAdminRoute, type AdminSection } from '../lib/route';
 import { useApp } from '../store';
+import { AiSection, GeneralSection, SecretsSection, VaultsSection } from './Admin';
 import { Icon } from './Icon';
 
 const SECTIONS: Record<AdminSection, { label: string; short?: string; icon: string; sub: string }> = {
@@ -15,9 +17,17 @@ const SECTIONS: Record<AdminSection, { label: string; short?: string; icon: stri
 
 /** Admin mode (#150): replaces the user-mode panes. Rail on wide screens and tablets, section list → section on the phone. */
 export function AdminMode() {
-  const { admin, phone, wide, setAdminSection, adminUp, closeAdmin } = useApp();
+  const { admin, phone, wide, setAdminSection, adminUp, closeAdmin, settings, vaults } = useApp();
+  const [version, setVersion] = useState<string | null>(null);
   const section: AdminSection = admin || 'general';
   const list = phone && admin === '';
+  useEffect(() => { if (list) api.health().then((h) => setVersion(h.version), () => {}); }, [list]);
+  /** Phone list summaries: real data where it is at hand, else the static text. */
+  const sub = (s: AdminSection) =>
+    s === 'general' && version ? `version ${version}`
+    : s === 'vaults' && vaults ? `${vaults.length} vault${vaults.length === 1 ? '' : 's'}`
+    : s === 'ai' && settings ? `${settings.model.split('/').pop()} · web ${settings.webAccess ? 'on' : 'off'}`
+    : SECTIONS[s].sub;
 
   // Wide and tablet: Escape leaves admin mode, like Done (a modal on top takes Escape first).
   useEffect(() => {
@@ -60,7 +70,7 @@ export function AdminMode() {
               <div className="admin-list">
                 {ADMIN_SECTIONS.map((s) => (
                   <a key={s} href={formatAdminRoute(s)} data-testid={`admin-row-${s}`} onClick={go(s)}>
-                    <Icon n={SECTIONS[s].icon} /><span className="tx"><b>{SECTIONS[s].label}</b><small>{SECTIONS[s].sub}</small></span><Icon n="chevron_right" size={16} />
+                    <Icon n={SECTIONS[s].icon} /><span className="tx"><b>{SECTIONS[s].label}</b><small>{sub(s)}</small></span><Icon n="chevron_right" size={16} />
                   </a>
                 ))}
               </div>
@@ -69,6 +79,10 @@ export function AdminMode() {
           ) : (
             <div className="admin-inner" data-testid={`admin-section-${section}`}>
               {phone && <h1 className="lt">{SECTIONS[section].label}</h1>}
+              {section === 'general' && <GeneralSection />}
+              {section === 'vaults' && <VaultsSection />}
+              {section === 'secrets' && <SecretsSection />}
+              {section === 'ai' && <AiSection />}
             </div>
           )}
         </main>
