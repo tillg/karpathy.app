@@ -271,6 +271,30 @@ The model in the settings is the default; one set in the app (admin mode › AI)
 **Prod** (the Hetzner server `app.karpathy.app`, reachable only over Tailscale) is never built or
 configured by hand: releases go there with `just deploy hetzner`, see [Deploying](#deploying).
 
+## Codespaces
+
+A GitHub Codespace is a second dev host next to the Mac: the repo in a cloud VM, with the dev container from
+`.devcontainer/` (Node 22, Docker-in-Docker, `just`, ripgrep, Playwright's Chromium, the Claude Code CLI). `just dev
+up`, `just check`, `just e2e` and `claude` work there as on the Mac. What stays Mac-only: omlx and `just ollama`, the
+`local` / `hetzner` deploy (Lima, Ansible), and the Keychain.
+
+1. **Secrets, once** (GitHub → Settings → Codespaces → Secrets, scoped to this repo): `OPENROUTER_API_KEY` (required:
+   a codespace has no omlx, so its dev stacks use the hosted gateway), optionally `EXA_API_KEY`, `NTFY_DEV_TOPIC` and
+   `ANTHROPIC_API_KEY`. On create, `.devcontainer/seed.sh` copies them into `deploy/secrets/` and `tmp/`, and writes
+   `deploy/settings/dev.local.yaml` (gateway `openrouter`). It never overwrites an existing file.
+2. **Create**: `gh codespace create -R tillg/karpathy.app -b <branch> -m standardLinux32gb` (4 cores, 16 GB), or Code →
+   Codespaces on GitHub. Authorize the extra repo access it asks for (`ingest_email` read, `karpathy_demo_wiki` write).
+   The first create takes a few minutes.
+3. **Connect**: `gh codespace code` (VS Code desktop) or `gh codespace ssh` (terminal). Run `claude` and log in once
+   (or use the `ANTHROPIC_API_KEY` secret). The project plugins install in the first session, as on the Mac. Personal
+   `~/.claude/` config comes from your dotfiles repo (GitHub → Settings → Codespaces → Dotfiles).
+4. **Run**: `just dev up`, then open https://localhost:8010 on the Mac. VS Code desktop forwards the port; from a
+   terminal, use `gh codespace ports forward 8010:8010`. The `*.app.github.dev` URL doesn't work: the dev proxy
+   answers only for `localhost`.
+
+A codespace bills per core-hour while running and stops after 30 idle minutes. `gh codespace stop` stops it sooner,
+and `gh codespace delete` removes it.
+
 ## Tests
 
 ```sh

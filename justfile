@@ -24,6 +24,7 @@ check:
     npm test
     just settings check
     bash deploy/stack.test.sh
+    bash .devcontainer/seed.test.sh
     bash deploy/ingest/run.test.sh
     bash deploy/ingest/compose.test.sh
     bash deploy/ingest/server.test.sh

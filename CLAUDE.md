@@ -111,6 +111,10 @@ header `karpathy #N`).
   `docker compose` (no hand-written port overrides in `tmp/`).
 - `just e2e` and `just prodtest` target this checkout's stack automatically. Run `just dev down` when done.
 
+A GitHub Codespace (`.devcontainer/`, README › Codespaces) is another dev host with its own stacks. It has no omlx
+(its `dev.local.yaml` selects the hosted gateway), no Keychain (secrets come from Codespaces secrets), and no Lima.
+`$CODESPACES` is set there.
+
 ## Progress messages (ntfy)
 
 When the user asks to be informed via ntfy ("send me a ntfy", "notify me after each step"), post to the
