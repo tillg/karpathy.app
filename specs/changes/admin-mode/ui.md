@@ -1,7 +1,7 @@
 ---
 feature: admin-mode
 title: "UI: admin mode draft"
-status: applying
+status: applied
 order: 5
 created: 2026-10-15
 edited: 2026-10-15

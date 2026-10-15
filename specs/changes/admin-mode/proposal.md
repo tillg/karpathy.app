@@ -1,7 +1,7 @@
 ---
 feature: admin-mode
 title: "Proposal: admin mode"
-status: applying
+status: applied
 order: 1
 created: 2026-10-15
 edited: 2026-10-15

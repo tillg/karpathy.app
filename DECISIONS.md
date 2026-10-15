@@ -2365,6 +2365,13 @@ edited: 2026-10-15
   that test; the full `just e2e` was stopped after 164 tests (2 failed, both `@llm` desktop specs:
   `ai-suggest-next`, `fix-106`). Open: finish the full `just e2e` and the baseline check of the `@llm` failures, tick
   steps 15 and 16, the review, archive, retro.
+  Resumed 19:09 on `feat/150-admin-mode`. The full `just e2e` at load 40–130 (another checkout's backend tests, a
+  Rancher port-forwarder crash at 19:35 and its restart): 499 passed, 46 failed; re-run alone at load 7: every
+  non-`@llm` failure passed (`fix-14` 3 of 3), 7 `@llm` runs still fail (`fix-124` = #142, `fix-13`, `fix-106`,
+  `ai-image`, `ai-open-note`: the dev model, none touches admin mode; not compared with the pre-change commit).
+  After merging the review fixes: lint, typecheck, settings/shared/web green, backend 509/510 (`chat.test.ts` › "turn
+  sets web tools from settings" timed out, passes alone), 16 admin-related e2e files on six projects 124/125
+  (`a11y.spec.ts:36` desktop, passes alone in 43 s). Steps 15 and 16 ticked.
 
 ## 12:58 — Baseline: two backend timing tests fail only under load; gate merges on lint, typecheck and the touched workspaces {#run-2026-10-15-1244-3}
 

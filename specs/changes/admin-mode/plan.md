@@ -1,7 +1,7 @@
 ---
 feature: admin-mode
 title: "Plan: admin mode"
-status: applying
+status: applied
 order: 4
 created: 2026-10-15
 edited: 2026-10-15
@@ -98,11 +98,11 @@ flowchart LR
 
 ## End to end and docs
 
-- [ ] E2E per section on desktop and iPhone, with a screenshot check
+- [x] E2E per section on desktop and iPhone, with a screenshot check
   - Depends on: 4, 7, 11, 14
   - Test first: `e2e/admin-mode.spec.ts` › "every section opens from the rail (desktop) and from the list (iphone) and shows its heading", › "AI: the model field, Use default and Web access behave as in the old Settings dialog", › "Secrets: the dev stack's secrets show Set", › "Server: CPU sparkline appears after the first sample", › "Usage: after one chat turn today's bar is non-zero". Fails today: no admin mode on the stack.
   - Verify: `just check` → all green; `just e2e` → all green; Playwright screenshots of every section at 1× on desktop and iphone saved to `tmp/admin-mode/`, read and compared with the draft in `ui.md`, including the last rows of the usage tables and the bottom of the section list
-- [ ] README feature list and the demo run book chapter "Admin mode"
+- [x] README feature list and the demo run book chapter "Admin mode"
   - Depends on: 15
   - Test first: none — docs only
   - Verify: `grep -n "Admin mode" README.md` matches; `grep -n "Admin mode" ~/git/karpathy_demo_wiki/"Karpathy Demo.md"` matches, with a *Try it* step and a bumped `updated` (pushed only after the release)
