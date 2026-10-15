@@ -166,6 +166,8 @@ export interface UsageRow {
   cacheRead: number;
   cacheWrite: number;
   cost: number;
+  /** The message is finished (`time.completed`); false while its turn runs. */
+  completed: boolean;
 }
 
 /** A session's messages (`{ info, parts }`) → one row per assistant message that carries tokens; metadata only, never text. */
@@ -185,8 +187,14 @@ export function usageRows(list: unknown[]): UsageRow[] {
       cacheRead: n(cache.read),
       cacheWrite: n(cache.write),
       cost: n(info.cost),
+      completed: typeof obj(info.time).completed === 'number',
     }];
   });
+}
+
+/** opencode's session list → every session of `dir` (children included) for the usage report. */
+export function usageSessions(list: { id: string; directory: string; time: { updated: number } }[], dir: string): { id: string; updatedAt: number }[] {
+  return list.filter((s) => s.directory === dir).map((s) => ({ id: s.id, updatedAt: s.time.updated }));
 }
 
 /** One opencode bus event → zero or one harness event. `root` = the vault root as opencode sees it. */

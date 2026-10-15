@@ -337,6 +337,11 @@ export * from './wikilink.js';
 export * from './relink.js';
 
 /** One reading of the server (admin mode, Server section); taken every 30 s by the backend. */
+/** The ranges `GET /metrics` serves. */
+export type MetricsRange = '1h' | '24h' | '7d';
+/** The windows `GET /usage` serves. */
+export type UsageDays = 7 | 30;
+
 export interface MetricsSample {
   /** Epoch ms. */
   at: number;
