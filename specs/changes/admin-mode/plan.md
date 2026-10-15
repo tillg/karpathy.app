@@ -65,7 +65,7 @@ flowchart LR
   - Depends on: none
   - Test first: `apps/backend/test/harness-map.test.ts` › "usageRows: assistant messages give created, model id, input/output/reasoning/cache read/write and cost; user messages and messages without tokens are skipped". Fails today: no `usageRows`.
   - Verify: `npm test -w apps/backend -- harness-map` → green; `npm test -w apps/backend` → all green
-- [ ] `UsageService` sums usage by day, model and vault; `GET /api/usage?days=7|30`
+- [x] `UsageService` sums usage by day, model and vault; `GET /api/usage?days=7|30`
   - Depends on: 8
   - Test first: `apps/backend/test/usage.test.ts` › "sums by day in the process timezone (`TZ`, rendered from the `timezone` setting), by model and by vault", › "re-reads only sessions whose time.updated changed", › "costKnown is false when every cost is 0", and `api.test.ts` › "GET /usage?days=5 is 400". Fails today: no module, no route.
   - Verify: `npm test -w apps/backend -- usage api` → green; `npm test -w apps/backend` → all green
