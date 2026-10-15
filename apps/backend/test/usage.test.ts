@@ -8,14 +8,17 @@ afterEach(() => {
   else process.env.TZ = tz;
 });
 
-const row = (created: number, model: string, input: number, cost = 0): UsageRow => ({ created, model, input, output: input * 2, reasoning: 1, cacheRead: 10, cacheWrite: 5, cost });
+const row = (created: number, model: string, input: number, cost = 0): UsageRow => ({ created, model, input, output: input * 2, reasoning: 1, cacheRead: 10, cacheWrite: 5, cost, completed: true });
 
 /** In-memory sessions per vault dir; counts the usage reads. */
 function source(data: Record<string, Record<string, { updatedAt: number; rows: UsageRow[] }>>) {
   const reads: string[] = [];
   const src: UsageSource = {
     vaults: () => Object.keys(data).map((id) => ({ id, name: id.toUpperCase(), dir: `/v/${id}` })),
-    sessions: async (dir) => Object.entries(data[dir.slice(3)]!).map(([id, s]) => ({ id, updatedAt: s.updatedAt })),
+    sessions: async (dir) => {
+      if (!data[dir.slice(3)]) throw new Error('boom');
+      return Object.entries(data[dir.slice(3)]!).map(([id, s]) => ({ id, updatedAt: s.updatedAt }));
+    },
     usage: async (dir, id) => (reads.push(id), data[dir.slice(3)]![id]!.rows),
   };
   return { src, reads, data };
@@ -79,5 +82,30 @@ describe('UsageService', () => {
     const now = Date.parse('2026-03-31T10:00:00Z');
     const { src } = source({ a: { s: { updatedAt: 1, rows: [row(now, 'p/m', 1)] } } });
     expect((await new UsageService(src, () => now).report(7)).costKnown).toBe(false);
+  });
+
+  it('a vault whose session list throws contributes nothing; the others are still reported', async () => {
+    process.env.TZ = 'UTC';
+    const now = Date.parse('2026-03-31T10:00:00Z');
+    const { src, data } = source({ a: { s: { updatedAt: 1, rows: [row(now, 'p/m', 1)] } }, b: {} });
+    delete data.b; // vaults() still lists b (Object.keys is evaluated lazily), its sessions() throws
+    const vaults = src.vaults;
+    src.vaults = () => [...vaults(), { id: 'b', name: 'B', dir: '/v/b' }];
+    const r = await new UsageService(src, () => now).report(7);
+    expect(r.total.input).toBe(1);
+    expect(r.byVault.map((v) => [v.vault, v.chats])).toEqual([['a', 1], ['b', 0]]);
+  });
+
+  it('a session read mid-turn is re-read on the next report even if updatedAt didn\'t change', async () => {
+    process.env.TZ = 'UTC';
+    const now = Date.parse('2026-03-31T10:00:00Z');
+    const { src, reads, data } = source({ a: { s: { updatedAt: 1, rows: [{ ...row(now, 'p/m', 0), completed: false }] } } });
+    const svc = new UsageService(src, () => now);
+    expect((await svc.report(7)).total.input).toBe(0);
+    data.a!.s = { updatedAt: 1, rows: [row(now, 'p/m', 5)] };
+    expect((await svc.report(7)).total.input).toBe(5);
+    expect(reads).toEqual(['s', 's']);
+    await svc.report(7); // completed now: cached
+    expect(reads).toHaveLength(2);
   });
 });

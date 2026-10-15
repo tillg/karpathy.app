@@ -319,6 +319,14 @@ describe('vault admin', () => {
     expect((await none.api.get('/settings/secrets')).body).toEqual({ secrets: [] });
   });
 
+  it('GET /settings/secrets: github_token is set when the token was set in the app, though the render said not set', async () => {
+    const secrets = [{ name: 'github_token', component: 'backend', purpose: 'GitHub token', optional: true, set: false }];
+    const { api } = await makeApp('file:///nowhere/', { deps: { secrets } });
+    expect((await api.get('/settings/secrets')).body.secrets[0].set).toBe(false);
+    await api.put('/settings/github-token', { token: 'github_pat_abcdefghijklmnopqrstuvwxyz9876' });
+    expect((await api.get('/settings/secrets')).body.secrets[0]).toMatchObject({ set: true, source: 'app', last4: '9876' });
+  });
+
   it('GET /usage?days=5 is 400', async () => {
     const t = await makeApp('file:///nowhere/', { deps: { usage: { report: async () => { throw new Error('unreachable'); } } } });
     const r = await t.api.get('/usage?days=5');

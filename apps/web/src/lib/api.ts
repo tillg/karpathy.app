@@ -1,6 +1,6 @@
 import type {
-  ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData, MetricsReport,
-  OpenPage, SearchHit, SecretStatus, Settings, SettingsView, TokenTest, UploadResult, UsageReport, Vault, VaultConfig, VaultStatus,
+  ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData, MetricsRange, MetricsReport,
+  OpenPage, SearchHit, SecretStatus, Settings, SettingsView, TokenTest, UploadResult, UsageDays, UsageReport, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
 import { parseLoginCode } from './login-code';
@@ -64,8 +64,8 @@ export const api = {
   health: () => json<{ backend: string; opencode: string; version: string; built: string | null; deployed: string | null }>('GET', '/health'),
   settings: () => json<SettingsView>('GET', '/settings'),
   secrets: () => json<{ secrets: SecretStatus[] }>('GET', '/settings/secrets'),
-  metrics: (range: '1h' | '24h' | '7d') => json<MetricsReport>('GET', `/metrics?range=${range}`),
-  usage: (days: 7 | 30) => json<UsageReport>('GET', `/usage?days=${days}`),
+  metrics: (range: MetricsRange) => json<MetricsReport>('GET', `/metrics?range=${range}`),
+  usage: (days: UsageDays) => json<UsageReport>('GET', `/usage?days=${days}`),
   patchSettings: (s: Partial<Settings>) => json<SettingsView>('PATCH', '/settings', s),
   putGithubToken: (token: string) => json<void>('PUT', '/settings/github-token', { token }),
   removeGithubToken: () => json<void>('DELETE', '/settings/github-token'),
