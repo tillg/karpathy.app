@@ -303,6 +303,22 @@ describe('vault admin', () => {
     expect((await none.api.get('/settings')).body.githubToken).toEqual({ source: 'none', last4: null });
   });
 
+  it('GET /settings/secrets returns the manifest; github_token carries source and last4 from GitHubToken', async () => {
+    const secrets = [
+      { name: 'github_token', component: 'backend', purpose: 'GitHub token', optional: true, set: true },
+      { name: 'exa_api_key', component: 'opencode', purpose: 'Web search (Exa)', optional: true, set: false },
+    ];
+    const { api } = await makeApp('file:///nowhere/', { githubSecret: 'ghp_secretsecretsecretsecret1111', deps: { secrets } });
+    const r = await api.get('/settings/secrets');
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ secrets: [{ ...secrets[0], source: 'deployment', last4: '1111' }, secrets[1]] });
+    expect(r.text).not.toContain('ghp_secretsecret');
+    await api.put('/settings/github-token', { token: 'github_pat_abcdefghijklmnopqrstuvwxyz9876' });
+    expect((await api.get('/settings/secrets')).body.secrets[0]).toMatchObject({ source: 'app', last4: '9876' });
+    const none = await makeApp('file:///nowhere/');
+    expect((await none.api.get('/settings/secrets')).body).toEqual({ secrets: [] });
+  });
+
   it('a token sent to the test route is masked in later messages, though never saved', async () => {
     const t = await makeApp('file:///nowhere/');
     const typed = 'ghp_typedtypedtypedtypedtyped1234';

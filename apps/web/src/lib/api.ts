@@ -1,6 +1,6 @@
 import type {
   ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData,
-  OpenPage, SearchHit, Settings, SettingsView, TokenTest, UploadResult, Vault, VaultConfig, VaultStatus,
+  OpenPage, SearchHit, SecretStatus, Settings, SettingsView, TokenTest, UploadResult, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
 import { parseLoginCode } from './login-code';
@@ -63,6 +63,7 @@ const q = (path: string) => `path=${encodeURIComponent(path)}`;
 export const api = {
   health: () => json<{ backend: string; opencode: string; version: string; built: string | null; deployed: string | null }>('GET', '/health'),
   settings: () => json<SettingsView>('GET', '/settings'),
+  secrets: () => json<{ secrets: SecretStatus[] }>('GET', '/settings/secrets'),
   patchSettings: (s: Partial<Settings>) => json<SettingsView>('PATCH', '/settings', s),
   putGithubToken: (token: string) => json<void>('PUT', '/settings/github-token', { token }),
   removeGithubToken: () => json<void>('DELETE', '/settings/github-token'),

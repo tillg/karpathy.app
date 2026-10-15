@@ -43,6 +43,21 @@ export interface SettingsView extends Settings {
   modelInput: ModelInput | null;
 }
 
+/** One entry of `GET /settings/secrets`: a secret the deployment references, never its value. */
+export interface SecretStatus {
+  name: string;
+  /** The component that reads it (backend, opencode, ...). */
+  component: string;
+  purpose: string;
+  optional: boolean;
+  /** Non-empty as of the last settings render. */
+  set: boolean;
+  /** `github_token` only: where the token in use comes from (absent when none). */
+  source?: 'app' | 'deployment';
+  /** `github_token` only: the last 4 characters of the token in use. */
+  last4?: string;
+}
+
 /** `POST /settings/github-token/test`. */
 export interface TokenTest {
   /** GitHub accepted the token (`GET /user`). */

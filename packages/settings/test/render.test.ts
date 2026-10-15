@@ -18,9 +18,6 @@ const SECRETS = {
   git_author_email: 'jane@example.com',
 };
 
-// The strict backend schema accepts the `secrets` manifest only from step 6 on.
-const withoutSecrets = ({ secrets: _secrets, ...rest }: Record<string, unknown>) => rest;
-
 describe('renderOpencodeProviders', () => {
   it("reproduces today's provider configs", () => {
     expect(renderOpencodeProviders(loadSettings('test', { overlay: false }))).toEqual({ provider: JSON.parse(fixture('dev-ollama.json')).provider });
@@ -127,7 +124,7 @@ describe('renderBackendSettings', () => {
     expect(s.commit_reminder_threshold).toBe(4);
     expect(s.files).toEqual({ visible_dot_dirs: ['.agents'] });
     for (const e of ['dev', 'prodtest', 'test', 'local', 'hetzner'])
-      expect(() => backendSettingsSchema.parse(withoutSecrets(JSON.parse(renderBackendSettings(loadSettings(e, { overlay: false }), SECRETS)))), e).not.toThrow();
+      expect(() => backendSettingsSchema.parse(JSON.parse(renderBackendSettings(loadSettings(e, { overlay: false }), SECRETS))), e).not.toThrow();
     for (const name of ['bearer_token', 'opencode_password', 'github_token', 'dns_api_token', 'openrouter_api_key'])
       expect(json).not.toContain(SECRETS[name as keyof typeof SECRETS]);
   });

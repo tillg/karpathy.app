@@ -20,6 +20,10 @@ export const backendSettingsSchema = z.strictObject({
   files: z.strictObject({
     visible_dot_dirs: z.array(z.string().regex(/^\.[^/]+$/, 'a dot-dir name starts with "."').refine((d) => d !== '.git', '.git is never shown')),
   }),
+  /** The secret manifest (names and booleans only), as of the render; absent in an older settings.json. */
+  secrets: z
+    .array(z.strictObject({ name: z.string(), component: z.string(), purpose: z.string(), optional: z.boolean(), set: z.boolean() }))
+    .default([]),
 });
 
 export interface BackendSettings {
@@ -32,6 +36,7 @@ export interface BackendSettings {
   webAccess: boolean;
   commitReminderThreshold: number;
   visibleDotDirs: string[];
+  secrets: z.infer<typeof backendSettingsSchema>['secrets'];
 }
 
 const secret = (f: { file: string } | undefined) => (f ? readFileSync(f.file, 'utf8').trim() || undefined : undefined);
@@ -55,5 +60,6 @@ export function loadBackendSettings(path: string): BackendSettings {
     webAccess: s.ai.web_access,
     commitReminderThreshold: s.commit_reminder_threshold,
     visibleDotDirs: s.files.visible_dot_dirs,
+    secrets: s.secrets,
   };
 }

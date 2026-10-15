@@ -33,7 +33,16 @@ describe('loadBackendSettings', () => {
       webAccess: true,
       commitReminderThreshold: 4,
       visibleDotDirs: ['.agents'],
+      secrets: [],
     });
+  });
+
+  it('settings.json without `secrets` loads as [], one with the manifest passes it on', async () => {
+    expect(loadBackendSettings(await rendered()).secrets).toEqual([]);
+    const entry = { name: 'exa_api_key', component: 'opencode', purpose: 'Web search (Exa)', optional: true, set: false };
+    expect(loadBackendSettings(await rendered((s) => (s.secrets = [entry]))).secrets).toEqual([entry]);
+    const bad = await rendered((s) => (s.secrets = [{ ...entry, value: 'x' }]));
+    expect(() => loadBackendSettings(bad)).toThrow(/secrets/);
   });
 
   it('a missing or invalid file names the path', async () => {
