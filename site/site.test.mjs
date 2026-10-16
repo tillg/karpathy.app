@@ -67,6 +67,22 @@ test("site tokens equal the app's (light and dark)", () => {
   }
 });
 
+const section = (html, id) => html.match(new RegExp(`<section id="${id}"[\\s\\S]*?</section>`))?.[0] ?? '';
+
+test("names the idea's origin: Karpathy's tweet and gist", () => {
+  const origin = section(page(), 'origin');
+  assert.ok(origin, 'no #origin section');
+  assert.match(origin, /<blockquote cite="https:\/\/x\.com\/karpathy\/status\/2039805659525644595"/);
+  assert.match(origin, /href="https:\/\/x\.com\/karpathy\/status\/2039805659525644595"/);
+  assert.match(origin, /href="https:\/\/gist\.github\.com\/karpathy\/442a6bf555914893e9891c11519de94f"/);
+  assert.match(origin, /<time datetime="2026-04-02"/);
+});
+
+test('the hero links to the origin', () => {
+  const hero = page().match(/<section class="hero"[\s\S]*?<\/section>/)?.[0] ?? '';
+  assert.match(hero, /href="#origin"/);
+});
+
 test('explains self-hosting and offers hosting by mail', () => {
   const html = page();
   const section = html.match(/<section id="self-host"[\s\S]*?<\/section>/)?.[0] ?? '';

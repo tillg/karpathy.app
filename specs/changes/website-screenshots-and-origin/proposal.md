@@ -1,7 +1,7 @@
 ---
 feature: website-screenshots-and-origin
 title: "Proposal: website screenshots and the idea's origin"
-status: proposed
+status: applying
 order: 1
 created: 2026-10-16
 edited: 2026-10-16
