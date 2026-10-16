@@ -47,7 +47,8 @@ flowchart LR
 
 In scope:
 
-- A `#screenshots` section after the feature cards, a `#origin` section after "How it works".
+- A `#screenshots` section after the feature cards, a `#origin` section after "How it works", and a one-line
+  link to `#origin` in the hero.
 - The screenshot files in `site/screenshots/`, compressed (WebP), with fixed `width`/`height` and lazy loading.
 - `site/capture.mjs`: a script that takes the three shots from a running stack, so they can be retaken after the
   UI changes.

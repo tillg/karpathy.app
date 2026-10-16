@@ -18,6 +18,10 @@ Every step runs `node site/site.test.mjs` (the site suite, also part of `npm tes
     `#origin` section links the tweet and the gist URLs, has a `<blockquote cite=…>` and
     `<time datetime="2026-04-02">` — fails today: no `#origin` section
   - Verify: `node site/site.test.mjs` → all pass
+- [ ] The hero points to the origin: "Built on Andrej Karpathy's LLM Wiki idea" linking `#origin`
+  - Test first: `site.test.mjs` › "the hero links to the origin" — asserts the `.hero` section has
+    `href="#origin"` — fails today: no such link
+  - Verify: `node site/site.test.mjs` → all pass
 
 ## Screenshots (#156)
 

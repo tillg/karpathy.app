@@ -175,6 +175,7 @@ edited: 2026-10-16
   - [10:20 — Screenshots from a local prodtest stack with the demo vault, not from prod](#run-2026-10-16-1016-2)
   - [10:20 — The tweet as a static quote card linking to x.com, no Twitter widget script](#run-2026-10-16-1016-3)
   - [10:20 — "Give a version and deploy it" = release the app as v0.0.29 and deploy it to hetzner; the site deploys via Pages](#run-2026-10-16-1016-4)
+  - [10:35 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote](#run-2026-10-16-1016-5)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2587,3 +2588,19 @@ edited: 2026-10-16
 - **Alternatives:** only the Pages deploy (the site has no version); a website version (no mechanism for one).
 - **Consequences:** rollback of the app: `just deploy hetzner 0.0.28`. Rollback of the site: revert the merge on
   `main`. If the deploy needs credentials the classifier blocks, it is left for the user.
+
+## 10:35 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote {#run-2026-10-16-1016-5}
+
+- **Status:** open
+- **Overrides:** `/spec:grill` — the interview needs a user ("If running unattended, say that grilling needs a user, and stop")
+- **Context:** `website-screenshots-and-origin`, `/spec:grill`; the user is away and asked to be grilled anyway.
+- **Question:** the open branches of the design tree: how visible is the origin; which engine and content for the
+  shots; quote or paraphrase; deep links or clicks for the capture script.
+- **Decision:** (1) the hero gets a line "Built on Andrej Karpathy's LLM Wiki idea" linking `#origin` (new plan
+  step 2); (2) WebKit for Mac, iPad and iPhone; (3) the shots show the coffee topic (`aeropress` and a chat whose
+  answer reads wiki pages, file chips visible); (4) the tweet's title line and first sentence verbatim; (5) the
+  script clicks through the UI, the app has no URL routing.
+- **Why:** #132 asks for a *visible* origin; Safari is the browser on all three devices; coffee pages have pictures
+  and short answers; a paraphrase would put words in his mouth.
+- **Alternatives:** origin section only; Chromium for the Mac; topology or mountains content.
+- **Consequences:** recorded in the change's `architecture.md` › Key decisions and `plan.md`.
