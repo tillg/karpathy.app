@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-15
+edited: 2026-10-16
 ---
 
 # Functional: karpathy.app
@@ -19,8 +19,10 @@ skills that need shell or credentials are not. Fetching mail and links moved out
 **ingest service**, so a vault's `/ingest` only turns what waits in `Input/` into wiki pages ([Ingest](#ingest)).
 
 Next to the app there is a public **website** at https://karpathy.app: one static start page that says what the
-app is, that the project ships code and not a running service (self-hosting needs a server, Tailscale and a set of
-secrets and keys), and how to ask for a hosted version (mail to the maintainer). It has no login and holds no user
+app is, shows it on a Mac, an iPad and an iPhone (**website screenshots** of the demo vault), names where the idea
+comes from (Andrej Karpathy's post "LLM Knowledge Bases" and his gist "LLM Wiki", linked from the hero), that the
+project ships code and not a running service (self-hosting needs a server, Tailscale and a set of secrets and
+keys), and how to ask for a hosted version (mail to the maintainer). It has no login and holds no user
 data ([deployment.md › Website](deployment.md#website)).
 
 Deliberately not built: an Obsidian clone (no plugins or canvas; the graph is a view, not an editor), multiple users or real-time

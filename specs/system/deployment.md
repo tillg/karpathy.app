@@ -1,7 +1,7 @@
 ---
 title: "Deployment: releases, targets and operations"
 created: 2026-10-02
-edited: 2026-10-15
+edited: 2026-10-16
 ---
 
 # Deployment: releases, targets and operations
@@ -377,11 +377,18 @@ flowchart LR
 ```
 
 - **Source:** `site/` (plain HTML + CSS, its own npm workspace `@karpathy/site`). `site/build.sh` assembles
-  `_site/` (gitignored) from the page files and `assets/icons/`. Preview: `just site` (http://localhost:8099).
+  `_site/` (gitignored) from the page files, `site/screenshots/` and `assets/icons/`. Preview: `just site`
+  (http://localhost:8099).
 - **Check:** `site/site.test.mjs` (node:test, part of `npm test`, so `ci.yml` covers it) builds `_site/` and
   checks the title, lang, viewport and repo link, that every local `href`/`src` resolves, that no path is
-  root-absolute, the self-hosting section with the hosting contact, and that the `:root` token blocks in
+  root-absolute, the self-hosting section with the hosting contact, the origin section (post and gist links,
+  dates) and the hero's link to it, the three screenshots (exactly `mac`, `ipad`, `iphone.webp`; `alt`, lazy,
+  `width`/`height` equal to the WebP's real size, ≤ 400 KB each), and that the `:root` token blocks in
   `site/style.css` equal the app's in `apps/web/src/styles.css` (light and dark).
+- **Screenshots:** `node site/capture.mjs [--ask "<question>"]` against this checkout's `just prodtest` with the
+  demo vault (a bare clone at `tmp/dev/remotes/tillg/karpathy_demo_wiki.git`, vault id `demo-wiki`): WebKit, one
+  context per device class, `cwebp -noalpha -q 82`. `--ask` writes a chat to the prodtest vault; the local model's
+  answers vary, so every shot is viewed before it is committed.
 - **Website deploy:** `.github/workflows/pages.yml` on pushes to `main` that touch the site, the icons or the app's
   stylesheet, and on manual dispatch. Release tags don't deploy it.
 - **Pages settings:** source "GitHub Actions" (`build_type=workflow`), custom domain `karpathy.app` set in the

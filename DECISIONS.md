@@ -178,6 +178,7 @@ edited: 2026-10-16
   - [10:22 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote](#run-2026-10-16-1016-5)
   - [10:24 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive](#run-2026-10-16-1016-6)
   - [10:49 — Review triage: fix all findings, including the app's chat-header bug #160 seen in the shots](#run-2026-10-16-1016-7)
+  - [11:28 — Archive `website-screenshots-and-origin` with its decisions open](#run-2026-10-16-1016-8)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2624,6 +2625,10 @@ edited: 2026-10-16
 - **Alternatives:** full suite per step (same verdict, roughly 5× the time).
 - **Consequences:** a step commit could in theory break another workspace unnoticed until the closing full run; the
   closing run catches it before anything reaches `main`.
+  Closing runs (11:05–11:30, during a prodtest rebuild and with other dev stacks up): lint and typecheck green, site
+  and web green; the backend suite failed 2–3 different tests per run (`api.test.ts`, `chat.test.ts`: git/pull and
+  opencode timing), all six of which pass when re-run alone. `apps/backend` has no change in this run, so they are
+  the load flakes of decision run-2026-10-15-1244-3, not regressions.
 
 ## 10:49 — Review triage: fix all findings, including the app's chat-header bug #160 seen in the shots {#run-2026-10-16-1016-7}
 
@@ -2644,3 +2649,16 @@ edited: 2026-10-16
 - **Alternatives:** leave #160 open and crop the header (hides the model chip and back link); keep the shots as they
   are.
 - **Consequences:** the release v0.0.29 now carries one app change (#160). `Closes #160` lands with the merge to `main`.
+
+## 11:28 — Archive `website-screenshots-and-origin` with its decisions open {#run-2026-10-16-1016-8}
+
+- **Status:** open
+- **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`
+- **Context:** `website-screenshots-and-origin` is applied and reviewed; its decisions 1–7 of this run are `open`
+  because nobody can review them during the run.
+- **Question:** archive now, or leave the change open until the user reviews the decisions?
+- **Decision:** archive; the decisions stay `open` and are listed in the archive commit's body.
+- **Why:** the task asks for the archive before the merge, release and deploy; `/autonomous` allows archiving past the
+  gate and lists the decisions for review.
+- **Alternatives:** leave the change in `specs/changes/` (blocks the task's merge/release order).
+- **Consequences:** a decision the user reverts later is undone with `/spec:tweak`.
