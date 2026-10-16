@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { snippet } from './snippet';
 
 describe('snippet (#54)', () => {
-  const line = 'related: [ollama, vannevar-bush, zettelkasten, mémoire-de-travail, other, more, and, more, words]';
+  const line = 'related: [jarvis, vannevar-bush, zettelkasten, mémoire-de-travail, other, more, and, more, words]';
 
   it('centers the match in the budget', () => {
     const s = snippet(line, 'mémoire', 31)!;

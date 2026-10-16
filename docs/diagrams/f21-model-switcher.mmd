@@ -7,7 +7,7 @@ sequenceDiagram
   B->>O: GET /config/providers
   O-->>B: providers and their models
   B-->>W: only providers with server-side keys
-  U->>W: pick ollama/qwen3 and agent librarian
+  U->>W: pick openrouter/qwen3 and agent librarian
   W->>W: remember choice for this chatId
   U->>W: send lint the entities folder
   W->>B: POST /vaults/:id/chats/:chatId/prompt with model and agent

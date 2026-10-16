@@ -1,3 +1,2 @@
-# Prod images on the Mac (`just prodtest`): like dev, with the prod author defaults.
-ai: { gateway: omlx, model: omlx/Qwen3-Coder-30B-A3B-Instruct-4bit, vision_model: omlx/Qwen3-VL-4B-Instruct-4bit }
+# Prod images on the Mac (`just prodtest`): like dev (OpenRouter), with the prod author defaults.
 git: { remote_base: file:///remotes/ }

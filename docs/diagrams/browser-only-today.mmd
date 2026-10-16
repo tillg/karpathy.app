@@ -9,7 +9,7 @@ flowchart LR
     V[("/vaults/&lt;id&gt;<br/>git clones")]
   end
   GH[("GitHub<br/>vault repos")]
-  LLM["LLM provider<br/>Anthropic · OpenAI · Ollama …"]
+  LLM["LLM provider<br/>Anthropic · OpenAI · OpenRouter …"]
   UI -- "HTTPS + bearer<br/>REST / NDJSON" --> P --> B
   B -- "SDK (ACP-shaped)" --> OC
   B -- "git / ripgrep" --> V

@@ -22,8 +22,6 @@ const gateway = z.strictObject({
   kind: z.enum([...BUILT_IN_KINDS, 'openai-compatible']),
   name: z.string().optional(),
   base_url: z.string().optional(),
-  /** Where the Ollama relay finds the model server (host:port), for the `ollama` gateway. */
-  relay_upstream: z.string().optional(),
   api_key: secretRef.optional(),
   /** Per model: opencode's model config (options, limits, …), passed through as is. */
   models: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),

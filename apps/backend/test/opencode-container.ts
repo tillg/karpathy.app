@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
-import { loadSettings } from '@karpathy/settings';
+import { loadSettings, renderOpencodeProviders } from '@karpathy/settings';
 import { basicAuth } from '../src/harness/opencode.js';
 
 // Real opencode container for integration tests (no mocks). The vaults dir must be under the
@@ -16,19 +17,41 @@ const REPO = resolve(import.meta.dirname, '../../..');
  */
 export const IMAGE = `kai-test-opencode-${createHash('sha1').update(REPO).digest('hex').slice(0, 8)}`;
 const NET = 'kai-test-net';
-const OLLAMA = 'kai-test-ollama';
-/** Volume that holds the Ollama models (the test models, pulled once). */
-const OLLAMA_VOLUME = process.env.OLLAMA_VOLUME ?? 'kai-spike-ollama';
-/** The test models: deploy/settings/test.yaml, overridable per run. */
-const TEST_AI = loadSettings('test').ai;
-export const LLM_MODEL = process.env.LLM_TEST_MODEL ?? TEST_AI.model;
-/** A model that reads images (pulled once into the Ollama volume, like LLM_MODEL). */
-export const LLM_VISION_MODEL = process.env.LLM_VISION_MODEL ?? TEST_AI.vision_model!;
-/** Declared to opencode but not pulled in Ollama: every turn fails fast with a non-retryable 404. */
-export const DEAD_MODEL = 'ollama/kai-no-such-model';
-/** A second declared-but-not-pulled model, to observe a model switch without an LLM. */
-export const DEAD_MODEL_2 = 'ollama/kai-no-such-model-2';
+/**
+ * On the test-only provider `dead`, whose base URL is opencode's own port: opencode answers the chat request
+ * with 401 (its server password), so every turn fails fast and non-retryably, offline (no model server, no key).
+ */
+export const DEAD_MODEL = 'dead/kai-no-such-model';
+/** A second dead model, to observe a model switch without an LLM. */
+export const DEAD_MODEL_2 = 'dead/kai-no-such-model-2';
+const DEAD_BASE_URL = 'http://127.0.0.1:4096/no-such-provider/v1';
 export const TEST_ROOT = resolve(REPO, 'tmp/test-run');
+
+const OPENROUTER_KEY_FILE = join(REPO, 'deploy/secrets/openrouter_api_key');
+
+/** The OpenRouter key for the test model: the env's, else the dev secret file's. */
+export function openrouterKey(env: Record<string, string | undefined> = process.env): string | undefined {
+  if (env.OPENROUTER_API_KEY) return env.OPENROUTER_API_KEY;
+  try {
+    return readFileSync(OPENROUTER_KEY_FILE, 'utf8').trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The @llm tier's models: always OpenRouter (every test runs there, locally and in CI). LLM_TEST_MODEL /
+ * LLM_VISION_MODEL pick other OpenRouter models, else test.yaml's (= production's). Without a key it throws before
+ * any container starts: no silent model, no auth error mid-turn.
+ */
+export function pickTestModels(
+  env: Record<string, string | undefined>,
+  deps: { openrouterKey: () => string | undefined },
+): { model: string; vision: string } {
+  if (!deps.openrouterKey()) throw new Error('no OpenRouter key: put it into deploy/secrets/openrouter_api_key (or OPENROUTER_API_KEY)');
+  const test = loadSettings('test', { overlay: false }).ai;
+  return { model: env.LLM_TEST_MODEL ?? test.model, vision: env.LLM_VISION_MODEL ?? test.vision_model! };
+}
 
 const docker = (...args: string[]) => execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 
@@ -113,32 +136,19 @@ export function ensureEgress(): number {
   return Number(docker('port', EGRESS, '3128/tcp').split('\n')[0]!.split(':').pop());
 }
 
-/** Starts (or reuses) the Ollama container on the test network. */
-export function ensureOllama() {
-  ensureNetwork();
-  try {
-    // "created": another parallel worker is starting it right now — don't remove it under that worker.
-    if (['running', 'created'].includes(docker('inspect', '-f', '{{.State.Status}}', OLLAMA))) return;
-    docker('rm', '-f', OLLAMA);
-  } catch {
-    // not there
-  }
-  try {
-    // A context large enough for opencode's system prompt + the vault's AGENTS.md (#57).
-    docker('run', '-d', '--name', OLLAMA, '--network', NET, '-e', 'OLLAMA_CONTEXT_LENGTH=16384', '-v', `${OLLAMA_VOLUME}:/root/.ollama`, 'ollama/ollama');
-  } catch (e) {
-    // Another parallel worker won the race to start it.
-    if (!String((e as { stderr?: string }).stderr).includes('is already in use')) throw e;
-  }
+/** The @llm tier's models (pickTestModels with the real key). */
+export function testModels(): TestModels {
+  return pickTestModels(process.env, { openrouterKey: () => openrouterKey() });
 }
+export type TestModels = ReturnType<typeof pickTestModels>;
 
 /**
- * Starts opencode serving `vaultsDir` at /vaults, with Ollama as provider. Use DEAD_MODEL for
- * turns that fail fast and deterministically (no LLM runs), LLM_MODEL for real ones. `env` adds container env.
+ * Starts opencode serving `vaultsDir` at /vaults. Without `models`, opencode has only the dead provider: turns
+ * fail fast and deterministically, no model server or key needed. With `models` (testModels(), the @llm tier) it
+ * also gets OpenRouter from deploy/settings/, as in production. `env` adds container env.
  */
-export async function startOpencode(vaultsDir: string, env: Record<string, string> = {}) {
+export async function startOpencode(vaultsDir: string, env: Record<string, string> = {}, models?: TestModels) {
   ensureImage();
-  ensureOllama();
   ensureEgress();
   await mkdir(vaultsDir, { recursive: true });
   const password = randomBytes(16).toString('hex');
@@ -147,33 +157,43 @@ export async function startOpencode(vaultsDir: string, env: Record<string, strin
   const name = `kai-test-oc-${process.pid}-${Math.random().toString(36).slice(2, 7)}`;
   // A fixed host port, so a stop/start (restart tests) keeps the URL.
   const hostPort = await freeHostPort();
-  const models: Record<string, Record<string, unknown>> = Object.fromEntries(
-    [LLM_MODEL, DEAD_MODEL, DEAD_MODEL_2].map((m) => m.split('/').slice(1).join('/')).map((id) => [id, { name: id, tool_call: true, limit: { context: 16384, output: 4096 } }]),
-  );
+  const id = (m: string) => m.split('/').slice(1).join('/');
+  const model = (m: string) => ({ name: id(m), tool_call: true, limit: { context: 16384, output: 4096 } });
   // DEAD_MODEL_2 declares image input, so the settings can be seen reporting what a model reads.
-  Object.assign(models[DEAD_MODEL_2.split('/').slice(1).join('/')]!, { modalities: { input: ['text', 'image'], output: ['text'] } });
-  const vision = LLM_VISION_MODEL.split('/').slice(1).join('/');
-  models[vision] = { name: vision, tool_call: true, limit: { context: 16384, output: 4096 }, modalities: { input: ['text', 'image'], output: ['text'] } };
-  const providerCfg = { provider: { ollama: { npm: '@ai-sdk/openai-compatible', name: 'Ollama', options: { baseURL: `http://${OLLAMA}:11434/v1` }, models } } };
-  docker(
+  const dead = { npm: '@ai-sdk/openai-compatible', name: 'Dead (tests)', options: { baseURL: DEAD_BASE_URL },
+    models: { [id(DEAD_MODEL)]: model(DEAD_MODEL), [id(DEAD_MODEL_2)]: { ...model(DEAD_MODEL_2), modalities: { input: ['text', 'image'], output: ['text'] } } } };
+  const provider: Record<string, unknown> = { dead };
+  const containerEnv: Record<string, string> = { OPENCODE_MODEL: models?.model ?? DEAD_MODEL };
+  // Secrets reach `docker run` through its own env and are passed by name, so they never show in a command line.
+  const secretEnv: Record<string, string> = {};
+  if (models) {
+    // OpenRouter as in production: its ZDR routing from deploy/settings/, the key by name, through the egress proxy.
+    const s = loadSettings('test', { overlay: false });
+    Object.assign(provider, renderOpencodeProviders(s).provider);
+    const key = openrouterKey()!;
+    Object.assign(secretEnv, { OPENROUTER_API_KEY: key, VISION_API_KEY: key });
+    // The look_at_image tool's vision model.
+    Object.assign(containerEnv, { VISION_MODEL: id(models.vision), VISION_BASE_URL: 'https://openrouter.ai/api/v1' });
+    const options = s.gateways.openrouter?.models?.[id(models.vision)]?.options;
+    if (options) containerEnv.VISION_REQUEST_OPTIONS = JSON.stringify(options);
+  }
+  const providerCfg = { provider };
+  execFileSync('docker', [
     'run', '-d', '--name', name, '--network', NET, '--user', `${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}`,
     '-p', `127.0.0.1:${hostPort}:4096`,
-    '-e', 'HOME=/home/app', '-e', 'XDG_DATA_HOME=/data', '-e', `OPENCODE_MODEL=${LLM_MODEL}`,
+    '-e', 'HOME=/home/app', '-e', 'XDG_DATA_HOME=/data',
     '-e', `OPENCODE_SERVER_PASSWORD=${password}`,
-    // All outbound HTTP goes through the egress proxy, as in compose; loopback and Ollama (a private IP) go direct.
+    // All outbound HTTP goes through the egress proxy, as in compose; only loopback goes direct.
     '-e', `HTTP_PROXY=http://${EGRESS}:3128`, '-e', `HTTPS_PROXY=http://${EGRESS}:3128`,
-    '-e', `NO_PROXY=localhost,127.0.0.1,0.0.0.0,${OLLAMA}`,
-    // A hosted model for the @llm tier (LLM_TEST_MODEL=openrouter/…): its key is passed by name only, so it
-    // never shows in a command line.
-    ...(process.env.OPENROUTER_API_KEY ? ['-e', 'OPENROUTER_API_KEY'] : []),
-    // The look_at_image tool's vision model: the test Ollama (a hosted one via VISION_* in `env`).
-    ...Object.entries({ VISION_BASE_URL: `http://${OLLAMA}:11434/v1`, VISION_MODEL: vision, ...env }).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
+    '-e', 'NO_PROXY=localhost,127.0.0.1,0.0.0.0',
+    ...Object.keys(secretEnv).flatMap((k) => ['-e', k]),
+    ...Object.entries({ ...containerEnv, ...env }).flatMap(([k, v]) => ['-e', `${k}=${v}`]),
     '-e', `OPENCODE_CONFIG_CONTENT=${JSON.stringify(providerCfg)}`,
     '--tmpfs', `/home/app:uid=${process.getuid?.() ?? 1000},gid=${process.getgid?.() ?? 1000},mode=0700`,
     '--tmpfs', `/data:uid=${process.getuid?.() ?? 1000},gid=${process.getgid?.() ?? 1000}`,
     '-v', `${vaultsDir}:/vaults`,
     IMAGE, 'serve', '--hostname', '0.0.0.0', '--port', '4096',
-  );
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...secretEnv } });
   const url = `http://127.0.0.1:${hostPort}`;
   const deadline = Date.now() + 60_000;
   for (;;) {

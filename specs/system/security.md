@@ -1,7 +1,7 @@
 ---
 title: "Security: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-15
+edited: 2026-10-16
 ---
 
 # Security: karpathy.app
@@ -290,11 +290,9 @@ kinds, strings only) and can only change which fields and flags the form shows; 
 - **Dev stacks on the Mac** (prod is unchanged): besides the proxy on 80N0, the backend's HTTP API is published on
   `127.0.0.1:80N1` only, for debugging; opencode and web stay unpublished on the internal network. The dev model
   is the native omlx, bound to `127.0.0.1:8000`; its API-key check is off (`auth.skip_api_key_verification`) because
-  it listens on loopback only. opencode reaches it only through the stack's relay (`ollama.internal`, a historical
-  name), which passes `/v1/*` (the OpenAI-compatible API) and answers 403 to everything else, so a
-  prompt-injected AI can't use the server's admin API (model management, settings); with Ollama a pull from an
-  "insecure" registry would otherwise make the Mac itself request LAN or loopback addresses the egress proxy
-  forbids.
+  it listens on loopback only. opencode reaches it only through the stack's model relay (`model-relay.internal`),
+  which passes `/v1/*` (the OpenAI-compatible API) and answers 403 to everything else, so a
+  prompt-injected AI can't use the server's admin API (model management, settings).
 - **Production server:** reachable only over Tailscale. The Hetzner firewall blocks all inbound traffic; the app,
   Beszel and Gatus bind the tailnet IP. SSH takes keys only, no root login. The operator logs in as `ops` (sudo);
   uid 1000, the app's user, has no login, no sudo and no Docker access, so a container breakout doesn't reach root

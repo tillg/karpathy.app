@@ -210,27 +210,27 @@ describe('context used (#140)', () => {
 });
 
 describe('context window (#140)', () => {
-  const providers = { providers: [{ id: 'ollama', models: {
+  const providers = { providers: [{ id: 'openrouter', models: {
     'qwen2.5:3b': { capabilities: { input: { image: false, pdf: false } }, limit: { context: 16384, output: 4096 } },
     'nolimit': { capabilities: { input: { image: true, pdf: false } }, limit: { context: 0, output: 0 } },
   } }] };
 
   it('mapModels keeps what the model reads and its context window', () => {
     expect(mapModels(providers)).toEqual([
-      { id: 'ollama/qwen2.5:3b', input: { image: false, pdf: false }, limit: 16384 },
-      { id: 'ollama/nolimit', input: { image: true, pdf: false } },
+      { id: 'openrouter/qwen2.5:3b', input: { image: false, pdf: false }, limit: 16384 },
+      { id: 'openrouter/nolimit', input: { image: true, pdf: false } },
     ]);
   });
 
   it('withLimit adds the window of the message\'s model', () => {
-    const limits = new Map([['ollama/qwen2.5:3b', 16384]]);
-    expect(withLimit({ id: 'm', role: 'assistant', createdAt: 1, model: 'ollama/qwen2.5:3b', context: { used: 10 } }, limits).context).toEqual({ used: 10, limit: 16384 });
+    const limits = new Map([['openrouter/qwen2.5:3b', 16384]]);
+    expect(withLimit({ id: 'm', role: 'assistant', createdAt: 1, model: 'openrouter/qwen2.5:3b', context: { used: 10 } }, limits).context).toEqual({ used: 10, limit: 16384 });
   });
 
   it('unknown model → no limit; no context → unchanged', () => {
-    const limits = new Map([['ollama/qwen2.5:3b', 16384]]);
+    const limits = new Map([['openrouter/qwen2.5:3b', 16384]]);
     expect(withLimit({ id: 'm', role: 'assistant', createdAt: 1, model: 'x/y', context: { used: 10 } }, limits).context).toEqual({ used: 10 });
-    const user = { id: 'u', role: 'user' as const, createdAt: 1, model: 'ollama/qwen2.5:3b' };
+    const user = { id: 'u', role: 'user' as const, createdAt: 1, model: 'openrouter/qwen2.5:3b' };
     expect(withLimit(user, limits)).toEqual(user);
   });
 });
@@ -241,13 +241,13 @@ describe('usageRows', () => {
       { info: { id: 'u1', role: 'user', time: { created: 1 }, model: { providerID: 'p', modelID: 'm' } }, parts: [] },
       {
         info: {
-          id: 'a1', role: 'assistant', providerID: 'omlx', modelID: 'qwen', time: { created: 1700000000000 }, cost: 0.25,
+          id: 'a1', role: 'assistant', providerID: 'openrouter', modelID: 'qwen', time: { created: 1700000000000 }, cost: 0.25,
           tokens: { input: 10, output: 20, reasoning: 3, cache: { read: 4, write: 5 } },
         },
         parts: [],
       },
-      { info: { id: 'a2', role: 'assistant', providerID: 'omlx', modelID: 'qwen', time: { created: 2 } }, parts: [] },
+      { info: { id: 'a2', role: 'assistant', providerID: 'openrouter', modelID: 'qwen', time: { created: 2 } }, parts: [] },
     ]);
-    expect(rows).toEqual([{ created: 1700000000000, model: 'omlx/qwen', input: 10, output: 20, reasoning: 3, cacheRead: 4, cacheWrite: 5, cost: 0.25 }]);
+    expect(rows).toEqual([{ created: 1700000000000, model: 'openrouter/qwen', input: 10, output: 20, reasoning: 3, cacheRead: 4, cacheWrite: 5, cost: 0.25 }]);
   });
 });

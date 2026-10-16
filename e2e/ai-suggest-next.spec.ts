@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { BASE_URL, expect, openApp, test } from './helpers';
 
 // The AI's suggest_next tool puts a next prompt into the composer as ghost text (spec change
-// 145-next-prompt-suggestion). Real model turns (dev: local Ollama), so long timeouts and assertions on the UI,
+// 145-next-prompt-suggestion). Real model turns (dev: OpenRouter), so long timeouts and assertions on the UI,
 // never on answer text; the exact suggestion is whatever the model sent.
 const TURN = 8 * 60_000;
 test.describe.configure({ timeout: 25 * 60_000 });

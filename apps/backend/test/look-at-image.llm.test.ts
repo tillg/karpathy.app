@@ -7,9 +7,12 @@ import { ChatService } from '../src/chat.js';
 import { OpencodeHarness } from '../src/harness/opencode.js';
 import { makeApp } from './app-helpers.js';
 import { makeRemote } from './helpers.js';
-import { LLM_MODEL, startOpencode, testDir } from './opencode-container.js';
+import { startOpencode, testDir, testModels } from './opencode-container.js';
 
-// @llm tier: the chat model (text-only qwen2.5:3b) calls look_at_image and the real vision model (qwen3-vl:2b)
+const models = testModels();
+const LLM_MODEL = models.model;
+
+// @llm tier: the text-only chat model calls look_at_image and the real vision model (both from testModels())
 // describes the image. Assertions check the tool call and its output, never the chat model's wording.
 
 let oc: Awaited<ReturnType<typeof startOpencode>>;
@@ -17,7 +20,7 @@ const base = testDir('look-at-image-llm');
 const vaultsDir = join(base, 'vaults');
 
 beforeAll(async () => {
-  oc = await startOpencode(vaultsDir);
+  oc = await startOpencode(vaultsDir, {}, models);
 }, 120_000);
 afterAll(() => oc?.stop());
 

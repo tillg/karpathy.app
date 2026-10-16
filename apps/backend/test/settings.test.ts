@@ -12,7 +12,7 @@ async function rendered(edit: (s: Record<string, unknown>) => void = () => {}) {
   const s: Record<string, unknown> = {
     auth: { bearer_token: { file: join(dir, 'bearer_token') }, opencode_password: { file: join(dir, 'opencode_password') } },
     git: { remote_base: 'file:///remotes/', author: { name: 'Dev User', email: 'dev@example.com' }, github_token: { file: join(dir, 'github_token') } },
-    ai: { model: 'ollama/qwen2.5:3b', web_access: true },
+    ai: { model: 'openrouter/qwen2.5:3b', web_access: true },
     commit_reminder_threshold: 4,
     files: { visible_dot_dirs: ['.agents'] },
   };
@@ -29,7 +29,7 @@ describe('loadBackendSettings', () => {
       githubToken: undefined,
       remoteBase: 'file:///remotes/',
       identity: { name: 'Dev User', email: 'dev@example.com' },
-      defaultModel: 'ollama/qwen2.5:3b',
+      defaultModel: 'openrouter/qwen2.5:3b',
       webAccess: true,
       commitReminderThreshold: 4,
       visibleDotDirs: ['.agents'],
