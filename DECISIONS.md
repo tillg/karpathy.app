@@ -181,6 +181,7 @@ edited: 2026-10-16
   - [11:28 — Archive `website-screenshots-and-origin` with its decisions open](#run-2026-10-16-1016-8)
   - [11:35 — Retro: the site workspace's test also lints `site/`; create the missing `needs-triage` label](#run-2026-10-16-1016-9)
   - [11:50 — Fix the flaky AdminMode Escape tests that turned `main`'s CI red, before releasing](#run-2026-10-16-1016-10)
+  - [12:03 — Re-run CI once on the network-bound `save_url` flake instead of changing the test; tag v0.0.29](#run-2026-10-16-1016-11)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2698,3 +2699,17 @@ edited: 2026-10-16
 - **Alternatives:** rerun CI until green (hides the flake); a retry on the test (weaker).
 - **Consequences:** couldn't make the flake fail on demand locally (17/17 five times before and after); CI is the
   judge. If `save_url` fails CI again, it needs its own issue (an external URL in a unit test).
+  CI on e1e427d: AdminMode passed; `save_url` failed again → filed #162, re-ran the failed job once → green (12:00).
+
+## 12:03 — Re-run CI once on the network-bound `save_url` flake instead of changing the test; tag v0.0.29 {#run-2026-10-16-1016-11}
+
+- **Status:** open
+- **Context:** `main`'s CI failed twice on `opencode-tools.test.ts` › `save_url saves a public image` (downloads
+  `w3c_home.png` from w3.org through the test proxy; "ERR undefined is not a function"); it passes locally and in
+  other attempts; no backend or `deploy/opencode` file changed in this run.
+- **Question:** chase the root cause before releasing, change the test, or re-run?
+- **Decision:** re-run the failed job once (green), file #162 with the leads, tag v0.0.29 on e1e427d.
+- **Why:** intermittent and external to this run's work; the test stays untouched (never weaken a test).
+- **Alternatives:** root-cause now (no local repro, could take long); skip or retry-wrap the test (forbidden).
+- **Consequences:** the release workflow's check job may hit it again; one re-run there, else the release waits for
+  #162.
