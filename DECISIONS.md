@@ -168,6 +168,7 @@ edited: 2026-10-15
   - [12:58 — Hold step 5 until step 6: the backend's strict schema would reject the new `secrets` key](#run-2026-10-15-1244-4)
   - [15:15 — Rewrite 15 e2e specs to reach the forms through admin mode; `fix-24` discards the saved draft before removing](#run-2026-10-15-1244-5)
   - [19:25 — Review triage: fix the defects and the dead code, adjust the spec where it promised more than the data has](#run-2026-10-15-1244-6)
+  - [09:00 — Archive admin-mode with its decisions open and the dev model's `@llm` e2e reds documented](#run-2026-10-15-1244-7)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2460,3 +2461,23 @@ edited: 2026-10-15
 - **Consequences:** left open: `Admin.tsx` size, the sections' cloned fetch effect, single-letter names, the "Missing"
   pill that can't occur while the renderer refuses a missing required secret, `last4` of the GitHub token (allowed by
   domain.md), the `fix-24` coverage gap (decision 5).
+
+## 09:00 — Archive admin-mode with its decisions open and the dev model's `@llm` e2e reds documented {#run-2026-10-15-1244-7}
+
+- **Status:** open
+- **Overrides:** `/spec:archive` 2c/2d — don't archive while the suite or a `Verify:` is red, or while the change's
+  decisions are `open`
+- **Context:** `admin-mode`, all 16 steps ticked. Step 15's `Verify` ("`just e2e` → all green") is not literally green:
+  `@llm` specs fail with the local dev model (Qwen3-Coder-30B via omlx). Compared with the pre-change commit `6ee3251`
+  on its own stack: `ai-image` and `fix-124` fail there too; `fix-106` passed there on 2026-10-15 22:00 and failed
+  there on 2026-10-16 09:00 (the model writes `[read(file_path=…)]` as text instead of calling the tool); `fix-13` and
+  `ai-open-note` pass on the branch when re-run. Every non-`@llm` failure of the full run passed alone. Decisions 1–7
+  of this run are `open`; nobody is there to review them.
+- **Question:** archive now, or leave the change open until the user is back?
+- **Decision:** archive: fold it into `specs/system/`, commit on `feat/150-admin-mode`, list the open decisions in
+  the commit body, close #150 through the PR (`Closes #150`).
+- **Why:** the remaining reds are the dev model's, reproduced without the change; the system description should match
+  the branch the PR proposes; the decisions stay reviewable in `DECISIONS.md` either way.
+- **Alternatives:** keep the change open (the PR would carry an outdated `specs/system/`).
+- **Consequences:** review decisions 1–7 before merging the PR. The `@llm` flakiness with the dev model is worth its
+  own issue (a retry or a sturdier tool-call prompt).
