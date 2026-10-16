@@ -2482,6 +2482,12 @@ edited: 2026-10-16
 - **Alternatives:** keep the change open (the PR would carry an outdated `specs/system/`).
 - **Consequences:** review decisions 1–7 before merging the PR. The `@llm` flakiness with the dev model is worth its
   own issue (a retry or a sturdier tool-call prompt).
+  2026-10-16: confirmed by the user; PR #159 merged (`8c1acd4`, closes #150). The merge went in while the PR's last
+  CI run was red (`chat.test.ts` setup timed out on the runner; the run before, on the same code minus
+  `DECISIONS.md`, was green) — the merge command didn't stop on the failed check. CI on `main` then failed once on
+  `opencode-tools.test.ts` › "save_url saves a public image" (fetches a public URL; passes locally) and was green on
+  re-run. Released `v0.0.28` and deployed to hetzner (smoke check green, announced on ntfy); rollback:
+  `just deploy hetzner 0.0.27`. The demo run book chapter went out with the #151 session's commit `ed047c2`.
 
 ## 09:10 — Retro: a per-test stack check in e2e and a CLAUDE.md line on judging e2e failures {#run-2026-10-15-1244-8}
 
