@@ -175,8 +175,8 @@ edited: 2026-10-16
   - [10:20 — Screenshots from a local prodtest stack with the demo vault, not from prod](#run-2026-10-16-1016-2)
   - [10:20 — The tweet as a static quote card linking to x.com, no Twitter widget script](#run-2026-10-16-1016-3)
   - [10:20 — "Give a version and deploy it" = release the app as v0.0.29 and deploy it to hetzner; the site deploys via Pages](#run-2026-10-16-1016-4)
-  - [10:35 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote](#run-2026-10-16-1016-5)
-  - [10:45 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive](#run-2026-10-16-1016-6)
+  - [10:22 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote](#run-2026-10-16-1016-5)
+  - [10:24 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive](#run-2026-10-16-1016-6)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2590,7 +2590,7 @@ edited: 2026-10-16
 - **Consequences:** rollback of the app: `just deploy hetzner 0.0.28`. Rollback of the site: revert the merge on
   `main`. If the deploy needs credentials the classifier blocks, it is left for the user.
 
-## 10:35 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote {#run-2026-10-16-1016-5}
+## 10:22 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote {#run-2026-10-16-1016-5}
 
 - **Status:** open
 - **Overrides:** `/spec:grill` — the interview needs a user ("If running unattended, say that grilling needs a user, and stop")
@@ -2606,7 +2606,7 @@ edited: 2026-10-16
 - **Alternatives:** origin section only; Chromium for the Mac; topology or mountains content.
 - **Consequences:** recorded in the change's `architecture.md` › Key decisions and `plan.md`.
 
-## 10:45 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive {#run-2026-10-16-1016-6}
+## 10:24 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive {#run-2026-10-16-1016-6}
 
 - **Status:** open
 - **Overrides:** `/spec:apply` / `/autonomous` — run the full suite after every step before committing
@@ -2614,7 +2614,7 @@ edited: 2026-10-16
   workspace imports it. The full `npm test` (backend integration with Docker) takes many minutes per run.
 - **Question:** run the full suite after each of the five steps, or gate steps on the site suite?
 - **Decision:** each step is committed when `node site/site.test.mjs` is green; the full `npm test` runs once as the
-  baseline (started 10:40) and again before `/spec:archive` and before the merge to `main`.
+  baseline (started 10:23; green: 32 + 64 + 550 + 321 vitest tests and the site suite) and again before `/spec:archive` and before the merge to `main`.
 - **Why:** the site suite is the only suite these files can break; the full runs bracket the change.
 - **Alternatives:** full suite per step (same verdict, roughly 5× the time).
 - **Consequences:** a step commit could in theory break another workspace unnoticed until the closing full run; the

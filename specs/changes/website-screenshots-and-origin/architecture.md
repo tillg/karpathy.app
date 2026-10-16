@@ -1,7 +1,7 @@
 ---
 feature: website-screenshots-and-origin
 title: "Architecture: website screenshots and the idea's origin"
-status: applying
+status: applied
 order: 3
 created: 2026-10-16
 edited: 2026-10-16

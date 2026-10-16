@@ -1,7 +1,7 @@
 ---
 feature: website-screenshots-and-origin
 title: "Plan: website screenshots and the idea's origin"
-status: applying
+status: applied
 order: 4
 created: 2026-10-16
 edited: 2026-10-16
@@ -40,7 +40,7 @@ Every step runs `node site/site.test.mjs` (the site suite, also part of `npm tes
     400 KB" — fail today: no `#screenshots` section
   - Verify: `node site/site.test.mjs` → all pass; `just site` page viewed at 1440 px and 390 px, light and dark,
     no horizontal scroll
-- [ ] README › Website: how to retake the screenshots
+- [x] README › Website: how to retake the screenshots
   - Test first: none — docs
   - Verify: `grep -n "capture.mjs" README.md` → matches
 
