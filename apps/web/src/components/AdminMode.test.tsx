@@ -13,6 +13,8 @@ const open = (routes: Record<string, unknown> = {}) => {
 };
 const noteOpen = (api: { calls: { call: string }[] }) => waitFor(() => expect(api.calls.some((c) => c.call === `GET /api/vaults/${VAULT}/file`)).toBe(true));
 const rail = () => document.querySelector('nav.admin-rail') as HTMLElement | null;
+/** Admin mode's effects have run (the heading took focus), so its Escape listener is attached: the hash alone is too early on a slow runner. */
+const adminReady = () => waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'General' })));
 
 beforeEach(() => setViewport(false));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); history.replaceState(null, '', '#'); });
@@ -72,6 +74,7 @@ describe('admin mode', () => {
     await noteOpen(api);
     fireEvent.click(await screen.findByTestId('open-settings'));
     await waitFor(() => expect(location.hash).toBe('#admin/general'));
+    await adminReady();
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
   });
@@ -90,6 +93,7 @@ describe('admin mode', () => {
     screen.getByTestId('open-settings').focus();
     fireEvent.click(screen.getByTestId('open-settings'));
     await waitFor(() => expect(location.hash).toBe('#admin/general'));
+    await adminReady();
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('open-settings')));
@@ -102,6 +106,7 @@ describe('admin mode', () => {
     await waitFor(() => expect((screen.getByTestId('graph-pane') as HTMLElement).hidden).toBe(false));
     fireEvent.click(screen.getByTestId('open-settings'));
     await waitFor(() => expect(location.hash).toBe('#admin/general'));
+    await adminReady();
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
     expect((screen.getByTestId('graph-pane') as HTMLElement).hidden).toBe(false);
@@ -129,6 +134,7 @@ describe('admin mode', () => {
     fireEvent.click(gear);
     await waitFor(() => expect(location.hash).toBe('#admin/general'));
     expect(document.getElementById('scrim')!.className).not.toContain('on');
+    await adminReady();
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('sidebar-toggle')));

@@ -180,6 +180,7 @@ edited: 2026-10-16
   - [10:49 — Review triage: fix all findings, including the app's chat-header bug #160 seen in the shots](#run-2026-10-16-1016-7)
   - [11:28 — Archive `website-screenshots-and-origin` with its decisions open](#run-2026-10-16-1016-8)
   - [11:35 — Retro: the site workspace's test also lints `site/`; create the missing `needs-triage` label](#run-2026-10-16-1016-9)
+  - [11:50 — Fix the flaky AdminMode Escape tests that turned `main`'s CI red, before releasing](#run-2026-10-16-1016-10)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2680,3 +2681,20 @@ edited: 2026-10-16
 - **Why:** (1) makes the cheap per-step gate catch what CI's lint would; (2) makes the documented mapping work.
 - **Alternatives:** a git pre-commit lint hook (slower for every commit in the repo); change the mapping to `bug`.
 - **Consequences:** `npm test` in the site workspace now fails on a lint error in `site/`.
+
+## 11:50 — Fix the flaky AdminMode Escape tests that turned `main`'s CI red, before releasing {#run-2026-10-16-1016-10}
+
+- **Status:** open
+- **Context:** CI on `main` failed after the merge (23b227d, 7f707b6 and its rerun), each time in a different
+  `AdminMode.test.tsx` case (Escape leaves admin mode / focus returns) — the same flake that failed the
+  `feat/150-admin-mode` runs this morning — and once in `opencode-tools.test.ts` › `save_url` (fetches a w3.org image;
+  passes locally). The release runs the same checks, so v0.0.29 would be blocked.
+- **Question:** release on a rerun's luck, or fix the flake?
+- **Decision:** fix it: the tests pressed Escape as soon as the hash said `#admin/general`, before AdminMode's
+  effects attached the keydown listener; they now first wait for the section heading to take focus (`adminReady()`),
+  which proves the effects ran. No assertion removed or weakened. `save_url` left as is (network).
+- **Why:** a real race in the test, not in the app (a user can't press Escape before admin mode has rendered); the
+  fix waits for a stronger precondition.
+- **Alternatives:** rerun CI until green (hides the flake); a retry on the test (weaker).
+- **Consequences:** couldn't make the flake fail on demand locally (17/17 five times before and after); CI is the
+  judge. If `save_url` fails CI again, it needs its own issue (an external URL in a unit test).
