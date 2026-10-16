@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-15
+edited: 2026-10-16
 ---
 
 **Contents**
@@ -2317,7 +2317,7 @@ edited: 2026-10-15
 
 ## 12:48 — Commit and push each step straight to main {#run-2026-10-15-1244-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** harness — commit or push only when the user asks; `~/.claude/CLAUDE.md` — never create or switch
   branches without permission
 - **Context:** `admin-mode`, 16 plan steps; the repo works on `main` (recent features were merged straight to it),
@@ -2377,7 +2377,7 @@ edited: 2026-10-15
 
 ## 12:58 — Baseline: two backend timing tests fail only under load; gate merges on lint, typecheck and the touched workspaces {#run-2026-10-15-1244-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:apply` 4b — run the full suite in the main tree after every merge
 - **Context:** `admin-mode`; the baseline `just check` (`tmp/check-baseline-20261015-124422.log`) had 2 of 485 backend
   tests red: `api.test.ts` › "connect fetches, the interval fetches while connected…" (1 s waits) and `chat.test.ts`
@@ -2412,7 +2412,7 @@ edited: 2026-10-15
 
 ## 15:15 — Rewrite 15 e2e specs to reach the forms through admin mode; `fix-24` discards the saved draft before removing {#run-2026-10-15-1244-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `~/.claude/CLAUDE.md` — never make tests pass by changing them without explicit permission
 - **Context:** `admin-mode` step 4. The plan names the rewrite and says `/spec:apply` asks the user first; nobody is
   there. 15 specs plus `e2e/helpers.ts` opened the Settings and Vaults dialogs (`settings-dialog`, `admin`).
@@ -2435,7 +2435,7 @@ edited: 2026-10-15
 
 ## 19:25 — Review triage: fix the defects and the dead code, adjust the spec where it promised more than the data has {#run-2026-10-15-1244-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `admin-mode`, `/spec:adversarial-code-review 6ee3251` (three axes). Nobody to ask which findings to act
   on.
 - **Question:** which findings get fixed now, which are left?
