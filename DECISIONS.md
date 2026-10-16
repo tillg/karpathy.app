@@ -2596,6 +2596,8 @@ edited: 2026-10-16
 - **Alternatives:** only the Pages deploy (the site has no version); a website version (no mechanism for one).
 - **Consequences:** rollback of the app: `just deploy hetzner 0.0.28`. Rollback of the site: revert the merge on
   `main`. If the deploy needs credentials the classifier blocks, it is left for the user.
+  Done: Pages deployed the site from 23b227d (live, checked); v0.0.29 tagged on e1e427d, release run 38884594626
+  green after one re-run of the `save_url` flake (#162); `just deploy hetzner 0.0.29` at 12:16, smoke check passed.
 
 ## 10:22 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote {#run-2026-10-16-1016-5}
 
