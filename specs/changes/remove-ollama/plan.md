@@ -50,7 +50,7 @@ flowchart LR
   - Depends on: 4
   - Test first: `deploy/stack.test.sh` › "dev and prodtest render a model-relay service with MODEL_UPSTREAM host.docker.internal:8000 and alias model-relay.internal", "opencode's NO_PROXY names model-relay.internal", "stack_model_ready reads MODEL_UPSTREAM". Fails today: the service is `ollama` / `ollama-bridge`.
   - Verify: `bash deploy/stack.test.sh` → all passed; `just dev up` → stack healthy, a chat turn answers on omlx
-- [ ] CI without Ollama; nightly `@llm` on OpenRouter
+- [x] CI without Ollama; nightly `@llm` on OpenRouter (2026-10-16: run 38881200980 on the branch, all jobs green, `test:llm` 32/32)
   - Depends on: 1
   - Test first: none — workflow config; the guard (step 8) and CI itself check it.
   - Verify: `grep -n -i "ollama" .github/workflows/ci.yml` → no match; `actionlint` clean; the nightly job runs `test:github` and `test:llm` with `OPENROUTER_API_KEY` from the secret (set with `gh secret set`); after push, the CI run on the branch is green and a `workflow_dispatch` of the nightly job is green
