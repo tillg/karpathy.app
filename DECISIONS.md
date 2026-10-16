@@ -170,6 +170,11 @@ edited: 2026-10-16
   - [19:25 — Review triage: fix the defects and the dead code, adjust the spec where it promised more than the data has](#run-2026-10-15-1244-6)
   - [09:00 — Archive admin-mode with its decisions open and the dev model's `@llm` e2e reds documented](#run-2026-10-15-1244-7)
   - [09:10 — Retro: a per-test stack check in e2e and a CLAUDE.md line on judging e2e failures](#run-2026-10-15-1244-8)
+- [2026-10-16 10:16 — Website: screenshots and Karpathy's tweet & gist (#156, #132)](#run-2026-10-16-1016)
+  - [10:20 — One spec change `website-screenshots-and-origin` for both website issues](#run-2026-10-16-1016-1)
+  - [10:20 — Screenshots from a local prodtest stack with the demo vault, not from prod](#run-2026-10-16-1016-2)
+  - [10:20 — The tweet as a static quote card linking to x.com, no Twitter widget script](#run-2026-10-16-1016-3)
+  - [10:20 — "Give a version and deploy it" = release the app as v0.0.29 and deploy it to hetzner; the site deploys via Pages](#run-2026-10-16-1016-4)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2510,3 +2515,75 @@ edited: 2026-10-16
 - **Alternatives:** Playwright `maxFailures` (stops the run, but also on real flaky reds); widening the model-literal
   rule to `.test.tsx` (relaxes a guard; left for the user).
 - **Consequences:** a stack that dies mid-run now fails each test in about 5 s with the cause.
+
+# 2026-10-16 10:16 — Website: screenshots and Karpathy's tweet & gist (#156, #132) {#run-2026-10-16-1016}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > - Create a branch website-changes
+  > - go thru the gh issues and take all the ones that are labeled with "website"
+  > - Go thru the cycle /spec:propose, /spec:grill (yes, you are being grilled ;) ), /spec:apply, /spec:adversarial-code-review (fix the issues!), /spec:archive
+  > - merge main into our branch, then our branch to main
+  > - Then give a version and deploy it
+  >
+  > In between always
+  > - commit and push onto the branch
+  > - ntfy my via the dev ntfy channel
+
+## 10:20 — One spec change `website-screenshots-and-origin` for both website issues {#run-2026-10-16-1016-1}
+
+- **Status:** open
+- **Context:** two open issues carry the `website` label: #156 (screenshots from Mac, iPad, iPhone) and #132
+  (Karpathy's tweet and gist on the website). Both touch only `site/`.
+- **Question:** one change per issue, or one change for both?
+- **Decision:** one change, `website-screenshots-and-origin`, linked to both issues.
+- **Why:** same files (`site/index.html`, `style.css`, `build.sh`, `site.test.mjs`), same Pages deploy; two changes
+  would conflict on every file and double the review.
+- **Alternatives:** two changes in sequence (cleaner issue mapping, twice the ceremony for a one-page site).
+- **Consequences:** the archive commit carries `Closes #156` and `Closes #132`.
+
+## 10:20 — Screenshots from a local prodtest stack with the demo vault, not from prod {#run-2026-10-16-1016-2}
+
+- **Status:** open
+- **Context:** #156 wants screenshots "from the karpathy app on Mac, iPad and iPhone". Reading the prod target's
+  access token was denied by the auto-mode classifier (credential materialization); the shots of run 2026-10-02 23:19
+  (`tmp/demo/final/`) no longer exist.
+- **Question:** where do the screenshots come from?
+- **Decision:** `just prodtest` (the release images on the Mac, header `karpathy.app` rather than a dev stack's
+  `karpathy #N`) with the demo vault `karpathy_demo_wiki` from a local bare remote, driven by Playwright at Mac,
+  iPad and iPhone viewports. The chat answer comes from the local dev model.
+- **Why:** same UI as prod's release images, no prod credentials, no writes into the prod demo vault; the dev
+  stack's `karpathy #N` header would look like a bug in a product shot.
+- **Alternatives:** prod over Tailscale (needs the token: blocked); a dev stack (wrong header); skip #156 (it is
+  `priority:high`).
+- **Consequences:** the chat answer is the local Qwen model's, not prod's model; retake on prod later if its quality
+  shows. No admin or secret screens in any shot.
+
+## 10:20 — The tweet as a static quote card linking to x.com, no Twitter widget script {#run-2026-10-16-1016-3}
+
+- **Status:** open
+- **Context:** #132. The site is plain HTML + CSS without any script or third-party request
+  (`specs/system/architecture.md` › Website). The tweet is verified: id 2039805659525644595, 2026-04-02, "LLM
+  Knowledge Bases"; the gist "LLM Wiki" (karpathy/442a6bf555914893e9891c11519de94f) is from 2026-04-04.
+- **Question:** embed the tweet with `widgets.js`, or render it ourselves?
+- **Decision:** a static "Where the idea comes from" section: a `<blockquote cite>` with the tweet's opening words,
+  author and date linking to x.com, and a card linking to the gist.
+- **Why:** no third-party script or tracking on a page that has none; works without X being reachable; matches the
+  site's look in light and dark.
+- **Alternatives:** the official embed (live counts, but a third-party script and cookies).
+- **Consequences:** the quoted text is fixed; it is a short attributed quote.
+
+## 10:20 — "Give a version and deploy it" = release the app as v0.0.29 and deploy it to hetzner; the site deploys via Pages {#run-2026-10-16-1016-4}
+
+- **Status:** open
+- **Overrides:** `specs/system/domain.md` › Website deploy — "Independent of releases; the website has no version"
+- **Context:** the task asks for a version and a deploy; the website has no version and deploys on every push to
+  `main` that touches `site/`.
+- **Question:** what gets a version, and what gets deployed?
+- **Decision:** after the merge to `main`, the Pages workflow deploys the site; then `just release 0.0.29` and
+  `just deploy hetzner 0.0.29` for the app, which carries `main`'s state (the app itself has no change from this run).
+- **Why:** follows the user's words while keeping the documented mechanisms; the release is cheap and harmless.
+- **Alternatives:** only the Pages deploy (the site has no version); a website version (no mechanism for one).
+- **Consequences:** rollback of the app: `just deploy hetzner 0.0.28`. Rollback of the site: revert the merge on
+  `main`. If the deploy needs credentials the classifier blocks, it is left for the user.
