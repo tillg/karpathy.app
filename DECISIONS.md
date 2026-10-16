@@ -2562,6 +2562,8 @@ edited: 2026-10-16
   `priority:high`).
 - **Consequences:** the chat answer is the local Qwen model's, not prod's model; retake on prod later if its quality
   shows. No admin or secret screens in any shot.
+  In practice the local Qwen3-Coder needed several `--ask` attempts (web search instead of the wiki, a wrong path,
+  rambling answers) before a short, correct answer with a file chip; every shot was viewed before committing.
 
 ## 10:20 — The tweet as a static quote card linking to x.com, no Twitter widget script {#run-2026-10-16-1016-3}
 
@@ -2606,6 +2608,8 @@ edited: 2026-10-16
   and short answers; a paraphrase would put words in his mouth.
 - **Alternatives:** origin section only; Chromium for the Mac; topology or mountains content.
 - **Consequences:** recorded in the change's `architecture.md` › Key decisions and `plan.md`.
+  (3) changed during apply: the shots show `which-brewer-for-which-bean` instead of `aeropress`, whose properties form
+  filled the screen; `architecture.md` › Key decisions says so.
 
 ## 10:24 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive {#run-2026-10-16-1016-6}
 

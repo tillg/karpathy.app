@@ -17,10 +17,11 @@ test('build assembles _site', () => {
   assert.ok(existsSync(out));
 });
 
-test('build copies site/screenshots', () => {
-  const src = join(root, 'site/screenshots');
-  assert.ok(existsSync(src), 'no site/screenshots');
-  for (const f of readdirSync(src)) assert.ok(existsSync(join(out, 'screenshots', f)), `_site/screenshots/${f} missing`);
+// Exactly the three device shots: nothing stray (e.g. .DS_Store) gets deployed.
+test('build copies exactly the three screenshots', () => {
+  const shots = ['ipad.webp', 'iphone.webp', 'mac.webp'];
+  assert.deepEqual(readdirSync(join(root, 'site/screenshots')).sort(), shots);
+  assert.deepEqual(readdirSync(join(out, 'screenshots')).sort(), shots);
 });
 
 const page = () => readFileSync(join(out, 'index.html'), 'utf8');
@@ -82,6 +83,7 @@ test("names the idea's origin: Karpathy's tweet and gist", () => {
   assert.match(origin, /href="https:\/\/x\.com\/karpathy\/status\/2039805659525644595"/);
   assert.match(origin, /href="https:\/\/gist\.github\.com\/karpathy\/442a6bf555914893e9891c11519de94f"/);
   assert.match(origin, /<time datetime="2026-04-02"/);
+  assert.match(origin, /<time datetime="2026-04-04"/);
 });
 
 // Pixel size of a WebP file, from its first chunk: VP8X (extended), VP8 (lossy) or VP8L (lossless).
@@ -122,9 +124,8 @@ test('the hero links to the origin', () => {
 });
 
 test('explains self-hosting and offers hosting by mail', () => {
-  const html = page();
-  const section = html.match(/<section id="self-host"[\s\S]*?<\/section>/)?.[0] ?? '';
-  assert.ok(section, 'no #self-host section');
-  for (const need of [/server/i, /Tailscale/, /secrets/i]) assert.match(section, need);
-  assert.match(section, /href="mailto:till\.gartner@gmail\.com/);
+  const selfHost = section(page(), 'self-host');
+  assert.ok(selfHost, 'no #self-host section');
+  for (const need of [/server/i, /Tailscale/, /secrets/i]) assert.match(selfHost, need);
+  assert.match(selfHost, /href="mailto:till\.gartner@gmail\.com/);
 });

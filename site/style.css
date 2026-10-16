@@ -83,7 +83,7 @@ h1 { font-size: clamp(32px, 7vw, 54px); line-height: 1.08; letter-spacing: -.5px
 .quote blockquote { margin: 0; }
 .quote blockquote p { margin: 0 0 8px; font-size: 17px; color: var(--label); }
 .quote figcaption { font-size: 14px; color: var(--label2); }
-.card p + p { margin-top: 10px; }
+.origin .card p + p { margin-top: 10px; }
 .origin .after { margin: 16px 0 0; }
 .needs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
 .card h3 { font-size: 17px; margin: 0 0 6px; }

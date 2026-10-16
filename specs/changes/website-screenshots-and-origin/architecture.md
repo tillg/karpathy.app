@@ -57,11 +57,13 @@ flowchart TB
 
 ## Taking the screenshots: `site/capture.mjs`
 
-A Node script using the repo's `playwright` dependency (WebKit for all three, so they render like Safari). Input: the app's base URL and a token file (defaults: this checkout's prodtest,
-`tmp/prodtest/secrets/bearer_token`) and the vault id. For each device class it opens a fresh browser context at
-the viewport and scale of the domain table, logs in with the token, opens the vault, a note and the chat that
-already holds the demo answer, waits for the network to settle, saves a PNG to `tmp/shots/`, and converts it with
-`cwebp -q 82` into `site/screenshots/`.
+A Node script using the repo's `playwright` dependency (WebKit for all three, so they render like Safari). It
+targets this checkout's prodtest only (port from `deploy/stack.sh`, token from `tmp/prodtest/secrets/`, vault
+`demo-wiki`), so the certificate check it skips never concerns another host. Options: `--note` (default
+`Wiki/synthesis/which-brewer-for-which-bean.md`) and `--ask "<question>"`. For each device class it opens a fresh
+browser context at the viewport and scale of the domain table, logs in with the token, opens the vault, the note in
+Read mode and the newest chat, scrolls the chat to its start, waits for the images to load, saves a PNG to
+`tmp/website-shots/`, and converts it with `cwebp -noalpha -q 82` into `site/screenshots/`.
 
 ```mermaid
 sequenceDiagram
@@ -69,16 +71,19 @@ sequenceDiagram
   participant PT as just prodtest
   participant C as site/capture.mjs
   participant W as cwebp
-  Dev->>PT: up + add demo vault + one chat turn
-  Dev->>C: node site/capture.mjs
+  Dev->>PT: up + add demo vault
+  Dev->>C: node site/capture.mjs --ask "…"
+  C->>PT: Mac: new chat, ask, wait for the answer
   loop Mac, iPad, iPhone
-    C->>PT: open vault, note, chat (viewport)
-    C->>C: screenshot → tmp/shots/<device>.png
+    C->>PT: open vault, note, newest chat (viewport)
+    C->>C: screenshot → tmp/website-shots/<device>.png
     C->>W: → site/screenshots/<device>.webp
   end
 ```
 
-The chat turn is made once by hand in the app (the local dev model answers), so the script only reads.
+`--ask` writes a chat into the prodtest copy of the demo vault (never the real one). The local dev model's answers
+vary, so the developer views the shots and repeats `--ask` until the answer is short and right; a run without
+`--ask` reshoots the newest chat.
 
 ## Key decisions
 
@@ -92,7 +97,7 @@ The chat turn is made once by hand in the app (the local dev model answers), so 
 | The hero links to `#origin` ("Built on Andrej Karpathy's LLM Wiki idea") | origin section only, far down the page | #132 asks for the origin to be *visible*; a reader of the hero sees it without scrolling |
 | WebKit for all three device classes | Chromium for the Mac | Safari is the browser on all three; one engine, one font rendering |
 | The quote is the tweet's title line and first sentence, verbatim | a paraphrase; the whole tweet | short, attributed, linked; a paraphrase would put words in his mouth |
-| Shot content: the demo vault's coffee topic — the note `aeropress` and a chat whose answer reads wiki pages (file chips visible) | the topology or mountains topics | coffee pages have pictures and short answers; file chips show what makes the app different |
+| Shot content: the demo vault's coffee topic — the synthesis note `which-brewer-for-which-bean` (Read mode, its pairing table) and a chat whose answer reads that page (file chip visible) | the note `aeropress` (first choice: in the shots its long properties form filled the screen); the topology or mountains topics | the synthesis page shows the wiki's point — an answer built from the vault's own pages; file chips show what makes the app different |
 | The capture script clicks through the UI (login, vault, note, chat) | deep links | the app has no URL routing for vault, note or chat |
 
 ## Tests (`site/site.test.mjs`)

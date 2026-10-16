@@ -16,12 +16,12 @@ release images (`just prodtest`, header `karpathy.app`) with the **demo vault** 
 tokens or secrets. It belongs to the website, not to the app: it lives in `site/screenshots/` and is retaken with
 `site/capture.mjs` when the UI changes enough to make it look outdated.
 
-**Device class** — the three form factors the app is built for, each with one fixed viewport:
+**Device class** — the three kinds of device the app is built for, each with one fixed viewport:
 
 | Device class | Viewport (CSS px) | Scale | Layout it shows |
 |---|---|---|---|
 | Mac | 1440 × 900 | 2 | file tree, note, chat |
-| iPad | 1180 × 820 (landscape) | 2 | note and chat side by side |
+| iPad | 1180 × 820 (landscape) | 2 | file tree, note, chat (the landscape iPad gets the wide layout) |
 | iPhone | 393 × 852 | 3 | chat |
 
 **Origin of the idea** — Andrej Karpathy's tweet *LLM Knowledge Bases* (2026-04-02, id 2039805659525644595) and his
