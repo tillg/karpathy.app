@@ -25,7 +25,7 @@ Every step runs `node site/site.test.mjs` (the site suite, also part of `npm tes
 
 ## Screenshots (#156)
 
-- [ ] `site/build.sh` copies `site/screenshots/` into `_site/screenshots/`
+- [x] `site/build.sh` copies `site/screenshots/` into `_site/screenshots/`
   - Test first: `site.test.mjs` › "build copies site/screenshots" — puts no file, asserts every file of
     `site/screenshots/` exists under `_site/screenshots/` and that the dir exists — fails today: build.sh copies
     only top-level files

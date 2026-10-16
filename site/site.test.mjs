@@ -1,7 +1,7 @@
 // Website checks (specs/changes/product-website): assemble _site/ with build.sh, then test the output.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -15,6 +15,12 @@ before(() => {
 
 test('build assembles _site', () => {
   assert.ok(existsSync(out));
+});
+
+test('build copies site/screenshots', () => {
+  const src = join(root, 'site/screenshots');
+  assert.ok(existsSync(src), 'no site/screenshots');
+  for (const f of readdirSync(src)) assert.ok(existsSync(join(out, 'screenshots', f)), `_site/screenshots/${f} missing`);
 });
 
 const page = () => readFileSync(join(out, 'index.html'), 'utf8');
