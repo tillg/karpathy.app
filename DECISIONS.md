@@ -179,6 +179,7 @@ edited: 2026-10-16
   - [10:24 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive](#run-2026-10-16-1016-6)
   - [10:49 — Review triage: fix all findings, including the app's chat-header bug #160 seen in the shots](#run-2026-10-16-1016-7)
   - [11:28 — Archive `website-screenshots-and-origin` with its decisions open](#run-2026-10-16-1016-8)
+  - [11:35 — Retro: the site workspace's test also lints `site/`; create the missing `needs-triage` label](#run-2026-10-16-1016-9)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2662,3 +2663,20 @@ edited: 2026-10-16
   gate and lists the decisions for review.
 - **Alternatives:** leave the change in `specs/changes/` (blocks the task's merge/release order).
 - **Consequences:** a decision the user reverts later is undone with `/spec:tweak`.
+
+## 11:35 — Retro: the site workspace's test also lints `site/`; create the missing `needs-triage` label {#run-2026-10-16-1016-9}
+
+- **Status:** open
+- **Context:** this run's retro. What went wrong: (1) the per-step gate (decision 6) ran only `site.test.mjs`, so
+  `capture.mjs` was committed with 6 `no-undef` lint errors (7b2a70c) and stayed lint-red until the review pass;
+  (2) filing #160 with the `needs-triage` label that `docs/agents/triage-labels.md` names failed — the repo had no
+  such label; (3) the first decision timestamps were written ahead of the clock (fixed by hand from `git log`);
+  (4) the local dev model needed many attempts for a usable chat answer in the screenshots.
+- **Question:** which fixes, at which level?
+- **Decision:** project level, applied: (1) `site/package.json` `test` = `eslint . && node site.test.mjs` (seen red
+  with a lint probe, green without); (2) `gh label create needs-triage`. (3) and (4) get no mechanical fix: (3) is
+  my discipline (`date` before each heading), (4) is documented in README and `deployment.md` › Website. Plugin
+  level, drafted only (report): none new.
+- **Why:** (1) makes the cheap per-step gate catch what CI's lint would; (2) makes the documented mapping work.
+- **Alternatives:** a git pre-commit lint hook (slower for every commit in the repo); change the mapping to `bug`.
+- **Consequences:** `npm test` in the site workspace now fails on a lint error in `site/`.
