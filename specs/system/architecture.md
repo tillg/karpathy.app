@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-15
+edited: 2026-10-16
 ---
 
 # Architecture: karpathy.app
@@ -192,11 +192,22 @@ flowchart LR
 Not part of the app or its stack: the public product page at https://karpathy.app, deployed to GitHub Pages
 on its own ([deployment.md › Website](deployment.md#website)).
 
-- `index.html` (start page: hero with logo, features, how it works, "Code, not a service" with what self-hosting
-  takes, a hosting contact) and `style.css` (the app's `:root` token blocks, copied, plus the page's layout).
-- `build.sh` assembles `_site/` from the page files and `assets/icons/`; all paths are relative, so the page also
-  works under `tillg.github.io/karpathy.app/`.
+- `index.html` (start page: hero with logo and a link to the origin, features, "See it on every device" with the
+  three screenshots, how it works, "Where the idea comes from" — Karpathy's post as a static `<blockquote cite>`
+  card linking to X and his gist as a card, no embed script —, "Code, not a service" with what self-hosting takes, a
+  hosting contact) and `style.css` (the app's `:root` token blocks, copied, plus the page's layout; the Mac shot
+  spans the width, iPad and iPhone share the row below, all stack at phone width).
+- `screenshots/{mac,ipad,iphone}.webp`: the website screenshots, each `<img>` with its real `width`/`height`,
+  `loading="lazy"`, linked to the full file. `capture.mjs` takes them from `just prodtest` (WebKit, the device
+  classes of [domain.md](domain.md)); it is a dev tool, not deployed.
+- `build.sh` assembles `_site/` from the page files, `screenshots/` and `assets/icons/`; all paths are relative, so
+  the page also works under `tillg.github.io/karpathy.app/`.
 - `site.test.mjs` runs the build and checks the output, including token equality with `apps/web/src/styles.css`.
+
+```mermaid
+flowchart TB
+  H[hero + origin link] --> F[features] --> SS["#screenshots<br/>Mac · iPad · iPhone"] --> HW["#how"] --> OR["#origin<br/>post + gist"] --> SH["#self-host + hosting contact"]
+```
 
 ### Backend (`apps/backend`)
 

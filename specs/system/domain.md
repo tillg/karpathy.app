@@ -1,7 +1,7 @@
 ---
 title: "Domain: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-15
+edited: 2026-10-16
 ---
 
 # Domain: karpathy.app
@@ -210,6 +210,9 @@ Terms for running the app, not for using it ([deployment.md](deployment.md)).
 | **Heartbeat** | A ping to healthchecks.io every 5 minutes; when it stops or reports a failure, healthchecks.io raises the alert. *Avoid:* uptime check. | `karpathy-heartbeat` |
 | **Website** | The public product page at `https://karpathy.app`; static, no login, no user data. Not the app, which runs at `app.karpathy.app` (or another target). *Avoid:* homepage, landing page, web app. | `site/` |
 | **Website deploy** | Publishing the current `site/` from `main` to GitHub Pages. Independent of releases; the website has no version. *Avoid:* release. | `.github/workflows/pages.yml` |
+| **Website screenshot** | A picture of the app on one device class (Mac 1440 × 900 @2, iPad landscape 1180 × 820 @2, iPhone 393 × 852 @3) with the demo vault open, for the website; light mode, no admin screens or secrets. Retaken with `site/capture.mjs`. *Avoid:* screen capture, mockup. | `site/screenshots/` |
+| **Origin** | Andrej Karpathy's post "LLM Knowledge Bases" (2026-04-02) and gist "LLM Wiki" (2026-04-04), the idea the app is built on; shown on the website. *Avoid:* inspiration, credits. | `site/index.html` › `#origin` |
+| **Demo vault** | The public example vault `tillg/karpathy_demo_wiki` (coffee, mountains, topology) with the demo run book `Karpathy Demo.md`; the website screenshots show it. *Avoid:* sample vault, test vault. | `~/git/karpathy_demo_wiki` |
 | **Login link** | `<app url>/#token=…`, shown as a QR code by `just token <target> --qr`; logs a device in. | `lib/login-code.ts` |
 
 ### Development
