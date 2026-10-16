@@ -110,6 +110,9 @@ header `karpathy #N`).
 - Never `down`, restart or exec into a stack another checkout owns, and never start one with raw
   `docker compose` (no hand-written port overrides in `tmp/`).
 - `just e2e` and `just prodtest` target this checkout's stack automatically. Run `just dev down` when done.
+- A full `just e2e` on a busy Mac fails dozens of tests that pass alone: re-run with `just e2e --last-failed`, and check
+  any `@llm` spec that still fails against the commit before your change (own worktree and stack) before blaming it —
+  the local dev model fails some of them on its own.
 
 ## Progress messages (ntfy)
 

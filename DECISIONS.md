@@ -169,6 +169,7 @@ edited: 2026-10-15
   - [15:15 — Rewrite 15 e2e specs to reach the forms through admin mode; `fix-24` discards the saved draft before removing](#run-2026-10-15-1244-5)
   - [19:25 — Review triage: fix the defects and the dead code, adjust the spec where it promised more than the data has](#run-2026-10-15-1244-6)
   - [09:00 — Archive admin-mode with its decisions open and the dev model's `@llm` e2e reds documented](#run-2026-10-15-1244-7)
+  - [09:10 — Retro: a per-test stack check in e2e and a CLAUDE.md line on judging e2e failures](#run-2026-10-15-1244-8)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2481,3 +2482,25 @@ edited: 2026-10-15
 - **Alternatives:** keep the change open (the PR would carry an outdated `specs/system/`).
 - **Consequences:** review decisions 1–7 before merging the PR. The `@llm` flakiness with the dev model is worth its
   own issue (a retry or a sturdier tool-call prompt).
+
+## 09:10 — Retro: a per-test stack check in e2e and a CLAUDE.md line on judging e2e failures {#run-2026-10-15-1244-8}
+
+- **Status:** open
+- **Context:** `admin-mode` run retro. What went wrong: (1) twice Rancher's port forwarder died mid-run and a full
+  `just e2e` turned 300 tests red with page timeouts that named no cause; (2) the full e2e run on a busy Mac was red
+  for load and for the dev model, and telling the two apart from a regression took a baseline worktree and stack;
+  (3) two parallel merges conflicted on adjacent new fixture lines in `fake-api.tsx` / `AdminMode.tsx`; (4) a Worker
+  fixed a repo-rule test failure (`model literals live only in deploy/settings/`, which scans `.test.tsx`) without
+  saying why, and the orchestrator reverted it as "unexplained" — `main` was red on it for a while.
+- **Question:** which fixes, at which level?
+- **Decision:** project level, applied: (1) an automatic `stackGuard` fixture in `e2e/helpers.ts` checks `/healthz`
+  before every test and fails with the cause and the `rdctl` restart (pinned by `e2e/stack-guard.spec.ts`); (2) one
+  CLAUDE.md line: re-run with `--last-failed`, compare a remaining `@llm` failure with the pre-change commit. Plugin
+  level, drafted only (report): `/spec:apply --parallel` Worker briefs should require "every file changed and why";
+  the plan reference's `Verify: just e2e → all green` needs a way to state a baseline for suites with model-dependent
+  tests.
+- **Why:** (1) is mechanical and stops a whole class of confusing reds; (2) is a pointer, the check itself needs a
+  second stack; (3) has no mechanical fix short of different fixture layouts; (4) is a brief problem in the plugin.
+- **Alternatives:** Playwright `maxFailures` (stops the run, but also on real flaky reds); widening the model-literal
+  rule to `.test.tsx` (relaxes a guard; left for the user).
+- **Consequences:** a stack that dies mid-run now fails each test in about 5 s with the cause.
