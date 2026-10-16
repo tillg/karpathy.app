@@ -18,11 +18,11 @@ function repeated(base: unknown, over: unknown, path = ''): string[] {
 
 describe('deploy/settings', () => {
   it('real ingest profiles only on hetzner: dev and test stacks never read a real Gmail label', () => {
-    for (const env of ['dev', 'local', 'prodtest', 'test']) expect(loadSettings(env, { overlay: false }).ingest?.profiles, env).toEqual({});
+    for (const env of ['dev', 'prodtest', 'test']) expect(loadSettings(env, { overlay: false }).ingest?.profiles, env).toEqual({});
   });
 
-  it('has the five environments', () => {
-    expect(environments()).toEqual(['dev', 'hetzner', 'local', 'prodtest', 'test']);
+  it('has the four environments', () => {
+    expect(environments()).toEqual(['dev', 'hetzner', 'prodtest', 'test']);
   });
 
   it("today's effective values", () => {
@@ -37,12 +37,6 @@ describe('deploy/settings', () => {
     expect(hetzner.git.remote_base).toBe('https://github.com/');
     expect(hetzner.git.author).toEqual({ name: { secret: 'git_author_name' }, email: { secret: 'git_author_email' } });
     expect(hetzner.ai.web).toMatchObject({ access: true, fetch_cap: 20, search_cap: 20 });
-
-    const local = loadSettings('local', { overlay: false });
-    expect(local.ai).toMatchObject({ gateway: 'ollama', model: 'ollama/qwen2.5:3b', vision_model: 'ollama/qwen3-vl:2b' });
-    expect(local.git).toMatchObject({ remote_base: 'file:///remotes/', author: { name: 'karpathy.app local', email: 'local@karpathy.app' } });
-    expect(local.proxy).toMatchObject({ domain: 'localhost', tls: 'internal' });
-    expect(local.timezone).toBe('Europe/Berlin');
 
     for (const env of ['dev', 'prodtest']) {
       const s = loadSettings(env, { overlay: false });

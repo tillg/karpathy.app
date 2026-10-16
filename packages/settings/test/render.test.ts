@@ -105,7 +105,6 @@ describe('OLLAMA_UPSTREAM', () => {
   it('where the relay finds the model server, only for a gateway on the Mac', () => {
     expect(env(renderComposeEnv(loadSettings('test', { overlay: false }), {})).OLLAMA_UPSTREAM).toBe('host.docker.internal:11434');
     expect(env(renderComposeEnv(loadSettings('dev', { overlay: false }), {})).OLLAMA_UPSTREAM).toBe('host.docker.internal:8000');
-    expect(env(renderComposeEnv(loadSettings('local', { overlay: false }), {})).OLLAMA_UPSTREAM).toBe('192.168.5.2:11434');
     expect(env(renderComposeEnv(loadSettings('hetzner', { overlay: false }), SECRETS)).OLLAMA_UPSTREAM).toBeUndefined();
   });
 });
@@ -123,7 +122,7 @@ describe('renderBackendSettings', () => {
     expect(s.ai).toEqual({ model: 'openrouter/z-ai/glm-5.3', web_access: true });
     expect(s.commit_reminder_threshold).toBe(4);
     expect(s.files).toEqual({ visible_dot_dirs: ['.agents'] });
-    for (const e of ['dev', 'prodtest', 'test', 'local', 'hetzner'])
+    for (const e of ['dev', 'prodtest', 'test', 'hetzner'])
       expect(() => backendSettingsSchema.parse(JSON.parse(renderBackendSettings(loadSettings(e, { overlay: false }), SECRETS))), e).not.toThrow();
     for (const name of ['bearer_token', 'opencode_password', 'github_token', 'dns_api_token', 'openrouter_api_key'])
       expect(json).not.toContain(SECRETS[name as keyof typeof SECRETS]);

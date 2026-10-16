@@ -157,7 +157,8 @@ export interface PendingPrompt {
   ran: boolean;
 }
 
-export const userCount = (c: ChatView | null) => c?.messages.filter((m) => m.role === 'user').length ?? 0;
+/** User messages with something to show: one whose parts haven't arrived yet (the hidden local-time part comes first) doesn't count. */
+export const userCount = (c: ChatView | null) => c?.messages.filter((m) => m.role === 'user' && m.parts.length > 0).length ?? 0;
 
 /**
  * Next state of a pending prompt given the latest chat (pure): keep it (possibly updated),
@@ -202,6 +203,9 @@ export function turnAnnouncement(prev: ChatView['turn'] | undefined, c: ChatView
 export function toolLabel(call: ToolCall): string {
   if (call.status === 'denied' || call.status === 'error')
     return `${call.status === 'denied' ? 'denied · ' : ''}${call.tool} ${call.path ?? call.url ?? call.title ?? ''}`;
+  // Browser tools (#151): waiting for the tab that sent the prompt, then the title the tool set.
+  if (call.browser && call.status === 'running') return call.tool === 'user_location' ? 'open the app to share your location' : `waiting for ${call.tool}`;
+  if (call.browser && call.title) return call.title;
   if (call.tool === 'websearch' && call.query) return `searched the web: "${call.query}"`;
   if ((call.tool === 'webfetch' || call.tool === 'open_url') && call.url) {
     const verb = call.tool === 'webfetch' ? 'fetched' : 'open';

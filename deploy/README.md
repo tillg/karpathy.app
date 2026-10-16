@@ -90,10 +90,9 @@ when the whole box is gone.
 |---|---|---|---|
 | **dev** stack N (1–9) | https://localhost:80N0 | Working on the code: sources bind-mounted, hot reload, the Mac's native omlx as the model; one per checkout, side by side (`just dev stacks`) | `just dev up [N]` |
 | **prodtest** | https://localhost:80N5 | The prod images built from the working tree, paired with dev stack N | `just prodtest` |
-| **local** target | https://localhost:9444 | A released version on an Ubuntu VM (Lima) sized like the server: tests the whole playbook | `just vm up`, `just deploy local` |
 | **hetzner** target | https://app.karpathy.app | Production: Hetzner server, reachable only over Tailscale | `just deploy hetzner` |
 
-dev and prodtest run in the Mac's Docker (Rancher Desktop); the two targets are real Ubuntu hosts
+dev and prodtest run in the Mac's Docker (Rancher Desktop); the target is a real Ubuntu host
 managed by Ansible.
 
 ## The `just` recipes
@@ -106,7 +105,6 @@ managed by Ansible.
 |---|---|
 | `just install` | `npm install` for the workspace (after a clone or in a fresh worktree). |
 | `just dev [up [N]\|down\|logs\|ps\|token\|stacks]` | This checkout's dev stack N on :80N0 (`up` without N: the remembered one, else the first free); `stacks` lists who owns which stack; `token` prints the access token. |
-| `just ollama install\|uninstall\|status` | Native Ollama on 127.0.0.1:11434 as a LaunchAgent (`brew install ollama` first). No longer the dev default (dev and prodtest use omlx, `brew services start omlx`); still what the `local` target expects. |
 | `just check` | Lint, typecheck, the unit + integration tests and the dev-stack tooling tests. |
 | `just test [args]` | The unit + integration tests only. |
 | `just e2e [args]` | Playwright against this checkout's dev stack. |
@@ -121,16 +119,6 @@ managed by Ansible.
 | `just deploy <target> [version] --only app` | Only the app role (or `--only monitoring`); assumes a full deploy ran before. The fast path for upgrades and rollbacks. |
 | `just deploy hetzner --bootstrap <public-ip>` | The first run against a fresh server: as `root` on its public IP. Every later run goes as `ops` over Tailscale. |
 | `just deploy-check <target> [version] [--only app\|monitoring]` | Dry run with diff; changes nothing. Needs a host that was deployed before (a fresh one has no Docker or Tailscale to check against). |
-| `just deploy-e2e local [args]` | The Playwright suite (without the `@llm` tests) against the local target. |
-
-**The local target VM**
-
-| Recipe | Does |
-|---|---|
-| `just vm up` | Creates the Lima VM the first time, starts it after that. |
-| `just vm down` | Stops it (keeps its disk). |
-| `just vm reset` | Deletes and recreates it: the from-scratch test. |
-| `just vm ssh [-- cmd]` | A shell in the VM, or one command. |
 
 **Secrets and logging in**
 
@@ -168,8 +156,7 @@ security add-generic-password -a "$USER" -s karpathy-ansible-hetzner -w   # prom
 ```
 
 The access token is a fixed value in the vault, not generated at startup; it changes only when you
-change it in the vault (and the next deploy restarts the stack with it). The `local` vault holds
-test values only.
+change it in the vault (and the next deploy restarts the stack with it).
 
 ### The GitHub token
 
@@ -263,8 +250,7 @@ deploy/
   compose.prodtest.yml     prodtest overrides
   dev.sh                   behind `just dev`
   backend/ proxy/ opencode/ web/   Dockerfiles and their config (Caddyfile, opencode.json)
-  lima/karpathy-vm.yaml    the local target VM
-  ansible/                 the playbook: site.yml, roles/, inventories/{local,hetzner}/,
+  ansible/                 the playbook: site.yml, roles/, inventories/hetzner/,
                            deploy.sh (just deploy), fill_vault.py (just secrets), token.sh (just token)
   hetzner-watch/           the availability check behind `just hetzner-watch`
 ```
@@ -280,5 +266,5 @@ settings and the secrets), monitoring in `/opt/karpathy-monitoring`, the vaults 
 - **The smoke check fails:** the new release is running but unhealthy. Deploy the previous
   version (`just deploy <target> <previous> --only app`) and look at the containers:
   `ssh ops@karpathy docker compose -p karpathy-app ps` and `… logs backend`.
-- **Monitoring:** the Beszel hub is at `http://<tailnet-ip>:8090` (`local`: http://localhost:9090),
+- **Monitoring:** the Beszel hub is at `http://<tailnet-ip>:8090`,
   Gatus at `:8091`. Alerts arrive on the target's ntfy topic.

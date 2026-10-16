@@ -19,3 +19,10 @@ export function stackTarget(env: Record<string, string | undefined>, root: strin
   if (!/^[1-9]$/.test(n)) throw new Error(`stack must be 1-9, got '${n}'`);
   return { baseURL: `https://localhost:80${n}0`, backendContainer: env.E2E_BACKEND_CONTAINER ?? `karpathy-app-${n}-backend-1`, project: `karpathy-app-${n}` };
 }
+
+/** Where Playwright writes results for a target: one folder each, so a dev-stack run and a prodtest run can overlap. */
+export function resultsDir(env: Record<string, string | undefined>, root: string) {
+  const t = stackTarget(env, root);
+  const name = 'project' in t ? t.project : new URL(t.baseURL).host.replace(/[^A-Za-z0-9.-]/g, '-');
+  return `tmp/test-results/${name}`;
+}

@@ -104,10 +104,7 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
   healthy while its last-run file is younger than 20 min. Without profiles it idles, healthy.
 
 A target adds `shared/compose.target.yml` (rendered by Ansible): the `vaults` volume as a bind mount
-of `/srv/vaults`; on `local` also the e2e bare repos at `/remotes` with `safe.directory` (plus `GIT_REMOTE_BASE` as
-env, which only releases from before the settings read), and, when the target's gateway is Ollama, the `ollama-relay`
-service (`ollama.internal` on `internal` + `egress`, upstream `${OLLAMA_UPSTREAM}`) with `NO_PROXY=…,ollama.internal`
-for opencode, and the ingest service's vault mounts: per ingest profile whose vault is already cloned,
+of `/srv/vaults`, and the ingest service's vault mounts: per ingest profile whose vault is already cloned,
 `/srv/vaults/<id>[/<root>]/Input` read-write and `…/Sources` read-only at the same path under `/vaults` (the `vaults`
 volume itself is not mounted into it).
 
@@ -115,7 +112,6 @@ volume itself is not mounted into it).
 
 | Target | Host | Reached as | TLS |
 |---|---|---|---|
-| `local` | Ubuntu 24.04 VM (Lima, `deploy/lima/karpathy-vm.yaml`), sized like the server; https://localhost:9444 | the Lima guest user | Caddy's internal CA |
 | `hetzner` | Hetzner CPX22, Nuremberg (CX23 was sold out); https://app.karpathy.app | `ops@karpathy` over Tailscale | Let's Encrypt via DNS-01 at GoDaddy |
 
 Each target is an environment with three homes:
@@ -131,7 +127,6 @@ runs without role `app`); role `app` asserts it equals the rendered `DOMAIN` and
 
 | Target | Model |
 |---|---|
-| `local` | The native Ollama on the Mac (`ollama/qwen2.5:3b`, `just ollama install`; not yet migrated to omlx, which the dev stacks use), through the VM stack's `ollama-relay` to `192.168.5.2:11434` (Lima's address for the host, forwarded to the Mac's loopback). Role `app` checks on the controller that Ollama answers and has the model, else stops with "run `just ollama install`". |
 | `hetzner` | OpenRouter `z-ai/glm-5.3`, routed to zero-data-retention hosts (the central default). |
 
 Not targets, and not deployed by the playbook: the **dev stacks** on the Mac (stack N, project `karpathy-app-N`,
@@ -179,10 +174,8 @@ sequenceDiagram
 - **Rollback** = deploying the older version with today's playbook (`just deploy <target> <old>
   --only app`, about 50 s). The playbook supports every release since it shipped; a template change
   that would break an older `compose.yml` must stay backward compatible. That is why the rendered `.env` keeps every
-  key the old `env.j2` wrote (`DEFAULT_MODEL`, `GIT_AUTHOR_*`, `TLS_MODE`, …; a golden test pins the set) and
-  `compose.target.yml` still sets `GIT_REMOTE_BASE` on `local`: a release from before the settings ignores
-  `settings.json` and reads those. Checked on `local` (rollback to 0.0.15 and forward again). Not covered: releases
-  older than the egress proxy on `local`. A release whose `compose.yml` has no `ingest` image (before `0.0.17-rc.1`) gets no
+  key the old `env.j2` wrote (`DEFAULT_MODEL`, `GIT_AUTHOR_*`, `TLS_MODE`, …; a golden test pins the set): a release
+  from before the settings ignores `settings.json` and reads those. A release whose `compose.yml` has no `ingest` image (before `0.0.17-rc.1`) gets no
   `ingest.json` and no ingest mounts (fact `app_ingest`).
 - **Bootstrap:** `just deploy hetzner <version> --bootstrap <public-ip>` runs the same play once as
   `root` on the public IP (with the temporary `setup-ssh` firewall); it needs exactly one inventory host
@@ -262,7 +255,7 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
   already entered for the dev stack as defaults) and generates the token, Beszel secrets and the ntfy
   topic. `vault-get.sh` reads one value for the other scripts.
 - Secret files carry no trailing newline (Caddy's `{file.…}` hands the DNS token over verbatim); tasks
-  that handle secrets are `no_log`. The `local` vault holds test values only.
+  that handle secrets are `no_log`.
 - **Logging a device in:** `just token <target>` copies the token; `--qr` prints a QR code of
   `<app url>/#token=…`. The PWA stores a token from that link and removes it from the URL and history;
   the home-screen app on iOS has its own storage, so its token screen can scan the QR code with the
@@ -270,13 +263,13 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
 
 ## Ingest service operations {#ingest-cutover}
 
-- **Gmail:** `just ingest-auth <target> <email>` (targets `dev` = this checkout's dev stack, `local`, `hetzner`) pipes
+- **Gmail:** `just ingest-auth <target> <email>` (targets `dev` = this checkout's dev stack, `hetzner`) pipes
   this Mac's gog OAuth client (`gog auth credentials`) and the account's refresh token (Keychain `gogcli`,
   `token:default:<email>`, from `gog auth add <email>` once) into the target's `ingest` container (`gog auth credentials
   set`, `gog auth import --refresh-token-stdin`) and checks `gog auth list`. Nothing is printed or written to disk on the
   way. Checked against a dev stack with a throwaway account.
 - **Instagram:** admin mode › Secrets & keys › Instagram in the app, by the user ([functional.md](functional.md#instagram-connection)).
-- **Profiles:** `ingest.profiles` in `deploy/settings/hetzner.yaml`, then a redeploy. Dev stacks, prodtest, `local`
+- **Profiles:** `ingest.profiles` in `deploy/settings/hetzner.yaml`, then a redeploy. Dev stacks, prodtest
   and the tests never get profiles; a real end-to-end mail test uses a separate test label (e.g. `MyLifeTest`), never a
   real one.
 
@@ -405,8 +398,7 @@ flowchart LR
 | Ansible run from the Mac, push-button, no CD | Covers host setup too; CD would need a Tailscale key in GitHub. |
 | Images from GHCR, never built on a target | No builds on a 4 GB box; identical bits on every target; a real version to roll back to. |
 | `compose.yml` as a release asset | Images and stack definition always come from the same release, even with a dirty checkout; no git or source on the host. |
-| Native arm64 runners, not QEMU | Free for public repos, fast; the `local` VM is arm64. |
-| `local` = a Lima VM, kept between runs | Only a VM runs the host roles; `just vm reset` for the from-scratch test. |
+| Native arm64 runners, not QEMU | Free for public repos, fast. |
 | Monitoring: Beszel + Gatus + healthchecks.io, its own compose project | The lowest RAM covering every alert; an app deploy never restarts the monitoring. |
 | The in-app Server section samples on its own, alerts stay out of the app | Works on every target and in dev without a tailnet path or hub credentials; one place for alerting. |
 | Secrets in Ansible Vault, password in the Keychain | No extra tool per deploy; one password per target. |
@@ -425,8 +417,7 @@ flowchart LR
 - A secret changed in a run that then fails isn't applied by the next run (the recreate triggers only
   on a change in the same run).
 - Handlers (Docker restart, systemd reload) are lost when a run fails (`force_handlers` is off).
-- No automated test of the `tailscale` role, the bootstrap or the reboot path; `local` runs without
-  Tailscale.
+- No automated test of the `tailscale` role, the bootstrap or the reboot path.
 - Secrets appear briefly in process lists (the smoke check's curl, `tailscale up`).
 - Gatus has no authentication on the tailnet.
 - Let's Encrypt allows 5 certificates per name per week: repeated rebuilds can run into it.

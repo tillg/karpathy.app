@@ -156,7 +156,7 @@ User / Admin role line, not an access boundary: the one token is both, so whoeve
 - **App skills come only from the image** (`/opt/opencode-config/opencode/skills/`, read-only, root-owned like the tools),
   never from a vault. A vault skill of the same name only replaces it in that vault; the backend decides the clash, and the
   AI's `skill` tool may still load either.
-- **The custom tools, `open_note`, `current_page`, `open_url`, `suggest_next`, `save_url` and `move_to_sources`, come from the image**, never from a vault: they sit in a root-owned,
+- **The custom tools, `open_note`, `current_page`, `open_url`, `suggest_next`, `user_location`, `save_url` and `move_to_sources`, come from the image**, never from a vault: they sit in a root-owned,
   read-only global config dir (`XDG_CONFIG_HOME=/opt/opencode-config`), pre-populated at build so opencode installs nothing at
   runtime. `open_note` checks the path lexically and by `stat` inside the session directory, refuses dot-segments, reads no
   content and changes nothing. `current_page` reads one file, `/vaults/.open-page/<session id>.json` (written by the backend when a prompt is accepted, outside every clone; the name is the session id, validated as a plain id, never a model-chosen path) and re-checks its path with the same `open_note` check, so a tampered file can't point outside the vault. The prompt body's `openPage.path` is validated by the backend like any vault path (`normalizeRel`: no `..`, absolute or `.git`). `open_url` fetches nothing and returns `offered <url>` for an http(s) URL (see
@@ -164,6 +164,16 @@ User / Admin role line, not an access boundary: the one token is both, so whoeve
   is allowed for `vault` only, and only a known URL becomes a new media file or PDF (see [Web access](#web-access)); with its `note` argument it also appends one `![[…]]` line to an existing Markdown note inside the vault (same path confinement, nothing else rewritten). `move_to_sources`, also
   `vault` only, can only rename `Input/<name>` to a new `Sources/<name>` ([Ingest service](#ingest-service)). opencode *would* load tools from a vault's
   `.opencode/tools/`; the harness-config rule below is what stops that.
+- **`user_location`, the browser tool** (#151), is one more image tool (`vault` and `vault-readonly`). It reads only an
+  answer file under `/vaults/.browser-calls/`, named by base64url of the session and call id (`fileKey`, on both sides:
+  no provider-chosen id becomes a path), outside every git clone. The backend writes that file only from
+  `POST /api/vaults/:id/chats/:chatId/browser-calls/:callId`, which is bearer-guarded like every route, accepts only a
+  call the backend announced and still holds pending for that vault and chat (`404` otherwise), validates the body
+  against the tool's schema (`400`; coordinates in range, no extra keys) and writes once (`409` for a second answer).
+  opencode never calls the backend: the answer file is the whole handoff, so no new path from opencode to the API.
+  Only the tab that sent the prompt is asked (by tab id), but that is routing, not authentication: every holder of the
+  token may post an answer to a pending call. The local-time line is text built from a zone `Intl` accepts and a
+  canonicalized locale, in a synthetic part; the zone never becomes a path.
 - **Harness config in a vault** (`.opencode/`, `opencode.json(c)`) disables chat for that vault and can't be created
   through the file API. It is code (plugins, custom tools, MCP servers with a `command`), and the managed config can
   only override its keys, not stop it from adding new ones. A vault that needs its own opencode config can't use chat.
@@ -264,7 +274,8 @@ itself is removed first) and `target="_blank" rel="noopener noreferrer"` on exte
 prod proxy adds a strict **CSP** (`default-src 'self'`, `script-src 'self'`, `object-src 'none'`,
 `frame-ancestors 'none'`, …; `style-src 'unsafe-inline'` because CodeMirror injects styles; `img-src` and
 `media-src` allow `'self' blob:` for media embeds, no remote hosts) and `nosniff`, `no-referrer` and
-`X-Frame-Options DENY`.
+`X-Frame-Options DENY`, and `Permissions-Policy: geolocation=(self)` (#151: the location API stays with the app's own
+origin; nothing else is restricted by it).
 
 **Media files** are untrusted bytes too:
 
@@ -308,8 +319,7 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   name), which passes `/v1/*` (the OpenAI-compatible API) and answers 403 to everything else, so a
   prompt-injected AI can't use the server's admin API (model management, settings); with Ollama a pull from an
   "insecure" registry would otherwise make the Mac itself request LAN or loopback addresses the egress proxy
-  forbids. The `local` target's VM still uses a native Ollama: the same relay (`ollama-relay`) to
-  `192.168.5.2:11434` (Lima's forward to the Mac's loopback), so Ollama never binds a LAN address.
+  forbids.
 - **Production server:** reachable only over Tailscale. The Hetzner firewall blocks all inbound traffic; the app,
   Beszel and Gatus bind the tailnet IP. SSH takes keys only, no root login. The operator logs in as `ops` (sudo);
   uid 1000, the app's user, has no login, no sudo and no Docker access, so a container breakout doesn't reach root
@@ -318,6 +328,15 @@ kinds, strings only) and can only change which fields and flags the form shows; 
 ## Gaps (known, not built)
 
 - No rate limiting on the token check.
+- **The exact position can be exfiltrated by prompt injection** (#151): a hostile page in a vault can tell the AI to
+  call `user_location` and put the result into a `webfetch` URL to an attacker's host, a `websearch` query or a note.
+  Once the browser's site permission is granted, the call needs no further click, and the position is full precision
+  (GPS, about 10 m, i.e. the user's house); both by the user's choice (no per-call confirmation, no rounding).
+  Mitigations: the tool description limits it to requests that depend on where the user is, web access is off by
+  default and per turn, and the chip shows every use. Not mitigated further; revisit if injection shows up.
+- **The position goes to the LLM provider** as tool output and stays in the opencode session (chat history) until the
+  chat is deleted; each use shows as a chip with its accuracy. No reverse geocoding, so no third party besides the
+  provider sees it.
 - The egress proxy allows every public destination (LLM APIs, models.dev, Exa, any web page); it is an SSRF fence,
   not an allowlist.
 - Exa without `EXA_API_KEY` is its anonymous, rate-limited endpoint with no account terms; with a key, the key travels

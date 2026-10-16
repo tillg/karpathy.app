@@ -79,10 +79,19 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Context usage** | *used / window* of a chat, e.g. `3,560 / 16,384`; only *used* when the window is unknown. Levels: normal < 70 % ≤ warning < 90 % ≤ critical. | `ContextUsage`; web `ContextMeter` |
 | **Compaction** | opencode summarizing a long chat to free its context; the next reply's context used drops, and the meter's tooltip says so. | opencode |
 | **Turn** | One user prompt in a chat plus everything the AI reads and changes in response. States `idle`, `queued` (waiting for another turn or for the sync), `running`. | `TurnState` |
-| **Consulted file / changed file / opened note** | The three tool-chip kinds of a turn: files the AI read (read tools), wrote (edit/write/patch tools), or asked the app to show (`open_note`). An opened note is neither consulted nor changed: opening reads and writes nothing. | `ToolCall.writes`, `ToolCall.opens` |
+| **Prompt (body)** | What the web app posts to start a turn: `{ text, attachments?, openPage?, tabId?, timeZone?, locale? }`. `tabId`, `timeZone` and `locale` are the sending tab's id and the [user time zone](#vocabulary); they are queued with the turn, so a queued turn still knows its answering tab and its zone. | `promptBody` (`app.ts`) |
+| **Vault event stream** | The never-ending NDJSON stream a browser keeps open while it shows a vault: `status`, `files-changed`, the agents move, and the browser calls (`browser-call`, `browser-call-done`). On connect it sends the current status, the last agents move and the still pending browser calls before the live events, so a reload or a PWA back in the foreground still answers. | `GET /vaults/:id/events`, `VaultEvent` |
+| **Consulted file / changed file / opened note** | The three tool-chip kinds of a turn: files the AI read (read tools), wrote (edit/write/patch tools), or asked the app to show (`open_note`). An opened note is neither consulted nor changed: opening reads and writes nothing. A fourth chip kind belongs to browser tools: `ToolCall.browser` with the call id, showing a waiting state while the call is pending. | `ToolCall.writes`, `ToolCall.opens`, `ToolCall.browser` |
 | **Open page** | The file the user has open in the note pane when a prompt is sent: vault-root-relative path, view mode (`read` / `write`) and whether it has unsaved edits; none while nothing is open. A snapshot per chat, replaced by every prompt; it is not updated mid-turn. | `OpenPage` (shared), `<vaults>/.open-page/<chatId>.json` |
 | **Page request** | One call of the AI's `current_page` tool: answers with the open page of the chat's latest prompt (re-checked against the vault), or that nothing is open. Reads and changes nothing in the vault; not a consulted or changed file. | `current_page` tool |
 | **Open request** | One call of the AI's `open_note` tool. It succeeds only for a file the file tree lists inside the chat's vault root; otherwise it fails as a tool error the AI sees, and nothing opens. Only `open_note`: a link offer is not an open request, because it never opens anything by itself. | `open_note` tool |
+| **Browser tool** | A tool the AI calls in opencode whose answer comes from the user's browser while the call waits. Today only `user_location` (local time is not one: see *Local time*). Read-only for the vault: it never writes a file. *Avoid:* client tool, frontend tool, device service. | `BROWSER_TOOLS` (shared, harness), `browserTools` (web) |
+| **Browser call** | One running call of a browser tool: chat, call id (opencode's `callID`), tool, input, the answering tab, its deadline. Pending until the tab answers, the deadline passes (90 s) or the turn ends (abort included). Announced on the vault event stream (`browser-call`, then `browser-call-done`). | `BrowserCall`, `browser-calls.ts` |
+| **Answering tab** | The browser tab that sent the turn's prompt, named by a random **tab id** it keeps in `sessionStorage` (survives a reload, not a new tab; a duplicated tab copies it, and then the first answer wins). Only it answers that turn's browser calls. *Avoid:* client, device (a device can have several tabs). | `tabId` (prompt body, `browser-call` event, `BrowserCall`) |
+| **Browser call result** | What the tab answers: a tool-specific object, validated by that tool's schema, or `unavailable` with a reason (`denied`, `no-position`, `unsupported`). Becomes the text the model reads. | `BrowserCallResult` |
+| **User time zone** | The IANA time zone and locale of the tab that sent the prompt, captured when it is sent and kept with the turn (also a queued one). | `timeZone`, `locale` (prompt body) |
+| **Local time** | The current date, time, weekday and UTC offset in the user time zone, computed on the server from the server clock when the turn is sent to opencode, and given to the model as a hidden line with every prompt (no tool). Needs no answer from the browser, so it works with the phone locked and for a queued turn. Without a user time zone: the deployment's `timezone` setting. | `localTimeLine` (harness), synthetic text part |
+| **User location** | The answering device's position from the Geolocation API (high accuracy), as precise as the device reports it, with accuracy in meters and the age of the fix. No place name. | `user_location` tool |
 | **Vision model** | The model that looks at images for the chat model (`ai.vision_model`, on the gateway its prefix names, not selectable in the app), reached through the `look_at_image` tool. | `ai.vision_model`, `VISION_*` |
 | **Suggestion / ghost text** | One short prompt the AI proposes as the user's next message: the latest completed `suggest_next` call after the last user message, shown greyed out in the empty composer while no turn runs. Not a tool chip. **Accepting** it (Tab, or a tap on the button) copies it into the composer; only Enter sends. Derived from the chat history, so it survives a reload. | `ToolCall.suggestion`, `nextSuggestion` |
 | **Live event vs. history** | Live events arrive on the chat stream while a turn runs; history is the stored chat loaded on reload or when a chat is opened. Only a live open request moves the UI; history shows the chip and moves nothing. | `ChatEvent` vs. `api.chat` |
@@ -192,7 +201,7 @@ Terms for running the app, not for using it ([deployment.md](deployment.md)).
 | **Release** | A git tag `vX.Y.Z` with the five images CI built from it and the `compose.yml` attached to the GitHub release. Never changes once published; a tag whose images failed to build isn't one. *Avoid:* build, deployment. | `.github/workflows/release.yml` |
 | **Pre-release** | A release from a `vX.Y.Z-rc.N` tag, from any commit. Deployable by name, never GitHub's "Latest" or `:latest`. | `guard` job |
 | **Version (of a release)** | `X.Y.Z`, the tag without the `v`; also the image tag and what `/api/health` reports. Local builds report `dev`. | `APP_VERSION` |
-| **Target** | A named place a release is deployed to: `local` (the Lima VM) or `hetzner`. One host with its own secrets (Ansible Vault) and host provisioning (inventory); its app settings are the **environment** of the same name (`deploy/settings/<target>.yaml`). Every target is an environment, not every environment a target. *Avoid:* stage, server. | `deploy/ansible/inventories/<target>`, `deploy/settings/<target>.yaml` |
+| **Target** | A named place a release is deployed to: today only `hetzner`. One host with its own secrets (Ansible Vault) and host provisioning (inventory); its app settings are the **environment** of the same name (`deploy/settings/<target>.yaml`). Every target is an environment, not every environment a target. *Avoid:* stage, server. | `deploy/ansible/inventories/<target>`, `deploy/settings/<target>.yaml` |
 | **Deployment** | One `just deploy <target> [version]`: brings the host to the desired state, starts the release, ends with the smoke check. *Avoid:* rollout, ship. | `site.yml` |
 | **Current release** | The release a target runs now; earlier ones stay for rollback. | `/opt/karpathy.app/current` |
 | **Rollback** | A deployment of an older release, with today's playbook. | — |
@@ -219,8 +228,8 @@ alone (project `karpathy-app`), not numbered stacks.
 | **Orphan stack** | A project `karpathy-app-N` whose owning checkout was deleted. Any checkout's `just dev up N` may take it over. | `stack_state` |
 | **Remembered stack** | The number in `<checkout>/tmp/dev/stack`, written by `just dev up` and deleted by `just dev down`. Every later `dev`, `e2e` and `prodtest` command in that checkout uses it. A checkout holds at most one stack. | `stack_resolve`, `stack_remember` |
 | **Paired prodtest** | The prod images as project `karpathy-app-N-prodtest` on 80N5, taking N from the checkout's dev stack (remembered in `tmp/prodtest/stack` while it runs, so it outlives `just dev down`). | `just prodtest` |
-| **Native omlx** | The dev LLM server on the Mac itself (omlx, an MLX-based OpenAI-compatible server; Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models/<model id>`), shared by all stacks and their prodtests. An outside service, like a cloud provider. The `local` target still uses a native Ollama (`just ollama install`). | `brew services start omlx` |
-| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native model server (omlx in dev and prodtest; the names are historical) and answers 403 to everything else. The `local` target has one too (`ollama-relay`, to Ollama). Where it finds the server is the gateway's `relay_upstream` (`OLLAMA_UPSTREAM`): `host.docker.internal:8000` (omlx) from a dev stack, `192.168.5.2:11434` from the Lima VM. | `deploy/proxy/Caddyfile.ollama-relay` |
+| **Native omlx** | The dev LLM server on the Mac itself (omlx, an MLX-based OpenAI-compatible server; Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models/<model id>`), shared by all stacks and their prodtests. An outside service, like a cloud provider. | `brew services start omlx` |
+| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native model server (omlx in dev and prodtest; the names are historical) and answers 403 to everything else. Where it finds the server is the gateway's `relay_upstream` (`OLLAMA_UPSTREAM`): `host.docker.internal:8000` (omlx) from a dev stack. | `deploy/proxy/Caddyfile.ollama-relay` |
 | **Stack label** | `karpathy #N`, the header brand (vault switcher) on dev stack N, so a browser tab shows which stack it is. Everywhere else the brand is `karpathy.app`. | `lib/brand.ts` › `brandName` |
 
 ### Settings
@@ -230,7 +239,7 @@ Terms for configuring the app per environment ([architecture.md](architecture.md
 | Term | Meaning | In code |
 |---|---|---|
 | **Setting** | A value an operator chooses per environment and the app reads at start: gateway, model, domain, TLS mode, timezone, git identity and remote base, web caps, visible dot-dirs, ingest profiles, which secret each component needs. Never changed by the app itself. *Avoid:* config (that's `config.json`, runtime state). | `Settings` (`packages/settings`) |
-| **Environment** | A named way the stack runs: `dev` (dev stack N), `prodtest`, `test` (CI and the backend's integration tests), `local` (the Lima VM target) and `hetzner` (production). It exists exactly when `deploy/settings/<env>.yaml` exists. Every target is an environment; not every environment is a target. | `environments()` |
+| **Environment** | A named way the stack runs: `dev` (dev stack N), `prodtest`, `test` (CI and the backend's integration tests) and `hetzner` (production). It exists exactly when `deploy/settings/<env>.yaml` exists. Every target is an environment; not every environment is a target. | `environments()` |
 | **Central settings file** | `deploy/settings/settings.yaml`, committed: every setting with the value all environments share. Must validate on its own as complete settings. | `settingsSchema` |
 | **Environment file** | `deploy/settings/<env>.yaml`, committed: the same shape, but only what that environment overrides (all keys optional, unknown keys still fail). | `partialSettingsSchema` |
 | **Local overlay** | Optional, gitignored `deploy/settings/dev.local.yaml` or `prodtest.local.yaml`: one developer's own choices on top (e.g. "use OpenRouter"). Never read for `test` or a target (a `local.local.yaml` or `hetzner.local.yaml` is an error) and ignored by the tests (`--no-local`). Replaces the hand-edited `deploy/.env`. | `loadSettings(env, { overlay })` |
@@ -440,7 +449,7 @@ more.
 | **Public web** | Serves fetched pages; untrusted. |
 | **Obsidian / other git clients** | Change the same GitHub repo from other devices; their changes arrive on the next pull and can cause a conflict. |
 | **GitHub** | Hosts the vault repos; the backend clones, fetches and pushes with the GitHub token, and asks `GET /user` to test it. |
-| **LLM provider** (the environment's gateway: OpenRouter in production; the native omlx on the Mac in dev and prodtest, the native Ollama on `local`) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
+| **LLM provider** (the environment's gateway: OpenRouter in production; the native omlx on the Mac in dev and prodtest) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
 
 ## Processes
 
@@ -638,7 +647,10 @@ flowchart TD
 1. The user sends a prompt; the backend queues the turn (one running turn per vault; the queue survives restarts).
 2. Before the turn starts the backend **pulls** under an exclusive lock, then downgrades to a shared lock without
    letting any other git operation in between.
-3. opencode runs the turn with the `vault` agent (or `vault-readonly` while in conflict). Reads and writes stream to
+3. opencode runs the turn with the `vault` agent (or `vault-readonly` while in conflict). The prompt carries a hidden
+   first line with the user's **local time** ("User's local time: Thursday 2026-10-15 23:41, Europe/Berlin (UTC+02:00),
+   locale de-DE", taken when the turn is sent, in the zone the browser sent, else the `timezone` setting), so "today"
+   and dates in note names are the user's. Reads and writes stream to
    the UI as tool chips; written paths join the AI-touched set and get an AI stamp. An **open request** (`open_note`) that completes
    opens the note in the editor: on the wide layout right away, on a phone or in the tablet overlay when the turn
    ends (only the last one of the turn); while the user is editing, a notice and the "opened" chip show it instead.
@@ -666,6 +678,32 @@ sequenceDiagram
   B-->>W: part {tool call, opens: true, path}
   W->>W: wide: openNote(path) now
   Note over W: phone / tablet overlay: waits until the turn ends, then opens
+```
+
+### Browser call
+
+1. During a turn the AI calls a browser tool (`user_location`); the tool waits for an answer, up to 90 s.
+2. The backend announces the call on the vault event stream (`browser-call`: chat, call id, tool, answering tab,
+   deadline). The chip shows "open the app to share your location".
+3. The answering tab (the one that sent the prompt) asks the browser (`navigator.geolocation`; the browser's own
+   permission prompt appears the first time) and posts the result. Every other tab ignores the event.
+4. The backend validates the result against the tool's schema, hands it to the waiting tool once and announces
+   `browser-call-done`. The tool turns it into text for the model ("The user is at 48.137154, 11.576124 (accuracy ±12 m,
+   fix 3 s old)." or a refusal) and names its own chip ("used your location (±12 m)", "location not shared").
+5. No answer by the deadline (tab closed, phone locked, prompt ignored): the tool returns "the user's device did not
+   answer", the AI asks the user, and the chip says "no answer from your device". The turn's end closes every call.
+
+```mermaid
+sequenceDiagram
+  participant O as opencode (tool)
+  participant B as Backend
+  participant W as Answering tab
+  O->>O: user_location waits
+  B-->>W: vault event browser-call
+  W->>W: navigator.geolocation (permission prompt the first time)
+  W->>B: POST result
+  B->>O: answer (once)
+  O->>O: continues the reply with the position
 ```
 
 ### Command turn
@@ -1041,9 +1079,22 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
   rewritten through a temp file and a rename); once ready, the item belongs to the AI and the user.
 - **The pull never moves `Input/`:** its dirty check and stash leave `Input/` out, so waiting items stay where they are
   (the ingest service bind-mounts the folder) while the pull fast-forwards around them.
-- **Only production reads real mail:** dev stacks, prodtest, tests and `local` have no ingest profiles (the service
+- **Only production reads real mail:** dev stacks, prodtest and tests have no ingest profiles (the service
   idles), so no other stack takes mails from a real label first.
 - **Vault content stays in its language;** the ingest pipeline adds no translation.
+- **A browser call is answered at most once:** the first valid answer wins, later ones get `409`; only the answering
+  tab answers, other tabs of the same user ignore the event. A turn without a tab id (old PWA, ingest runner) has no
+  answering tab.
+- **No answer is not a failure the model sees:** at the deadline the tool returns "the user's device did not answer"
+  as text, not as a tool error, so the AI asks the user instead of retrying. A refusal ("the user did not share their
+  location") is a normal answer too.
+- **The AI asks for the position only when the request depends on where the user is** ("near me", "here", local
+  weather), by the tool's description (a rule for the model, not enforced). There is no app setting and no per-call
+  confirmation: the browser's site permission is the switch.
+- **Without a user time zone** (old PWA, ingest runner) the local time uses the deployment's `timezone` setting; an
+  invalid zone or locale is dropped, and the line is still sent.
+- **The position stays in the user's chat:** it is the tool's output, stored in the opencode session like every tool
+  output, and deleted with the chat. It goes to the model provider as part of the context.
 - **Single user:** one bearer token, one git identity, one server-wide model.
 - **Settings name secrets, never hold them:** `deploy/settings/` is committed to a public repo, so a secret appears
   there only as a secret reference; its value stays in a secret store. Rendered files are generated, never edited.

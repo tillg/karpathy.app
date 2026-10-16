@@ -98,6 +98,10 @@ flowchart LR
 - **Store** (`store.tsx`): one `useAppState` hook in a React context holds the token, vaults, status, open note, save
   pipeline (autosave 1.5 s, drafts, retries), the vault event stream and routing (`#/<vault>/<path>`, and `#admin` /
   `#admin/<section>` for admin mode: `admin`, `adminVault`, `openAdmin`, `setAdminSection`, `adminUp`, `closeAdmin`).
+  Its event handler also answers browser calls for this tab (see **Browser tools** below).
+- **Client context and browser tools** (#151): `lib/client-context.ts` gives the tab id (random, `sessionStorage`
+  `karpathy.tab`) and `clientContext()` = `{ tabId, timeZone, locale }`, sent with every prompt; `lib/browser-tools.ts`
+  holds the handlers (`user_location`), see [Browser tools and local time](#browser-tools-and-local-time).
 - **Editor** (`Editor.tsx`, `lib/cm.ts`): CodeMirror 6 with decorations only, so the Markdown text, frontmatter and
   `[[wikilinks]]` round-trip losslessly; CRLF kept; external reloads applied as one minimal change. Embeds come from a
   `StateField` (block decorations must come from state): per line with an embed, a block widget after the line end
@@ -216,6 +220,8 @@ on its own ([deployment.md › Website](deployment.md#website)).
 | `usage.ts` | `UsageService.report(days)` (#150): lists each vault's sessions through a `UsageSource`, reads a session's rows only when its `time.updated` moved (cache per directory and session, concurrency 4, unfinished replies not cached), sums by day (process timezone), model and vault; a failing vault is logged and left out. See [Admin mode](#admin-mode). |
 | `metrics.ts` | `MetricsSampler` (#150): samples CPU, memory, load, the vaults and config disks and opencode's health every 30 s, keeps 7 days in memory and in `<CONFIG_DIR>/metrics.jsonl`, `report(range)` averages into ≤ 240 points. Host readers and the clock are injectable. See [Admin mode](#admin-mode). |
 | `harness/context-cache.ts` | Pure (#140): `lastEntries(sessions, cache, fetchLast)` gives each listed chat its `lastEntryAt` (newest message, any role) and `context` (last assistant message), fetching `session.messages(limit 4)` only for sessions whose `time.updated` moved (concurrency 4, a failed fetch retried next list), and sorts by `lastEntryAt ?? updatedAt`, newest first; `ModelLimits` caches each model's `limit.context` from `models()` and reloads on an unknown model. |
+| `browser-calls.ts` | `BrowserCalls` (on `Vaults`, #151): the pending browser calls of every vault, the answer files and the deadline ([Browser tools and local time](#browser-tools-and-local-time)). `chat.ts` opens a call when a mapped browser tool part is `running` and closes it when the part leaves `running`, and `closeVault`s at the turn's end. |
+| `harness/local-time.ts` | Pure (#151): `localTimeLine(now, timeZone?, locale?)`, the hidden line with the user's local time that `promptParts` adds to every prompt. |
 | `harness/command.ts` | Pure: `parseCommand`, `expandCommand`, `withoutBaseDir`, `commandInstructions`. |
 | `commit-message.ts` | Proposes commit messages with a throwaway, tool-less session; marked as a running proposal so a skill refresh doesn't cut it off. |
 | `config-store.ts` | Atomic, serialized writes to `/config/config.json`; also holds the GitHub token set in the app. Knows the deployment's default model (`defaultModel`) and stores the model only as `modelOverride` while it differs from it ([Settings](#settings)). |
@@ -249,9 +255,9 @@ So a vault can't switch off the zero-data-retention routing or point the gateway
 file would be merged *before* the project config, which is why the providers don't travel that way (a vault's
 `zdr: false` won in the check that found it).
 
-The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `current_page`, `open_url`, `suggest_next`, `save_url`, `move_to_sources`, `look_at_image`),
+The global config dir (`/opt/opencode-config/opencode/`) holds everything the image adds: `tools/` (`open_note`, `current_page`, `open_url`, `suggest_next`, `save_url`, `move_to_sources`, `look_at_image`, `user_location`),
 `plugins/` (`known-url`, `md-lint`), `lib/` (helpers) and `skills/` (the **app skills**, today `research`). The bake step
-waits for the six tools in the tool ids and for both plugins' `ready` log lines before it makes the dir read-only.
+waits for the eight tools in the tool ids and for both plugins' `ready` log lines before it makes the dir read-only.
 
 **Custom tool `current_page`** (`deploy/opencode/tools/current_page.ts`, helper `deploy/opencode/lib/open-page.ts`): tells the model which
 file the user has open (#143). The web app sends `openPage { path, mode, unsaved }` in the prompt body (none when no file is open); the backend
@@ -261,6 +267,8 @@ The tool reads `/vaults/.open-page/<context.sessionID>.json` (session id = chat 
 "The user has `<path>` open (Write mode)." (plus an unsaved-edits hint), "No page is open …", "… no longer exists in the vault", or, for a path in a dot folder (`.agents`, which `resolveNote` refuses but `read` reaches), "… open, in a dot folder that this tool does not check: read it by that path". The model then
 uses `read`. A tool rather than prompt injection: no changing line in every prompt, and the model asks only when the user means "this note". The
 call shows as a plain chip; `harness/map.ts` is unchanged. Allowed for `vault` and `vault-readonly`.
+
+**Custom tool `user_location`** (`deploy/opencode/tools/user_location.ts`, helper `deploy/opencode/lib/browser-call.ts`, #151): the one **browser tool**. No arguments; it waits up to 90 s for an answer file `/vaults/.browser-calls/<fileKey(session)>/<fileKey(call)>.json` that the backend writes when the user's browser has answered, and returns the position as text or one of the refusals. Allowed for `vault` and `vault-readonly`. The channel is in [Browser tools and local time](#browser-tools-and-local-time).
 
 **Custom tool `open_note`** (`deploy/opencode/tools/open_note.ts`, path check in `deploy/opencode/lib/resolve-note.ts`):
 checks that `path` resolves inside `context.directory`, exists, is a file and has no dot segment, then returns
@@ -448,8 +456,8 @@ Ollama host). Gotcha: `::ffff:0:0/96` or `0.0.0.0/8` in the ACL make Squid read 
 
 Serves the built PWA from `/srv` with SPA fallback, proxies `/api/*` to the backend unbuffered (`flush_interval -1`),
 sets CSP and security headers (`img-src` and `media-src` allow `blob:` for media embeds; `frame-src` and
-`object-src` stay closed), and gets its certificate by DNS-01 (`TLS_MODE=dns`; GoDaddy, with a 90 s wait for
-GoDaddy's nameservers) or from Caddy's internal CA (`TLS_MODE=internal`: dev, prodtest and the `local` target).
+`object-src` stay closed; `Permissions-Policy: geolocation=(self)` keeps the location API to the app itself), and gets its certificate by DNS-01 (`TLS_MODE=dns`; GoDaddy, with a 90 s wait for
+GoDaddy's nameservers) or from Caddy's internal CA (`TLS_MODE=internal`: dev and prodtest).
 `DOMAIN`, `TLS_MODE` and `DNS_PROVIDER` come from the rendered `.env` (settings `proxy.domain`, `proxy.tls`,
 `proxy.dns.provider`). A
 plain-HTTP site on `127.0.0.1:8081` answers the container healthcheck.
@@ -474,7 +482,12 @@ sequenceDiagram
 ```
 
 - **Request/response** JSON over `fetch`; **streams** as NDJSON over `fetch` (no WebSockets, no SSE to the browser):
-  the vault event stream (`status`, `files-changed`; never ends) and the chat stream (ends when the turn is idle).
+  the vault event stream (`status`, `files-changed`, the agents move, `browser-call` / `browser-call-done`; never ends)
+  and the chat stream (ends when the turn is idle).
+- **Browser calls** (#151): the backend asks the browser, the browser answers by `POST
+  /api/vaults/:id/chats/:chatId/browser-calls/:callId` (bearer-guarded; `404` unknown or expired, `409` already
+  answered, `400` invalid result). The question travels as the vault event `browser-call`; pending calls are replayed
+  on connect. See [Browser tools and local time](#browser-tools-and-local-time).
 - Turns outlive connections: a client reattaches to a running turn from any device.
 
 ## Incoming changes and the user's pull
@@ -688,6 +701,135 @@ sequenceDiagram
 - **Web:** `toolLabel` → `open <host><path…>`; `toolHref` returns the URL of a completed `open_url` too. `ToolChip` renders it as
   an `<a target="_blank" rel="noopener noreferrer">` action chip (arrow icon, full URL as tooltip). A refused one is the usual error
   chip; tapping it shows "URL not in this chat: …".
+
+## Browser tools and local time
+
+Two independent parts (#151). **Local time** rides with the prompt: no tool, no round-trip. **Position** is a
+**browser tool** (`user_location`) on a general browser-call channel. No new network path: opencode stays on the
+internal network and talks to nobody new. The tool and the backend meet on the shared vaults volume, as
+`current_page` does (`.open-page`); the backend reaches the browser over the vault event stream that is open whenever
+the app shows the vault, and the browser answers with an ordinary authenticated request.
+
+### Local time
+
+- **Web:** every prompt body (plain and slash commands, same route) carries `timeZone`
+  (`Intl.DateTimeFormat().resolvedOptions().timeZone`) and `locale` (`navigator.language`), next to `tabId`.
+- **Backend:** `promptBody` (`app.ts`) accepts `timeZone` (≤ 64) and `locale` (≤ 35), both optional, stored on the
+  queued `Turn` like `openPage`. `localTimeLine` ignores a zone `Intl` doesn't accept and a locale
+  `Intl.getCanonicalLocales` rejects (free text from the browser).
+- **The line:** `harness/opencode.ts` → `promptParts` adds a `synthetic: true` text part (as command instructions
+  already are; `map.ts` hides synthetic parts) when the turn is sent, **first**, before the user's text, so the request is
+  what the model reads last: "User's local time: Thursday 2026-10-15 23:41, Europe/Berlin (UTC+02:00), locale de-DE.
+  (Context from the app, not part of the user's message: use it for 'today', 'now' and dates in note names instead of
+  the server date; do not mention it unless asked.)" Worded as context because the small dev model answered the plain
+  line instead of the question. The time is taken when the turn runs, so a queued turn gets its own. The web keeps the
+  pending bubble until the user message has a visible part (`userCount`), since the hidden part arrives first.
+- **Fallback:** no `timeZone` (headless ingest runner, an old PWA) → the backend's own zone, i.e. the `timezone`
+  setting (it already reaches the backend as `TZ`; Europe/Berlin on hetzner), read via `Intl`; locale omitted.
+
+### Browser-call flow
+
+```mermaid
+sequenceDiagram
+  participant W as Web (tab t1)
+  participant B as Backend
+  participant O as opencode
+  participant T as tool user_location
+  W->>B: POST …/prompt {text, tabId: t1, timeZone, locale}
+  B->>O: promptAsync
+  O->>T: execute(args, ctx)
+  T->>T: poll .browser-calls/<session>/<ctx.callID>.json (250 ms)
+  O-->>B: part tool user_location, state running
+  B->>B: map.ts: browser tool → BrowserCalls.open(vault, chat, call, tool, input, t1)
+  B-->>W: vault event browser-call {chatId, callId, tool, input, tabId: t1, deadline}
+  W->>W: tabId == my tab id → navigator.geolocation.getCurrentPosition
+  W->>B: POST …/chats/:chat/browser-calls/:call {ok: true, value} (or {ok: false, reason})
+  B->>B: validate with the tool's schema, write answer file (atomic, once)
+  B-->>W: vault event browser-call-done {callId}
+  T->>T: answer file found → format text, delete file
+  T-->>O: "The user is at 48.137154, 11.576124 (accuracy ±12 m, fix 3 s old)."
+```
+
+**Tool side (opencode image).**
+
+- `deploy/opencode/lib/browser-call.ts` (import-free, so backend tests load it, like `open-page.ts`):
+  `waitForAnswer(dir, sessionID, callID, { timeoutMs, abort })` polls
+  `<dir>/<fileKey(sessionID)>/<fileKey(callID)>.json` every 250 ms, returns the parsed answer or `null` on timeout,
+  stops on `abort`, deletes the file it read. The dir is the literal `/vaults/.browser-calls`. `fileKey` = base64url of
+  the id, on both sides: any id a provider sends (`functions.user_location:0`) works and none becomes a path.
+- The call id is `context.callID`: opencode 1.18.25 sets it from the model's tool call id, and the tool part the
+  backend maps carries the same `callID`; a test keeps it true across upgrades.
+- `tools/user_location.ts`: no arguments; waits 90 s (`BROWSER_CALL_TIMEOUT_MS`; the backend's `TIMEOUT_MS` is the
+  same value, the images share no code). Texts: "The user is at 48.137154, 11.576124 (accuracy ±12 m, fix 3 s old).",
+  "The user did not share their location.", "No position is available on the user's device.", "The user's browser
+  cannot share a location.", "The user's device did not answer. Ask the user where they are if you need it." The
+  description limits it to requests that depend on where the user is. It names its own chip with
+  `context.metadata({ title })` (`locationTitle`: "used your location (±12 m)", "location not shared", "no location
+  available", "no answer from your device"), because `ToolCall` carries no output.
+
+**Backend.**
+
+- `BROWSER_TOOLS` (`packages/shared`) is the one list of browser tools; `harness/map.ts` sets `ToolCall.browser = true`
+  and `callId` for them. The web's handlers are a `Record<BrowserTool, …>`, so a tool without a handler fails the
+  typecheck. Types `BrowserCall`, `BrowserCallResult` and `parseBrowserCallResult` (dependency-free) live in
+  `packages/shared`.
+- `BrowserCalls` (`browser-calls.ts`, on `Vaults`):
+  - `open`: when a mapped part of a browser tool enters `running`; keeps `{ vaultId, chatId, callId, tool, input,
+    tabId, deadline }` in memory and emits `browser-call`. Idempotent per vault + chat + call id (parts update several
+    times; providers reuse ids like `call_0` across chats). `input` is `{}` today.
+  - The tab is the vault's running turn's `tabId`, also when the tool runs in a subagent (`task`) session (a vault runs
+    one turn at a time). An adopted turn (backend restart) and a turn without `tabId` have none: the event carries
+    `tabId: null`, no tab answers, the tool times out.
+  - `answer`: `404` unknown or expired call, `409` already answered, `400` when the body fails the tool's schema.
+    Writes `<vaults>/.browser-calls/<fileKey(chat)>/<fileKey(call)>.json` (temp file + rename), once (an in-memory
+    flag, reset when the write fails so the tab can retry), then emits `browser-call-done`. The position is passed on as
+    the browser gave it, unrounded.
+  - Close: the part leaving `running`, or the deadline (90 s + 5 s grace) → drop the call, emit `browser-call-done`,
+    remove a stale answer file. The turn's end (abort included) calls `closeVault`, which closes every call of the
+    vault, subagent sessions too; `removeChat` runs when a chat is deleted and when an adopted turn ends.
+  - `pending(vaultId)`: what a newly connected vault event stream receives after `status` and the replayed agents
+    move (`app.ts` events route).
+- Prompt body `tabId`: `^[A-Za-z0-9-]{8,64}$`, optional, stored on the queued `Turn` (`config.json` `queued`) and on the
+  running turn.
+
+**Web.**
+
+- `lib/client-context.ts`: the tab id from `crypto.getRandomValues` (works without a secure context, e.g. a dev stack
+  over plain http), in `sessionStorage`; a page-lifetime id when storage is blocked, so prompts never fail over it.
+- `lib/browser-tools.ts`: `user_location` calls `navigator.geolocation.getCurrentPosition({ enableHighAccuracy: true,
+  maximumAge: 60_000, timeout: 60_000 })`; `PERMISSION_DENIED` → `{ ok: false, reason: 'denied' }`,
+  `POSITION_UNAVAILABLE` / timeout → `no-position`, no Geolocation API → `unsupported`.
+- The vault event handler answers a `browser-call` whose `tabId` is this tab's id and whose tool has a handler, once
+  per call id (an unknown tool is answered `unsupported`), whichever chat is on screen. Only the shown vault's event
+  stream is open: a call while the user looks at another vault is answered only if they switch back before the
+  deadline (the pending replay), else the tool times out.
+- Chips (`toolLabel`): while running "open the app to share your location", when done the title the tool set.
+- iOS: geolocation needs a secure context (HTTPS; `localhost` in dev) and works in the installed PWA. With iOS
+  "Precise Location" off the device gives an approximate position, which the tool reports with its accuracy. The proxy
+  sends `Permissions-Policy: geolocation=(self)` (`deploy/proxy/Caddyfile`).
+
+### Key decisions
+
+- **Live round-trip for the position,** not a position sent with every prompt (like `openPage`): the AI asks only when
+  it needs it, and the channel serves future browser tools that act, not just report.
+- **Answer file on the shared volume,** not an HTTP call from the tool or opencode's permission `ask`: no new path from
+  opencode (which reads untrusted vault content) to the backend's API; a permission reply carries no data.
+- **Announced on the vault event stream,** not the chat stream: it is open whenever the vault is shown, the chat stream
+  only while that chat is on screen.
+- **Only the tab that sent the prompt answers:** "where am I?" must be answered by the device in the user's hand, not by
+  a laptop at home. A duplicated tab shares the tab id; the first answer wins (`409` for the second).
+- **No app setting, no per-call confirmation:** the browser's site permission is the switch; declining is an ordinary
+  answer. Revisit if prompt injection shows up ([security](security.md#gaps-known-not-built)).
+- **Timeout returns text, not a tool error:** the model asks the user instead of retrying. A suspended tab: 90 s, the
+  chip says "open the app to share your location", no longer wait.
+- **Full device precision** (high accuracy, no rounding, no reverse geocoding), the user's choice: "nearest bakery",
+  street questions. Costs a slower fix (up to ~30 s cold) and a more sensitive position.
+- **Local time computed on the server from the zone sent with the prompt, as a hidden line, not a `local_time` tool:**
+  opencode's system prompt already states the server's date, so the model would rarely call a tool and "today" would
+  stay wrong. No wait, no failure path: works with the phone locked and for a queued turn; ~30 tokens per prompt.
+- **Turns without a zone use the existing `timezone` setting,** not UTC or a new setting: headless turns and old PWAs
+  still date notes in the user's usual zone.
+- **Tool call key = opencode's `callID`** (verified in opencode 1.18.25); field name `tabId`, matching *answering tab*.
 
 ## Ingest
 
@@ -1138,7 +1280,7 @@ flowchart LR
   (the server removes the emptied folder). Send posts `{ text, attachments: paths }`. Chips and sent files render
   through `FileEmbed` → `mountEmbed` (an image through `/raw` and the object-URL cache, a PDF as a file card). The
   composer re-reads `GET /settings` when a chat opens.
-- **Prompt:** `promptBody` = `{ text (≤ 100 000, may be empty with attachments), attachments? (≤ 5 paths), openPage? { path, mode, unsaved } }` (`openPage`: see Custom tool `current_page`; not queued, written to the state file when the prompt is accepted). The
+- **Prompt:** `promptBody` = `{ text (≤ 100 000, may be empty with attachments), attachments? (≤ 5 paths), openPage? { path, mode, unsaved }, tabId?, timeZone?, locale? }` (`openPage`: see Custom tool `current_page`; not queued, written to the state file when the prompt is accepted; `tabId`, `timeZone`, `locale`: see [Browser tools and local time](#browser-tools-and-local-time), queued with the turn). The
   queued `Turn` keeps the paths (persisted in `config.json` `queued`, never bytes); an attachment-only prompt titles the
   chat with the first file name. At turn start `Vaults.checkAttachment` applies the raw-file rules, `isUploadable` and
   `MAX_ATTACHMENT_BYTES` (20 MB); a failure is a stream `error` and the turn ends before opencode. `PromptInput.files`
@@ -1184,7 +1326,7 @@ sequenceDiagram
 - The preflight clone is blobless, depth 1 and without checkout (commits and trees only, small even for media-heavy
   vaults), made in a random `pre-*` dir under `<vaultsDir>/.preflight/` on the vaults volume, and always removed.
   `Vaults.init()` removes `.preflight/` at startup (leftovers of a crash). The clone is killed after 60 s. It also
-  works against `file://` remotes (setting `git.remote_base`, `file:///remotes/` in dev, prodtest and on `local`) in
+  works against `file://` remotes (setting `git.remote_base`, `file:///remotes/` in dev and prodtest) in
   tests and dev.
 - **Folder check:** `git ls-tree HEAD[:<root>]`; only entries of type tree count, so a *file* named `Wiki` is missing.
   Names match case-insensitively; missing ones are created as `Sources/` / `Wiki/`. A root that isn't in the tree
@@ -1480,8 +1622,10 @@ for the `secrets` key (every deployment renders anyway; the backend tolerates it
 | Volume `caddy-data` | TLS certificates and keys. | proxy |
 | Browser localStorage | Token, local drafts, tree expansion state, tree sort and filter (`karpathy.treeSort`, `karpathy.treeFilter`), main pane, mode preference (`karpathy.mode`), properties view (`karpathy.propsView`). | web |
 | localStorage `karpathy.recentCommands.<vault>`, `karpathy.shownMoves` | The last 10 commands started in a vault (chip order); the agents moves already announced (last 50). | web |
-| Backend memory | Per vault: the skill stamp of the last opencode refresh, the last agents move, the skill-link scan after it, running commit-message proposals. Lost on restart (the first check then refreshes). | backend |
-| opencode image `/opt/opencode-config/opencode/` | Tools `open_note`, `current_page`, `open_url`, `suggest_next`, `look_at_image`, `save_url` and `move_to_sources`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
+| Backend memory | Per vault: the skill stamp of the last opencode refresh, the last agents move, the skill-link scan after it, running commit-message proposals, the pending browser calls. Lost on restart (the first check then refreshes). | backend |
+| opencode image `/opt/opencode-config/opencode/` | Tools `open_note`, `current_page`, `open_url`, `suggest_next`, `look_at_image`, `user_location`, `save_url` and `move_to_sources`, plugin `known-url`, helpers, app skills (`skills/research/`). Read-only, from the release. | opencode |
+| Volume `vaults` `/vaults/.browser-calls/<fileKey(chat)>/<fileKey(call)>.json` | The answer of a browser call, from the backend's write to the tool's read (deleted by the tool; removed at close, turn end, chat delete). Outside every clone, next to `.open-page`. | backend, opencode |
+| sessionStorage `karpathy.tab` | The tab id (answering tab). | web |
 | Browser memory | Object URLs of media (≤ 200 MB), places of notes seen this session. Lost on reload. | web |
 | Service worker cache `vault-api` | Vault list, file trees, opened notes (for offline reading); cleared on 401. | web |
 
@@ -1503,7 +1647,7 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 | GitHub | Vault repos; fine-grained token as an HTTP extra header, never in `.git/config`; `api.github.com/user` for the token test | in use |
 | LLM providers (OpenRouter in production, any via opencode) | Model behind opencode, chosen as the environment's gateway in `deploy/settings/`; keys only in the rendered `opencode.env` | OpenRouter `z-ai/glm-5.3` on zero-data-retention hosts in production |
 | omlx | Dev and prodtest (native on the Mac: MLX server, Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models`; `Qwen3-Coder-30B-A3B-Instruct-4bit`, vision `Qwen3-VL-4B-Instruct-4bit`) | in use |
-| Ollama | The `local` target (native on the Mac, `just ollama install`); CI and integration LLM tests (container; models from `deploy/settings/test.yaml`) | in use |
+| Ollama | CI and integration LLM tests (container; models from `deploy/settings/test.yaml`) | in use |
 | Exa | Web search backend (opencode `websearch`, MCP at `mcp.exa.ai`); optional `EXA_API_KEY`, else the anonymous, rate-limited endpoint | in use |
 | Gmail (via `gog`) | The ingest profiles' labels: read, relabel; OAuth client and refresh token copied from the Mac by `just ingest-auth` | built; no profile enabled in production yet |
 | Instagram (via instascraper / instagrapi) | Posts and Reels behind Instagram links in mails; password login from admin mode › Secrets & keys › Instagram | built; the real login not yet tried from the server |
@@ -1544,7 +1688,7 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 - **Website** (`.github/workflows/pages.yml`): the site test, then `_site/` to GitHub Pages on every push to `main`
   that touches `site/`, `assets/icons/` or the app's stylesheet.
 - **Releases and production:** a tag `vX.Y.Z` builds the images (amd64 + arm64) to GHCR; the Ansible playbook
-  deploys a release to a **target**: `local` (a Lima VM on the Mac, https://localhost:9444) or `hetzner` (a
+  deploys a release to a **target**: `hetzner` (a
   Hetzner CPX22 reachable only over Tailscale, https://app.karpathy.app, running since 2026-10-02), with
   monitoring (Beszel, Gatus, a healthchecks.io heartbeat, alerts via ntfy). All of it:
   [deployment.md](deployment.md).
@@ -1611,15 +1755,12 @@ flowchart TD
   and every prodtest. `dev.sh` checks it before compose (`stack_model_ready` in `deploy/stack.sh`): whatever
   `OLLAMA_UPSTREAM` points at (`host.docker.internal` mapped to `127.0.0.1`) must answer any HTTP status on
   `/v1/models`; a gateway without a relay upstream (hosted) skips the check. Containers reach the Mac's loopback as
-  `host.docker.internal`. The `local` target's VM still uses a native Ollama (`just ollama install|uninstall|status`,
-  LaunchAgent `app.karpathy.ollama` on `127.0.0.1:11434`, `OLLAMA_CONTEXT_LENGTH=16384`), not yet migrated.
-- **Ollama relay.** Each stack keeps a small Caddy (`ollama` in dev, `ollama-bridge` in prodtest, `ollama-relay` on
-  the `local` target, all `deploy/proxy/Caddyfile.ollama-relay`) on the `internal` network (alias `ollama.internal`)
+  `host.docker.internal`.
+- **Ollama relay.** Each stack keeps a small Caddy (`ollama` in dev, `ollama-bridge` in prodtest, both
+  `deploy/proxy/Caddyfile.ollama-relay`) on the `internal` network (alias `ollama.internal`)
   and `egress`. opencode's provider config (the gateway's `base_url`, `http://ollama.internal:11434/v1` for `omlx` and `ollama` alike, in
   `OPENCODE_CONFIG_CONTENT`; the names are historical) and `NO_PROXY` use that name. The upstream is `{$OLLAMA_UPSTREAM}`, the gateway's
-  `relay_upstream` in the rendered `.env`: `host.docker.internal:8000` (the `omlx` gateway) for dev and prodtest,
-  `192.168.5.2:11434` on `local` (Lima's user-mode address for the host, which forwards to the Mac's loopback, so
-  Ollama stays bound to `127.0.0.1`).
+  `relay_upstream` in the rendered `.env`: `host.docker.internal:8000` (the `omlx` gateway) for dev and prodtest.
   The relay passes only `/v1/*` and answers 403 to the rest, so the model server's admin API (Ollama's pull, delete, create; omlx's management API) stays out
   of a prompt-injected AI's reach. It rewrites `Host` to `localhost:11434`, because a loopback-bound Ollama answers
   403 to any other `Host` (its DNS-rebinding guard); harmless for omlx.
@@ -1665,22 +1806,22 @@ flowchart TB
 ```
 
 **Files.** `settings.yaml` (central: every setting with the shared value), one committed environment file each for
-`dev`, `prodtest`, `test`, `local` and `hetzner` (only what differs), and the gitignored local overlays
+`dev`, `prodtest`, `test` and `hetzner` (only what differs), and the gitignored local overlays
 `dev.local.yaml` / `prodtest.local.yaml`. The keys:
 
 | Key | Holds | Overridden by |
 |---|---|---|
-| `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | `dev`, `prodtest`: `omlx`, `omlx/Qwen3-Coder-30B-A3B-Instruct-4bit`; `test`, `local`: `ollama`, `ollama/qwen2.5:3b` |
-| `ai.vision_model` | The vision model of `look_at_image` (required; `<gateway>/<model>` on any configured gateway, named by its own prefix — so switching only `ai.gateway` in an overlay keeps it valid; the gateway's kind must speak the OpenAI chat API, and the dev relay's `OLLAMA_UPSTREAM` falls back to the vision gateway's): `openrouter/mistralai/mistral-medium-3-5` (Mistral Small 2603 was rate-limited upstream for the shared OpenRouter key, HTTP 429), with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY` and `VISION_REQUEST_OPTIONS` (the model's `options`, merged into the request) into `opencode.env`. | `dev`, `prodtest`: `omlx/Qwen3-VL-4B-Instruct-4bit`; `test`, `local`: `ollama/qwen3-vl:2b` |
+| `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | `dev`, `prodtest`: `omlx`, `omlx/Qwen3-Coder-30B-A3B-Instruct-4bit`; `test`: `ollama`, `ollama/qwen2.5:3b` |
+| `ai.vision_model` | The vision model of `look_at_image` (required; `<gateway>/<model>` on any configured gateway, named by its own prefix — so switching only `ai.gateway` in an overlay keeps it valid; the gateway's kind must speak the OpenAI chat API, and the dev relay's `OLLAMA_UPSTREAM` falls back to the vision gateway's): `openrouter/mistralai/mistral-medium-3-5` (Mistral Small 2603 was rate-limited upstream for the shared OpenRouter key, HTTP 429), with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY` and `VISION_REQUEST_OPTIONS` (the model's `options`, merged into the request) into `opencode.env`. | `dev`, `prodtest`: `omlx/Qwen3-VL-4B-Instruct-4bit`; `test`: `ollama/qwen3-vl:2b` |
 | `ai.web` | `access` (default of the Web access switch), `fetch_cap`, `search_cap` (20 each), `exa_api_key` (optional secret) | — |
 | `auth` | `bearer_token`, `opencode_password` (secret references) | — |
-| `git` | `remote_base` (`https://github.com/`), `author` (`name`, `email`), `github_token` (optional secret) | `dev`, `prodtest`, `local`: `file:///remotes/`; author per environment; `hetzner`: author as secrets `git_author_name` / `git_author_email` |
+| `git` | `remote_base` (`https://github.com/`), `author` (`name`, `email`), `github_token` (optional secret) | `dev`, `prodtest`: `file:///remotes/`; author per environment; `hetzner`: author as secrets `git_author_name` / `git_author_email` |
 | `proxy` | `domain` (`localhost`), `tls` (`internal` \| `dns`), `dns.provider` (`godaddy`), `dns.api_token` (optional secret) | `hetzner`: `app.karpathy.app`, `dns`, token required |
-| `timezone` | `Etc/UTC` | `local`, `hetzner`: `Europe/Berlin` |
+| `timezone` | `Etc/UTC` | `hetzner`: `Europe/Berlin` |
 | `commit_reminder_threshold` | Default of the commit reminder (4) | — |
 | `files.visible_dot_dirs` | Dot-folders the file tree shows (`[.agents]`; names start with `.`, never `.git`) | — |
-| `ingest` | `defaults` (ingest-email options: `max_per_poll` 20, `resolve_max_urls_per_mail` 5, `run_interval_s` 900) and `profiles` (`{}`: the loop idles). A profile: `vault` (backend vault id), optional `root`, `label`, `account` and `allowed_senders` (each may be a secret reference, so no personal data lands in the public repo), optional `settings` (ingest-email options) | only `hetzner` may set profiles (none yet; a test asserts `dev`, `local`, `prodtest` and `test` have none) |
-| `gateways.<id>` | `kind`, `name`, `base_url`, `relay_upstream`, `api_key`, `models` (opencode's per-model config, passed through): `openrouter` (built-in kind; `z-ai/glm-5.3` with its zero-data-retention provider routing) `omlx` (`openai-compatible`, "omlx (dev)", the same base URL, `relay_upstream: host.docker.internal:8000`, `Qwen3-Coder-30B-A3B-Instruct-4bit` and `Qwen3-VL-4B-Instruct-4bit` with `limit: { context: 16384, output: 4096 }`) and `ollama` (`openai-compatible`, base URL `http://ollama.internal:11434/v1`, `qwen2.5:3b` and `qwen3-vl:2b` with limits) | `local`: `ollama.relay_upstream: 192.168.5.2:11434` |
+| `ingest` | `defaults` (ingest-email options: `max_per_poll` 20, `resolve_max_urls_per_mail` 5, `run_interval_s` 900) and `profiles` (`{}`: the loop idles). A profile: `vault` (backend vault id), optional `root`, `label`, `account` and `allowed_senders` (each may be a secret reference, so no personal data lands in the public repo), optional `settings` (ingest-email options) | only `hetzner` may set profiles (none yet; a test asserts `dev`, `prodtest` and `test` have none) |
+| `gateways.<id>` | `kind`, `name`, `base_url`, `relay_upstream`, `api_key`, `models` (opencode's per-model config, passed through): `openrouter` (built-in kind; `z-ai/glm-5.3` with its zero-data-retention provider routing) `omlx` (`openai-compatible`, "omlx (dev)", the same base URL, `relay_upstream: host.docker.internal:8000`, `Qwen3-Coder-30B-A3B-Instruct-4bit` and `Qwen3-VL-4B-Instruct-4bit` with `limit: { context: 16384, output: 4096 }`) and `ollama` (`openai-compatible`, base URL `http://ollama.internal:11434/v1`, `qwen2.5:3b` and `qwen3-vl:2b` with limits) | — |
 
 **Load and validate** (`packages/settings`, plain TypeScript run with `tsx`, deps `yaml` and `zod`):
 

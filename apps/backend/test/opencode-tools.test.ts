@@ -109,6 +109,35 @@ describe('suggest_next tool', () => {
   });
 });
 
+describe('user_location tool (#151)', () => {
+  it('opencode lists user_location as a tool', async () => {
+    const r = await oc.fetch(`${oc.url}/experimental/tool/ids?directory=/vaults`);
+    expect(await r.json()).toContain('user_location');
+  });
+
+  it('user_location is allowed for vault and vault-readonly, not commit-message', async () => {
+    const cfg = JSON.parse(await readFile(join(import.meta.dirname, '../../../deploy/opencode/opencode.json'), 'utf8'));
+    expect(cfg.agent.vault.permission.user_location).toBe('allow');
+    expect(cfg.agent['vault-readonly'].permission.user_location).toBe('allow');
+    expect(cfg.agent['commit-message'].permission).toEqual({ '*': 'deny' });
+  });
+
+  it('user_location reads the answer file of its session and call id inside the container', async () => {
+    const fk = (id: string) => Buffer.from(id).toString('base64url');
+    await mkdir(join(vaultsDir, '.browser-calls', fk('ses_loc')), { recursive: true });
+    await writeFile(join(vaultsDir, '.browser-calls', fk('ses_loc'), `${fk('call_loc')}.json`), JSON.stringify({ ok: true, value: { latitude: 48.137154, longitude: 11.576124, accuracy: 12, ageMs: 3000 } }));
+    await writeFile(join(vaultsDir, 'location.ts'), [
+      "const t = (await import('/opt/opencode-config/opencode/tools/user_location.ts')).default;",
+      "console.log(JSON.stringify(await t.execute({}, { sessionID: 'ses_loc', callID: 'call_loc', abort: new AbortController().signal })));",
+    ].join('\n'));
+    const r = spawnSync('docker', ['exec', '-e', 'BUN_BE_BUN=1', oc.name, 'opencode', 'run', '/vaults/location.ts'], { encoding: 'utf8' });
+    expect(JSON.parse(`${r.stdout}${r.stderr}`.trim())).toEqual({
+      output: 'The user is at 48.137154, 11.576124 (accuracy ±12 m, fix 3 s old).',
+      metadata: { title: 'used your location (±12 m)' },
+    });
+  });
+});
+
 describe('look_at_image tool', () => {
   it('opencode lists look_at_image as a tool', async () => {
     const r = await oc.fetch(`${oc.url}/experimental/tool/ids?directory=/vaults`);

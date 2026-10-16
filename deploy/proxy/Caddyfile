@@ -28,6 +28,8 @@ http://:8081 {
 		X-Content-Type-Options nosniff
 		Referrer-Policy no-referrer
 		X-Frame-Options DENY
+		# The AI's user_location asks the browser for the position (#151): only the app itself, never an embedded page.
+		Permissions-Policy "geolocation=(self)"
 	}
 	# handle blocks are mutually exclusive, so the SPA fallback never swallows /api.
 	handle /api/* {

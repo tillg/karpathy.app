@@ -533,3 +533,40 @@ describe('@llm chat attachments', () => {
     });
   });
 });
+
+describe('@llm browser tools (#151)', () => {
+  it('@llm user_location is announced for the prompting tab, and its answer reaches the tool (same callID on both sides)', async () => {
+    const t = await setup();
+    const pos = { latitude: 48.137154, longitude: 11.576124, accuracy: 12, ageMs: 3000 };
+    const announced: { callId: string; tabId: string | null }[] = [];
+    const unsub = t.vaults.subscribe(t.id, (e) => {
+      if (e.type !== 'browser-call') return;
+      announced.push({ callId: e.call.callId, tabId: e.call.tabId });
+      void t.vaults.browserCalls.answer(t.id, e.call.chatId, e.call.callId, { ok: true, value: pos });
+    });
+    try {
+      await withRetry(async () => {
+        const id = (await t.chat.create(t.id)).chatId;
+        const tools = new Map<string, ToolCall>();
+        await t.chat.prompt(t.id, id, 'Call the user_location tool to get my position, then tell me the coordinates.', undefined, undefined, { tabId: 'tab-12345678' });
+        await new Promise<void>((resolve) => {
+          t.chat.stream(t.id, id, (e) => {
+            if (e.type === 'part' && e.part.type === 'tool') tools.set(e.part.id, e.part.call);
+          }, resolve);
+        });
+        const loc = [...tools.values()].find((c) => c.tool === 'user_location');
+        if (!loc) throw new Inconclusive(`no user_location call: ${JSON.stringify([...tools.values()].map((c) => c.tool))}`);
+        expect(loc).toMatchObject({ browser: true, status: 'completed', title: 'used your location (±12 m)' });
+        expect(announced).toContainEqual({ callId: loc.callId, tabId: 'tab-12345678' });
+        const raw = await oc.fetch(`${oc.url}/session/${id}/message?directory=${encodeURIComponent(t.chat.dir(t.id))}`);
+        const outputs = ((await raw.json()) as { parts: { tool?: string; state?: { output?: string } }[] }[])
+          .flatMap((m) => m.parts)
+          .filter((p) => p.tool === 'user_location')
+          .map((p) => p.state?.output);
+        expect(outputs).toContain('The user is at 48.137154, 11.576124 (accuracy ±12 m, fix 3 s old).');
+      });
+    } finally {
+      unsub();
+    }
+  }, 600_000);
+});

@@ -56,7 +56,8 @@ gateways:
             only: [mistral/zdr, mistral]
             zdr: true
             data_collection: deny
-  # The native Ollama on the Mac (`just ollama install`), reached through a /v1-only relay.
+  # An Ollama reached through the /v1-only relay: the test models (test.yaml; CI and the integration tests run
+  # their own Ollama container). Dev and prodtest use omlx.
   ollama:
     kind: openai-compatible
     name: Ollama (dev)

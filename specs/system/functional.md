@@ -460,6 +460,19 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   `|` splits the cell (fix: `[[page\|alias]]`). The user sees no message, at most one more *changed* chip. The user's
   own edits are not checked.
 - **The AI sees the open file:** each message carries the file open in the note pane (path, Read or Write mode, unsaved edits). When you say "this note", "this page" or "here", the AI calls `current_page` (a chip) and reads that file; with nothing open it says so. Unsaved edits aren't on disk: the AI reads the saved text.
+- **The AI knows your local time** (#151): every message carries your device's time zone and language, and the AI gets
+  a hidden line with the current local time, so "today", "write today's journal entry" and `/research` note names use
+  your date (not the server's) at any hour, with no chip and no permission. It works with the phone locked and for a
+  queued message (the time is taken when the turn runs).
+- **The AI can ask where you are** (#151): "find a café near me", "what's the weather here?". The AI calls
+  `user_location`; the first time, your browser asks "allow location?" (it remembers the answer per site, on iOS per
+  app). While it waits the chip says "open the app to share your location"; then "used your location (±12 m)" (the
+  position is as precise as the device can tell, e.g. GPS ±10 m, with no place name). Declining is fine: the chip says
+  "location not shared" and the AI goes on without it. Only the tab that sent the message answers, so a laptop at home
+  never answers for the phone in your pocket; it works while you look at another chat of the vault. A call while
+  another vault is shown times out unless you switch back in time. With no position available the chip says "no
+  location available". The AI asks only when your request depends on where you are. The position goes to the model
+  provider and stays in the chat until you delete it.
 - **The AI opens notes** when asked ("show me my reading list"): on the wide layout right away, on a phone or in the
   tablet overlay when the reply is done, never while the user is editing (then a notice "AI opened …" and the chip).
   Reloading a chat never reopens anything; a wrong path goes back to the AI as a tool error. Works in conflict too.
@@ -708,6 +721,8 @@ sequenceDiagram
 | Photos and PDFs from the device (Attach button, drop, chat composer) | A new file in the page's own folder or a `Sources/upload-…/` folder; an embed, or a chip sent with the prompt |
 | Search query | Grouped hits with line snippets |
 | Chat prompt (`/name args` for a command) | Streamed reply, tool chips, changed notes |
+| The device's time zone and language (sent with every prompt) | The AI's date and time are yours; no chip |
+| The browser's answer to its location prompt (when the AI asks "where am I?") | A chip ("used your location (±12 m)", "location not shared") and the position in the AI's reply context |
 | `/` in the composer; a command chip | The command palette; `/name ` in the composer |
 | `/research <topic>`, then "go" | A plan note, then source files, cited wiki pages and a ticked-off plan (uncommitted) |
 | Tap on an Open chip | The page in a new browser tab |
@@ -861,6 +876,18 @@ both; a later change can restrict admin mode, taking nothing away from users. Th
     library, camera and Files, a HEIC library photo arriving as `.jpg`; and in Obsidian, a moved page, its image and
     a rewritten `[[…/…]]` link after a commit and pull. Safari drag and drop on the Mac was checked by hand on
     2026-10-05.
+- **Location and local time** (#151):
+  - A locked phone, a closed tab or an ignored permission prompt: after 90 s the AI is told "the device did not answer"
+    and asks you where you are; the chip says "no answer from your device". Open the app while the chip waits and it
+    answers.
+  - A duplicated tab shares the tab id: both answer, the first wins, the second is refused silently.
+  - Only the sending tab answers; a prompt sent by an old PWA build or by the ingest runner has no answering tab, so a
+    location request times out there, and its local time is the deployment's `timezone` setting (Europe/Berlin), not
+    your device's zone.
+  - The browser asks again only if you reset the site permission; with iOS "Precise Location" off the position is
+    approximate (the chip shows the larger accuracy). A cold GPS fix can take up to about 30 s.
+  - Only `user_location` exists as a browser tool; no app setting turns it off (the browser's site permission does), and
+    there is no reverse geocoding: with Web access on the AI can look a place up itself.
 - A retryable provider error is retried by opencode for up to about 2 minutes before the turn fails.
 - With the chat in main, Tab still reaches the note before the chat (the swap moves columns visually only). At
   1024–1279 px with the sidebar open, the main column (364 px) is narrower than the side column.

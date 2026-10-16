@@ -119,6 +119,11 @@ describe('settlePending', () => {
     expect(settlePending(p, { ...empty, turn: 'running', messages: [user] })).toBe('drop');
   });
 
+  it('keeps it while the server user message has no visible part yet (the hidden local-time part comes first, #151)', () => {
+    const r = settlePending(p, { ...empty, turn: 'running', messages: [{ ...user, parts: [] }] });
+    expect(r).not.toBe('drop');
+  });
+
   it('restores the text when the turn goes idle without having run (stopped while queued)', () => {
     expect(settlePending(p, empty)).toBe('restore');
   });
@@ -205,6 +210,17 @@ describe('turns (#63: one assistant block per turn)', () => {
     expect(first.role === 'assistant' && first.parts.map((p) => p.id)).toEqual(['t1', 't2', 'p3']);
     expect(first.role === 'assistant' && changedPaths(first.parts)).toEqual(['y.md']);
     expect(t[3]).toMatchObject({ role: 'assistant', id: 'a4', errors: [] });
+  });
+});
+
+describe('toolLabel: browser tools (#151)', () => {
+  const loc = (more: Partial<ToolCall>): ToolCall => ({ id: 'p', tool: 'user_location', status: 'completed', writes: false, browser: true, callId: 'c', ...more });
+  it('while the call waits, the chip asks to open the app', () => {
+    expect(toolLabel(loc({ status: 'running' }))).toBe('open the app to share your location');
+  });
+  it('done: the title the tool set (accuracy, or not shared)', () => {
+    expect(toolLabel(loc({ title: 'used your location (±12 m)' }))).toBe('used your location (±12 m)');
+    expect(toolLabel(loc({ title: 'location not shared' }))).toBe('location not shared');
   });
 });
 

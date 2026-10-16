@@ -130,7 +130,7 @@ A release from a `vX.Y.Z-rc.N` tag, from any commit. Deployable by name, but nev
 The `X.Y.Z` of a release (the tag without the `v`), as `GET /api/health` reports it. Dev and prodtest builds report `dev`.
 
 **Target**:
-A named place a release can be deployed to: `local` (the Lima VM on the Mac) or `hetzner`. One host, its own settings and secrets.
+A named place a release can be deployed to; today only `hetzner`. One host, its own settings and secrets.
 _Avoid_: Environment, stage, server
 
 **Deployment**:

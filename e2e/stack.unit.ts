@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { stackTarget } from './stack.ts';
+import { resultsDir, stackTarget } from './stack.ts';
 
 const root = (remembered?: string) => {
   const d = mkdtempSync(join(tmpdir(), 'stack-'));
@@ -35,4 +35,9 @@ test('E2E_BASE_URL wins and is kept as-is', () => {
 
 test("nothing set → throws 'run just dev up'", () => {
   assert.throws(() => stackTarget({}, root()), /run just dev up/);
+});
+
+test('results go to a folder per target, so parallel runs (dev stack, prodtest) never share one', () => {
+  assert.equal(resultsDir({ STACK: '3' }, root()), 'tmp/test-results/karpathy-app-3');
+  assert.equal(resultsDir({ E2E_BASE_URL: 'https://localhost:8015' }, root()), 'tmp/test-results/localhost-8015');
 });

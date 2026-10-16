@@ -17,9 +17,8 @@ in_ingest() {
     dev)
       local n; n=$(cat ../../tmp/dev/stack 2>/dev/null) || { echo "no dev stack for this checkout: just dev up" >&2; exit 1; }
       docker exec -i "karpathy-app-$n-ingest-1" sh -c "$cmd" ;;
-    local) ssh -F "$HOME/.lima/karpathy-vm/ssh.config" lima-karpathy-vm "sudo docker exec -i karpathy-app-ingest-1 sh -c $(printf %q "$cmd")" ;;
     hetzner) ssh ops@karpathy "sudo docker exec -i karpathy-app-ingest-1 sh -c $(printf %q "$cmd")" ;;
-    *) echo "unknown target: $target (dev, local, hetzner)" >&2; exit 1 ;;
+    *) echo "unknown target: $target (dev, hetzner)" >&2; exit 1 ;;
   esac
 }
 
