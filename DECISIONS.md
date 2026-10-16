@@ -177,6 +177,7 @@ edited: 2026-10-16
   - [10:20 — "Give a version and deploy it" = release the app as v0.0.29 and deploy it to hetzner; the site deploys via Pages](#run-2026-10-16-1016-4)
   - [10:22 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote](#run-2026-10-16-1016-5)
   - [10:24 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive](#run-2026-10-16-1016-6)
+  - [10:49 — Review triage: fix all findings, including the app's chat-header bug #160 seen in the shots](#run-2026-10-16-1016-7)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2619,3 +2620,23 @@ edited: 2026-10-16
 - **Alternatives:** full suite per step (same verdict, roughly 5× the time).
 - **Consequences:** a step commit could in theory break another workspace unnoticed until the closing full run; the
   closing run catches it before anything reaches `main`.
+
+## 10:49 — Review triage: fix all findings, including the app's chat-header bug #160 seen in the shots {#run-2026-10-16-1016-7}
+
+- **Status:** open
+- **Overrides:** `~/.claude/CLAUDE.md` § 3 — touch only what the request requires (#160 is an app bug, not a website issue)
+- **Context:** `/spec:adversarial-code-review` of `website-screenshots-and-origin` (Defects, Standards, Spec). The
+  Mac and iPad shots showed "ChatsQwen3-Coder…": the chat's back link and the centred model name overlapped by
+  8 px (filed as #160). Other findings: a rambling chat answer in the shots, `capture.mjs` crashing without
+  `tmp/prodtest/stack` even with `--url`, the token sent without a certificate check to a non-local `--url`, an alpha
+  channel in the WebPs, fixed sleeps, spec drift (note, tmp path, `--ask` writes, "View on X", gist date), and test
+  holes (empty screenshot dir, extra files).
+- **Question:** which findings to fix, and is the app bug in scope?
+- **Decision:** fix all of them; #160 test-first (`e2e/fix-160.spec.ts`, then `.ctitle` keeps 128 px free on each
+  side), then retake the shots on rebuilt prodtest images; update the spec where the code deliberately differs
+  (which-brewer note, `--ask`, three panes on the iPad).
+- **Why:** the shots are the product's face; a visible glitch or a rambling answer undoes their point. The CSS fix is
+  one line and ships with this run's release anyway.
+- **Alternatives:** leave #160 open and crop the header (hides the model chip and back link); keep the shots as they
+  are.
+- **Consequences:** the release v0.0.29 now carries one app change (#160). `Closes #160` lands with the merge to `main`.

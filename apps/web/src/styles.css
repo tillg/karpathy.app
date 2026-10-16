@@ -327,7 +327,8 @@ span.embed .embed-skel { width: 100%; border-radius: 8px; background: var(--fill
 
 /* ---------- chat ---------- */
 #chat { background: var(--paper); }
-.ctitle { position: absolute; left: 50%; transform: translateX(-50%); max-width: 45%; pointer-events: none; }
+/* Centred, but never under the "‹ Chats" back link or the bar's buttons (#160): 128 px kept free on each side. */
+.ctitle { position: absolute; left: 50%; transform: translateX(-50%); max-width: min(45%, calc(100% - 256px)); pointer-events: none; }
 .model { font-size: 12px; color: var(--tint); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 .msgs { padding: 10px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
 .day { align-self: center; font-size: 12px; color: var(--label2); font-weight: 500; }
