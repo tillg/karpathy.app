@@ -1,7 +1,7 @@
 // Website checks (specs/changes/product-website): assemble _site/ with build.sh, then test the output.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -82,6 +82,38 @@ test("names the idea's origin: Karpathy's tweet and gist", () => {
   assert.match(origin, /href="https:\/\/x\.com\/karpathy\/status\/2039805659525644595"/);
   assert.match(origin, /href="https:\/\/gist\.github\.com\/karpathy\/442a6bf555914893e9891c11519de94f"/);
   assert.match(origin, /<time datetime="2026-04-02"/);
+});
+
+// Pixel size of a WebP file, from its first chunk: VP8X (extended), VP8 (lossy) or VP8L (lossless).
+const webpSize = (buf) => {
+  const chunk = buf.toString('ascii', 12, 16);
+  if (chunk === 'VP8X') return { width: buf.readUIntLE(24, 3) + 1, height: buf.readUIntLE(27, 3) + 1 };
+  if (chunk === 'VP8 ') return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff };
+  if (chunk === 'VP8L') {
+    const b = buf.readUInt32LE(21);
+    return { width: (b & 0x3fff) + 1, height: ((b >> 14) & 0x3fff) + 1 };
+  }
+  throw new Error(`not a WebP: ${chunk}`);
+};
+
+test('shows the app on Mac, iPad and iPhone', () => {
+  const shots = section(page(), 'screenshots');
+  assert.ok(shots, 'no #screenshots section');
+  const imgs = [...shots.matchAll(/<img\b[^>]*>/g)].map((m) => m[0]);
+  const attr = (img, name) => img.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1];
+  assert.deepEqual(imgs.map((i) => attr(i, 'src')), ['screenshots/mac.webp', 'screenshots/ipad.webp', 'screenshots/iphone.webp']);
+  for (const img of imgs) {
+    const src = attr(img, 'src');
+    assert.ok(attr(img, 'alt')?.trim(), `${src}: no alt`);
+    assert.equal(attr(img, 'loading'), 'lazy', `${src}: not lazy`);
+    const { width, height } = webpSize(readFileSync(join(out, src)));
+    assert.deepEqual([Number(attr(img, 'width')), Number(attr(img, 'height'))], [width, height], `${src}: width/height`);
+  }
+});
+
+test('screenshots stay under 400 KB', () => {
+  const dir = join(root, 'site/screenshots');
+  for (const f of readdirSync(dir)) assert.ok(statSync(join(dir, f)).size <= 400 * 1024, `${f} is over 400 KB`);
 });
 
 test('the hero links to the origin', () => {

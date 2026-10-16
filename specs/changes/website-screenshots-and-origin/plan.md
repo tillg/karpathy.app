@@ -30,11 +30,11 @@ Every step runs `node site/site.test.mjs` (the site suite, also part of `npm tes
     `site/screenshots/` exists under `_site/screenshots/` and that the dir exists — fails today: build.sh copies
     only top-level files
   - Verify: `node site/site.test.mjs` → all pass
-- [ ] Write `site/capture.mjs` and take the three screenshots from `just prodtest` with the demo vault
+- [x] Write `site/capture.mjs` and take the three screenshots from `just prodtest` with the demo vault
   - Test first: none — a capture tool driving a live stack; its output is checked by the next step's tests
   - Verify: `ls site/screenshots/{mac,ipad,iphone}.webp` → three files; each viewed and free of admin screens,
     tokens and error states
-- [ ] Add the `#screenshots` section with the three images
+- [x] Add the `#screenshots` section with the three images
   - Test first: `site.test.mjs` › "shows the app on Mac, iPad and iPhone" (three `<img>` under `screenshots/`
     with `alt`, `loading="lazy"`, `width`/`height` equal to the WebP's real size) and › "screenshots stay under
     400 KB" — fail today: no `#screenshots` section
