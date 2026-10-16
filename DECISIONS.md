@@ -2335,7 +2335,7 @@ edited: 2026-10-16
 
 ## 12:48 — Apply with `--parallel`: Workers in `.worktrees/`, each with its own `npm ci`; e2e steps in the main tree {#run-2026-10-15-1244-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `admin-mode` `plan.md` has `Depends on:` lines; five steps (1, 5, 8, 10, 12) are ready at the start.
 - **Question:** sequential or parallel, and how do Workers get dependencies?
 - **Decision:** `--parallel` with at most 3 Workers; each worktree runs `npm ci --prefer-offline` (workspace
@@ -2398,7 +2398,7 @@ edited: 2026-10-16
 
 ## 12:58 — Hold step 5 until step 6: the backend's strict schema would reject the new `secrets` key {#run-2026-10-15-1244-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `admin-mode` step 5 (renderer writes `secrets` into `settings.json`); `apps/backend/src/settings.ts`
   parses it with `z.strictObject`. The Worker made an existing render test strip `secrets` before parsing to stay
   green.
@@ -2465,7 +2465,7 @@ edited: 2026-10-16
 
 ## 09:00 — Archive admin-mode with its decisions open and the dev model's `@llm` e2e reds documented {#run-2026-10-15-1244-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:archive` 2c/2d — don't archive while the suite or a `Verify:` is red, or while the change's
   decisions are `open`
 - **Context:** `admin-mode`, all 16 steps ticked. Step 15's `Verify` ("`just e2e` → all green") is not literally green:
@@ -2485,7 +2485,7 @@ edited: 2026-10-16
 
 ## 09:10 — Retro: a per-test stack check in e2e and a CLAUDE.md line on judging e2e failures {#run-2026-10-15-1244-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `admin-mode` run retro. What went wrong: (1) twice Rancher's port forwarder died mid-run and a full
   `just e2e` turned 300 tests red with page timeouts that named no cause; (2) the full e2e run on a busy Mac was red
   for load and for the dev model, and telling the two apart from a regression took a baseline worktree and stack;
