@@ -47,7 +47,7 @@ export function Shell() {
     return s.sidebarOpen || s.chatOpen;
   };
   // Tablet: Escape closes the overlay sidebar / chat and returns focus to its toggle (issue #43).
-  const overlay = tablet && (s.sidebarOpen || s.chatOpen);
+  const overlay = tablet && (s.sidebarOpen || s.chatOpen) && s.admin === null;
   const { setSidebarOpen, setChatOpen, sidebarOpen } = s;
   useEffect(() => {
     if (!overlay) return;

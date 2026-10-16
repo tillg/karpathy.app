@@ -40,20 +40,28 @@ flowchart LR
 
 ## Secrets
 
-| Secret | Goes only to | How |
-|---|---|---|
-| Bearer token | backend | compose secret; `settings.json` names its file (`/run/secrets/bearer_token`) |
-| GitHub token | backend | set in the app (stored in `config.json`, wins) or the compose secret (fallback); sent per git command as an `http.https://github.com/.extraheader`, never written to `.git/config`, redacted from errors and logs ([below](#github-token)) |
-| DNS API token | proxy | compose secret (root-owned on a server) |
-| LLM provider key (the chosen gateway's only), optional `EXA_API_KEY` | opencode | rendered `opencode.env` (env file, 0600) |
-| opencode server password | backend, opencode | compose secret `opencode_password` (named in `settings.json`; opencode's entrypoint exports it as `OPENCODE_SERVER_PASSWORD`); generated once per target, never in the vault or the AI's reach |
-| Commit author on `hetzner` (personal data, not a credential) | backend | secret references resolved inline into `settings.json` and `.env` (both 0600) |
-| Ingest token | backend, ingest | compose secret `ingest_token`, generated once per target; the backend reads it from `INGEST_TOKEN_FILE` and sends it as a bearer token to the ingest endpoint |
-| gog keyring password | ingest | compose secret `gog_keyring_password`, generated once per target; `run.sh` exports it as `GOG_KEYRING_PASSWORD` |
-| Gmail OAuth client + refresh token | ingest | gog's file keyring in the `ingest-state` volume, encrypted with the keyring password; piped in from the Mac's Keychain by `just ingest-auth`, never printed or written to disk on the way |
-| Instagram session (cookies, device ids) | ingest | `session-<user>.json` (0600) in the `ingest-state` volume; the password is never stored |
-| Ingest profile account and allowed senders (personal data) | ingest | secret references resolved into `ingest.json` (0600) |
-| `INGEST_EMAIL_DEPLOY_KEY` | CI and the release workflow | GitHub repo secret: the private half of a read-only deploy key on `tillg/ingest_email` only |
+| Secret | Goes only to | How | In admin mode |
+|---|---|---|---|
+| Bearer token | backend | compose secret; `settings.json` names its file (`/run/secrets/bearer_token`) | Name, set |
+| GitHub token | backend | set in the app (stored in `config.json`, wins) or the compose secret (fallback); sent per git command as an `http.https://github.com/.extraheader`, never written to `.git/config`, redacted from errors and logs ([below](#github-token)) | Name, set, source, last 4 |
+| DNS API token | proxy | compose secret (root-owned on a server) | Name, set |
+| LLM provider key (the chosen gateway's only), optional `EXA_API_KEY` | opencode | rendered `opencode.env` (env file, 0600) | Name, set |
+| opencode server password | backend, opencode | compose secret `opencode_password` (named in `settings.json`; opencode's entrypoint exports it as `OPENCODE_SERVER_PASSWORD`); generated once per target, never in the vault or the AI's reach | Name, set |
+| Commit author on `hetzner` (personal data, not a credential) | backend | secret references resolved inline into `settings.json` and `.env` (both 0600) | Name, set |
+| Ingest token | backend, ingest | compose secret `ingest_token`, generated once per target; the backend reads it from `INGEST_TOKEN_FILE` and sends it as a bearer token to the ingest endpoint | Not listed |
+| gog keyring password | ingest | compose secret `gog_keyring_password`, generated once per target; `run.sh` exports it as `GOG_KEYRING_PASSWORD` | Not listed |
+| Gmail OAuth client + refresh token | ingest | gog's file keyring in the `ingest-state` volume, encrypted with the keyring password; piped in from the Mac's Keychain by `just ingest-auth`, never printed or written to disk on the way | No |
+| Instagram session (cookies, device ids) | ingest | `session-<user>.json` (0600) in the `ingest-state` volume; the password is never stored | Connection state only |
+| Ingest profile account and allowed senders (personal data) | ingest | secret references resolved into `ingest.json` (0600) | Name, set |
+| `INGEST_EMAIL_DEPLOY_KEY` | CI and the release workflow | GitHub repo secret: the private half of a read-only deploy key on `tillg/ingest_email` only | No |
+
+**Shown in admin mode** (#150, Secrets & keys › Deployment secrets): the name, purpose, component and whether a value is
+set, for every secret the deployment references (the active gateway's only); never a value or a part of one. The one
+exception is the GitHub token, which keeps its source and last four characters, as in its own form. The Instagram
+session shows only its connection state, and the Instagram password is never stored. The status comes from a manifest the
+renderer writes into `settings.json` (names and booleans, as of the last render): the backend doesn't read opencode's,
+the proxy's or the ingest service's secrets to answer it. Only the GitHub token and the Instagram login can be set in
+the app; every other secret is set per deployment, not through the app.
 
 **Secrets are references in the settings.** `deploy/settings/` is committed to a public repo, so a setting that is
 secret holds only `{ secret: <name> }`; the renderer reads the value from a secret store (one file per name). In
@@ -63,9 +71,26 @@ Keychain): role `app` passes them on stdin to `render-settings.sh` on the contro
 temp store only while the renderer runs; the rendered files are removed from the controller in an `always:` block,
 and every task that handles them doesn't log. Compose secret files are written 0600. `just settings show` prints
 references, never values; the renderer never logs a value; the legacy check in `dev.sh` names keys of an old
-`deploy/.env` / `opencode.env`, not their values. `settings.json` holds no credential: only `/run/secrets/…` paths.
+`deploy/.env` / `opencode.env`, not their values. `settings.json` holds no credential: only `/run/secrets/…` paths, plus the `secrets` manifest (names, purpose,
+component, optional and set flags; no value).
 opencode never receives the GitHub or bearer token; the ingest service receives none of the app's secrets (bearer,
 GitHub, opencode password, provider keys), only its own two.
+
+## Admin mode: usage and metrics
+
+Admin mode (#150) adds three read-only routes, `GET /api/settings/secrets`, `GET /api/usage` and `GET /api/metrics`, all
+behind the bearer token like every `/api` route; none writes anything. Admin mode is a UI split along a planned
+User / Admin role line, not an access boundary: the one token is both, so whoever holds it can open it
+([Gaps](#gaps-known-not-built)).
+
+- **Usage reads only message metadata** from opencode's sessions (role, token counts, cost, model, time), never message
+  text or tool output, and shows vaults only as grouping names. `days` is validated (7 or 30).
+- **Metrics** reveal host size and load to the token holder, who is already the operator. The sample holds numbers only
+  (CPU, memory, load, disk, opencode up).
+- **`metrics.jsonl`** is on the backend-only `config` volume (not mounted into opencode or the proxy), created 0600
+  and rewritten through a temp file with the same mode; an unreadable or torn history doesn't stop the backend.
+- No new secret leaves the server and no new component gets one: the sampler reads `/proc`, the disk usage of two
+  volumes and opencode's health check.
 
 ## GitHub token
 
@@ -316,7 +341,9 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   not an allowlist.
 - Exa without `EXA_API_KEY` is its anonymous, rate-limited endpoint with no account terms; with a key, the key travels
   in the Exa URL query (HTTPS, to Exa only). Neither has zero data retention below Exa's enterprise plans.
-- Single shared token: no per-device tokens or revocation other than changing the secret.
+- Single shared token: no per-device tokens or revocation other than changing the secret. Also no roles: whoever has
+  the token can enter admin mode (add and remove vaults, set the GitHub token and Instagram login, read usage and
+  server metrics).
 - The GitHub token set in the app is stored unencrypted in `config.json`; request bodies of the token routes are not
   logged, but no rate limit applies to the test route.
 - The LLM provider sees every note, image and PDF the AI reads, and every image or PDF the user attaches to a prompt.

@@ -36,42 +36,91 @@ collaboration, a sync protocol of its own, offline AI, creating GitHub repos fro
   history before anything else runs. The token screen's **Scan QR code** reads that link with the camera, for the
   home-screen app on iOS, which doesn't share Safari's storage. The operator gets the QR code from
   `just token <target> --qr`.
-- **Version:** the settings dialog shows the server's and the loaded PWA's version (`dev` for local builds), so
+- **Version:** admin mode › General shows the server's and the loaded PWA's version (`dev` for local builds), so
   after a deploy you see whether the new release and its service worker are live; for a release also when it was
   **Built** and **Deployed** (local date and time).
 - **PWA:** installable (standalone, app icons); updates itself when a new version is deployed, re-checking whenever
   the app comes back to the foreground.
 
-### Vaults and settings (two dialogs: "Vaults" and "Settings")
+### Admin mode (#150)
 
-Vault management and settings are separate dialogs, one per entry point:
+The app is in one of two modes. **User mode** is the app as used day to day: file tree, note, search, chat, changes;
+it includes **switching** between vaults. **Admin mode** is a full-screen view of its own for configuring and watching
+the installation: six sections, no notes or chat. It replaced the former "Vaults" and "Settings" dialogs. Admin mode is
+two roles ahead: today the one bearer token is both User and Admin, nothing is enforced yet (see
+[Permissions and visibility](#permissions-and-visibility)).
 
 | Entry point | Opens |
 |---|---|
-| Vault menu → **Manage vaults…** ("Add / configure GitHub repos") | **Vaults** dialog, on the vault list |
-| **Edit vault** (note pane, changes panel) | **Vaults** dialog, on that vault's details |
-| Sidebar **gear** (tooltip "Settings") | **Settings** dialog |
-
-The Vaults dialog holds nothing that applies to every vault; the Settings dialog holds nothing per vault.
+| Sidebar **gear** (tooltip "Settings") | **General** (on the phone: the section list) |
+| Vault menu → **Manage vaults…** ("Add / configure GitHub repos") | **Vaults**, on the vault list |
+| **Edit vault** (note pane, changes panel) | **Vaults**, on that vault's details |
+| "**Reconnect in Secrets & keys**" notice in Vaults | **Secrets & keys** |
 
 ```mermaid
 flowchart LR
-    M[Manage vaults…] --> L[Vaults: list]
-    L --> D[details] & A[Add vault] & H[What is a vault?]
-    E[Edit vault] --> D
-    G[gear] --> S[Settings: GitHub · Instagram · App · Version]
+  subgraph U[User mode]
+    G[gear in sidebar]
+    MV[Vault menu → Manage vaults…]
+    EV[Edit vault]
+    SW[Vault menu → switch vault]
+  end
+  subgraph A["Admin mode (#admin/&lt;section&gt;)"]
+    gen[General] --- vau[Vaults] --- sec[Secrets & keys] --- ai[AI] --- use[Usage] --- srv[Server]
+  end
+  G --> gen
+  MV --> vau
+  EV -->|vault details| vau
+  vau -->|Instagram notice| sec
+  A -->|Done / Esc / Back| U
 ```
 
-The **Vaults** dialog has three views, switched inside it (no router). Details and Add vault have an "All vaults" back
-button to the list.
+Entering admin mode saves the open note first. The mode has its own address (`#admin/<section>`), so reload, Back and a
+bookmarked link work; after a reload straight into admin mode, **Done** goes to the last vault.
+
+| Section | Content |
+|---|---|
+| **General** | Commit reminder threshold (1–1000 changed files, own **Save**); **Version** (see [Access](#access)) |
+| **Vaults** | Vault list, details, Add vault, "What is a vault?" (below) |
+| **Secrets & keys** | GitHub token, Instagram login, and the status of every deployment secret (below) |
+| **AI** | Model (`provider/model`, server-wide; the server rejects models opencode doesn't offer; free text, no picker), "Default: …" line with **Use default**, **Web access** switch, **Save settings** |
+| **Usage** | Tokens and cost over time, by day, model and vault ([Usage](#usage)) |
+| **Server** | CPU, memory, load and disk over time, opencode status, uptime ([Server](#server)) |
+
+Each section saves only its own fields. The texts and validation of the moved forms are unchanged.
+
+**Layouts**
+
+| Width | Layout |
+|---|---|
+| wide (≥ 1024 px) | A left rail (brand, an **ADMIN** pill, icon + label per section, footer "Admin mode: settings for this installation, all vaults and all users.") and the open section beside it (at most 780 px wide); header bar with the section title and **Done** |
+| tablet (700–1023 px) | The same rail, narrow: icon + short label ("Secrets" for Secrets & keys) |
+| phone (≤ 699 px) | Strict two levels. The **section list** (**ADMIN** pill, **Done**, large title "Admin", one summary line per section such as "5 of 6 set" or "12.3k tokens this week · $0.40") is the top level and the only place with **Done**. A tap opens the section, whose bar has only "‹ Admin" back to the list. User mode's bottom tab bar is hidden |
+
+- **Leaving:** **Done** returns to where admin mode was entered from: the same vault, note and pane. On wide screens and
+  tablets **Escape** does the same, unless the focus is in a text field or a dialog is open (Escape in a field is the
+  field's, so typed input isn't lost). On the phone Escape does nothing. Browser Back: on wide screens and tablets one step
+  leaves admin mode (moving between sections doesn't add history entries); on the phone it goes from a section to the list
+  and from the list out.
+- **Focus:** on entering and, on the phone, on each page change, the focus goes to the section heading; leaving puts it back
+  on what opened admin mode (the gear or the vault menu button), else the gear.
+- **Vault switching stays in user mode** (vault menu, always available). Admin mode has no vault switcher: it isn't about
+  one vault. Background work continues in admin mode: a streaming reply keeps streaming and the vault event stream stays
+  connected.
+
+#### Vaults section
+
+Three views, switched inside the section. Details and Add vault have an "All vaults" back button to the list.
 
 - **Vault list** (opens first): one row per vault with name, `repo · branch · /root` and the state badge; a row opens
-  its details. Below: **Add vault**. A `(?)` button next to "Vaults" opens **What is a vault?**: a
+  its details. Below: **Add vault** and a line "Switching between vaults stays in your notes (the vault menu). Here you
+  add, edit and remove them." A `(?)` button next to "Vaults" opens **What is a vault?**: a
   short explanation of `Sources/` (immutable source documents), `Wiki/` (the AI-maintained knowledge base) and optional
   `Schema/` (instructions for the AI), with a folder sketch and the note that the app offers to create missing folders.
-  "Edit vault" in the note pane and the changes panel (vault not cloned) opens that vault's details directly.
+  "Edit vault" in the note pane and the changes panel (vault not cloned) opens that vault's details directly (only that
+  once: later visits to Vaults start at the list).
   While the Instagram connection is `expired`, the list shows "Instagram disconnected — N links waiting.
-  **Reconnect in Settings**", which opens the Settings dialog.
+  **Reconnect in Secrets & keys**", which opens that section.
 - **Vault details:** the edit fields, **Retry** and **Remove** for one vault.
   - **Edit vault:** name any time; repo, branch or root only when the vault has no uncommitted changes and no unpushed
     commits.
@@ -80,19 +129,24 @@ button to the list.
   "Checking the repo…" while the backend checks the repo first (see [Checked attach](#checked-attach)); the vault is
   stored and clones in the background only if the check passes (list refreshes every 2 s). A failure after the check
   shows the git error with **Retry** and **Edit**.
-- **Switch vault** from the vault menu (shows `name · branch`); the open note is saved first.
-- **Settings** dialog (the gear; no back button), in four groups:
-  - **GitHub:** the server-wide token ([GitHub token](#github-token)).
-  - **Instagram:** the ingest service's Instagram login ([Instagram connection](#instagram-connection)).
-  - **App:** commit reminder threshold (1–1000 changed files), the model (`provider/model`, server-wide; the
-    server rejects models opencode doesn't offer) and the **Web access** switch (on by default, for all vaults: "Lets
-    the AI search the web (via Exa) and read pages you or it found. Each search and page is shown in the chat.").
+- **Switch vault** from the vault menu in user mode (shows `name · branch`); the open note is saved first.
+
+#### Other sections
+
+- **General:** the commit reminder threshold, and **Version**: server and PWA version, Built and Deployed ([Access](#access)).
+- **Secrets & keys**, three blocks: **GitHub** (the server-wide token, [GitHub token](#github-token)), **Instagram** (the
+  ingest service's Instagram login, [Instagram connection](#instagram-connection)) and **Deployment secrets**
+  ([below](#deployment-secrets)).
+- **AI:**
+  - The model (`provider/model`, server-wide) and the **Web access** switch (on by default, for all vaults: "Lets
+    the AI search the web (via Exa) and read pages you or it found. Each search and page is shown in the chat."). A line
+    says that provider keys live on the server only and points to Secrets & keys for whether they are set.
   - **Model default:** below the model field a line "Default: `provider/model`" shows the deployment's default model
     (from its settings, `deploy/settings/`); while the field holds another model, a **Use default** button puts the
     default back into the field. Saving the default removes the override, so a later change of the deployment's
     default applies again; saving another model keeps it as an override until then. The threshold and the switch
     also start from the deployment's settings, but there a saved value keeps winning.
-  - **Version:** server and PWA version, Built and Deployed.
+- **Usage** and **Server:** see [Usage](#usage) and [Server](#server).
 
 #### Checked attach
 
@@ -112,7 +166,7 @@ Not checked: changing repo, branch or root of an existing vault, and the structu
 
 #### GitHub token
 
-One token is used for every vault. It is set in Settings, so rotating an expired token needs no SSH and no restart; it
+One token is used for every vault. It is set in admin mode › Secrets & keys, so rotating an expired token needs no SSH and no restart; it
 applies to the next git operation. The deployment's `github_token` secret (setting `git.github_token`) stays the fallback.
 
 - **Field:** a password field. Its placeholder shows the state: "No token set", "Using the server’s token •••• abcd"
@@ -126,7 +180,7 @@ applies to the next git operation. The deployment's `github_token` secret (setti
 
 #### Instagram connection
 
-The ingest service fetches Instagram posts with one logged-in account per deployment. Settings › Instagram makes and
+The ingest service fetches Instagram posts with one logged-in account per deployment. Admin mode › Secrets & keys › Instagram makes and
 renews that login from any device; no Mac step.
 
 - **Status line:** "Connected as @x", "Expired: Instagram rejected the session of @x", "Waiting for the code" or "Not
@@ -142,6 +196,46 @@ renews that login from any device; no Mac step.
   within 90 s), "Instagram login failed: <error type>". Without a running ingest service the section shows only "Ingest
   service not running".
 - The Vaults list carries the "Instagram disconnected" notice while the status is `expired` (see Vault list above).
+
+#### Deployment secrets
+
+Below GitHub and Instagram, Secrets & keys lists every secret the deployment references: **Purpose**, **Secret** (its
+name), **Used by** (component) and **Status** with an icon and a word: **Set**, **Missing** (a required secret without a
+value) or **Not set (optional)**. The heading carries "N of M set". On the phone the secret name moves under the purpose
+and the component column is hidden. Only secrets of the active gateway appear. Names and set or not: never a value or a
+part of one (the GitHub token keeps its last four characters in its own form). The status is as of the last settings
+render (a deployment, or `just dev up`), not probed live; provider keys, the Exa key, the bearer token and the DNS token
+are set per deployment, not in the app. A line under the table says so.
+
+The GitHub token's row shows **Set** whenever the app holds a token (set in the app) or the deployment does.
+
+#### Usage
+
+Admin mode › Usage: the LLM tokens the AI used. Range **7 days / 30 days** (default 7) with the date span.
+
+- **Tiles:** Total tokens, Input, Output (reasoning counts as output; with the share of the total) and **Cost**, the last
+  only when the provider reports one (otherwise hidden, also in the tables, rather than $0).
+- **Tokens per day:** stacked bars (Input, Cache, Output; cache = read + write), a legend, a hover tooltip per day and a
+  "Show numbers" table. Days without use show as zero.
+- **By model** (input, output, cache, cost) and **By vault** (chats with use, tokens, cost).
+- Footnote: "Counts the chats that still exist. A deleted chat drops out; cost as reported by the provider." Sub-agent
+  sessions count; a failing vault is left out of the report instead of failing it.
+
+#### Server
+
+Admin mode › Server: the machine the backend runs on (on a dev stack: Rancher Desktop's VM). Range **1 hour / 24 hours /
+7 days** (default 24 hours), "sampled every 30 s · updated N s ago". The page refreshes at the sampling interval while
+shown and visible, and again when the page becomes visible.
+
+- **Status rows:** the AI harness (opencode) **Up** or **Down**, and the backend's uptime ("7 h 41 min", "2 d 3 h").
+- **Five sparkline cards:** CPU (share of all cores), Memory (in use of the total), Load (1-minute average), Disk ·
+  vaults and Disk · config volume (used of the total, and percent), each with the current value, a hover crosshair and
+  tooltip, its peak marked, min, max and latest, and "Show numbers" with those three.
+- Right after a start the first sample is taken at once (CPU is measured against a reading primed at start); before any
+  sample "No data yet — the first sample comes within 30 s."
+- Footnote: "The machine the backend runs on. Alerts (disk, memory, down) still go to your phone via ntfy." Alerting stays
+  with Beszel and healthchecks.io ([deployment.md › Monitoring](deployment.md#monitoring)); the history survives a
+  backend restart (kept 7 days).
 
 ### Notes
 
@@ -485,7 +579,7 @@ flowchart LR
   folder the user drops into `Input/` (Obsidian, or pushed from the Mac and pulled) is picked up within a minute. Nothing
   is committed: items, moves and pages are uncommitted changes until **Commit & Push**.
 - **Gmail access** is set up by the operator (`just ingest-auth <target> <email>`), **Instagram** by the user in
-  Settings › Instagram ([Instagram connection](#instagram-connection)).
+  admin mode › Secrets & keys ([Instagram connection](#instagram-connection)).
 
 ### Skills
 
@@ -635,12 +729,13 @@ sequenceDiagram
 | Clone, pull or open of a vault in Anthropic's layout | `AGENTS.md`, `.agents/skills/`, the skill link, a notice (uncommitted changes) |
 | Commit message | Commit on GitHub (or an unpushed commit), toast |
 | Conflict choice per file | Resolved file(s), possibly a `.conflict-<date>` copy |
-| Settings: reminder threshold, model (or Use default), Web access | A model override stored only while it differs from the deployment's default |
+| Admin mode: reminder threshold (General), model (or Use default) and Web access (AI) | A model override stored only while it differs from the deployment's default |
 | URLs in prompts and notes, web search queries (AI) | Web chips; pages and results in the chat only |
 | "Add a picture of X from <URL>" (AI) | A new media file or PDF in the vault (changed chip) and an embed in the note |
 | Mail to an ingest profile's Gmail label; a folder dropped into `Input/` | Input items (and sibling items for its links) in `Input/`, the input count |
 | Tap on Ingest | A new chat running `/ingest`: wiki pages, items moved to `Sources/` (uncommitted) |
-| Instagram username, password, maybe a code (Settings › Instagram) | The Instagram connection's status; the password is not stored |
+| Instagram username, password, maybe a code (Secrets & keys › Instagram) | The Instagram connection's status; the password is not stored |
+| Admin mode: gear, Manage vaults…, Edit vault; a range (7 / 30 days, 1 h / 24 h / 7 d) | The six sections; the secret status table, token usage, server charts |
 
 No pasting of images, no video or audio uploads by the user (the AI may save them from a URL), no exports, no outgoing
 e-mail, no push notifications (also not when something arrives in `Input/`).
@@ -676,7 +771,9 @@ overwrite) and *deleted* (banner).
 ## Permissions and visibility
 
 Single user: whoever has the bearer token can do everything. There are no roles, no sharing and no per-vault
-permissions. The AI's permissions are fixed in the managed opencode config ([architecture.md](architecture.md#opencode-deployopencode)).
+permissions. The UI is split along a planned line of two roles: **User** (user mode: notes, chat, switching between the
+vaults one has access to) and **Admin** (also admin mode: configure and watch the installation). Today the one token is
+both; a later change can restrict admin mode, taking nothing away from users. The AI's permissions are fixed in the managed opencode config ([architecture.md](architecture.md#opencode-deployopencode)).
 
 ## Edge cases and known limitations
 
@@ -689,6 +786,12 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
 - **No rename or move** of notes or folders (except the move into its own folder on a page's first upload), no
   explicit folder creation, no automatic pull (only the count updates on its own), no per-chat model,
   no chat rename, no global keyboard shortcuts.
+- **Admin mode:**
+  - **Usage** counts only what opencode still stores: a deleted chat drops out of the totals, and throwaway sessions (commit-message
+    proposals) count only while they exist. The first report after a backend start reads every chat once and is slower.
+  - **Server** shows the machine the backend container runs on, not per container; there are no alerts, thresholds or
+    budgets in the app. The secret status is as of the last settings render. The model field stays free text.
+  - Entering admin mode saves the open note, so an unsaved draft can't exist when a vault is removed there.
 - Native `prompt()` / `confirm()` dialogs for new note, delete, discard, remove vault and delete chat.
 - **Text files other than notes** (#126): no language servers, linting, formatting or line numbers; a language chunk
   that can't load (offline, not yet cached) leaves the file as plain text. HTML Read mode runs no scripts (that needs
@@ -751,7 +854,7 @@ permissions. The AI's permissions are fixed in the managed opencode config ([arc
   - The real Instagram login is tested only against a fake; the first real connect happens in production. Instagram
     may challenge or block logins and fetches from the server's datacenter IP; a failed post ends in `failed_links`.
   - **Cancel** in the Instagram code step only resets the form: the server's pending login waits for a code until its
-    5-minute timeout, and reopening Settings shows the code field again (#135).
+    5-minute timeout, and reopening Secrets & keys shows the code field again (#135).
   - A new item arriving between the review and the commit makes the commit refuse with the changed list ("changes
     moved"); review again. A long `/ingest` turn holds the vault: commits and pulls wait until it ends or is stopped.
   - Items are uncommitted until the user commits: discarding them loses them (their mails have already left the

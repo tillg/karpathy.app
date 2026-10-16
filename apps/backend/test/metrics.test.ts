@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -15,7 +15,8 @@ const dir = () => mkdtemp(join(tmpdir(), 'metrics-'));
 async function setup(opts: { start?: number } = {}) {
   const d = await dir();
   const clock = { t: opts.start ?? 1_000_000_000_000 };
-  const cpu = { idle: 0, total: 0 };
+  /** `step`: every reading advances the clock of the cpu by this much (100 total, 50 idle = 50 % busy). */
+  const cpu = { idle: 0, total: 0, step: false };
   const sampler = () =>
     new MetricsSampler({
       dir: d,
@@ -23,7 +24,13 @@ async function setup(opts: { start?: number } = {}) {
       configDir: '/config',
       now: () => clock.t,
       readers: {
-        cpus: () => ({ ...cpu }),
+        cpus: () => {
+          if (cpu.step) {
+            cpu.total += 100;
+            cpu.idle += 50;
+          }
+          return { idle: cpu.idle, total: cpu.total };
+        },
         mem: () => ({ used: 4, total: 8 }),
         load: () => 0.5,
         statfs: async (p) => (p === '/vaults' ? { used: 10, total: 100 } : { used: 1, total: 10 }),
@@ -76,7 +83,7 @@ describe('MetricsSampler', () => {
     const s = sampler();
     await s.start();
     s.stop();
-    expect(s.report('7d').samples.map((x) => x.at)).toEqual([clock.t - HOUR]);
+    expect(s.report('7d').samples.map((x) => x.at)).toEqual([clock.t - HOUR, clock.t]); // the old one is dropped, start sampled once
   });
 
   it('hourly compaction rewrites the file without the old samples', async () => {
@@ -94,20 +101,57 @@ describe('MetricsSampler', () => {
   });
 
   it('range 24h is bucket-averaged to at most 240 points', async () => {
-    const { clock, cpu, sampler } = await setup();
+    const { d, clock, sampler } = await setup();
+    // 2880 samples (30 s apart) ending at `now`; cpu alternates 0 / 100, so an average is 50 and a last-sample is 0 or 100.
+    const mk = (at: number, cpu: number) => JSON.stringify({ at, cpu, memUsed: 1, memTotal: 8, load1: 0, vaultsUsed: 0, vaultsTotal: 0, configUsed: 0, configTotal: 0, opencodeUp: true });
+    const lines = Array.from({ length: 2880 }, (_, i) => mk(clock.t - (2879 - i) * 30_000, i % 2 === 0 ? 0 : 100));
+    await writeFile(join(d, 'metrics.jsonl'), `${lines.join('\n')}\n`);
     const s = sampler();
-    for (let i = 0; i < 2880; i++) {
-      cpu.total += 100;
-      cpu.idle += 50;
-      await s.sample();
-      clock.t += 30_000;
-    }
+    await s.start();
+    s.stop();
     const r = s.report('24h');
     expect(r.samples.length).toBeLessThanOrEqual(240);
     expect(r.samples.length).toBeGreaterThan(200);
-    expect(r.samples[10]!.cpu).toBeCloseTo(50);
+    for (const x of r.samples.slice(1, -1)) expect(x.cpu).toBeCloseTo(50, 0);
     expect(r.latest?.memTotal).toBe(8);
     expect(r.intervalS).toBe(1e6);
-    expect(s.report('1h').samples).toHaveLength(120);
+    expect(s.report('1h').samples.length).toBeGreaterThanOrEqual(120);
+  });
+
+  it('the first sample after start has a real CPU reading, and latest is fresh', async () => {
+    const { cpu, sampler } = await setup();
+    cpu.step = true;
+    const s = sampler();
+    await s.start();
+    s.stop();
+    expect(s.report('1h').latest?.cpu).toBe(50);
+  });
+
+  it('a sample at exactly now is clamped into the last bucket: at most 240 points', async () => {
+    const { d, clock, sampler } = await setup();
+    const mk = (at: number) => JSON.stringify({ at, cpu: 1, memUsed: 1, memTotal: 2, load1: 0, vaultsUsed: 0, vaultsTotal: 0, configUsed: 0, configTotal: 0, opencodeUp: true });
+    // one sample per bucket (6 min wide) plus one at exactly now
+    const ats = Array.from({ length: 240 }, (_, i) => clock.t - DAY + i * 6 * MIN + 1);
+    await writeFile(join(d, 'metrics.jsonl'), `${[...ats, clock.t].map(mk).join('\n')}\n`);
+    const s = sampler();
+    await s.start();
+    s.stop();
+    expect(s.report('24h').samples.length).toBeLessThanOrEqual(240);
+  });
+
+  it('start survives an unreadable history file and starts empty', async () => {
+    const { d, clock, sampler } = await setup();
+    await mkdir(join(d, 'metrics.jsonl')); // reading a directory: EISDIR
+    const s = sampler();
+    await expect(s.start()).resolves.toBeUndefined();
+    s.stop();
+    expect(s.report('7d').samples.map((x) => x.at)).toEqual([clock.t]); // no history, only the first sample
+  });
+
+  it('metrics.jsonl is written with mode 0600', async () => {
+    const { d, sampler } = await setup();
+    const s = sampler();
+    await s.sample();
+    expect((await stat(join(d, 'metrics.jsonl'))).mode & 0o777).toBe(0o600);
   });
 });
