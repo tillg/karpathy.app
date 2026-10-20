@@ -53,6 +53,8 @@ section { margin: 56px 0; }
 .logo { width: 128px; height: 128px; border-radius: 28px; box-shadow: var(--shadow); }
 h1 { font-size: clamp(32px, 7vw, 54px); line-height: 1.08; letter-spacing: -.5px; margin: 28px 0 14px; color: var(--label); }
 .lead { max-width: 640px; margin: 0 auto; font-size: clamp(17px, 2.4vw, 20px); color: var(--label2); }
+.origin-link { margin: 12px 0 0; font-size: 15px; font-weight: 600; }
+.origin-link a { text-decoration: none; }
 
 .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
 .card { background: var(--bg2); border-radius: 16px; padding: 20px; box-shadow: 0 .5px 0 var(--sep); }
@@ -65,7 +67,24 @@ h1 { font-size: clamp(32px, 7vw, 54px); line-height: 1.08; letter-spacing: -.5px
 .how li::before { content: counter(step); flex: none; width: 26px; height: 26px; border-radius: 13px; background: var(--tint-soft); color: var(--tint);
   font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; }
 
-.self-host .intro { margin: 0 0 16px; font-size: 17px; color: var(--label2); max-width: 680px; }
+/* screenshots: the Mac across the full width, iPad and iPhone below it; stacked at phone width */
+.shots .grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+@media (min-width: 700px) { .shots .grid { grid-template-columns: 3fr 1fr; align-items: end; } .shot.mac { grid-column: 1 / -1; } }
+.shot { margin: 0; text-align: center; }
+.shot img { display: block; width: 100%; height: auto; border-radius: 12px; box-shadow: var(--shadow); background: var(--bg2); }
+.shot.iphone img { border-radius: 22px; max-width: 320px; margin: 0 auto; }
+.shot figcaption { margin-top: 10px; font-size: 14px; color: var(--label2); }
+
+.self-host .intro, .origin .intro, .shots .intro { margin: 0 0 16px; font-size: 17px; color: var(--label2); max-width: 680px; }
+
+/* where the idea comes from: the tweet as a quote card, the gist as a card */
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.quote { margin: 0; border-left: 4px solid var(--tint); }
+.quote blockquote { margin: 0; }
+.quote blockquote p { margin: 0 0 8px; font-size: 17px; color: var(--label); }
+.quote figcaption { font-size: 14px; color: var(--label2); }
+.origin .card p + p { margin-top: 10px; }
+.origin .after { margin: 16px 0 0; }
 .needs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
 .card h3 { font-size: 17px; margin: 0 0 6px; }
 .cta { text-align: center; background: var(--bg2); border-radius: 20px; padding: 36px 20px; margin-top: 28px; }

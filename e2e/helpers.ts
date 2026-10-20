@@ -13,13 +13,9 @@ export const BASE_URL = target.baseURL;
 /** The dev stack's compose project (karpathy-app-N); undefined for a non-dev target (E2E_BASE_URL). */
 export const PROJECT = 'project' in target ? target.project : undefined;
 export const TOKEN = readFileSync(resolve(ROOT, process.env.E2E_TOKEN_FILE ?? 'deploy/secrets/bearer_token'), 'utf8').trim();
-/**
- * Runs a command in the target stack's backend container: this checkout's dev stack, or E2E_BACKEND_CONTAINER.
- * A stack on another Docker daemon also sets E2E_DOCKER (e.g. `limactl shell karpathy-vm sudo docker`).
- */
+/** Runs a command in the target stack's backend container: this checkout's dev stack, or E2E_BACKEND_CONTAINER. */
 export function backendExec(...args: string[]): string {
-  const [cmd, ...pre] = (process.env.E2E_DOCKER ?? 'docker').split(' ');
-  return execFileSync(cmd, [...pre, 'exec', target.backendContainer, ...args], { encoding: 'utf8' });
+  return execFileSync('docker', ['exec', target.backendContainer, ...args], { encoding: 'utf8' });
 }
 /** Host dir mounted as /remotes in the backend (GIT_REMOTE_BASE=file:///remotes/). */
 export const REMOTES = join(ROOT, 'tmp/dev/remotes/e2e');
@@ -267,7 +263,26 @@ export async function waitSaved(page: Page) {
   await expect(page.getByTestId('save-state')).toHaveText(/^Saved/, { timeout: 15_000 });
 }
 
-export const test = base.extend<{ api: Api; vault: TestVault; cspGuard: void }>({
+/**
+ * Why a test can't reach the dev stack, or null when it answers. Global setup checks once; this runs before every
+ * test, so a stack that stops answering mid-run (Rancher's port forwarder died, the run's 300 failures said nothing)
+ * fails each test with the cause instead of a page timeout.
+ */
+export async function stackDown(url = BASE_URL): Promise<string | null> {
+  const ctx = await request.newContext({ ignoreHTTPSErrors: true });
+  try {
+    if ((await ctx.get(`${url}/healthz`, { timeout: 5000 })).ok()) return null;
+  } catch { /* refused or timed out */ } finally { await ctx.dispose(); }
+  return `dev stack ${url} stopped answering. If every published port refuses at once, Rancher's port forwarder died: `
+    + '`rdctl shutdown && open -a "Rancher Desktop"`, then re-run the failed tests (`just e2e --last-failed`).';
+}
+
+export const test = base.extend<{ api: Api; vault: TestVault; cspGuard: void; stackGuard: void }>({
+  stackGuard: [async ({}, use) => {
+    const down = await stackDown();
+    if (down) throw new Error(down);
+    await use();
+  }, { auto: true }],
   // Fails a test whose page logged a Content-Security-Policy violation (prod proxy sends a CSP).
   cspGuard: [async ({ page }, use) => {
     const violations: string[] = [];

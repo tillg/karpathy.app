@@ -1,6 +1,7 @@
 import type { MetricsReport, MetricsSample } from '@karpathy/shared';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
+import { percent, pct } from '../lib/percent';
 import { Sparkline } from './charts/Sparkline';
 import { Icon } from './Icon';
 
@@ -10,9 +11,11 @@ const RANGES: { id: Range; label: string; ago: string }[] = [
   { id: '24h', label: '24 hours', ago: '24 h ago' },
   { id: '7d', label: '7 days', ago: '7 d ago' },
 ];
-const POLL_MS = 30_000;
+/** Used until the first report says how often the backend samples. */
+const DEFAULT_INTERVAL_S = 30;
 const gb = (b: number) => (b / 1024 ** 3).toFixed(1).replace(/\.0$/, '');
-const pct = (used: number, total: number) => `${total ? Math.round((used / total) * 100) : 0} %`;
+/** Share of the vaults disk in use, in whole percent. */
+export const diskPercent = (s: MetricsSample) => percent(s.vaultsUsed, s.vaultsTotal);
 const usage = (used: number, total: number) => `${gb(used)} / ${gb(total)} GB`;
 /** 27660 → "7 h 41 min"; under an hour "12 min"; from a day "2 d 3 h". */
 export const duration = (s: number) => {
@@ -29,26 +32,44 @@ const METRICS: Metric[] = [
   { title: 'Disk · config', sub: 'Config volume', max: (s) => s.configTotal, value: (s) => s.configUsed, format: (v, s) => `${usage(v, s.configTotal)} · ${pct(v, s.configTotal)}` },
 ];
 
-/** Server (#150): CPU, memory, load and disk of the machine the backend runs on, polled every 30 s while shown. */
+/** "updated N s ago": ticks on its own, so the charts do not re-render every second. */
+function Updated({ at }: { at: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return <> · updated {Math.max(0, Math.round((now - at) / 1000))} s ago</>;
+}
+
+/** Server (#150): CPU, memory, load and disk of the machine the backend runs on, polled at the sampling interval while shown and visible. */
 export function ServerSection() {
   const [range, setRange] = useState<Range>('24h');
   const [r, setR] = useState<MetricsReport | null>(null);
   const [failed, setFailed] = useState(false);
   const [fetchedAt, setFetchedAt] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    let live = true;
-    setR(null);
-    setFailed(false);
-    const load = () => api.metrics(range).then((x) => { if (live) { setR(x); setFailed(false); setFetchedAt(Date.now()); } }, () => { if (live) setFailed(true); });
-    load();
-    const t = setInterval(load, POLL_MS);
-    return () => { live = false; clearInterval(t); };
+  /** The current range's liveness: switched off on a range change and on unmount, so an answer for an older range is dropped. */
+  const cur = useRef({ live: false });
+  const load = useCallback(() => {
+    const mine = cur.current;
+    return api.metrics(range).then((x) => { if (mine.live) { setR(x); setFailed(false); setFetchedAt(Date.now()); } }, () => { if (mine.live) setFailed(true); });
   }, [range]);
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
+    const mine = { live: true };
+    cur.current = mine;
+    setR(null);
+    setFailed(false);
+    void load();
+    return () => { mine.live = false; };
+  }, [load]);
+  const intervalS = r?.intervalS ?? DEFAULT_INTERVAL_S;
+  // Poll only while the page is visible; coming back to it refetches.
+  useEffect(() => {
+    const poll = () => { if (!document.hidden) void load(); };
+    const t = setInterval(poll, intervalS * 1000);
+    document.addEventListener('visibilitychange', poll);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', poll); };
+  }, [load, intervalS]);
 
   const { ago } = RANGES.find((x) => x.id === range)!;
   const latest = r?.latest ?? null;
@@ -58,7 +79,7 @@ export function ServerSection() {
         <div className="seg" role="group" aria-label="Range">
           {RANGES.map((x) => <button key={x.id} className={x.id === range ? 'on' : ''} aria-pressed={x.id === range} onClick={() => setRange(x.id)}>{x.label}</button>)}
         </div>
-        <span className="muted">sampled every {r?.intervalS ?? 30} s{fetchedAt ? ` · updated ${Math.max(0, Math.round((now - fetchedAt) / 1000))} s ago` : ''}</span>
+        <span className="muted">sampled every {intervalS} s{fetchedAt ? <Updated key={fetchedAt} at={fetchedAt} /> : null}</span>
       </div>
       {failed && <div className="form-error" role="alert">Could not load the server metrics.</div>}
       {!r && !failed && <p className="muted">Loading server metrics…</p>}
@@ -92,7 +113,7 @@ export function ServerSection() {
                 </div>
               ))}
             </div>
-          ) : <p className="muted">No data yet — the first sample comes within 30 s.</p>}
+          ) : <p className="muted">No data yet — the first sample comes within {intervalS} s.</p>}
           <div className="foot"><Icon n="info_circle" size={15} /><span>The machine the backend runs on. Alerts (disk, memory, down) still go to your phone via ntfy.</span></div>
         </>
       )}

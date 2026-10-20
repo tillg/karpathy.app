@@ -94,6 +94,13 @@ writes or updates wiki pages that cite them, and ticks off the plan note (at mos
 **continue** for more). `/research Research/<date>-<slug>.md` resumes a plan in any chat. Everything stays
 uncommitted until you review and commit.
 
+**Time and place.** Every message carries your browser's time zone, so the AI knows your local date and time
+("today's journal entry" at 23:30 is today, not the server's tomorrow; messages without one, e.g. from the ingest
+runner, use the deployment's `timezone` setting). When a request depends on where you are ("cafés near me"), the AI
+calls `user_location`: the tab you sent the message from answers with your position, as precise as the device can
+tell (GPS: about 10 m). The browser asks once for permission; declining is fine, the AI then asks you. The chip shows
+each use and its accuracy; the position goes to the model provider and stays in that chat's history.
+
 **Vault layout: the `.agents` standard.** Vaults follow the open `.agents` standard that opencode, Codex,
 Cursor, Gemini CLI and others share: instructions in `AGENTS.md`, skills in `.agents/skills/<name>/SKILL.md`,
 rather than Anthropic's `CLAUDE.md` / `.claude/`. opencode runs with `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`,
@@ -202,7 +209,7 @@ Everything runs in docker compose (on this Mac: Rancher Desktop), except the dev
 into `~/.omlx/models/` with omlx's own Python, e.g. `HF_HUB_DISABLE_XET=1 "$(brew --prefix omlx)/libexec/bin/python3" -c 'from huggingface_hub import snapshot_download as d; d("mlx-community/Qwen3-VL-4B-Instruct-4bit", local_dir="'"$HOME"'/.omlx/models/Qwen3-VL-4B-Instruct-4bit")'`
 (same for `Qwen3-Coder-30B-A3B-Instruct-4bit`). omlx listens on loopback only, so its API-key check is off
 (`auth.skip_api_key_verification: true` in `~/.omlx/settings.json`); `memory.memory_guard_tier: aggressive` lets the
-16.8 GB coder model load. The `local` target still expects a native Ollama (`just ollama install|uninstall|status`).
+16.8 GB coder model load.
 
 **Dev** (hot reload, the model from `deploy/settings/dev.yaml`: the native omlx). Several dev stacks run side by side,
 one per checkout (main clone or worktree): stack N (1–9) is on https://localhost:80N0, and its header
@@ -221,8 +228,8 @@ paired prodtest. Each stack's `ollama` service (the name is historical) is only 
 `just prodtest` use it.
 
 `just` lists all commands (`brew install just`); they wrap `deploy/dev.sh` and npm. Deploying
-also needs `brew install lima ansible ansible-lint qrencode jq` (the local target VM, the playbook,
-the login QR code and the deploy scripts).
+also needs `brew install ansible ansible-lint qrencode jq` (the playbook, the login QR code and the
+deploy scripts).
 
 Notes open at `https://localhost:80N0/#/<vault>/<path>` (Back/Forward work). Binary files
 (images, PDFs, …) are listed but not editable. A vault whose clone failed can be retried
@@ -243,7 +250,7 @@ into `deploy/secrets/github_token` (or set one in the app: admin mode › Secret
 
 Every app setting lives in [`deploy/settings/`](deploy/settings/) (#133): `settings.yaml` holds each setting with
 the value all environments share, and `<env>.yaml` only what an environment changes: `dev` (dev stacks),
-`prodtest`, `test` (CI and integration tests), `local` (the VM target) and `hetzner` (production). Among them:
+`prodtest`, `test` (CI and integration tests) and `hetzner` (production). Among them:
 the LLM gateway and model (`ai.gateway`, `ai.model`, `gateways`), domain and TLS, timezone, git remote and
 commit author, the web caps, and the dot-folders the file tree shows (`files.visible_dot_dirs`).
 
@@ -307,7 +314,9 @@ npm run typecheck
 ```
 
 `just check` runs lint, typecheck, `npm test` and the stack tooling's tests (`deploy/stack.test.sh`,
-`e2e/stack.unit.ts`; they need Docker; the model check is tested against a throwaway local HTTP server).
+`e2e/stack.unit.ts`; they need Docker; the model check is tested against a throwaway local HTTP server). It first
+refuses to start when Docker doesn't answer or the load is above 3 per core (the container tests would only time out);
+`CHECK_IGNORE_LOAD=1 just check` runs anyway.
 
 To run the e2e suite against the **prod images** (https://localhost:80N5, paired with this
 checkout's dev stack N): `just prodtest`, `just prodtest e2e [playwright args]`, `just prodtest down`; details in the header of `deploy/compose.prodtest.yml`: `E2E_BASE_URL`, `E2E_TOKEN_FILE` and `E2E_BACKEND_CONTAINER`
@@ -331,7 +340,7 @@ procedure: [`deploy/README.md`](deploy/README.md).** The short version:
 
 ```sh
 just release 0.3.0            # tag v0.3.0 → images on GHCR + GitHub release
-just deploy hetzner 0.3.0     # put it on the server (`local`: the test VM on https://localhost:9444)
+just deploy hetzner 0.3.0     # put it on the server
 just token hetzner --qr       # log a phone or iPad in by scanning a QR code
 ```
 
@@ -391,6 +400,13 @@ The product page at [https://karpathy.app](https://karpathy.app) is plain HTML +
 styled with the app's design tokens (copied from `apps/web/src/styles.css`; `npm test` fails if they
 drift) and the icons from `assets/icons/`. Preview it with `just site` (http://localhost:8099). Every push
 to `main` that touches the site deploys it to GitHub Pages ([`pages.yml`](.github/workflows/pages.yml)).
+
+The page also shows where the idea comes from (Karpathy's "LLM Knowledge Bases" post and his "LLM Wiki" gist)
+and screenshots of the app on a Mac, an iPad and an iPhone (`site/screenshots/*.webp`, light mode, ≤ 400 KB
+each). To retake them after a UI change: `just dev up && just prodtest`, add the demo vault (a bare clone of
+`karpathy_demo_wiki` at `tmp/dev/remotes/tillg/karpathy_demo_wiki.git`, repo `tillg/karpathy_demo_wiki`), then
+`node site/capture.mjs --ask "<question>"` (WebKit, needs `cwebp`). Without `--ask` the shots show the vault's
+newest chat; check every shot before committing — the local model's answers vary.
 
 ## Name
 

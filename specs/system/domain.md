@@ -1,7 +1,7 @@
 ---
 title: "Domain: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-13
+edited: 2026-10-16
 ---
 
 # Domain: karpathy.app
@@ -31,11 +31,17 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Attach preflight** | The check that runs when a vault is added, before anything is stored or cloned into the vault directory: repo and branch reachable with the GitHub token, vault root exists, required folders present. A vault that fails it was never attached. | `preflight()` |
 | **Missing folders** | The required folders absent from the vault root of a repo being attached. The user decides whether to create them. | `409 missing-folders` |
 | **Folder placeholder** | An empty `.gitkeep` that makes a created folder exist in git. It is an uncommitted change like any other; nothing is committed for the user. | `Vaults.createFolders` |
-| **GitHub token** | The single, server-wide credential for every git operation against GitHub (clone, pull, push, preflight). Set in the app's settings or, as fallback, the deployment's `github_token` secret (setting `git.github_token`). Never sent to the client in full (last 4 characters only), never given to the AI, never written into a repo. | `GitHubToken`, `config.githubToken` |
+| **GitHub token** | The single, server-wide credential for every git operation against GitHub (clone, pull, push, preflight). Set in admin mode › Secrets & keys or, as fallback, the deployment's `github_token` secret (setting `git.github_token`). Never sent to the client in full (last 4 characters only), never given to the AI, never written into a repo. | `GitHubToken`, `config.githubToken` |
 | **Token source** | Where the active token comes from: `settings` (set in the app, wins), `secret` (the deployment secret, used while none is set in the app) or `none`. | `SettingsView.githubToken.source` |
 | **Token test** | A check of a token, the stored one or one typed but not saved: does GitHub accept it, whose is it, its scopes and expiry, and can it reach each configured vault's repo and branch. Stores nothing. | `TokenTest` |
-| **Vaults dialog** | Where the user manages vaults: the vault list, a vault's details (edit, retry, remove), Add vault and "What is a vault?". Opened from the vault menu's **Manage vaults…** or, on one vault's details, from **Edit vault**. Holds nothing that applies to every vault. *Avoid:* admin area, "Vaults & settings". | `adminOpen.view = 'vaults'`, `VaultsDialog` |
-| **Settings dialog** | Where the user edits the server-wide settings and the GitHub token and reads the version. Opened from the sidebar gear only. Holds nothing per vault. Rule of thumb: what applies to every vault is a setting; anything with a vault id belongs to the Vaults dialog. | `adminOpen.view = 'settings'`, `SettingsDialog` |
+| **User mode** | The app as used day to day: file tree, note, search, chat, changes, and switching between vaults. The default. *Avoid:* main mode, normal view. | `Shell` (`admin === null`) |
+| **Admin mode** | The full-screen view for configuring and watching the installation: six admin sections, no notes or chat. Entered from the sidebar gear, **Manage vaults…** and **Edit vault**; left with **Done**. Holds the vault list and details, the settings, the secret status, the usage and the server charts. Replaced the Vaults and Settings dialogs. Rule of thumb: what applies to every vault, or to the installation, is admin; anything a user does to work (notes, chat, switching vaults) is user mode. *Avoid:* settings dialog, vaults dialog, admin area, configuration mode. | `AdminMode`, route `#admin/<section>`, store `admin` |
+| **Admin section** | One page of admin mode: `general`, `vaults`, `secrets` (Secrets & keys), `ai`, `usage`, `server`. A rail entry on wide screens and tablets, a row of the section list on the phone. `#admin` alone is the phone's list (wider screens open `general`); an unknown section falls back to `general`. *Avoid:* tab (the phone has none). | `AdminSection`, `ADMIN_SECTIONS` (`lib/route.ts`) |
+| **Role** (planned) | Who someone is to the installation: **User** (works in user mode, switches between the vaults they have access to) or **Admin** (may also enter admin mode). Not enforced: the one bearer token is both. The UI already splits along the line. | — |
+| **Secret status** | For one secret the deployment references: its name, the component that uses it, what it is for, whether it is optional and whether a value is set. Computed when the settings are rendered (active gateway's secrets only); never contains the value or a part of it. `github_token` adds where the token in use comes from (`app` or `deployment`) and its last four characters, and reads set whenever either source has one. Shown in Secrets & keys. | `SecretStatus`, `secrets` in `settings.json`, `GET /api/settings/secrets` |
+| **Token usage** | The tokens the AI used, summed from the assistant messages stored in opencode's sessions (child sessions included): input, output, reasoning, cache read, cache write, and cost when the provider reports one. Grouped by day (in the deployment's timezone), model and vault. Counts only chats that still exist. Not the context fill (#140), which is the size of one chat's last request. *Avoid:* consumption, context. | `UsageReport`, `usage.ts` |
+| **Metrics sample** | One reading of the server taken by the backend every 30 s: CPU %, memory used and total, 1-minute load, disk used and total of the vaults volume and the config volume, opencode up or down. | `MetricsSample`, `metrics.ts` |
+| **Metrics history** | The samples of the last 7 days, kept in memory and in `metrics.jsonl` on the config volume so a restart keeps them. Older samples are dropped. Read in three ranges (1 h, 24 h, 7 d), averaged into at most 240 points each. | `metrics.jsonl`, `GET /api/metrics?range=` |
 | **Active vault** | The one vault the UI is currently scoped to. | web `store.tsx` |
 | **Vault state** | `cloning` → `ready` or `clone-failed`; `ready` ↔ `conflict`. The attach preflight comes before the vault exists, so it is not a state. | `VaultState` |
 | **Vault file** | Any file in the vault: a text file (note, HTML page, code file), a media file or a binary file. The file tree, Delete, the Changes list and commits work on vault files. *Avoid:* note (for anything that isn't Markdown), document, item. | `FileEntry`; web store `note` (identifier kept) |
@@ -73,10 +79,19 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Context usage** | *used / window* of a chat, e.g. `3,560 / 16,384`; only *used* when the window is unknown. Levels: normal < 70 % ≤ warning < 90 % ≤ critical. | `ContextUsage`; web `ContextMeter` |
 | **Compaction** | opencode summarizing a long chat to free its context; the next reply's context used drops, and the meter's tooltip says so. | opencode |
 | **Turn** | One user prompt in a chat plus everything the AI reads and changes in response. States `idle`, `queued` (waiting for another turn or for the sync), `running`. | `TurnState` |
-| **Consulted file / changed file / opened note** | The three tool-chip kinds of a turn: files the AI read (read tools), wrote (edit/write/patch tools), or asked the app to show (`open_note`). An opened note is neither consulted nor changed: opening reads and writes nothing. | `ToolCall.writes`, `ToolCall.opens` |
+| **Prompt (body)** | What the web app posts to start a turn: `{ text, attachments?, openPage?, tabId?, timeZone?, locale? }`. `tabId`, `timeZone` and `locale` are the sending tab's id and the [user time zone](#vocabulary); they are queued with the turn, so a queued turn still knows its answering tab and its zone. | `promptBody` (`app.ts`) |
+| **Vault event stream** | The never-ending NDJSON stream a browser keeps open while it shows a vault: `status`, `files-changed`, the agents move, and the browser calls (`browser-call`, `browser-call-done`). On connect it sends the current status, the last agents move and the still pending browser calls before the live events, so a reload or a PWA back in the foreground still answers. | `GET /vaults/:id/events`, `VaultEvent` |
+| **Consulted file / changed file / opened note** | The three tool-chip kinds of a turn: files the AI read (read tools), wrote (edit/write/patch tools), or asked the app to show (`open_note`). An opened note is neither consulted nor changed: opening reads and writes nothing. A fourth chip kind belongs to browser tools: `ToolCall.browser` with the call id, showing a waiting state while the call is pending. | `ToolCall.writes`, `ToolCall.opens`, `ToolCall.browser` |
 | **Open page** | The file the user has open in the note pane when a prompt is sent: vault-root-relative path, view mode (`read` / `write`) and whether it has unsaved edits; none while nothing is open. A snapshot per chat, replaced by every prompt; it is not updated mid-turn. | `OpenPage` (shared), `<vaults>/.open-page/<chatId>.json` |
 | **Page request** | One call of the AI's `current_page` tool: answers with the open page of the chat's latest prompt (re-checked against the vault), or that nothing is open. Reads and changes nothing in the vault; not a consulted or changed file. | `current_page` tool |
 | **Open request** | One call of the AI's `open_note` tool. It succeeds only for a file the file tree lists inside the chat's vault root; otherwise it fails as a tool error the AI sees, and nothing opens. Only `open_note`: a link offer is not an open request, because it never opens anything by itself. | `open_note` tool |
+| **Browser tool** | A tool the AI calls in opencode whose answer comes from the user's browser while the call waits. Today only `user_location` (local time is not one: see *Local time*). Read-only for the vault: it never writes a file. *Avoid:* client tool, frontend tool, device service. | `BROWSER_TOOLS` (shared, harness), `browserTools` (web) |
+| **Browser call** | One running call of a browser tool: chat, call id (opencode's `callID`), tool, input, the answering tab, its deadline. Pending until the tab answers, the deadline passes (90 s) or the turn ends (abort included). Announced on the vault event stream (`browser-call`, then `browser-call-done`). | `BrowserCall`, `browser-calls.ts` |
+| **Answering tab** | The browser tab that sent the turn's prompt, named by a random **tab id** it keeps in `sessionStorage` (survives a reload, not a new tab; a duplicated tab copies it, and then the first answer wins). Only it answers that turn's browser calls. *Avoid:* client, device (a device can have several tabs). | `tabId` (prompt body, `browser-call` event, `BrowserCall`) |
+| **Browser call result** | What the tab answers: a tool-specific object, validated by that tool's schema, or `unavailable` with a reason (`denied`, `no-position`, `unsupported`). Becomes the text the model reads. | `BrowserCallResult` |
+| **User time zone** | The IANA time zone and locale of the tab that sent the prompt, captured when it is sent and kept with the turn (also a queued one). | `timeZone`, `locale` (prompt body) |
+| **Local time** | The current date, time, weekday and UTC offset in the user time zone, computed on the server from the server clock when the turn is sent to opencode, and given to the model as a hidden line with every prompt (no tool). Needs no answer from the browser, so it works with the phone locked and for a queued turn. Without a user time zone: the deployment's `timezone` setting. | `localTimeLine` (harness), synthetic text part |
+| **User location** | The answering device's position from the Geolocation API (high accuracy), as precise as the device reports it, with accuracy in meters and the age of the fix. No place name. | `user_location` tool |
 | **Vision model** | The model that looks at images for the chat model (`ai.vision_model`, on the gateway its prefix names, not selectable in the app), reached through the `look_at_image` tool. | `ai.vision_model`, `VISION_*` |
 | **Suggestion / ghost text** | One short prompt the AI proposes as the user's next message: the latest completed `suggest_next` call after the last user message, shown greyed out in the empty composer while no turn runs. Not a tool chip. **Accepting** it (Tab, or a tap on the button) copies it into the composer; only Enter sends. Derived from the chat history, so it survives a reload. | `ToolCall.suggestion`, `nextSuggestion` |
 | **Live event vs. history** | Live events arrive on the chat stream while a turn runs; history is the stored chat loaded on reload or when a chat is opened. Only a live open request moves the UI; history shows the chip and moves nothing. | `ChatEvent` vs. `api.chat` |
@@ -168,13 +183,13 @@ Terms for getting mails, links and Instagram posts into a wiki ([Ingest an input
 | **Input item** | One direct sub-folder of `Input/`: an `index.md` (frontmatter + body) and its files (`original.eml`, attachments, images, video, PDF and its text). Named `<kind>-YYYY-MM-DD-<slug>` (`mail-…`, `insta-…`, `web-…`, `youtube-…`, `gh-…`). Loose files directly in `Input/` are not items. | folder |
 | **Input count** | The number of direct sub-folders of `Input/` (with or without `index.md`; hidden folders such as `.tmp-*` and loose files don't count), shown as the red badge on `Input`. It is the queue length, not the processing state: items whose links are still being fetched count too. | web `inputCount(tree)` |
 | **Open link** | A URL in an item's `index.md` the ingest service hasn't fetched yet (frontmatter `unresolved_links`). It becomes a `resolved_links` entry `{url, source}`, whose source is a **sibling item** in `Input/`, or a `failed_links` entry `{url, attempts, reason}`. An item with open links is still being processed. | ingest-email frontmatter |
-| **Waiting link** | An Instagram link that couldn't be fetched because there is no live Instagram session (reason `no-session`). Shown as "N links waiting" in Settings › Instagram. | `waitingLinks` |
+| **Waiting link** | An Instagram link that couldn't be fetched because there is no live Instagram session (reason `no-session`). Shown as "N links waiting" in Secrets & keys › Instagram. | `waitingLinks` |
 | **Ingest service** | The compose service `ingest`: fetches mail into `Input/` every 15 minutes and resolves open links every minute. Deterministic, no LLM, never commits, never touches an item that has no open links. *Avoid:* pipeline (that's the whole path from mail to wiki). | `deploy/ingest/` |
 | **Ingest profile** | One Gmail label → one vault: the label (with its sub-labels `/processed`, `/failed`, `/rejected`), the gog account, the allowed senders, ingest-email options and the vault id (plus its root) whose `Input/` it fills. A setting per environment; only production may have any. | `ingest.profiles` (`deploy/settings/`) |
 | **Ingest** | The AI step: the vault's `ingest` skill turns ready input items into wiki pages and moves each finished item to `Sources/`. It never fetches anything. *Avoid:* import. | vault skill `.agents/skills/ingest/` |
 | **Ingest button** | The button next to the input count: a new chat that sends `/ingest` in one tap. Shown only when the vault has an `ingest` command. | web `ingestNow()` |
 | **Move to sources** | One call of the AI's `move_to_sources` tool: `Input/<name>` becomes `Sources/<name>` in one rename. Never overwrites, never deletes, refuses an item with open links. | `move_to_sources` tool |
-| **Instagram connection** | The ingest service's logged-in Instagram session, one account per deployment. States `not-connected`, `waiting-for-code` (Instagram asked for a 2FA or challenge code, at most 5 min), `connected` (as `@account`), `expired` (a session exists, but the resolver still reported `no-session` for an Instagram link after it was made). Made and renewed in Settings › Instagram; the password is used once and never kept. | ingest service `/instagram/*`, `InstagramStatus` |
+| **Instagram connection** | The ingest service's logged-in Instagram session, one account per deployment. States `not-connected`, `waiting-for-code` (Instagram asked for a 2FA or challenge code, at most 5 min), `connected` (as `@account`), `expired` (a session exists, but the resolver still reported `no-session` for an Instagram link after it was made). Made and renewed in admin mode › Secrets & keys › Instagram; the password is used once and never kept. | ingest service `/instagram/*`, `InstagramStatus` |
 | **Last-run file** | `/state/last-run` in the ingest container, touched around every ingest-email call; the container is unhealthy when it is older than 20 minutes. Not the **heartbeat** (the healthchecks.io ping). | compose healthcheck |
 
 ### Operations
@@ -186,7 +201,7 @@ Terms for running the app, not for using it ([deployment.md](deployment.md)).
 | **Release** | A git tag `vX.Y.Z` with the five images CI built from it and the `compose.yml` attached to the GitHub release. Never changes once published; a tag whose images failed to build isn't one. *Avoid:* build, deployment. | `.github/workflows/release.yml` |
 | **Pre-release** | A release from a `vX.Y.Z-rc.N` tag, from any commit. Deployable by name, never GitHub's "Latest" or `:latest`. | `guard` job |
 | **Version (of a release)** | `X.Y.Z`, the tag without the `v`; also the image tag and what `/api/health` reports. Local builds report `dev`. | `APP_VERSION` |
-| **Target** | A named place a release is deployed to: `local` (the Lima VM) or `hetzner`. One host with its own secrets (Ansible Vault) and host provisioning (inventory); its app settings are the **environment** of the same name (`deploy/settings/<target>.yaml`). Every target is an environment, not every environment a target. *Avoid:* stage, server. | `deploy/ansible/inventories/<target>`, `deploy/settings/<target>.yaml` |
+| **Target** | A named place a release is deployed to: today only `hetzner`. One host with its own secrets (Ansible Vault) and host provisioning (inventory); its app settings are the **environment** of the same name (`deploy/settings/<target>.yaml`). Every target is an environment, not every environment a target. *Avoid:* stage, server. | `deploy/ansible/inventories/<target>`, `deploy/settings/<target>.yaml` |
 | **Deployment** | One `just deploy <target> [version]`: brings the host to the desired state, starts the release, ends with the smoke check. *Avoid:* rollout, ship. | `site.yml` |
 | **Current release** | The release a target runs now; earlier ones stay for rollback. | `/opt/karpathy.app/current` |
 | **Rollback** | A deployment of an older release, with today's playbook. | — |
@@ -195,6 +210,9 @@ Terms for running the app, not for using it ([deployment.md](deployment.md)).
 | **Heartbeat** | A ping to healthchecks.io every 5 minutes; when it stops or reports a failure, healthchecks.io raises the alert. *Avoid:* uptime check. | `karpathy-heartbeat` |
 | **Website** | The public product page at `https://karpathy.app`; static, no login, no user data. Not the app, which runs at `app.karpathy.app` (or another target). *Avoid:* homepage, landing page, web app. | `site/` |
 | **Website deploy** | Publishing the current `site/` from `main` to GitHub Pages. Independent of releases; the website has no version. *Avoid:* release. | `.github/workflows/pages.yml` |
+| **Website screenshot** | A picture of the app on one device class (Mac 1440 × 900 @2, iPad landscape 1180 × 820 @2, iPhone 393 × 852 @3) with the demo vault open, for the website; light mode, no admin screens or secrets. Retaken with `site/capture.mjs`. *Avoid:* screen capture, mockup. | `site/screenshots/` |
+| **Origin** | Andrej Karpathy's post "LLM Knowledge Bases" (2026-04-02) and gist "LLM Wiki" (2026-04-04), the idea the app is built on; shown on the website. *Avoid:* inspiration, credits. | `site/index.html` › `#origin` |
+| **Demo vault** | The public example vault `tillg/karpathy_demo_wiki` (coffee, mountains, topology) with the demo run book `Karpathy Demo.md`; the website screenshots show it. *Avoid:* sample vault, test vault. | `~/git/karpathy_demo_wiki` |
 | **Login link** | `<app url>/#token=…`, shown as a QR code by `just token <target> --qr`; logs a device in. | `lib/login-code.ts` |
 
 ### Development
@@ -213,8 +231,8 @@ alone (project `karpathy-app`), not numbered stacks.
 | **Orphan stack** | A project `karpathy-app-N` whose owning checkout was deleted. Any checkout's `just dev up N` may take it over. | `stack_state` |
 | **Remembered stack** | The number in `<checkout>/tmp/dev/stack`, written by `just dev up` and deleted by `just dev down`. Every later `dev`, `e2e` and `prodtest` command in that checkout uses it. A checkout holds at most one stack. | `stack_resolve`, `stack_remember` |
 | **Paired prodtest** | The prod images as project `karpathy-app-N-prodtest` on 80N5, taking N from the checkout's dev stack (remembered in `tmp/prodtest/stack` while it runs, so it outlives `just dev down`). | `just prodtest` |
-| **Native omlx** | The dev LLM server on the Mac itself (omlx, an MLX-based OpenAI-compatible server; Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models/<model id>`), shared by all stacks and their prodtests. An outside service, like a cloud provider. The `local` target still uses a native Ollama (`just ollama install`). | `brew services start omlx` |
-| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native model server (omlx in dev and prodtest; the names are historical) and answers 403 to everything else. The `local` target has one too (`ollama-relay`, to Ollama). Where it finds the server is the gateway's `relay_upstream` (`OLLAMA_UPSTREAM`): `host.docker.internal:8000` (omlx) from a dev stack, `192.168.5.2:11434` from the Lima VM. | `deploy/proxy/Caddyfile.ollama-relay` |
+| **Native omlx** | The dev LLM server on the Mac itself (omlx, an MLX-based OpenAI-compatible server; Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models/<model id>`), shared by all stacks and their prodtests. An outside service, like a cloud provider. | `brew services start omlx` |
+| **Ollama relay** | The per-stack Caddy (`ollama` in dev, `ollama-bridge` in prodtest) that opencode reaches as `ollama.internal:11434`; it passes only the OpenAI-compatible `/v1` API to the native model server (omlx in dev and prodtest; the names are historical) and answers 403 to everything else. Where it finds the server is the gateway's `relay_upstream` (`OLLAMA_UPSTREAM`): `host.docker.internal:8000` (omlx) from a dev stack. | `deploy/proxy/Caddyfile.ollama-relay` |
 | **Stack label** | `karpathy #N`, the header brand (vault switcher) on dev stack N, so a browser tab shows which stack it is. Everywhere else the brand is `karpathy.app`. | `lib/brand.ts` › `brandName` |
 
 ### Settings
@@ -224,7 +242,7 @@ Terms for configuring the app per environment ([architecture.md](architecture.md
 | Term | Meaning | In code |
 |---|---|---|
 | **Setting** | A value an operator chooses per environment and the app reads at start: gateway, model, domain, TLS mode, timezone, git identity and remote base, web caps, visible dot-dirs, ingest profiles, which secret each component needs. Never changed by the app itself. *Avoid:* config (that's `config.json`, runtime state). | `Settings` (`packages/settings`) |
-| **Environment** | A named way the stack runs: `dev` (dev stack N), `prodtest`, `test` (CI and the backend's integration tests), `local` (the Lima VM target) and `hetzner` (production). It exists exactly when `deploy/settings/<env>.yaml` exists. Every target is an environment; not every environment is a target. | `environments()` |
+| **Environment** | A named way the stack runs: `dev` (dev stack N), `prodtest`, `test` (CI and the backend's integration tests) and `hetzner` (production). It exists exactly when `deploy/settings/<env>.yaml` exists. Every target is an environment; not every environment is a target. | `environments()` |
 | **Central settings file** | `deploy/settings/settings.yaml`, committed: every setting with the value all environments share. Must validate on its own as complete settings. | `settingsSchema` |
 | **Environment file** | `deploy/settings/<env>.yaml`, committed: the same shape, but only what that environment overrides (all keys optional, unknown keys still fail). | `partialSettingsSchema` |
 | **Local overlay** | Optional, gitignored `deploy/settings/dev.local.yaml` or `prodtest.local.yaml`: one developer's own choices on top (e.g. "use OpenRouter"). Never read for `test` or a target (a `local.local.yaml` or `hetzner.local.yaml` is an error) and ignored by the tests (`--no-local`). Replaces the hand-edited `deploy/.env`. | `loadSettings(env, { overlay })` |
@@ -233,7 +251,7 @@ Terms for configuring the app per environment ([architecture.md](architecture.md
 | **Secret store** | A directory with one file per secret name, read when rendering: `deploy/secrets/` (dev), `tmp/prodtest/secrets/` (prodtest), and on a deployment a private temp dir on the Ansible controller filled from the target's vault. A missing or empty file fails unless the reference is optional. | `resolveSecrets()` |
 | **Gateway** | A named way to reach LLMs, the key is opencode's provider id: a kind (`openrouter`, `anthropic`, `openai`: built into opencode, any model id is valid; `openai-compatible`: only its listed models), optional base URL, API key (a secret reference), the relay upstream (Ollama) and per-model options (e.g. OpenRouter's zero-data-retention routing). `ai.gateway` picks one per environment. | `gateways`, `BUILT_IN_KINDS` |
 | **Default model** | `ai.model` of the effective settings, `<gateway>/<model id>`. What the backend and opencode use unless an admin overrode it.  | `settings.json` `ai.model`, `ConfigStore.defaultModel` |
-| **Model override** | The model an admin picked in the Settings dialog, stored in `config.json` only while it differs from the default model; choosing the default again removes it, so the next default change reaches the installation. | `modelOverride`, `SettingsView.modelOverridden` |
+| **Model override** | The model an admin typed in admin mode › AI (free text, no picker), stored in `config.json` only while it differs from the default model; choosing the default again removes it, so the next default change reaches the installation. | `modelOverride`, `SettingsView.modelOverridden` |
 | **Rendered files** | What the renderer writes from the effective settings for components that can't read YAML: the compose `.env`, `opencode.env` (API key, web caps, model, provider config), the backend's `settings.json` and the ingest service's `ingest.json`. Generated, never edited, never committed. | `just settings render`, `tmp/settings/<env>/` |
 
 Three kinds of configuration exist; only settings live in `deploy/settings/`:
@@ -251,6 +269,7 @@ flowchart TB
     r1[vaults]
     r2[model override, GitHub token, threshold, web access]
     r3[aiTouched, edit stamps, queued prompts]
+    r4[metrics history: metrics.jsonl]
   end
   subgraph P["Policy: versioned with the code, same everywhere"]
     p1[opencode agents and permissions]
@@ -258,7 +277,7 @@ flowchart TB
     p3[Caddy headers, CSP]
   end
   S -->|deploy/settings/| F[(central file +<br/>environment files)]
-  R -->|config.json| C[(config volume)]
+  R -->|config.json, metrics.jsonl| C[(config volume)]
   P -->|baked into images| I[(images)]
 ```
 
@@ -317,9 +336,9 @@ erDiagram
   TURN }o--o| COMMAND : "may start with"
 ```
 
-- **Settings** (the app's, in the Settings dialog) are server-wide: the commit reminder threshold, Web access and
+- **Settings** (the app's, in admin mode › General and AI) are server-wide: the commit reminder threshold, Web access and
   the **model** (`provider/model`). The default model comes from the environment's settings (`ai.model`, see
-  [Settings](#settings)); the dialog stores a **model override** only while it differs from it. There is no per-chat
+  [Settings](#settings)); admin mode stores a **model override** only while it differs from it. There is no per-chat
   model. The **GitHub token** is managed next to them but is stored separately from them (never part of `Settings`).
 - The **GitHub token** is optional in the app: with none set, the deployment's `github_token` secret is used.
   Removing the stored token falls back to the secret again. A token changed in the app applies to the next git
@@ -421,19 +440,19 @@ more.
 | Actor | What it can do |
 |---|---|
 | **Operator** (the same person as the user, on the Mac) | Cuts releases, deploys them to the targets, holds the vault passwords (Keychain) and gets the alerts. |
-| **User** (single person, holds the bearer token) | Manage vaults and settings, connect Instagram, start an ingest with one tap, drop folders into `Input/` or delete them, read and edit notes, upload photos and PDFs (button or drop; the first upload to a flat page moves it into its own folder), attach them to prompts, search, chat with the AI, review diffs, discard, commit and push, resolve conflicts. Uses the app as a PWA on phone, iPad and desktop. |
+| **User** (single person, holds the bearer token) | Switch between vaults; as admin (same person today) manage vaults and settings in admin mode, watch usage and server, connect Instagram, start an ingest with one tap, drop folders into `Input/` or delete them, read and edit notes, upload photos and PDFs (button or drop; the first upload to a flat page moves it into its own folder), attach them to prompts, search, chat with the AI, review diffs, discard, commit and push, resolve conflicts. Uses the app as a PWA on phone, iPad and desktop. |
 | **AI** (opencode agent, on the user's behalf) | Inside one vault root only: read notes; write notes unless the vault is in conflict (then read-only); open one note in the user's editor when the user asks to see it (also in conflict). Receives attached images and PDFs as message content when its model reads them. With Web access on: web search, and web fetch of known URLs (also in conflict); outside a conflict also save a known URL's image, video, audio or PDF as a new vault file (media download). Follows a command's instructions; in a research plan turn it scouts only a little and stops for the user's reply. Offers a known URL to the user as an Open chip when asked to show a page (also with Web access off and in conflict). Outside a conflict, moves a ready input item from `Input/` to `Sources/` (`move_to_sources`). It can't run shell commands (a skill's shell snippets are never run), fetch or offer URLs it built itself, reach internal hosts, read `.env` files, edit `.git` or harness config, create other binary files, overwrite a media file, commit or push. |
 | **Vault author** (whoever pushes to the repo) | Adds commands by adding skills to `.agents/skills/` (or to `.claude/`, which the agents move picks up on the next pull). A skill is instructions for the AI, not code. Owns the vault's `ingest` skill; the app ships none. |
 | **Ingest service** (compose service `ingest`) | Fetches the mails of each ingest profile's Gmail label into the vault's `Input/` and resolves their links (web pages, PDFs with OCR, YouTube, GitHub, Instagram) into sibling items. Touches an item only while it has open links; never commits, never moves anything to `Sources/`. Sees only `Input/` and `Sources/` of the configured vaults on a target. |
 | **Gmail** | Holds the ingest profiles' labels; the ingest service reads the top label and moves each mail once, to `/processed`, `/rejected` (sender not allowed) or `/failed`. Never touched by the AI's ingest. |
-| **Instagram** | Serves posts and Reels to the ingest service with the session made in Settings › Instagram; may ask for a 2FA or challenge code, or reject a session. |
+| **Instagram** | Serves posts and Reels to the ingest service with the session made in admin mode › Secrets & keys › Instagram; may ask for a 2FA or challenge code, or reject a session. |
 | **User's browser** | Loads a page the user opened from an Open chip, with the user's own cookies and network. |
 | **Device (iOS)** | Converts HEIC photos to JPEG when the picker's accepted types are an explicit list without HEIC. |
 | **Search backend (Exa)** | Receives the AI's web search queries; returns results. |
 | **Public web** | Serves fetched pages; untrusted. |
 | **Obsidian / other git clients** | Change the same GitHub repo from other devices; their changes arrive on the next pull and can cause a conflict. |
 | **GitHub** | Hosts the vault repos; the backend clones, fetches and pushes with the GitHub token, and asks `GET /user` to test it. |
-| **LLM provider** (the environment's gateway: OpenRouter in production; the native omlx on the Mac in dev and prodtest, the native Ollama on `local`) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
+| **LLM provider** (the environment's gateway: OpenRouter in production; the native omlx on the Mac in dev and prodtest) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
 
 ## Processes
 
@@ -631,7 +650,10 @@ flowchart TD
 1. The user sends a prompt; the backend queues the turn (one running turn per vault; the queue survives restarts).
 2. Before the turn starts the backend **pulls** under an exclusive lock, then downgrades to a shared lock without
    letting any other git operation in between.
-3. opencode runs the turn with the `vault` agent (or `vault-readonly` while in conflict). Reads and writes stream to
+3. opencode runs the turn with the `vault` agent (or `vault-readonly` while in conflict). The prompt carries a hidden
+   first line with the user's **local time** ("User's local time: Thursday 2026-10-15 23:41, Europe/Berlin (UTC+02:00),
+   locale de-DE", taken when the turn is sent, in the zone the browser sent, else the `timezone` setting), so "today"
+   and dates in note names are the user's. Reads and writes stream to
    the UI as tool chips; written paths join the AI-touched set and get an AI stamp. An **open request** (`open_note`) that completes
    opens the note in the editor: on the wide layout right away, on a phone or in the tablet overlay when the turn
    ends (only the last one of the turn); while the user is editing, a notice and the "opened" chip show it instead.
@@ -659,6 +681,32 @@ sequenceDiagram
   B-->>W: part {tool call, opens: true, path}
   W->>W: wide: openNote(path) now
   Note over W: phone / tablet overlay: waits until the turn ends, then opens
+```
+
+### Browser call
+
+1. During a turn the AI calls a browser tool (`user_location`); the tool waits for an answer, up to 90 s.
+2. The backend announces the call on the vault event stream (`browser-call`: chat, call id, tool, answering tab,
+   deadline). The chip shows "open the app to share your location".
+3. The answering tab (the one that sent the prompt) asks the browser (`navigator.geolocation`; the browser's own
+   permission prompt appears the first time) and posts the result. Every other tab ignores the event.
+4. The backend validates the result against the tool's schema, hands it to the waiting tool once and announces
+   `browser-call-done`. The tool turns it into text for the model ("The user is at 48.137154, 11.576124 (accuracy ±12 m,
+   fix 3 s old)." or a refusal) and names its own chip ("used your location (±12 m)", "location not shared").
+5. No answer by the deadline (tab closed, phone locked, prompt ignored): the tool returns "the user's device did not
+   answer", the AI asks the user, and the chip says "no answer from your device". The turn's end closes every call.
+
+```mermaid
+sequenceDiagram
+  participant O as opencode (tool)
+  participant B as Backend
+  participant W as Answering tab
+  O->>O: user_location waits
+  B-->>W: vault event browser-call
+  W->>W: navigator.geolocation (permission prompt the first time)
+  W->>B: POST result
+  B->>O: answer (once)
+  O->>O: continues the reply with the position
 ```
 
 ### Command turn
@@ -804,6 +852,41 @@ in the same fetch run, once:
 A mail whose folder was written but whose label move failed stays in the top label; the next run recognizes it by
 `message_id` and writes nothing twice.
 
+### Enter and leave admin mode
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant W as Web app
+  U->>W: gear / Manage vaults… / Edit vault
+  W->>W: save the open note, remember the user-mode hash
+  W->>W: hash → #admin/<section> (push)
+  U->>W: picks sections (replace; on the phone list → section is a push)
+  U->>W: Done (Esc on wide and tablet, or Back)
+  W->>W: hash → remembered #/<vault>/<path>
+```
+
+Entering saves the open note first; a stale or deleted note (dialog or toast) keeps the user in user mode, an offline failure doesn't (the draft is kept locally). Panes stay mounted underneath, so streaming
+replies and the event stream go on. After a reload straight into `#admin/…` nothing is remembered: Done goes to the
+last vault. If the vault that was active was removed in admin mode, Done doesn't go back through its route: the app stays where
+it is.
+
+### Take a metrics sample
+
+The backend primes its CPU reading at start and takes the first sample at once, then every 30 s: CPU % from the
+difference of the CPU times since the previous sample, memory from the host kernel (what the container sees in
+`/proc`), 1-minute load, the free space of the vaults and config volumes, and whether opencode answers. The sample is
+appended to memory and, one line, to `metrics.jsonl` (mode 0600); samples older than 7 days are dropped and the file is
+rewritten atomically at most once an hour. An unreadable history file starts the history empty; a torn last line is
+skipped.
+
+### Report token usage
+
+On request (7 or 30 days) the backend lists every session of every vault's directory in opencode (children
+included), reads the assistant messages of sessions that changed since the last read (cached by the session's
+`time.updated`; a session whose last reply is unfinished isn't cached) and sums tokens and cost by day (the deployment's
+timezone), model and vault. Only message metadata is read, never text. A vault that fails is left out, not the report.
+
 ### Commit
 
 1. The user opens the commit dialog; the app flushes the open note and asks for a proposed message (a tool-less AI
@@ -873,6 +956,12 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
 
 ## Rules and constraints
 
+- **Admin mode shows no secret value:** no value and no part of one leaves the server, except the GitHub token's last
+  four characters. Admin mode shows nothing per vault outside the Vaults section; usage names vaults only as grouping.
+  Everything a user needs, switching vaults included, stays in user mode, so restricting admin mode to an admin role
+  takes nothing away from users.
+- **Usage is what opencode stored:** a deleted chat no longer counts. Metrics describe the machine the backend container
+  runs on (on a dev stack: Rancher Desktop's VM).
 - **File kind by name, not content:** `notes.md` is a note even if it holds code, `notes.txt` a code file even if it
   holds Markdown (table in [File kinds](#file-kinds)).
 - **A rendered HTML page is inert:** its Read mode never runs scripts, submits forms or contacts other hosts, and sees
@@ -993,9 +1082,22 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
   rewritten through a temp file and a rename); once ready, the item belongs to the AI and the user.
 - **The pull never moves `Input/`:** its dirty check and stash leave `Input/` out, so waiting items stay where they are
   (the ingest service bind-mounts the folder) while the pull fast-forwards around them.
-- **Only production reads real mail:** dev stacks, prodtest, tests and `local` have no ingest profiles (the service
+- **Only production reads real mail:** dev stacks, prodtest and tests have no ingest profiles (the service
   idles), so no other stack takes mails from a real label first.
 - **Vault content stays in its language;** the ingest pipeline adds no translation.
+- **A browser call is answered at most once:** the first valid answer wins, later ones get `409`; only the answering
+  tab answers, other tabs of the same user ignore the event. A turn without a tab id (old PWA, ingest runner) has no
+  answering tab.
+- **No answer is not a failure the model sees:** at the deadline the tool returns "the user's device did not answer"
+  as text, not as a tool error, so the AI asks the user instead of retrying. A refusal ("the user did not share their
+  location") is a normal answer too.
+- **The AI asks for the position only when the request depends on where the user is** ("near me", "here", local
+  weather), by the tool's description (a rule for the model, not enforced). There is no app setting and no per-call
+  confirmation: the browser's site permission is the switch.
+- **Without a user time zone** (old PWA, ingest runner) the local time uses the deployment's `timezone` setting; an
+  invalid zone or locale is dropped, and the line is still sent.
+- **The position stays in the user's chat:** it is the tool's output, stored in the opencode session like every tool
+  output, and deleted with the chat. It goes to the model provider as part of the context.
 - **Single user:** one bearer token, one git identity, one server-wide model.
 - **Settings name secrets, never hold them:** `deploy/settings/` is committed to a public repo, so a secret appears
   there only as a secret reference; its value stays in a secret store. Rendered files are generated, never edited.

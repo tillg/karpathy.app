@@ -222,7 +222,7 @@ grep -q 'settings_render prodtest' "$here/../justfile" && ok "just prodtest rend
 
 # Every secret a target's settings use has a source in role app: named in roles/app/vars/main.yml, a provider
 # key from vault_opencode_env (<NAME>_API_KEY → <name>_api_key), or the opencode password made on the host.
-for t in local hetzner; do
+for t in hetzner; do
   missing=$("$here/../node_modules/.bin/tsx" "$here/../packages/settings/src/cli.ts" --no-local --list-secrets "$t" | while read -r name; do
     case "$name" in (opencode_password|*_api_key) continue ;; esac
     grep -q "'$name'" "$here/ansible/roles/app/vars/main.yml" || echo "$name"
@@ -230,29 +230,22 @@ for t in local hetzner; do
   eq "$t: every secret in the settings has a source in role app" "$missing" ""
 done
 
-# A target's compose.target.yml: the Ollama relay only when deploy/settings/ picks the Ollama gateway.
+# A target's compose.target.yml.
 (
   fails=0
   out=$(mktemp -d)
   tpl=${TARGET_TEMPLATE:-$here/ansible/roles/app/templates/compose.target.yml.j2}
-  ANSIBLE_LOCALHOST_WARNING=False ansible localhost -m template -a "src=$tpl dest=$out/local.yml" \
-    -e '{"target":"local","remotes_dir":"/remotes","vaults_fs_mount":"/srv/vaults","app_settings_env":{"OLLAMA_UPSTREAM":"192.168.5.2:11434","GIT_REMOTE_BASE":"file:///remotes/"}}' >/dev/null 2>&1
   ANSIBLE_LOCALHOST_WARNING=False ansible localhost -m template -a "src=$tpl dest=$out/hetzner.yml" \
     -e '{"target":"hetzner","vaults_fs_mount":"/srv/vaults","app_settings_env":{},"app_ingest_vaults":["mylife","frechen/wiki"]}' >/dev/null 2>&1
-  for t in local hetzner; do
-    cfg=$(cd "$here" && OLLAMA_UPSTREAM=192.168.5.2:11434 docker compose -f compose.yml -f "$out/$t.yml" config --format json 2>&1) \
-      || { bad "$t: compose.target.yml merges" "$cfg"; continue; }
-    has=$(node -e 'const c=JSON.parse(require("fs").readFileSync(0,"utf8")); const r=c.services["ollama-relay"]; console.log(r ? `${r.environment.OLLAMA_UPSTREAM} ${c.services.opencode.environment.NO_PROXY}` : "none")' <<<"$cfg")
-    if [ "$t" = local ]; then
-      eq "local: relay to the Mac's Ollama, opencode reaches it direct" "$has" "192.168.5.2:11434 localhost,127.0.0.1,0.0.0.0,ollama.internal"
-      eq "local: older releases still get GIT_REMOTE_BASE (rollback)" "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).services.backend.environment.GIT_REMOTE_BASE)' <<<"$cfg")" file:///remotes/
-    else
-      eq "hetzner: no relay" "$has" none
-      eq "hetzner: ingest mounts Input/ rw and Sources/ ro per vault (root included)" \
-        "$(node -e 'const s=JSON.parse(require("fs").readFileSync(0,"utf8")).services.ingest; console.log(s.volumes.filter((v)=>v.target.startsWith("/vaults/")).map((v)=>v.target+(v.read_only?":ro":"")).join(" "))' <<<"$cfg")" \
-        "/vaults/mylife/Input /vaults/mylife/Sources:ro /vaults/frechen/wiki/Input /vaults/frechen/wiki/Sources:ro"
-    fi
-  done
+  cfg=$(cd "$here" && docker compose -f compose.yml -f "$out/hetzner.yml" config --format json 2>&1) \
+    || bad "hetzner: compose.target.yml merges" "$cfg"
+  if [ "${cfg:0:1}" = "{" ]; then
+    has=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).services["ollama-relay"] ? "relay" : "none")' <<<"$cfg")
+    eq "hetzner: no relay" "$has" none
+    eq "hetzner: ingest mounts Input/ rw and Sources/ ro per vault (root included)" \
+      "$(node -e 'const s=JSON.parse(require("fs").readFileSync(0,"utf8")).services.ingest; console.log(s.volumes.filter((v)=>v.target.startsWith("/vaults/")).map((v)=>v.target+(v.read_only?":ro":"")).join(" "))' <<<"$cfg")" \
+      "/vaults/mylife/Input /vaults/mylife/Sources:ro /vaults/frechen/wiki/Input /vaults/frechen/wiki/Sources:ro"
+  fi
   rm -rf "$out"
   exit "$fails"
 ) || fails=$((fails + 1))

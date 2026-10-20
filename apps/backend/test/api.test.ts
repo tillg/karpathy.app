@@ -319,6 +319,14 @@ describe('vault admin', () => {
     expect((await none.api.get('/settings/secrets')).body).toEqual({ secrets: [] });
   });
 
+  it('GET /settings/secrets: github_token is set when the token was set in the app, though the render said not set', async () => {
+    const secrets = [{ name: 'github_token', component: 'backend', purpose: 'GitHub token', optional: true, set: false }];
+    const { api } = await makeApp('file:///nowhere/', { deps: { secrets } });
+    expect((await api.get('/settings/secrets')).body.secrets[0].set).toBe(false);
+    await api.put('/settings/github-token', { token: 'github_pat_abcdefghijklmnopqrstuvwxyz9876' });
+    expect((await api.get('/settings/secrets')).body.secrets[0]).toMatchObject({ set: true, source: 'app', last4: '9876' });
+  });
+
   it('GET /usage?days=5 is 400', async () => {
     const t = await makeApp('file:///nowhere/', { deps: { usage: { report: async () => { throw new Error('unreachable'); } } } });
     const r = await t.api.get('/usage?days=5');
@@ -1466,6 +1474,41 @@ describe('open waits for a command-list refresh', () => {
     const st = await t.vaults.open(t.id);
     expect(st.incomingCount).toBe(0);
     expect(await readFile(join(t.vaults.vaultRootDir(t.id), 'Other.md'), 'utf8')).toBe('pushed\n');
+  });
+});
+
+describe('browser calls (#151)', () => {
+  const pos = { latitude: 48.137154, longitude: 11.576124, accuracy: 12, ageMs: 3000 };
+  const open = (t: Awaited<ReturnType<typeof vaultApp>>, callId = 'call_1') =>
+    t.vaults.browserCalls.open({ vaultId: t.id, chatId: 'ses_a', callId, tool: 'user_location', input: {}, tabId: 'tab-12345678' });
+
+  it('POST …/browser-calls/:call writes the answer once: 204, then 409; unknown 404, bad body 400', async () => {
+    const t = await vaultApp();
+    open(t);
+    const p = `/vaults/${t.id}/chats/ses_a/browser-calls/call_1`;
+    expect((await t.api.post(`/vaults/${t.id}/chats/ses_a/browser-calls/nope`, { ok: false, reason: 'denied' })).status).toBe(404);
+    expect((await t.api.post(p, { ok: true, value: { ...pos, longitude: 200 } })).status).toBe(400);
+    expect((await t.api.post(p, { ok: true, value: pos })).status).toBe(204);
+    expect(JSON.parse(await readFile(join(t.dirs.vaults, '.browser-calls', Buffer.from('ses_a').toString('base64url'), `${Buffer.from('call_1').toString('base64url')}.json`), 'utf8'))).toEqual({ ok: true, value: pos });
+    expect((await t.api.post(p, { ok: true, value: pos })).status).toBe(409);
+    t.vaults.browserCalls.close(t.id, 'ses_a', 'call_1');
+  });
+
+  it('the vault event stream announces a call, and a stream connected mid-call gets it after status', async () => {
+    const t = await vaultApp();
+    const connect = await eventStreams(t.app);
+    const live = await connect(t.id);
+    open(t, 'call_2');
+    const isCall = (e: VaultEvent) => e.type === 'browser-call';
+    await live.waitFor(isCall, 3000);
+    const late = await connect(t.id);
+    await late.waitFor(isCall, 3000);
+    expect(late.events[0]!.type).toBe('status');
+    expect(late.events.find(isCall)).toMatchObject({ type: 'browser-call', call: { chatId: 'ses_a', callId: 'call_2', tool: 'user_location', tabId: 'tab-12345678' } });
+    await t.api.post(`/vaults/${t.id}/chats/ses_a/browser-calls/call_2`, { ok: false, reason: 'denied' });
+    await live.waitFor((e) => e.type === 'browser-call-done', 3000);
+    await live.close();
+    await late.close();
   });
 });
 

@@ -1,8 +1,10 @@
 import type {
-  ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData, MetricsReport,
-  OpenPage, SearchHit, SecretStatus, Settings, SettingsView, TokenTest, UploadResult, UsageReport, Vault, VaultConfig, VaultStatus,
+  BrowserCallResult,
+  ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData, MetricsRange, MetricsReport,
+  OpenPage, SearchHit, SecretStatus, Settings, SettingsView, TokenTest, UploadResult, UsageDays, UsageReport, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
+import { clientContext, type ClientContext } from './client-context';
 import { parseLoginCode } from './login-code';
 
 const TOKEN_KEY = 'karpathy.token';
@@ -64,8 +66,8 @@ export const api = {
   health: () => json<{ backend: string; opencode: string; version: string; built: string | null; deployed: string | null }>('GET', '/health'),
   settings: () => json<SettingsView>('GET', '/settings'),
   secrets: () => json<{ secrets: SecretStatus[] }>('GET', '/settings/secrets'),
-  metrics: (range: '1h' | '24h' | '7d') => json<MetricsReport>('GET', `/metrics?range=${range}`),
-  usage: (days: 7 | 30) => json<UsageReport>('GET', `/usage?days=${days}`),
+  metrics: (range: MetricsRange) => json<MetricsReport>('GET', `/metrics?range=${range}`),
+  usage: (days: UsageDays) => json<UsageReport>('GET', `/usage?days=${days}`),
   patchSettings: (s: Partial<Settings>) => json<SettingsView>('PATCH', '/settings', s),
   putGithubToken: (token: string) => json<void>('PUT', '/settings/github-token', { token }),
   removeGithubToken: () => json<void>('DELETE', '/settings/github-token'),
@@ -124,9 +126,19 @@ export const api = {
   chat: (id: string, chatId: string) => json<ChatDetail>('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
   deleteChat: (id: string, chatId: string) => json<void>('DELETE', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
   prompt: (id: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage) =>
-    json<{ queued: boolean }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, { text, ...(attachments?.length ? { attachments } : {}), ...(openPage ? { openPage } : {}) }),
+    json<{ queued: boolean }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, promptBody(text, attachments, openPage, clientContext())),
   chatStream: (id: string, chatId: string, signal: AbortSignal) => request('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}/stream`, undefined, signal),
   abort: (id: string, chatId: string) => json<void>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/abort`),
+  answerBrowserCall: (id: string, chatId: string, callId: string, result: BrowserCallResult) =>
+    json<void>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/browser-calls/${encodeURIComponent(callId)}`, result),
 };
+
+/** A prompt's body: the text, attachments and open page, plus the sending tab's context (#151). */
+export const promptBody = (text: string, attachments: string[] | undefined, openPage: OpenPage | undefined, ctx: ClientContext) => ({
+  text,
+  ...(attachments?.length ? { attachments } : {}),
+  ...(openPage ? { openPage } : {}),
+  ...ctx,
+});
 
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));

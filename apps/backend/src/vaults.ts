@@ -20,6 +20,7 @@ import {
   type VaultStatus,
 } from '@karpathy/shared';
 import { INPUT_DIR, isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
+import { BrowserCalls } from './browser-calls.js';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
 import { filesMentioning, graph, listTree, search, versionOf, versionOfFile } from './files.js';
@@ -103,11 +104,15 @@ export class Vaults {
   afterRelinkScan?: () => Promise<void>;
   /** Called under the lock once removal is allowed (the chat service deletes the vault's chats). */
   beforeRemove?: (id: string) => Promise<void>;
+  /** Pending browser calls (#151), announced on the vault event stream. */
+  readonly browserCalls: BrowserCalls;
 
   constructor(
     private readonly store: ConfigStore,
     private readonly env: VaultsEnv,
-  ) {}
+  ) {
+    this.browserCalls = new BrowserCalls(this.vaultsPath(), (id, e) => this.emit(id, e));
+  }
 
   /** Loads configured vaults; re-clones any whose clone never finished. */
   async init(): Promise<void> {

@@ -1,3 +1,4 @@
+import type { BrowserCall } from './browser-call.js';
 // API types shared by backend and web. All routes sit under /api (mvp §3.2).
 
 export type VaultState = 'cloning' | 'ready' | 'clone-failed' | 'conflict';
@@ -203,7 +204,11 @@ export type VaultEvent =
   | { type: 'status'; status: VaultStatus }
   | { type: 'files-changed'; files: { path: string; version: string | null }[] }
   /** `at`: when the move ran (ms), so a client shows each move once. */
-  | ({ type: 'agents-move'; at: number } & AgentsMove);
+  | ({ type: 'agents-move'; at: number } & AgentsMove)
+  /** A browser tool waits for the tab `call.tabId` (#151). */
+  | { type: 'browser-call'; call: BrowserCall }
+  /** The call was answered, timed out or its turn ended: stop answering it. */
+  | { type: 'browser-call-done'; callId: string };
 
 // ---- Chat (ACP-shaped: session / prompt / update / tool_call / permission) ----
 
@@ -261,6 +266,9 @@ export interface ToolCall {
   error?: string;
   /** suggest_next: the suggested next prompt (shown as ghost text in the composer, not as a chip). */
   suggestion?: string;
+  /** A browser tool (#151): its answer comes from the tab that sent the prompt; `callId` matches its `browser-call` event. */
+  browser?: boolean;
+  callId?: string;
   /** websearch: the search query. */
   query?: string;
   /** webfetch: the fetched URL. */
@@ -332,11 +340,17 @@ export interface ApiError {
   code?: string;
 }
 
+export * from './browser-call.js';
 export * from './media.js';
 export * from './wikilink.js';
 export * from './relink.js';
 
 /** One reading of the server (admin mode, Server section); taken every 30 s by the backend. */
+/** The ranges `GET /metrics` serves. */
+export type MetricsRange = '1h' | '24h' | '7d';
+/** The windows `GET /usage` serves. */
+export type UsageDays = 7 | 30;
+
 export interface MetricsSample {
   /** Epoch ms. */
   at: number;

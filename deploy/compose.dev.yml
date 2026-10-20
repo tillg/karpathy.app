@@ -45,7 +45,7 @@ services:
     volumes:
       - vaults:/vaults
 
-  # The dev LLM is the native Ollama on the Mac (`just ollama install`), shared by all stacks. This relay
+  # The dev LLM is the native omlx on the Mac (deploy/settings/dev.yaml), shared by all stacks. This relay
   # (proxy/Caddyfile.ollama-relay) is opencode's only route to it, and passes only the /v1 API.
   ollama:
     image: caddy:2.10-alpine

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { mapEvent, mapMessageInfo, mapMessages, mapModels, withLimit, mapToolPart, usageRows, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
+import { mapEvent, mapMessageInfo, mapMessages, mapModels, mapPart, withLimit, mapToolPart, usageRows, usageSessions, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
 
 // Real opencode 1.18.25 event captures from the Phase 0 spike (vault root /vaults/a).
 const raw = readFileSync(join(import.meta.dirname, 'fixtures/opencode-events.jsonl'), 'utf8')
@@ -52,6 +52,21 @@ describe('opencode → harness mapping (real captures)', () => {
 });
 
 describe('mapping edge cases', () => {
+  it('user_location maps as a browser tool with its opencode call id (#151)', () => {
+    const part = { id: 'prt_1', callID: 'call_9', tool: 'user_location', state: { status: 'running', input: {} } };
+    expect(mapToolPart(part, '/vaults/a')).toMatchObject({ id: 'prt_1', tool: 'user_location', status: 'running', browser: true, callId: 'call_9' });
+    expect(mapToolPart({ ...part, tool: 'read' }, '/vaults/a')).not.toHaveProperty('browser');
+  });
+
+  it('a completed browser tool shows the chip title from its metadata (#151)', () => {
+    const part = { id: 'prt_1', callID: 'call_9', tool: 'user_location', state: { status: 'completed', input: {}, title: '', metadata: { title: 'used your location (±12 m)' } } };
+    expect(mapToolPart(part, '/vaults/a')).toMatchObject({ title: 'used your location (±12 m)' });
+  });
+
+  it('a synthetic text part (command instructions, the local-time line) is not shown in the chat', () => {
+    expect(mapPart({ id: 'p', type: 'text', text: "User's local time: …", synthetic: true }, '/vaults/a')).toBeNull();
+  });
+
   it('relative tool paths are resolved against the vault root (#12)', () => {
     expect(toVaultPath('./Home.md', '/vaults/a')).toBe('Home.md');
     expect(toVaultPath('notes/../Home.md', '/vaults/a')).toBe('Home.md');
@@ -226,13 +241,31 @@ describe('usageRows', () => {
       { info: { id: 'u1', role: 'user', time: { created: 1 }, model: { providerID: 'p', modelID: 'm' } }, parts: [] },
       {
         info: {
-          id: 'a1', role: 'assistant', providerID: 'omlx', modelID: 'qwen', time: { created: 1700000000000 }, cost: 0.25,
+          id: 'a1', role: 'assistant', providerID: 'omlx', modelID: 'qwen', time: { created: 1700000000000, completed: 1700000005000 }, cost: 0.25,
           tokens: { input: 10, output: 20, reasoning: 3, cache: { read: 4, write: 5 } },
         },
         parts: [],
       },
       { info: { id: 'a2', role: 'assistant', providerID: 'omlx', modelID: 'qwen', time: { created: 2 } }, parts: [] },
     ]);
-    expect(rows).toEqual([{ created: 1700000000000, model: 'omlx/qwen', input: 10, output: 20, reasoning: 3, cacheRead: 4, cacheWrite: 5, cost: 0.25 }]);
+    expect(rows).toEqual([{ created: 1700000000000, model: 'omlx/qwen', input: 10, output: 20, reasoning: 3, cacheRead: 4, cacheWrite: 5, cost: 0.25, completed: true }]);
+  });
+
+  it('usageRows: a message without time.completed (mid-turn) is completed: false', () => {
+    const rows = usageRows([
+      { info: { id: 'a', role: 'assistant', providerID: 'p', modelID: 'm', time: { created: 5 }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }, parts: [] },
+    ]);
+    expect(rows.map((r) => r.completed)).toEqual([false]);
+  });
+});
+
+describe('usageSessions', () => {
+  it('keeps every session of the directory, children included, as { id, updatedAt }', () => {
+    const list = [
+      { id: 'root', directory: '/v/a', parentID: undefined, title: 't', time: { created: 1, updated: 10 } },
+      { id: 'child', directory: '/v/a', parentID: 'root', title: 'c', time: { created: 2, updated: 20 } },
+      { id: 'other', directory: '/v/b', time: { created: 3, updated: 30 } },
+    ];
+    expect(usageSessions(list, '/v/a')).toEqual([{ id: 'root', updatedAt: 10 }, { id: 'child', updatedAt: 20 }]);
   });
 });

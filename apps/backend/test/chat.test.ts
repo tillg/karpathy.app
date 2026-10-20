@@ -508,11 +508,84 @@ describe('chat API against a real opencode container', () => {
 
 const helloSkill = { '.agents/skills/hello/SKILL.md': '---\nname: hello\ndescription: Says hello\n---\n\nHELLO-BODY for $ARGUMENTS. Run !`id -u` first.\n' };
 
-/** Text parts of the chat's first user message, as opencode stored them. */
-async function userParts(t: Awaited<ReturnType<typeof setup>>, chatId: string) {
+const isLocalTime = (p: { text: string; synthetic?: boolean }) => Boolean(p.synthetic) && p.text.startsWith("User's local time:");
+
+/** Text parts of the chat's first user message, as opencode stored them; `localTime` keeps the local-time line (#151). */
+async function userParts(t: Awaited<ReturnType<typeof setup>>, chatId: string, { localTime = false } = {}) {
   const msgs = (await t.raw.session.messages({ directory: t.dir, sessionID: chatId })).data ?? [];
-  return (msgs.find((m) => m.info.role === 'user')?.parts ?? []).filter((p) => p.type === 'text') as { text: string; synthetic?: boolean }[];
+  const parts = (msgs.find((m) => m.info.role === 'user')?.parts ?? []).filter((p) => p.type === 'text') as { text: string; synthetic?: boolean }[];
+  return localTime ? parts : parts.filter((p) => !isLocalTime(p));
 }
+
+describe('local time (#151)', () => {
+  it('a prompt carries a hidden local-time line in the time zone it was sent with', async () => {
+    const t = await setup();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    const body = { text: 'what day is it?', tabId: 'tab-12345678', timeZone: 'Pacific/Auckland', locale: 'en-NZ' };
+    expect((await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, body)).status).toBe(202);
+    await waitIdle(t.chat, t.id, chatId);
+    const line = (await userParts(t, chatId, { localTime: true })).filter(isLocalTime);
+    expect(line).toHaveLength(1);
+    expect(line[0]!.text).toMatch(/^User's local time: \w+day \d{4}-\d{2}-\d{2} \d{2}:\d{2}, Pacific\/Auckland \(UTC\+1[23]:00\), locale en-NZ\./);
+    const shown = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body.messages.find((m: { role: string }) => m.role === 'user');
+    expect(shown.parts.map((p: { text?: string }) => p.text)).toEqual(['what day is it?']);
+  });
+
+  it('a /command turn carries it too, before the skill text', async () => {
+    const t = await setup(helloSkill);
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: '/hello', timeZone: 'Europe/Berlin' });
+    await waitIdle(t.chat, t.id, chatId);
+    const hidden = (await userParts(t, chatId, { localTime: true })).filter((p) => p.synthetic);
+    expect(hidden.map((p) => isLocalTime(p))).toEqual([true, false]);
+    expect(hidden[0]!.text).toContain('Europe/Berlin');
+  });
+
+  it('without a time zone the line uses the backend zone (the timezone setting)', async () => {
+    const t = await setup();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'hi' });
+    await waitIdle(t.chat, t.id, chatId);
+    const own = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect((await userParts(t, chatId, { localTime: true })).find(isLocalTime)?.text).toContain(`, ${own} (UTC`);
+  });
+
+  it('tabId, timeZone and locale are kept on the queued turn; a bad tabId or an over-long zone is a 400 (an unknown zone falls back later)', async () => {
+    const t = await setup();
+    await t.vaults.lock(t.id).acquireExclusive(); // never released: the turn stays queued
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    const p = `/vaults/${t.id}/chats/${chatId}/prompt`;
+    expect((await t.api.post(p, { text: 'x', tabId: '../../etc' })).status).toBe(400);
+    expect((await t.api.post(p, { text: 'x', timeZone: 'x'.repeat(65) })).status).toBe(400);
+    expect((await t.api.post(p, { text: 'x', tabId: 'tab-12345678', timeZone: 'Europe/Berlin', locale: 'de-DE' })).status).toBe(202);
+    expect(t.store.get().queued[t.id]).toEqual([{ chatId, text: 'x', tabId: 'tab-12345678', timeZone: 'Europe/Berlin', locale: 'de-DE' }]);
+    t.chat.close();
+  });
+});
+
+describe('browser calls and the turn (#151)', () => {
+  const call = (t: Awaited<ReturnType<typeof setup>>, chatId: string, callId: string) =>
+    t.vaults.browserCalls.open({ vaultId: t.id, chatId, callId, tool: 'user_location', input: {}, tabId: null });
+
+  it("a turn's end closes the vault's pending calls, those of subagent sessions included", async () => {
+    const t = await setup();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    call(t, chatId, 'c1');
+    call(t, 'ses_subagent', 'c2');
+    expect(t.vaults.browserCalls.pending(t.id)).toHaveLength(2);
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'hi' });
+    await waitIdle(t.chat, t.id, chatId);
+    await expect.poll(() => t.vaults.browserCalls.pending(t.id)).toEqual([]);
+  });
+
+  it('deleting a chat drops its calls', async () => {
+    const t = await setup();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    call(t, chatId, 'c3');
+    expect((await t.api.delete(`/vaults/${t.id}/chats/${chatId}`)).status).toBe(204);
+    expect(t.vaults.browserCalls.pending(t.id)).toEqual([]);
+  });
+});
 
 describe('command turns', () => {
   it('a /command turn stores the user text plus a synthetic part with the skill text', async () => {

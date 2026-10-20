@@ -2,17 +2,18 @@ import type { UsageReport } from '@karpathy/shared';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { shortNumber } from '../lib/chat';
+import { pct } from '../lib/percent';
 import { StackedBars } from './charts/StackedBars';
 import { Icon } from './Icon';
 
 type Sums = UsageReport['total'];
 const RANGES = [7, 30] as const;
-const tokens = (s: Sums) => s.input + s.output + s.reasoning + s.cacheRead + s.cacheWrite;
+/** All tokens of a report row, cache included. */
+export const tokens = (s: Sums) => s.input + s.output + s.reasoning + s.cacheRead + s.cacheWrite;
 const cache = (s: Sums) => s.cacheRead + s.cacheWrite;
 /** Reasoning tokens are billed as output, so they count there. */
 const out = (s: Sums) => s.output + s.reasoning;
 export const money = (x: number) => `$${x.toFixed(2)}`;
-const pct = (x: number, total: number) => `${total ? Math.round((x / total) * 100) : 0} %`;
 /** "2026-10-09" → "Oct 9" in the browser locale (parsed as a local date: no timezone shift). */
 const dayLabel = (date: string) => {
   const [y, m, d] = date.split('-').map(Number);
@@ -59,10 +60,10 @@ export function UsageSection() {
               format={shortNumber}
               series={[
                 { key: 'input', label: 'Input', color: 'var(--series-1)' },
-                { key: 'cacheRead', label: 'Cache read', color: 'var(--series-3)' },
+                { key: 'cache', label: 'Cache', color: 'var(--series-3)' },
                 { key: 'output', label: 'Output', color: 'var(--series-2)' },
               ]}
-              rows={r.days.map((d) => ({ label: dayLabel(d.date), values: { input: d.input, cacheRead: d.cacheRead, output: out(d) } }))}
+              rows={r.days.map((d) => ({ label: dayLabel(d.date), values: { input: d.input, cache: cache(d), output: out(d) } }))}
             />
           </div>
           <div className="gh">By model</div>

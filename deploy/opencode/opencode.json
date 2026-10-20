@@ -48,6 +48,7 @@
         "open_url": "allow",
         "suggest_next": "allow",
         "look_at_image": "allow",
+        "user_location": "allow",
         "save_url": "allow",
         "move_to_sources": "allow"
       }
@@ -61,7 +62,8 @@
         "current_page": "allow",
         "open_url": "allow",
         "suggest_next": "allow",
-        "look_at_image": "allow"
+        "look_at_image": "allow",
+        "user_location": "allow"
       }
     },
     "commit-message": {

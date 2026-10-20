@@ -33,7 +33,8 @@ don't translate or normalize it.
 
 MVP (milestone M4) implemented and deployed. The source of truth for how the system works is
 [`specs/system/`](specs/system/) plus the ADRs in `docs/adr/`; read the relevant pages before changing
-anything. Commands: `just` (see `README.md`).
+anything. Commands: `just` (see `README.md`). Model-facing changes (prompt parts, tool descriptions, the system
+prompt) put `npm run test:llm` in their `Verify:`.
 
 `specs/` layout: `system/` (how the system is), `changes/<name>/` (open spec changes, spec plugin;
 archived = folded into `system/` and deleted), `research/<name>/` (research results, kept as reference).
@@ -110,6 +111,9 @@ header `karpathy #N`).
 - Never `down`, restart or exec into a stack another checkout owns, and never start one with raw
   `docker compose` (no hand-written port overrides in `tmp/`).
 - `just e2e` and `just prodtest` target this checkout's stack automatically. Run `just dev down` when done.
+- A full `just e2e` on a busy Mac fails dozens of tests that pass alone: re-run with `just e2e --last-failed`, and check
+  any `@llm` spec that still fails against the commit before your change (own worktree and stack) before blaming it —
+  the local dev model fails some of them on its own.
 
 A GitHub Codespace (`.devcontainer/`, README › Codespaces) is another dev host with its own stacks. It has no omlx
 (its `dev.local.yaml` selects the hosted gateway), no Keychain (secrets come from Codespaces secrets), and no Lima.

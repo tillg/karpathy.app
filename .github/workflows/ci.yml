@@ -50,9 +50,7 @@ jobs:
       - run: ansible-galaxy collection install --force -r requirements.yml -p ~/.ansible/collections
       - run: ansible-lint
       - run: |
-          for t in local hetzner; do
-            ansible-playbook -i "inventories/$t" --vault-id "$t@vault-pass-client.sh" --syntax-check site.yml
-          done
+          ansible-playbook -i inventories/hetzner --vault-id hetzner@vault-pass-client.sh --syntax-check site.yml
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
