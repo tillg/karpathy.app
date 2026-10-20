@@ -33,8 +33,14 @@ flowchart LR
 - [x] Document Codespaces in `README.md` (create, secrets, connect, forward, cost) and `CLAUDE.md` (a codespace is a dev host; the Keychain is Mac-only)
   - Test first: none — docs
   - Verify: `grep -q '## Codespaces' README.md && grep -qi codespace CLAUDE.md`
+- [x] `seed.sh` names every missing secret and what goes without it
+  - Test first: `.devcontainer/seed.test.sh` › "every secret set, no hints" › "no key: hint names `EXA_API_KEY` / `NTFY_DEV_TOPIC` / `ANTHROPIC_API_KEY`"
+  - Verify: `bash .devcontainer/seed.test.sh` → all passed
+- [x] `just resume`: continue the last Claude session after a reconnect
+  - Test first: none — a one-line recipe
+  - Verify: `just --dry-run resume` prints `claude --continue`
 - [ ] Smoke test in a real codespace on this branch
   - Test first: none — needs GitHub Codespaces
-  - Verify: in the codespace, `just check` green; `just dev up` prints stack 1; after `gh codespace ports forward 8010:8010` on the Mac, https://localhost:8010 loads and one chat turn is answered; `claude` lists the four project plugins after a restart; `just e2e` green
+  - Verify: in the codespace, `just check` green; `just dev up` prints stack 1; after `gh codespace ports forward 8010:8010` on the Mac, https://localhost:8010 loads and one chat turn is answered; `claude` lists the four project plugins after a restart; `just e2e` green; after reconnecting, `just resume` continues the session
 
 System docs are updated at `/spec:archive`.

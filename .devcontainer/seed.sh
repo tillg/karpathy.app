@@ -21,4 +21,10 @@ else
 fi
 [ -z "${EXA_API_KEY:-}" ] || write "$root/deploy/secrets/exa_api_key" 600 "$EXA_API_KEY"
 [ -z "${NTFY_DEV_TOPIC:-}" ] || write "$root/tmp/.ntfy_dev_topic" 600 "$NTFY_DEV_TOPIC"
+
+# The optional secrets: name each missing one and what goes without it.
+missing() { [ -n "${!1:-}" ] || echo "no $1 (optional): $2" >&2; }
+missing EXA_API_KEY "the AI has no web search"
+missing NTFY_DEV_TOPIC "no ntfy progress messages"
+missing ANTHROPIC_API_KEY "log in to claude once by hand"
 exit 0

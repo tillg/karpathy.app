@@ -37,11 +37,16 @@ codespace. `seed.sh` writes no settings, only the key: no `dev.local.yaml`, no n
 | Source (env) | Target | When the source is unset |
 |---|---|---|
 | `OPENROUTER_API_KEY` | `deploy/secrets/openrouter_api_key` | `seed.sh` prints a hint, and `just dev up` fails at render with the missing-secret error the Mac gives. |
-| `EXA_API_KEY` | `deploy/secrets/exa_api_key` | Nothing (optional secret). |
-| `NTFY_DEV_TOPIC` | `tmp/.ntfy_dev_topic` | Nothing. The CLAUDE.md Keychain fallback is Mac-only. |
+| `EXA_API_KEY` | `deploy/secrets/exa_api_key` | A hint: the AI has no web search. |
+| `NTFY_DEV_TOPIC` | `tmp/.ntfy_dev_topic` | A hint: no ntfy progress messages. The CLAUDE.md Keychain fallback is Mac-only. |
+| `ANTHROPIC_API_KEY` | — (Claude Code reads it from the environment) | A hint: log in to `claude` once by hand. |
 
-Files are written with mode 600 (secrets) or 644, and existing files are left as they are. `ANTHROPIC_API_KEY` isn't
-seeded: Claude Code reads it from the environment.
+Files are written with mode 600, and existing files are left as they are. Hints go to stderr; `seed.sh` always exits 0.
+
+### Resuming Claude after a reconnect
+
+An SSH session ends with the connection, and `claude` with it. `just resume` runs `claude --continue`, which picks up
+this checkout's last session. It works on the Mac too. Borrowed from ai-sandbox-manager's attach command.
 
 ### Reaching the app: localhost forward only
 

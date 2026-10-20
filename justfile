@@ -12,6 +12,10 @@ install:
 dev action="up" *args:
     deploy/dev.sh {{action}} {{args}}
 
+# Resume this checkout's last Claude Code session (e.g. after reconnecting to a codespace); extra args go to claude
+resume *args:
+    claude --continue {{args}}
+
 # Build the website into _site/ and preview it on http://localhost:<port> (default 8099)
 site port="8099":
     site/build.sh

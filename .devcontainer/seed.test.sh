@@ -17,11 +17,12 @@ fresh() {
   rm -f "$d"/deploy/settings/*.local.yaml
   echo "$d"
 }
-seed() { env -u OPENROUTER_API_KEY -u EXA_API_KEY -u NTFY_DEV_TOPIC "$@" bash "$here/seed.sh" "$d"; }
+seed() { env -u OPENROUTER_API_KEY -u EXA_API_KEY -u NTFY_DEV_TOPIC -u ANTHROPIC_API_KEY "$@" bash "$here/seed.sh" "$d"; }
 
 d=$(fresh)
-seed OPENROUTER_API_KEY=or-key EXA_API_KEY=exa-key NTFY_DEV_TOPIC=karpathy-development-x >/dev/null 2>&1
+err=$(seed OPENROUTER_API_KEY=or-key EXA_API_KEY=exa-key NTFY_DEV_TOPIC=karpathy-development-x ANTHROPIC_API_KEY=a 2>&1 >/dev/null)
 eq "fresh: seed exits 0" "$?" 0
+eq "fresh: every secret set, no hints" "$err" ""
 [ -e "$d/deploy/settings/dev.local.yaml" ] && bad "fresh: no dev.local.yaml (dev is on OpenRouter)" "written" \
   || ok "fresh: no dev.local.yaml (dev is on OpenRouter)"
 eq "fresh: openrouter key from OPENROUTER_API_KEY" "$(cat "$d/deploy/secrets/openrouter_api_key" 2>/dev/null)" or-key
@@ -54,7 +55,9 @@ err=$(seed 2>&1 >/dev/null); code=$?
 eq "no key: seed exits 0" "$code" 0
 [ -e "$d/deploy/secrets/openrouter_api_key" ] && bad "no key: no key file" "written" || ok "no key: no key file"
 [ -e "$d/deploy/secrets/exa_api_key" ] && bad "no key: no exa file" "written" || ok "no key: no exa file"
-case "$err" in *OPENROUTER_API_KEY*) ok "no key: hint names OPENROUTER_API_KEY" ;; *) bad "no key: hint names OPENROUTER_API_KEY" "stderr: $err" ;; esac
+for v in OPENROUTER_API_KEY EXA_API_KEY NTFY_DEV_TOPIC ANTHROPIC_API_KEY; do
+  case "$err" in *"$v"*) ok "no key: hint names $v" ;; *) bad "no key: hint names $v" "stderr: $err" ;; esac
+done
 rm -rf "$d"
 
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
