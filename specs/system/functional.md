@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-16
+edited: 2026-10-20
 ---
 
 # Functional: karpathy.app
@@ -307,6 +307,8 @@ flowchart LR
   and a selection already copied aren't copied again (clearing it first re-arms the copy). A refused clipboard write
   (no secure context, no permission) is silent. Read mode does the same on the rendered page (same gestures and rules):
   it copies the selection's visible text (e.g. "AeroPress", not `[[aeropress]]`), and only a selection inside the page.
+  The chat's messages do the same (rendered text, only a selection inside the message list); the composer doesn't,
+  since there you select text to replace it.
 - **Outline and note info** (#79): the list button in the note header (notes only, left of Write/Read) shows the
   note's headings, indented by level, the same in both modes; headings in code, the frontmatter and `%%comments%%`
   aren't listed. A tap jumps there: Write mode scrolls the heading's line to the top without moving the cursor or

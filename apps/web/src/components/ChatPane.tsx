@@ -4,6 +4,7 @@ import { ApiError, api, errorText } from '../lib/api';
 import { prepare } from '../lib/attach';
 import { loadChips, localStamp, saveChips, type Chip, type ChipDraft } from '../lib/chips';
 import { chipCommands, filterCommands, paletteQuery, recentCommands, recordCommand } from '../lib/commands';
+import { readSelectionText, selectionCopier } from '../lib/copy-select';
 import { mountEmbed } from '../lib/embed';
 import { mediaKind } from '../lib/media';
 import { adoptQueued, applyChatEvent, attachWarning, changedPaths, isAcceptKey, lastContext, newOpens, nextSuggestion, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
@@ -244,6 +245,10 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
   const { chat, setChat, error, attach } = useChat(vaultId, chatId);
   // How full the context is after the newest reply (#140).
   const ctx = useMemo(() => (chat ? lastContext(chat.messages) : null), [chat]);
+  // Copy on select (#144) in the messages, as in the note's Read mode; on the focusable scroller, so shift+arrows reach it.
+  // Not in the composer, where you select to replace.
+  const copy = useMemo(() => selectionCopier(() => toast('Copied')), [toast]);
+  const copySelection = (e: { currentTarget: Element }) => copy(readSelectionText(e.currentTarget));
   // The vault's commands, for the palette and the chips. Optional: without it the composer works as before.
   const [commands, setCommands] = useState<Command[] | null>(null);
   const loadCommands = useCallback(() => {
@@ -443,7 +448,8 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
   return (
     <>
       <div className="sr-only" aria-live="polite" data-testid="chat-live">{said}</div>
-      <div className="scroll" ref={scroller} tabIndex={0} role="region" aria-label="Messages">
+      <div className="scroll" ref={scroller} tabIndex={0} role="region" aria-label="Messages" onMouseUp={copySelection}
+        onTouchEnd={copySelection} onKeyUp={(e) => { if (e.shiftKey && !e.metaKey && !e.ctrlKey) copySelection(e); }}>
         {(chat?.readonly || conflict) && <div className="banner warn" data-testid="chat-readonly">The vault is in conflict — the AI can only read, not change notes, until it is resolved.</div>}
         <div className="msgs" data-testid="chat-messages">
           {!chat && !error && <div className="day">Loading…</div>}
