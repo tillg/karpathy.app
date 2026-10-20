@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Seeds a codespace's checkout from its Codespaces secrets (specs/changes/codespaces-dev): the hosted-gateway overlay
-# (a codespace has no omlx), the provider keys and the ntfy dev topic. Never overwrites an existing file: the
+# Seeds a codespace's checkout from its Codespaces secrets (specs/changes/codespaces-dev): the provider keys (dev runs
+# on OpenRouter, like everywhere) and the ntfy dev topic. Never overwrites an existing file: the
 # developer's own edits win. No network, no installs. Usage: seed.sh <repo root>
 set -euo pipefail
 root=${1:?usage: seed.sh <repo root>}
@@ -13,9 +13,6 @@ write() {
   chmod "$2" "$1"
   echo "seeded ${1#"$root"/}"
 }
-
-write "$root/deploy/settings/dev.local.yaml" 644 "# Written by .devcontainer/seed.sh: a codespace has no omlx, so dev stacks use the hosted gateway.
-ai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3, vision_model: openrouter/mistralai/mistral-medium-3-5 }"
 
 if [ -n "${OPENROUTER_API_KEY:-}" ]; then
   write "$root/deploy/secrets/openrouter_api_key" 600 "$OPENROUTER_API_KEY"

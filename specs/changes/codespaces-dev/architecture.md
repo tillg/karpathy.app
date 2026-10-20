@@ -4,7 +4,7 @@ title: "Architecture: develop in a GitHub Codespace"
 status: applying
 order: 3
 created: 2026-10-15
-edited: 2026-10-15
+edited: 2026-10-20
 ---
 
 # Architecture: develop in a GitHub Codespace
@@ -26,32 +26,19 @@ edited: 2026-10-15
 same filesystem as the shell, so those relative mounts resolve. Docker-outside-of-Docker would need path translation.
 DinD also keeps stacks, images and volumes inside the codespace, with nothing shared on the host.
 
-### Hosted gateway through the local overlay
+### Always OpenRouter, no settings of its own
 
-`dev.yaml` selects `omlx`, whose relay upstream `host.docker.internal:8000` doesn't exist in a codespace.
-`stack_model_ready` would then refuse `just dev up`. `seed.sh` writes `deploy/settings/dev.local.yaml` with:
-
-```yaml
-# Written by .devcontainer/seed.sh: a codespace has no omlx, so dev stacks use the hosted gateway.
-ai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3, vision_model: openrouter/mistralai/mistral-medium-3-5 }
-```
-
-That's the defaults from `settings.yaml`, restated because `dev.yaml` overrides them. The overlay is already the
-documented place for a developer's model choice, it's gitignored, and the merge is key by key, so
-`git.remote_base: file:///remotes/` from `dev.yaml` stays. No new settings environment and no `CODESPACES` branch in
-`dev.sh`. A hosted gateway renders no `OLLAMA_UPSTREAM`, so `stack_model_ready` passes.
-
-Alternative considered: a committed `codespace.yaml` environment. Rejected, because `dev.sh` hardcodes `dev`, and a
-second dev-like environment doubles what `just settings check` and the e2e suite must cover.
+Every model comes from OpenRouter, in dev as in prod and the tests, so the committed `dev` settings already work in a
+codespace. `seed.sh` writes no settings, only the key: no `dev.local.yaml`, no new settings environment, and no
+`CODESPACES` branch in `dev.sh`. A developer's own `dev.local.yaml` still applies, as on the Mac.
 
 ### Seeding rules
 
 | Source (env) | Target | When the source is unset |
 |---|---|---|
-| `OPENROUTER_API_KEY` | `deploy/secrets/openrouter_api_key` | Overlay still written. `seed.sh` prints a hint, and `just dev up` fails at render with the missing-secret error the Mac gives. |
+| `OPENROUTER_API_KEY` | `deploy/secrets/openrouter_api_key` | `seed.sh` prints a hint, and `just dev up` fails at render with the missing-secret error the Mac gives. |
 | `EXA_API_KEY` | `deploy/secrets/exa_api_key` | Nothing (optional secret). |
 | `NTFY_DEV_TOPIC` | `tmp/.ntfy_dev_topic` | Nothing. The CLAUDE.md Keychain fallback is Mac-only. |
-| — | `deploy/settings/dev.local.yaml` | Written when missing. |
 
 Files are written with mode 600 (secrets) or 644, and existing files are left as they are. `ANTHROPIC_API_KEY` isn't
 seeded: Claude Code reads it from the environment.

@@ -4,7 +4,7 @@ title: "Plan: develop in a GitHub Codespace"
 status: applying
 order: 4
 created: 2026-10-15
-edited: 2026-10-15
+edited: 2026-10-20
 ---
 
 # Plan: develop in a GitHub Codespace
@@ -21,8 +21,8 @@ flowchart LR
   4 --> 5
 ```
 
-- [x] Seed the hosted-gateway overlay and the Codespaces secrets (`.devcontainer/seed.sh <repo>`)
-  - Test first: `.devcontainer/seed.test.sh` (temp repo dir) › "fresh: writes `deploy/settings/dev.local.yaml` with gateway openrouter, and `deploy/secrets/openrouter_api_key` (mode 600) from `OPENROUTER_API_KEY`" › "`EXA_API_KEY` → `exa_api_key`, `NTFY_DEV_TOPIC` → `tmp/.ntfy_dev_topic`" › "existing files are left as they are" › "no `OPENROUTER_API_KEY`: overlay written, no key file, a hint on stderr, exit 0" › "the seeded overlay renders: `just settings render dev` with the seeded secrets passes and renders no `OLLAMA_UPSTREAM`". Fails today: `seed.sh` doesn't exist.
+- [x] Seed the Codespaces secrets (`.devcontainer/seed.sh <repo>`)
+  - Test first: `.devcontainer/seed.test.sh` (temp repo dir) › "fresh: writes `deploy/secrets/openrouter_api_key` (mode 600) from `OPENROUTER_API_KEY`, and no `dev.local.yaml`" › "`EXA_API_KEY` → `exa_api_key`, `NTFY_DEV_TOPIC` → `tmp/.ntfy_dev_topic`" › "existing files are left as they are" › "no `OPENROUTER_API_KEY`: no key file, a hint on stderr, exit 0" › "dev renders: `just settings render dev` with the seeded secrets passes, and its model is on OpenRouter". Fails today: `seed.sh` doesn't exist.
   - Verify: `bash .devcontainer/seed.test.sh` → all ok
 - [x] Dev container: image, features, machine size, ports, repo access, secrets, `post-create.sh`
   - Test first: none — config and an install script with no local runtime
@@ -30,7 +30,7 @@ flowchart LR
 - [x] Run the seed test in `just check`
   - Test first: none — wiring
   - Verify: `just --show check | grep -q devcontainer/seed.test.sh` and `bash .devcontainer/seed.test.sh` → ok
-- [x] Document Codespaces in `README.md` (create, secrets, connect, forward, cost) and `CLAUDE.md` (a codespace is a dev host; omlx and Keychain are Mac-only)
+- [x] Document Codespaces in `README.md` (create, secrets, connect, forward, cost) and `CLAUDE.md` (a codespace is a dev host; the Keychain is Mac-only)
   - Test first: none — docs
   - Verify: `grep -q '## Codespaces' README.md && grep -qi codespace CLAUDE.md`
 - [ ] Smoke test in a real codespace on this branch

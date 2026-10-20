@@ -15,7 +15,7 @@
   "otherPortsAttributes": { "onAutoForward": "silent" },
   "secrets": {
     "OPENROUTER_API_KEY": {
-      "description": "The dev stacks' model gateway (a codespace has no omlx). Seeded into deploy/secrets/openrouter_api_key."
+      "description": "The dev stacks' models (OpenRouter). Seeded into deploy/secrets/openrouter_api_key."
     },
     "EXA_API_KEY": { "description": "Optional: the AI's web search. Seeded into deploy/secrets/exa_api_key." },
     "NTFY_DEV_TOPIC": { "description": "Optional: the ntfy dev topic for progress messages. Seeded into tmp/.ntfy_dev_topic." },

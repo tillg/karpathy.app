@@ -277,13 +277,12 @@ configured by hand: releases go there with `just deploy hetzner`, see [Deploying
 
 A GitHub Codespace is a second dev host next to the Mac: the repo in a cloud VM, with the dev container from
 `.devcontainer/` (Node 22, Docker-in-Docker, `just`, ripgrep, Playwright's Chromium, the Claude Code CLI). `just dev
-up`, `just check`, `just e2e` and `claude` work there as on the Mac. What stays Mac-only: omlx and `just ollama`, the
-`local` / `hetzner` deploy (Lima, Ansible), and the Keychain.
+up`, `just check`, `just e2e` and `claude` work there as on the Mac. What stays Mac-only: the `local` / `hetzner`
+deploy (Lima, Ansible) and the Keychain.
 
 1. **Secrets, once** (GitHub → Settings → Codespaces → Secrets, scoped to this repo): `OPENROUTER_API_KEY` (required:
-   a codespace has no omlx, so its dev stacks use the hosted gateway), optionally `EXA_API_KEY`, `NTFY_DEV_TOPIC` and
-   `ANTHROPIC_API_KEY`. On create, `.devcontainer/seed.sh` copies them into `deploy/secrets/` and `tmp/`, and writes
-   `deploy/settings/dev.local.yaml` (gateway `openrouter`). It never overwrites an existing file.
+   the dev stacks' models), optionally `EXA_API_KEY`, `NTFY_DEV_TOPIC` and `ANTHROPIC_API_KEY`. On create,
+   `.devcontainer/seed.sh` copies them into `deploy/secrets/` and `tmp/`. It never overwrites an existing file.
 2. **Create**: `gh codespace create -R tillg/karpathy.app -b <branch> -m standardLinux32gb` (4 cores, 16 GB), or Code →
    Codespaces on GitHub. Authorize the extra repo access it asks for (`ingest_email` read, `karpathy_demo_wiki` write).
    The first create takes a few minutes.
