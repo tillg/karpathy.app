@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { BASE_URL, expect, openApp, openNote, test, typeAtEnd } from './helpers';
 
 // The AI's open_note tool opens a note in the UI (spec change ai-open-page). Real model turns
-// (dev: local Ollama), so long timeouts and assertions on chips and the route, never answer text.
+// (dev: OpenRouter), so long timeouts and assertions on chips and the route, never answer text.
 const TURN = 8 * 60_000;
 test.describe.configure({ timeout: 25 * 60_000 });
 

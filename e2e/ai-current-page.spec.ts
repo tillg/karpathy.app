@@ -3,7 +3,7 @@ import { backendExec, expect, openApp, openNote, test, uid } from './helpers';
 
 // The AI's current_page tool tells which file the user has open (spec change 143-open-page-tool). The first test is
 // deterministic: the web app sends the open page with each message and the backend stores it for the tool, outside
-// the vault. The second uses the real model (dev: local Ollama), so long timeouts and assertions on the chip only.
+// the vault. The second uses the real model (dev: OpenRouter), so long timeouts and assertions on the chip only.
 const TURN = 8 * 60_000;
 test.describe.configure({ timeout: 25 * 60_000 });
 

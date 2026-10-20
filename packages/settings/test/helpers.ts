@@ -12,9 +12,9 @@ export function tempDir(files: Record<string, string> = {}): string {
 /** A complete central settings.yaml; `extra` is appended (top-level keys must not repeat). */
 export const CENTRAL = `
 ai:
-  gateway: ollama
-  model: ollama/small
-  vision_model: ollama/vision
+  gateway: compat
+  model: compat/small
+  vision_model: compat/vision
   web: { access: true, fetch_cap: 20, search_cap: 20, exa_api_key: { secret: exa_api_key, optional: true } }
 auth:
   bearer_token: { secret: bearer_token }
@@ -31,10 +31,9 @@ timezone: Etc/UTC
 commit_reminder_threshold: 4
 files: { visible_dot_dirs: [.agents] }
 gateways:
-  ollama:
+  compat:
     kind: openai-compatible
-    base_url: http://ollama.internal:11434/v1
-    relay_upstream: host.docker.internal:11434
+    base_url: http://llm.example/v1
     models:
       small: { tool_call: true }
       vision: { tool_call: true }

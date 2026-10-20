@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import { expect, openApp, test } from './helpers';
 
 // An attached image and a text-only chat model: the AI calls look_at_image and answers from the vision model's
-// description (spec change 146-image-model). Real model turns (dev: local Ollama), so long timeouts and
+// description (spec change 146-image-model). Real model turns (dev: OpenRouter), so long timeouts and
 // assertions on chips, never on answer text.
 const TURN = 8 * 60_000;
 test.describe.configure({ timeout: 25 * 60_000 });

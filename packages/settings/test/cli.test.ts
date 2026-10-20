@@ -14,7 +14,7 @@ const cli = (...args: string[]) => {
 describe('settings CLI', () => {
   it('render writes the three files', () => {
     const out = tempDir();
-    const store = tempDir({ bearer_token: 'tok-SECRET', opencode_password: 'pw' });
+    const store = tempDir({ bearer_token: 'tok-SECRET', opencode_password: 'pw', openrouter_api_key: 'or-SECRET' });
     const r = cli('render', 'dev', '--out', out, '--secrets', store, '--compose-dir', join(out, '..'));
     expect(r.err).toBe('');
     expect(r.code).toBe(0);
@@ -22,6 +22,7 @@ describe('settings CLI', () => {
     expect(statSync(join(out, 'opencode.env')).mode & 0o777).toBe(0o600);
     expect(readFileSync(join(out, '.env'), 'utf8')).toContain(`SETTINGS_DIR=${out.split('/').pop()}`);
     expect(r.out).not.toContain('tok-SECRET');
+    expect(r.out).not.toContain('or-SECRET');
   });
 
   it('a missing required secret fails and names it', () => {
@@ -38,7 +39,7 @@ describe('settings CLI', () => {
   });
 
   it('get prints one value', () => {
-    expect(cli('get', 'test', 'ai.vision_model').out.trim()).toBe('ollama/qwen3-vl:2b');
+    expect(cli('get', 'test', 'ai.vision_model').out.trim()).toBe('openrouter/mistralai/mistral-medium-3-5');
     expect(cli('get', 'test', 'ai.nope').code).toBe(1);
   });
 

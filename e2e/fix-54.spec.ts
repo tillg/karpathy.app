@@ -2,7 +2,7 @@ import { expect, openApp, test } from './helpers';
 
 // #54: the highlighted match stays visible in narrow result rows.
 test('@iphone @ipad a match deep in a long line is visible and highlighted in the result row', async ({ page, api, vault }) => {
-  await api.write(vault.id, 'Distillation.md', '---\nrelated: [ollama, vannevar-bush, zettelkasten, mémoire-de-travail, spaced-repetition, knowledge-compilation]\n---\n# Distillation\n');
+  await api.write(vault.id, 'Distillation.md', '---\nrelated: [jarvis, vannevar-bush, zettelkasten, mémoire-de-travail, spaced-repetition, knowledge-compilation]\n---\n# Distillation\n');
   await openApp(page, vault.id);
   if (await page.getByTestId('tab-search').isVisible()) await page.getByTestId('tab-search').click();
   else {

@@ -1,7 +1,7 @@
 import { expect, openApp, test } from './helpers';
 
 // #63: one assistant block per turn (tool steps grouped under one header); a failed chip shows its
-// error on tap. Real model turns (dev: local Ollama) — slow, assertions on structure, not text.
+// error on tap. Real model turns (dev: OpenRouter) — slow, assertions on structure, not text.
 const TURN = 8 * 60_000;
 test.describe.configure({ timeout: 20 * 60_000 });
 

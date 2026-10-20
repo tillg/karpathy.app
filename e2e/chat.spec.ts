@@ -1,7 +1,7 @@
 import type { Browser, Page } from '@playwright/test';
 import { Api, BASE_URL, expect, openApp, test, type TestVault } from './helpers';
 
-// Real model turns (dev: local Ollama qwen2.5:3b on CPU) — slow. Few tests, long timeouts, and
+// Real model turns (dev: OpenRouter) — slow. Few tests, long timeouts, and
 // assertions on tool chips and the file system rather than on the answer text.
 const TURN = 8 * 60_000;
 // In order, one worker, one vault; a failing test doesn't skip the others.

@@ -3,7 +3,7 @@ import { backendExec, expect, openApp, PROJECT, test } from './helpers';
 
 // Time and place from the browser (spec change browser-tools, #151). The first test is deterministic: every prompt
 // carries the tab's time zone, and the backend hands the model a hidden local-time line. The others use the real model
-// (dev: the native omlx) and the browser's real Geolocation API, faked by Playwright: assertions on chips and tool output.
+// (dev: OpenRouter) and the browser's real Geolocation API, faked by Playwright: assertions on chips and tool output.
 const TURN = 8 * 60_000;
 test.describe.configure({ timeout: 25 * 60_000 });
 

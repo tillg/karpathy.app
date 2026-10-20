@@ -74,9 +74,8 @@ works from iPad/phone, not just the Mac terminal.
   same remote. No second sync system.
 - **Runtime = docker compose, in dev and prod.** Services: reverse proxy (auto-TLS), backend,
   opencode, egress proxy (opencode's only way to the internet: public destinations only). They share the vault clones via a compose volume. Only the proxy publishes ports. In dev,
-  bind-mount the sources for hot reload rather than running anything natively; the one exception is the dev
-  model, a native omlx (MLX server, Homebrew service) on the Mac shared by all dev stacks. The Docker CLI
-  talks to Rancher Desktop.
+  bind-mount the sources for hot reload rather than running anything natively. Every model, dev and tests included,
+  is on OpenRouter (no local model server). The Docker CLI talks to Rancher Desktop.
 - **Settings = `deploy/settings/`** (`settings.yaml` + one override file per environment, #133). Every
   setting a component reads comes from there (rendered into `.env`, `opencode.env`, the opencode provider
   config and the backend's `settings.json`); add new settings there, not as env vars or literals.

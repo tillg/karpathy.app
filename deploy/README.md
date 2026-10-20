@@ -88,7 +88,7 @@ when the whole box is gone.
 
 | Stack | URL | What it's for | Start |
 |---|---|---|---|
-| **dev** stack N (1–9) | https://localhost:80N0 | Working on the code: sources bind-mounted, hot reload, the Mac's native omlx as the model; one per checkout, side by side (`just dev stacks`) | `just dev up [N]` |
+| **dev** stack N (1–9) | https://localhost:80N0 | Working on the code: sources bind-mounted, hot reload, production's OpenRouter models; one per checkout, side by side (`just dev stacks`) | `just dev up [N]` |
 | **prodtest** | https://localhost:80N5 | The prod images built from the working tree, paired with dev stack N | `just prodtest` |
 | **hetzner** target | https://app.karpathy.app | Production: Hetzner server, reachable only over Tailscale | `just deploy hetzner` |
 
@@ -246,7 +246,7 @@ Each fresh server requests a new certificate; Let's Encrypt allows 5 for the sam
 ```
 deploy/
   compose.yml              the stack (one definition for dev, prodtest and every target)
-  compose.dev.yml          dev overrides (bind mounts, Ollama relay, Vite)
+  compose.dev.yml          dev overrides (bind mounts, model relay, Vite)
   compose.prodtest.yml     prodtest overrides
   dev.sh                   behind `just dev`
   backend/ proxy/ opencode/ web/   Dockerfiles and their config (Caddyfile, opencode.json)

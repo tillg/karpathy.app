@@ -63,10 +63,6 @@ jobs:
       - run: npm ci
       - run: npm run test:github
         env: { TEST_VAULT_TOKEN: '${{ secrets.TEST_VAULT_TOKEN }}' }
-      # Real model turns on a local Ollama (no provider key): pull the models (text + vision) into a volume once.
-      - run: |
-          docker volume create ollama-models
-          docker run -d --name pull -v ollama-models:/root/.ollama ollama/ollama
-          sleep 3 && docker exec pull ollama pull "$(node_modules/.bin/tsx packages/settings/src/cli.ts get test ai.model | sed 's|^ollama/||')" && docker exec pull ollama pull "$(node_modules/.bin/tsx packages/settings/src/cli.ts get test ai.vision_model | sed 's|^ollama/||')" && docker rm -f pull
+      # Real model turns on OpenRouter, the production models (every test that runs a model runs it there).
       - run: npm run test:llm
-        env: { OLLAMA_VOLUME: ollama-models }
+        env: { OPENROUTER_API_KEY: '${{ secrets.OPENROUTER_API_KEY }}' }

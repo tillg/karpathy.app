@@ -243,12 +243,12 @@ describe('vault admin', () => {
   });
 
   it('settings: unknown model → 400 with a readable message; bad threshold → readable message (#16)', async () => {
-    const { api } = await makeApp('file:///nowhere/', { deps: { availableModels: async () => [{ id: 'ollama/qwen2.5:3b', input: { image: false, pdf: false } }] } });
+    const { api } = await makeApp('file:///nowhere/', { deps: { availableModels: async () => [{ id: 'openrouter/qwen2.5:3b', input: { image: false, pdf: false } }] } });
     const bad = await api.patch('/settings', { model: 'nope/model-x' });
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/not available/i);
-    expect(bad.body.error).toContain('ollama/qwen2.5:3b');
-    expect((await api.patch('/settings', { model: 'ollama/qwen2.5:3b' })).status).toBe(200);
+    expect(bad.body.error).toContain('openrouter/qwen2.5:3b');
+    expect((await api.patch('/settings', { model: 'openrouter/qwen2.5:3b' })).status).toBe(200);
     for (const v of [2.5, 0, 100000]) {
       const r = await api.patch('/settings', { commitReminderThreshold: v });
       expect(r.status).toBe(400);
@@ -257,11 +257,11 @@ describe('vault admin', () => {
   });
 
   it('settings model default and override', async () => {
-    const models = [{ id: 'ollama/qwen2.5:3b', input: { image: false, pdf: false } }, { id: 'ollama/qwen3-vl:2b', input: { image: true, pdf: false } }];
-    const { api } = await makeApp('file:///nowhere/', { defaultModel: 'ollama/qwen2.5:3b', deps: { availableModels: async () => models } });
-    expect((await api.get('/settings')).body).toMatchObject({ model: 'ollama/qwen2.5:3b', defaultModel: 'ollama/qwen2.5:3b', modelOverridden: false });
-    expect((await api.patch('/settings', { model: 'ollama/qwen3-vl:2b' })).body).toMatchObject({ model: 'ollama/qwen3-vl:2b', modelOverridden: true });
-    expect((await api.patch('/settings', { model: null })).body).toMatchObject({ model: 'ollama/qwen2.5:3b', modelOverridden: false });
+    const models = [{ id: 'openrouter/qwen2.5:3b', input: { image: false, pdf: false } }, { id: 'openrouter/qwen3-vl:2b', input: { image: true, pdf: false } }];
+    const { api } = await makeApp('file:///nowhere/', { defaultModel: 'openrouter/qwen2.5:3b', deps: { availableModels: async () => models } });
+    expect((await api.get('/settings')).body).toMatchObject({ model: 'openrouter/qwen2.5:3b', defaultModel: 'openrouter/qwen2.5:3b', modelOverridden: false });
+    expect((await api.patch('/settings', { model: 'openrouter/qwen3-vl:2b' })).body).toMatchObject({ model: 'openrouter/qwen3-vl:2b', modelOverridden: true });
+    expect((await api.patch('/settings', { model: null })).body).toMatchObject({ model: 'openrouter/qwen2.5:3b', modelOverridden: false });
     expect((await api.patch('/settings', { model: 'nope/x' })).status).toBe(400);
   });
 

@@ -28,10 +28,7 @@ services:
 
   opencode:
     image: !reset null
-    # The model and its gateway come from deploy/settings/ (dev.yaml: the native Ollama via the relay below).
-    environment:
-      # Ollama sits on a private IP, which the egress proxy refuses: reach it direct.
-      NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama.internal
+    # The model and its gateway come from deploy/settings/ (OpenRouter, through the egress proxy as in production).
 
   egress:
     image: !reset null
@@ -44,18 +41,6 @@ services:
       INGEST_FAKE_INSTAGRAM_LOGIN: "1"
     volumes:
       - vaults:/vaults
-
-  # The dev LLM is the native omlx on the Mac (deploy/settings/dev.yaml), shared by all stacks. This relay
-  # (proxy/Caddyfile.ollama-relay) is opencode's only route to it, and passes only the /v1 API.
-  ollama:
-    image: caddy:2.10-alpine
-    restart: unless-stopped
-    environment:
-      OLLAMA_UPSTREAM: ${OLLAMA_UPSTREAM:-host.docker.internal:11434}
-    volumes: ["./proxy/Caddyfile.ollama-relay:/etc/caddy/Caddyfile:ro"]
-    networks:
-      internal: { aliases: [ollama.internal] }
-      egress: {}
 
   web:
     build: { context: .., dockerfile: deploy/web/Dockerfile.dev }

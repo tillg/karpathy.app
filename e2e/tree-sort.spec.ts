@@ -65,7 +65,7 @@ test.describe('tree sort and filter', () => {
     await expect(wiki).toHaveAttribute('aria-expanded', 'false');
   });
 
-  // Real model turn (dev: local Ollama), so long timeouts; assertions on chips and the tree, never answer text.
+  // Real model turn (dev: OpenRouter), so long timeouts; assertions on chips and the tree, never answer text.
   test('@llm filter by AI shows only AI files, with a chip that resets it', async ({ page, vault }) => {
     test.setTimeout(30 * 60_000);
     const reminder = page.getByTestId('reminder-dialog');

@@ -198,7 +198,7 @@ describe('turns (#63: one assistant block per turn)', () => {
   it('merges consecutive assistant messages between user messages', () => {
     const t = turns([
       u('u1', 'hi'),
-      a('a1', [tool('t1', 'x.md')], { model: 'ollama/qwen' }),
+      a('a1', [tool('t1', 'x.md')], { model: 'openrouter/qwen' }),
       a('a2', [tool('t2', 'y.md', true)], { error: 'boom' }),
       a('a3', [{ type: 'text', id: 'p3', text: 'done' }]),
       u('u2', 'again'),
@@ -206,7 +206,7 @@ describe('turns (#63: one assistant block per turn)', () => {
     ]);
     expect(t.map((x) => x.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
     const first = t[1]!;
-    expect(first).toMatchObject({ role: 'assistant', id: 'a1', model: 'ollama/qwen', errors: ['boom'] });
+    expect(first).toMatchObject({ role: 'assistant', id: 'a1', model: 'openrouter/qwen', errors: ['boom'] });
     expect(first.role === 'assistant' && first.parts.map((p) => p.id)).toEqual(['t1', 't2', 'p3']);
     expect(first.role === 'assistant' && changedPaths(first.parts)).toEqual(['y.md']);
     expect(t[3]).toMatchObject({ role: 'assistant', id: 'a4', errors: [] });
