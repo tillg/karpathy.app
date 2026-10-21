@@ -1,9 +1,12 @@
 import { mkdir, readFile, rm, writeFile, access } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
-import { INPUT_DIR, type Change, type ChangeKind, type ConflictChoice } from '@karpathy/shared';
+import { INPUT_DIR, type Change, type ChangeKind, type ConflictChoice, type SecretFinding } from '@karpathy/shared';
 import { Git, type GitOptions } from './git.js';
+import { MESSAGE_FILE, type SecretScanner } from './secret-scan.js';
 
 export const PULL_STASH = 'karpathy-app-pull';
+/** Commits whose secret scan passed (or whose findings the user acknowledged), one hash per line, in .git. */
+const SCANNED_FILE = 'karpathy-secret-scanned';
 const AI_COAUTHOR = 'karpathy.app agent <agent@karpathy.app>';
 export const AI_TRAILER = `Co-authored-by: ${AI_COAUTHOR}`;
 
@@ -23,7 +26,14 @@ export type PullResult =
 export interface PushResult {
   pushed: boolean;
   error?: string;
+  /** Unscanned unpushed commits with a possible secret were turned back into uncommitted changes: their AI paths. */
+  aiPaths?: string[];
 }
+
+export type UnpushedCheck =
+  | { kind: 'clean' }
+  /** The unpushed commits were folded back into uncommitted changes (`aiPaths` as in `PullResult`). */
+  | { kind: 'folded'; aiPaths: string[]; findings: SecretFinding[] };
 
 /**
  * git operations on one vault clone (mvp §2.4). Paths in and out are vault-root-relative;
@@ -37,6 +47,8 @@ export class Repo {
     readonly branch: string,
     readonly root: string,
     opts: GitOptions,
+    /** Guards every push (#141): unpushed commits the app didn't scan are scanned first. */
+    private readonly scanner?: SecretScanner,
   ) {
     this.git = new Git(dir, opts);
   }
@@ -220,7 +232,7 @@ export class Repo {
     if (notMoved) {
       if ((await this.unpushedCount()) === 0) return { kind: 'ok', pushed: false };
       const p = await this.push();
-      return { kind: 'ok', pushed: p.pushed, pushError: p.error };
+      return { kind: 'ok', pushed: p.pushed, pushError: p.error, ...(p.aiPaths ? { aiPaths: p.aiPaths } : {}) };
     }
     // 2. Fold unpushed commits back into uncommitted changes. Their AI trailer goes with them: say which
     // files the AI wrote, so the next commit carries it again.
@@ -370,7 +382,59 @@ export class Repo {
     return (await this.git.out(['rev-parse', 'HEAD'])).trim();
   }
 
+  /** Records that `commit` passed the secret scan (or the user acknowledged its findings). */
+  async markScanned(commit: string): Promise<void> {
+    const keep = new Set([...(await this.scannedCommits()), commit]);
+    const unpushed = new Set((await this.git.run(['rev-list', `${this.upstream}..HEAD`], { allowFail: true })).stdout.split('\n').filter(Boolean));
+    await writeFile(join(this.dir, '.git', SCANNED_FILE), [...keep].filter((c) => c === commit || unpushed.has(c)).map((c) => `${c}\n`).join(''));
+  }
+
+  private async scannedCommits(): Promise<string[]> {
+    return (await readFile(join(this.dir, '.git', SCANNED_FILE), 'utf8').catch(() => '')).split('\n').filter(Boolean);
+  }
+
+  /**
+   * Unpushed commits the app didn't scan (made in a terminal in the clone, or before the scan existed): each one's
+   * changes and message are scanned. Clean → marked scanned. A finding → all unpushed commits are folded back into
+   * uncommitted changes (as a pull does), so the next Commit & Push scans them with "commit anyway" at hand.
+   * Throws when the scan can't run.
+   */
+  async checkUnpushed(): Promise<UnpushedCheck> {
+    if (!this.scanner) return { kind: 'clean' };
+    const list = await this.git.run(['rev-list', '--reverse', `${this.upstream}..HEAD`], { allowFail: true });
+    if (list.code !== 0) return { kind: 'clean' };
+    const scanned = new Set(await this.scannedCommits());
+    const unscanned = list.stdout.split('\n').filter((c) => c && !scanned.has(c));
+    if (!unscanned.length) return { kind: 'clean' };
+    const ignoreRev = (await this.git.run(['rev-parse', '-q', '--verify', `${this.upstream}^{commit}`], { allowFail: true })).stdout.trim() || null;
+    const findings: SecretFinding[] = [];
+    for (const c of unscanned) findings.push(...(await this.scanner.scanCommit(this.dir, c, ignoreRev)));
+    if (!findings.length) {
+      for (const c of unscanned) await this.markScanned(c);
+      return { kind: 'clean' };
+    }
+    const mb = await this.git.run(['merge-base', 'HEAD', this.upstream], { allowFail: true });
+    if (mb.code !== 0) throw new Error('secret scan: unpushed commits hold a possible secret and have no merge base with the remote');
+    const aiPaths = await this.aiPathsSince(this.upstream);
+    await this.git.run(['reset', '-q', '--mixed', mb.stdout.trim()]);
+    return { kind: 'folded', aiPaths, findings };
+  }
+
   async push(): Promise<PushResult> {
+    let check: UnpushedCheck;
+    try {
+      check = await this.checkUnpushed();
+    } catch (e) {
+      return { pushed: false, error: `the secret scan couldn't run, so nothing was pushed (${(e as Error).message})` };
+    }
+    if (check.kind === 'folded') {
+      const shown = check.findings.slice(0, 3).map((f) => `${f.file === MESSAGE_FILE ? f.file : (this.toVaultPath(f.file) ?? f.file)}${f.line ? ` line ${f.line}` : ''} (${f.rule})`);
+      return {
+        pushed: false,
+        error: `Unpushed commits made outside the app hold a possible secret: ${shown.join('; ')}${check.findings.length > shown.length ? ' and more' : ''}. Nothing was pushed; their changes are uncommitted again. Review them and commit.`,
+        aiPaths: check.aiPaths,
+      };
+    }
     const r = await this.git.run(['push', '-q', '--end-of-options', 'origin', `HEAD:refs/heads/${this.branch}`], { allowFail: true });
     if (r.code !== 0) return { pushed: false, error: r.stderr.trim() };
     await this.git.run(['fetch', '-q', '--end-of-options', 'origin', this.branch], { allowFail: true });

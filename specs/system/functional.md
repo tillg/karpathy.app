@@ -487,11 +487,16 @@ syntax, so the same note shows the same table in Obsidian. The block's text is n
 - **Discard** one file's changes (refused if the file changed since the diff was shown).
 - **Commit & Push:** proposes a message (AI, falls back to "Update N files"), editable; commits all uncommitted
   changes of the vault root and pushes. If new changes arrived since the review, the commit is refused with the list.
-- **Secret scan** (#141): before it commits, the app scans the changes for secrets (API keys, tokens, private keys:
-  gitleaks' rules). A finding refuses the commit and lists file, line, rule and at most the first four characters;
-  nothing is committed or pushed. **Remove** the secret (edit or discard the file) and commit again, or **Commit
-  anyway**, which covers exactly the findings shown (one that arrived later blocks again). A `.gitleaksignore` at the
-  vault repo's root (fingerprints `file:rule:line`) silences known false positives for good.
+- **Secret scan** (#141): before it commits, the app scans the changed files (binary ones too) and the commit message
+  for secrets (API keys, tokens, private keys: gitleaks' rules). A finding refuses the commit and lists file (or
+  "Commit message"), line, rule and at most the first four characters; nothing is committed or pushed. A changed
+  file over 50 MB can't be scanned and is listed as `too-large-to-scan`. **Remove** the secret (edit or discard the
+  file) and commit again, or **Commit anyway**, which covers exactly the secrets shown (one that arrived later, even
+  on the same line, blocks again). A committed `.gitleaksignore` at the vault repo's root (fingerprints
+  `file:rule:line`) silences known false positives for good; changes to it count only once they are committed.
+  Unpushed commits made outside the app are scanned before a push; if one holds a possible secret, nothing is pushed
+  and their changes become uncommitted again, for a normal Commit & Push. The proposed commit message is written
+  from a diff with the possible secrets taken out (#167).
 - **Unpushed commits:** "N unpushed commits · retry".
 - **Commit reminder** when changes pass the threshold: "Later" brings it back at 2× the threshold, a second "Later"
   silences it until the count drops again. Changes under `Input/` don't count (waiting input items aren't unsaved
