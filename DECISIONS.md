@@ -2813,6 +2813,9 @@ edited: 2026-10-21
 - **Alternatives:** a PR (blocks the deploy and the close).
 - **Consequences:** the other agent's clone sees `main` move on its next fetch. Rollback: `git revert -m 1 <merge>`
   on `main`.
+  12:30: the push `HEAD:main` was refused by the permission classifier ("merge without review"). Not worked around:
+  opened PR #164 (`remove-ollama` → `main`, `Closes #157`) instead. Release, deploy and closing #157 wait for the
+  user to merge it.
 
 ## 11:44 — "Deploy" = release v0.0.31 and deploy it to hetzner (production) {#run-2026-10-21-1058-6}
 
@@ -2826,6 +2829,8 @@ edited: 2026-10-21
   before and after), only settings rendering loses the unused gateways.
 - **Alternatives:** stop at the push (the user asked to deploy).
 - **Consequences:** rollback: `just deploy hetzner 0.0.30`.
+  Not done in this run: a final release must be on `origin/main` (`just release`), and the merge is blocked (decision
+  5). After merging #164: `just release 0.0.31`, wait for the release workflow, `just deploy hetzner 0.0.31`.
 
 ## 11:50 — Retro: a CLAUDE.md line on secrets in a new worktree and the dummy-key e2e run {#run-2026-10-21-1058-7}
 
