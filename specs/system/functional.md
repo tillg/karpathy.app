@@ -438,6 +438,11 @@ instant; Refresh reads it again (no live updates). three.js loads on first open 
 - **Discard** one file's changes (refused if the file changed since the diff was shown).
 - **Commit & Push:** proposes a message (AI, falls back to "Update N files"), editable; commits all uncommitted
   changes of the vault root and pushes. If new changes arrived since the review, the commit is refused with the list.
+- **Secret scan** (#141): before it commits, the app scans the changes for secrets (API keys, tokens, private keys:
+  gitleaks' rules). A finding refuses the commit and lists file, line, rule and at most the first four characters;
+  nothing is committed or pushed. **Remove** the secret (edit or discard the file) and commit again, or **Commit
+  anyway**, which covers exactly the findings shown (one that arrived later blocks again). A `.gitleaksignore` at the
+  vault repo's root (fingerprints `file:rule:line`) silences known false positives for good.
 - **Unpushed commits:** "N unpushed commits · retry".
 - **Commit reminder** when changes pass the threshold: "Later" brings it back at 2× the threshold, a second "Later"
   silences it until the count drops again. Changes under `Input/` don't count (waiting input items aren't unsaved

@@ -330,7 +330,8 @@ npm run test:e2e       # Playwright against this checkout's dev stack
 npm run typecheck
 ```
 
-`just check` runs lint, typecheck, `npm test` and the stack tooling's tests (`deploy/stack.test.sh`,
+`just check` runs a secret scan of the repo (`deploy/gitleaks/scan-repo.sh`: pinned gitleaks over the history and
+every uncommitted file; CI runs it too), lint, typecheck, `npm test` and the stack tooling's tests (`deploy/stack.test.sh`,
 `e2e/stack.unit.ts`; they need Docker; the model check is tested against a throwaway local HTTP server). It first
 refuses to start when Docker doesn't answer or the load is above 3 per core (the container tests would only time out);
 `CHECK_IGNORE_LOAD=1 just check` runs anyway.
