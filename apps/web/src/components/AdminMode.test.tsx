@@ -160,7 +160,7 @@ describe('admin mode', () => {
   });
 
   describe('sections hold the moved forms', () => {
-    const SETTINGS = { commitReminderThreshold: 20, model: 'x/y', defaultModel: 'p/default', modelOverridden: true, webAccess: false, githubToken: { source: 'none', last4: null }, modelInput: null };
+    const SETTINGS = { commitReminderThreshold: 20, model: 'x/y', defaultModel: 'p/default', modelOverridden: true, titleModel: 'x/y', defaultTitleModel: 'x/y', titleModelOverridden: false, visionModel: 'g/v', defaultVisionModel: 'g/v', visionModelOverridden: false, visionGateway: 'g', webAccess: false, githubToken: { source: 'none', last4: null }, modelInput: null };
     const VAULTS = [{ id: VAULT, name: 'One', repo: 'o/r', branch: 'main', root: '', state: 'ready' }];
     const inAdmin = async (section: string, routes: Record<string, unknown> = {}) => {
       const api = open({ 'GET /api/settings': SETTINGS, 'GET /api/vaults': VAULTS, 'GET /api/health': { backend: 'ok', opencode: 'ok', version: '9.9.9', built: null, deployed: null }, 'GET /api/ingest/instagram': { state: 'not-connected', waitingLinks: 0 }, ...routes });
@@ -214,6 +214,32 @@ describe('admin mode', () => {
       fireEvent.click(sec('ai').getByTestId('settings-web-access'));
       fireEvent.click(sec('ai').getByTestId('settings-save'));
       await waitFor(() => expect(patches(api)).toEqual([{ model: 'p/default', webAccess: true }]));
+    });
+
+    it('AI: title and vision model fields, defaults, Use default; Save sends only changed ones (default = null)', async () => {
+      const api = await inAdmin('ai', { 'PATCH /api/settings': (b: object) => ({ ...SETTINGS, ...b }) });
+      const title = (await sec('ai').findByTestId('settings-title-model')) as HTMLInputElement;
+      const vision = sec('ai').getByTestId('settings-vision-model') as HTMLInputElement;
+      expect(title.value).toBe('x/y');
+      expect(vision.value).toBe('g/v');
+      expect(sec('ai').getByText('Writes the chat titles. Starts as the chat model.')).toBeTruthy();
+      expect(sec('ai').getByText('A model of the g gateway that reads images (look_at_image).')).toBeTruthy();
+      expect(sec('ai').queryByTestId('settings-title-model-reset')).toBeNull();
+      expect(sec('ai').queryByTestId('settings-vision-model-reset')).toBeNull();
+      fireEvent.change(title, { target: { value: 'x/small' } });
+      fireEvent.change(vision, { target: { value: 'g/other' } });
+      fireEvent.click(sec('ai').getByTestId('settings-save'));
+      await waitFor(() => expect(patches(api)).toEqual([{ model: 'x/y', webAccess: false, titleModel: 'x/small', visionModel: 'g/other' }]));
+    });
+
+    it('AI: Use default on the title model sends null', async () => {
+      const api = await inAdmin('ai', { 'GET /api/settings': { ...SETTINGS, titleModel: 'x/small', titleModelOverridden: true }, 'PATCH /api/settings': (b: object) => ({ ...SETTINGS, ...b }) });
+      expect(((await sec('ai').findByTestId('settings-title-model')) as HTMLInputElement).value).toBe('x/small');
+      expect(sec('ai').getByTestId('settings-title-model-default').textContent).toBe('Default: x/y');
+      fireEvent.click(sec('ai').getByTestId('settings-title-model-reset'));
+      expect((sec('ai').getByTestId('settings-title-model') as HTMLInputElement).value).toBe('x/y');
+      fireEvent.click(sec('ai').getByTestId('settings-save'));
+      await waitFor(() => expect(patches(api)).toEqual([{ model: 'x/y', webAccess: false, titleModel: null }]));
     });
 
     it('"Manage vaults…" opens #admin/vaults; "Edit vault" opens that vault\'s details', async () => {

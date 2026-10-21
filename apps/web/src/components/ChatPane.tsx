@@ -241,8 +241,17 @@ const sentCommand = (text: string, list: Command[] | null) => {
 };
 
 function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) {
-  const { settings, setSettings, conflict, online, toast, paths, refreshFiles, commandsNonce, openPage } = useApp();
+  const { settings, setSettings, conflict, online, toast, paths, refreshFiles, commandsNonce, openPage, chatTitle } = useApp();
   const { chat, setChat, error, attach } = useChat(vaultId, chatId);
+  // A drift check's suggested title (#148): the load has it; a chat-title event of this chat replaces it.
+  const [titleSuggestion, setTitleSuggestion] = useState<string | null>(null);
+  const loadedSuggestion = chat?.titleSuggestion;
+  useEffect(() => { setTitleSuggestion(loadedSuggestion ?? null); }, [loadedSuggestion]);
+  useEffect(() => { if (chatTitle?.chatId === chatId) setTitleSuggestion(chatTitle.titleSuggestion ?? null); }, [chatTitle, chatId]);
+  const answerSuggestion = async (call: Promise<void>) => {
+    setTitleSuggestion(null);
+    try { await call; } catch (e) { toast(errorText(e)); }
+  };
   // How full the context is after the newest reply (#140).
   const ctx = useMemo(() => (chat ? lastContext(chat.messages) : null), [chat]);
   // Copy on select (#144) in the messages, as in the note's Read mode; on the focusable scroller, so shift+arrows reach it.
@@ -485,6 +494,13 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
         </div>
       </div>
       <div className="comp">
+        {titleSuggestion && (
+          <div className="title-suggest" data-testid="chat-title-suggestion">
+            <span>Rename this chat to “{titleSuggestion}”?</span>
+            <button className="btn sm" data-testid="chat-title-rename" onClick={() => void answerSuggestion(api.renameChat(vaultId, chatId, titleSuggestion))}>Rename</button>
+            <button className="btn g sm" data-testid="chat-title-keep" onClick={() => void answerSuggestion(api.keepChatTitle(vaultId, chatId))}>Keep</button>
+          </div>
+        )}
         {ctx && <ContextMeter usage={ctx.usage} variant="full" {...(ctx.model ? { model: ctx.model } : {})} />}
         {paletteOpen && <Palette items={paletteItems} active={paletteActive} onPick={(c) => putCommand(c, '')} />}
         {(draft.chips.length > 0 || uploading > 0) && (
@@ -514,14 +530,14 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
 }
 
 function ChatList({ vaultId }: { vaultId: string }) {
-  const { setChatId, toast, online, phone } = useApp();
+  const { setChatId, toast, online, phone, chatTitle } = useApp();
   const [chats, setChats] = useState<ChatSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {
     api.chats(vaultId).then((c) => { setChats(c); setError(null); })
       .catch((e) => setError(e instanceof ApiError && e.status === 503 ? 'The AI chat is not available on this server yet.' : errorText(e)));
   }, [vaultId]);
-  useEffect(() => { if (online) load(); }, [load, online]);
+  useEffect(() => { if (online) load(); }, [load, online, chatTitle]);
   // Refresh the running/queued markers until every chat is idle.
   const busy = chats?.some((c) => c.turn !== 'idle');
   useEffect(() => {

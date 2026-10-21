@@ -68,7 +68,8 @@ export const api = {
   secrets: () => json<{ secrets: SecretStatus[] }>('GET', '/settings/secrets'),
   metrics: (range: MetricsRange) => json<MetricsReport>('GET', `/metrics?range=${range}`),
   usage: (days: UsageDays) => json<UsageReport>('GET', `/usage?days=${days}`),
-  patchSettings: (s: Partial<Settings>) => json<SettingsView>('PATCH', '/settings', s),
+  /** `null` for the two optional models means back to the default. */
+  patchSettings: (s: Omit<Partial<Settings>, 'titleModel' | 'visionModel'> & { titleModel?: string | null; visionModel?: string | null }) => json<SettingsView>('PATCH', '/settings', s),
   putGithubToken: (token: string) => json<void>('PUT', '/settings/github-token', { token }),
   removeGithubToken: () => json<void>('DELETE', '/settings/github-token'),
   /** Tests `token`, or the stored token when omitted. */
@@ -125,6 +126,8 @@ export const api = {
   newChat: (id: string) => json<{ chatId: string }>('POST', `${v(id)}/chats`),
   chat: (id: string, chatId: string) => json<ChatDetail>('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
   deleteChat: (id: string, chatId: string) => json<void>('DELETE', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
+  renameChat: (id: string, chatId: string, title: string) => json<void>('PATCH', `${v(id)}/chats/${encodeURIComponent(chatId)}`, { title }),
+  keepChatTitle: (id: string, chatId: string) => json<void>('DELETE', `${v(id)}/chats/${encodeURIComponent(chatId)}/title-suggestion`),
   prompt: (id: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage) =>
     json<{ queued: boolean }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, promptBody(text, attachments, openPage, clientContext())),
   chatStream: (id: string, chatId: string, signal: AbortSignal) => request('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}/stream`, undefined, signal),

@@ -194,11 +194,39 @@ function CommitReminderForm() {
 function AiForm() {
   const { settings } = useApp();
   const [model, setModel] = useState('');
+  const [titleModel, setTitleModel] = useState('');
+  const [visionModel, setVisionModel] = useState('');
   const [webAccess, setWebAccess] = useState(true);
-  useEffect(() => { if (settings) { setModel(settings.model); setWebAccess(settings.webAccess); } }, [settings]);
+  useEffect(() => {
+    if (!settings) return;
+    setModel(settings.model);
+    setTitleModel(settings.titleModel);
+    setVisionModel(settings.visionModel);
+    setWebAccess(settings.webAccess);
+  }, [settings]);
+  /** Sent only when changed; the default value goes as null (back to default). */
+  const optional = (value: string, current: string | undefined, dflt: string | undefined) =>
+    settings && value.trim() !== current ? (value.trim() === dflt ? null : value.trim()) : undefined;
   const s = useSettingsSave(
     () => (!model.trim() ? 'Model: enter provider/model, or use the default.' : null),
-    () => ({ model: model.trim(), webAccess }),
+    () => ({
+      model: model.trim(), webAccess,
+      ...(settings && titleModel.trim() !== settings.titleModel ? { titleModel: optional(titleModel, settings.titleModel, settings.defaultTitleModel) } : {}),
+      ...(settings && visionModel.trim() !== settings.visionModel ? { visionModel: optional(visionModel, settings.visionModel, settings.defaultVisionModel) } : {}),
+    }),
+  );
+  const modelField = (id: string, label: string, hint: string, value: string, set: (v: string) => void, dflt: string, overridden: boolean) => (
+    <>
+      <label className="field"><span>{label}</span>
+        <input data-testid={`settings-${id}`} value={value} autoCapitalize="off" spellCheck={false} onChange={(e) => { set(e.target.value); s.setSaved(false); }} /></label>
+      <p className="muted">{hint}</p>
+      <div className="model-default">
+        <span className="muted" data-testid={`settings-${id}-default`} data-overridden={String(overridden)}>Default: {dflt}</span>
+        {value.trim() !== dflt && (
+          <button type="button" className="btn g sm" data-testid={`settings-${id}-reset`} onClick={() => { set(dflt); s.setSaved(false); }}>Use default</button>
+        )}
+      </div>
+    </>
   );
   return (
     <div className="form">
@@ -212,6 +240,8 @@ function AiForm() {
           )}
         </div>
       )}
+      {settings && modelField('title-model', 'Title model (provider/model)', 'Writes the chat titles. Starts as the chat model.', titleModel, setTitleModel, settings.defaultTitleModel, settings.titleModelOverridden)}
+      {settings && modelField('vision-model', 'Vision model (provider/model)', `A model of the ${settings.visionGateway} gateway that reads images (look_at_image).`, visionModel, setVisionModel, settings.defaultVisionModel, settings.visionModelOverridden)}
       <div className="switch-row">
         <div>
           <label htmlFor="settings-web-access">Web access</label>

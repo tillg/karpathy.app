@@ -212,6 +212,8 @@ function useAppState() {
   /** The last agents move of the active vault, until dismissed; `commandsNonce` makes the chat reload its command list. */
   const [agentsMove, setAgentsMove] = useState<(AgentsMove & { at: number }) | null>(null);
   const [commandsNonce, setCommandsNonce] = useState(0);
+  /** The last `chat-title` event (#148): the chat list reloads, the open chat updates its title and suggestion. */
+  const [chatTitle, setChatTitle] = useState<{ chatId: string; titleSuggestion?: string; nonce: number } | null>(null);
   /** Moves already shown (`vault:at`), kept in this browser: the event stream replays the last one on every connect. */
   const shownMoves = useRef(new Set<string>(loadShownMoves()));
   /** Bumped when cached media bytes were dropped (their file changed): shown embeds remount. */
@@ -891,6 +893,7 @@ function useAppState() {
     }
     if (e.type === 'browser-call') return void answerBrowserCall(vault, e.call);
     if (e.type === 'browser-call-done') return;
+    if (e.type === 'chat-title') return setChatTitle({ chatId: e.chatId, ...(e.titleSuggestion ? { titleSuggestion: e.titleSuggestion } : {}), nonce: Date.now() });
     setChangesNonce((x) => x + 1);
     if (e.files.some((f) => f.path === SCHEMA_PATH)) void loadSchema(vault);
     // A skill written outside a pull (by the AI, a save, a service): chips and the Ingest button reload commands (#134).
@@ -928,7 +931,7 @@ function useAppState() {
     online, phone, wide, toast, toastMsg,
     vaults, reloadVaults, settings, setSettings, active, activeId, setActiveId, usable,
     status, setStatus, pull, pulling, files, paths, refreshFiles, changesNonce, mediaEpoch,
-    agentsMove, dismissAgentsMove: () => setAgentsMove(null), commandsNonce,
+    agentsMove, dismissAgentsMove: () => setAgentsMove(null), commandsNonce, chatTitle,
     note, openPage, currentText, openNote, isEditing, closeNote, forgetVault, editDraft, flush, uploadToNote, reloadNote, overwriteNote, deleteNote, newNote, stale, setStale,
     keepDeletedNote, closeDeletedNote,
     followLink, exists, readOnly, conflict, canGoBack, goBack,
