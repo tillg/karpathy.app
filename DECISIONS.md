@@ -219,6 +219,13 @@ edited: 2026-10-21
   - [20:45 — #91: Bases evaluated in the backend; strict v1 subset, table view only, 500 rows](#run-2026-10-21-1919-13)
   - [20:45 — #91: in Write mode the table replaces the block while the cursor is outside it](#run-2026-10-21-1919-14)
   - [21:20 — Release v0.0.34 from karpathy-dev; the prod deploy runs on the Mac](#run-2026-10-21-1919-15)
+  - [22:30 — Fix all 20 review findings before releasing, one agent per feature](#run-2026-10-21-1919-16)
+  - [22:30 — Secret scan scans stored file contents, reads `.gitleaksignore` from HEAD, scans unpushed commits](#run-2026-10-21-1919-17)
+  - [22:30 — Search: words match from their start only; no in-word fallback](#run-2026-10-21-1919-18)
+  - [22:30 — Push with `gh` as the credential helper per command; don't touch the git config](#run-2026-10-21-1919-19)
+  - [23:00 — #168: propose a Mac relay for Instagram traffic instead of scraping in the browser](#run-2026-10-21-1919-20)
+  - [23:30 — Release despite the `chat.spec.ts:128` and #162 flakes](#run-2026-10-21-1919-21)
+  - [23:40 — Retro: dev host gets Playwright WebKit, qrencode and ffmpeg](#run-2026-10-21-1919-22)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3294,3 +3301,99 @@ edited: 2026-10-21
 - **Why:** asking for the vault password would put every prod secret into the transcript and onto the dev host.
 - **Alternatives:** the user pastes `ANSIBLE_VAULT_PASSWORD`; copying the password into a file on karpathy-dev.
 - **Consequences:** rollback `just deploy hetzner 0.0.33`. Retro candidate: a documented way to deploy from karpathy-dev.
+
+## 22:30 — Fix all 20 review findings before releasing, one agent per feature {#run-2026-10-21-1919-16}
+
+- **Status:** open
+- **Context:** the adversarial review of `8696615..5c2187e` found 20 issues (3 high: chat queue drops a prompt on pull
+  failure; busy-path send never re-attaches; the secret scan misses binary and `-diff` content).
+- **Question:** release with the findings filed as issues, or fix first?
+- **Decision:** fix them all before the release: four agents (chat queue, secret scan + #167, search, bases + graph),
+  each test-first on its own branch, merged into `main`.
+- **Why:** the user asked for prod; shipping a scan bypass and a prompt-dropping queue isn't "done".
+- **Alternatives:** file 20 issues and release now.
+- **Consequences:** two later items still noted, not fixed: a backend restart between the scan warning and "Commit
+  anyway" costs one extra prompt; Bases speed has no automated guard.
+
+## 22:30 — Secret scan scans stored file contents, reads `.gitleaksignore` from HEAD, scans unpushed commits {#run-2026-10-21-1919-17}
+
+- **Status:** open
+- **Context:** review findings 2, 3, 4, 16, 20 on #141, plus #167.
+- **Question:** how to close the bypasses?
+- **Decision:** write each changed file's raw stored content to a temp dir and run `gitleaks dir` (no attributes, no
+  vault config); files over 50 MB become a `too-large-to-scan` finding that needs "Commit anyway"; `.gitleaksignore` is
+  read from HEAD; any gitleaks warning or error fails closed; the commit message is scanned; fingerprints are a keyed
+  hash of file, rule and secret (random key per process); unpushed commits the app didn't scan are scanned before a
+  push and, on a finding, turned back into changes; the commit-message proposal sends the diff with possible secrets
+  replaced by `[possible secret removed]` (#167).
+- **Why:** each was a reproduced bypass; failing closed matches the scan's purpose.
+- **Alternatives:** `gitleaks git --staged` with neutralised attributes; a hard 50 MB skip.
+- **Consequences:** gitleaks' default rules still skip images and don't open archives (documented). #167 was only
+  referenced by the commits; close it after review.
+
+## 22:30 — Search: words match from their start only; no in-word fallback {#run-2026-10-21-1919-18}
+
+- **Status:** open
+- **Context:** review of #138: `tuch` no longer finds "Handtuch" (ripgrep did substring matches).
+- **Question:** add a substring fallback, or document the limit?
+- **Decision:** document it in `functional.md`; queries are capped at 500 characters and 20 distinct words; typo lookup
+  also matches unstemmed words (title and body), so `renovaton` finds "Kitchen Renovation".
+- **Why:** a fallback would rarely run (typo matching usually answers first) and brings back full scans.
+- **Alternatives:** substring fallback over names and lines.
+- **Consequences:** German compound parts aren't found from the middle; revisit with a decompounder if it matters.
+  The unstemmed words cost ~+45 % build time and ~+17 % memory in a worst-case synthetic vault.
+
+## 22:30 — Push with `gh` as the credential helper per command; don't touch the git config {#run-2026-10-21-1919-19}
+
+- **Status:** open
+- **Context:** at 22:24 `~/.git-credentials` on karpathy-dev was emptied (git's `store` helper erases a credential
+  GitHub rejects, so the dev vault's GitHub token was most likely expired or revoked); `git push` and
+  `ingest-egress.test.ts` (clones `tillg/ingest_email`) failed; `gh` was still logged in.
+- **Question:** repair the host's git login or work around it?
+- **Decision:** pass `credential.helper=!gh auth git-credential` per command (and through `GIT_CONFIG_*` env vars in
+  `tmp/ghcred.env` for test runs); no change to `~/.gitconfig` or the vault.
+- **Why:** the host's credentials are Ansible-managed from the dev vault, which only the Mac can open.
+- **Alternatives:** `gh auth setup-git` (changes the global config Ansible manages).
+- **Consequences:** renew the GitHub token in the dev vault (`just secrets dev`) and run `just devhost`.
+
+## 23:00 — #168: propose a Mac relay for Instagram traffic instead of scraping in the browser {#run-2026-10-21-1919-20}
+
+- **Status:** open
+- **Context:** issue #168 (research ticket) asks how the browser could scrape Instagram, because the server's IP is
+  blocked.
+- **Question:** which approach to propose?
+- **Decision:** `specs/changes/instagram-mac-relay/`: Squid gets an ingest-only port that sends Instagram hosts through
+  a tinyproxy on the Mac (tailnet-only, CONNECT :443 to those hosts); offline Mac → the link waits; no fallback to the
+  server IP. Issue closed with the open questions.
+- **Why:** a web page can't fetch instagram.com (CORS, `connect-src 'self'`, HttpOnly session cookie); only the IP
+  matters, and the scraper can stay where it is.
+- **Alternatives:** running the scraper on the Mac; a browser extension; an iOS Shortcut; a residential proxy; the
+  official APIs (can't read others' posts).
+- **Consequences:** five open questions in the proposal and the issue; apply with `/spec:apply instagram-mac-relay`.
+
+## 23:30 — Release despite the `chat.spec.ts:128` and #162 flakes {#run-2026-10-21-1919-21}
+
+- **Status:** open
+- **Context:** final e2e on `main` 1118800: 39 passed, `@llm` chat-title test failed in the batch and passed twice alone
+  (its tests share one vault, noted by the #155 agent). The release workflow's `check` failed on `save_url saves a
+  public image` (#162, intermittent on GitHub runners); CI on the same commit had passed.
+- **Question:** stop the release, or re-run?
+- **Decision:** re-run the release's failed jobs once.
+- **Why:** both are known flakes unrelated to this run's code.
+- **Alternatives:** chase #162 first.
+- **Consequences:** #162 stays open.
+
+## 23:40 — Retro: dev host gets Playwright WebKit, qrencode and ffmpeg {#run-2026-10-21-1919-22}
+
+- **Status:** open
+- **Context:** this run's agents couldn't run the ipad/iphone (WebKit) projects or `token-scan.spec.ts` on karpathy-dev,
+  and `--last-failed` died on the missing `qrencode`.
+- **Question:** which mechanical fix?
+- **Decision:** `dev.test.sh` checks for WebKit, qrencode and ffmpeg (red first), and role `devtools` installs them
+  (commit f965ac6).
+- **Why:** a test plus the role keeps every dev host able to run the full e2e suite.
+- **Alternatives:** a CLAUDE.md note to skip WebKit on Linux.
+- **Consequences:** apply with `just devhost` from the Mac. Other retro findings: fix agents branched from
+  `origin/main` that lagged my local merges (push `main` right after every merge); the five build agents reported
+  "done" with 20 review findings left (plugin-level draft: have each agent run the adversarial review on its own
+  diff before reporting); no way to deploy from karpathy-dev (decision 15).
