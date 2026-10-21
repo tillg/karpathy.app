@@ -246,7 +246,7 @@ Each fresh server requests a new certificate; Let's Encrypt allows 5 for the sam
 ```
 deploy/
   compose.yml              the stack (one definition for dev, prodtest and every target)
-  compose.dev.yml          dev overrides (bind mounts, model relay, Vite)
+  compose.dev.yml          dev overrides (bind mounts, Vite)
   compose.prodtest.yml     prodtest overrides
   dev.sh                   behind `just dev`
   backend/ proxy/ opencode/ web/   Dockerfiles and their config (Caddyfile, opencode.json)

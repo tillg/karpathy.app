@@ -50,7 +50,7 @@ export async function describeImage(dir: string, path: string, question: string 
   if (!env.VISION_BASE_URL || !env.VISION_MODEL) throw new Error('image recognition is not configured');
   const image = await resolveImage(dir, path);
   const url = `${env.VISION_BASE_URL.replace(/\/+$/, '')}/chat/completions`;
-  // `proxy` is Bun's fetch option (opencode runs on Bun); Bun's own NO_PROXY keeps the dev model relay direct.
+  // `proxy` is Bun's fetch option (opencode runs on Bun).
   const res = await fetch(url, {
     method: 'POST',
     proxy: proxyFor(url, env),
