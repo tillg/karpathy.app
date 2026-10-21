@@ -1,7 +1,7 @@
 ---
 feature: ai-chat-titles
 title: "Proposal: AI-generated chat titles"
-status: applying
+status: applied
 order: 1
 created: 2026-10-21
 edited: 2026-10-21

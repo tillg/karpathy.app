@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-16
+edited: 2026-10-21
 ---
 
 # Architecture: karpathy.app
@@ -235,13 +235,15 @@ flowchart TB
 | `harness/local-time.ts` | Pure (#151): `localTimeLine(now, timeZone?, locale?)`, the hidden line with the user's local time that `promptParts` adds to every prompt. |
 | `harness/command.ts` | Pure: `parseCommand`, `expandCommand`, `withoutBaseDir`, `commandInstructions`. |
 | `commit-message.ts` | Proposes commit messages with a throwaway, tool-less session; marked as a running proposal so a skill refresh doesn't cut it off. |
-| `config-store.ts` | Atomic, serialized writes to `/config/config.json`; also holds the GitHub token set in the app. Knows the deployment's default model (`defaultModel`) and stores the model only as `modelOverride` while it differs from it ([Settings](#settings)). |
+| `chat-title.ts` | `ChatTitles` (#148): the title after turn 2 and the drift check every 10 turns, through a throwaway, tool-less session of the `chat-title` agent; keeps and answers the title suggestions ([Chat titles](#chat-titles)). |
+| `vision-model.ts` | `syncVisionModel(vaultsDir, settings)`: writes or removes `<vaults>/.vision.json`, the admin's vision model for the `look_at_image` tool ([Chat titles](#chat-titles)). |
+| `config-store.ts` | Atomic, serialized writes to `/config/config.json`; also holds the GitHub token set in the app. Knows the deployment's defaults (`defaults`: model, title model, vision model, web access, threshold) and stores the three models only as `modelOverride`, `titleModelOverride` and `visionModelOverride` while they differ from them ([Settings](#settings)); holds the per-chat `titleSuggestions`. |
 
 ### opencode (`deploy/opencode`)
 
 The pinned stock image (`deploy/opencode/Dockerfile`) plus a **managed config** at `/etc/opencode/opencode.json` (merged last, so a vault can't override it; it holds policy only, no provider):
 agents `vault` (edits allowed except `.git` and harness config), `vault-readonly` (default; used during conflicts) and
-`commit-message` (no tools); `bash`, `webfetch`, `websearch`, `save_url`, `move_to_sources`, `task`, `question` and `external_directory` denied
+`commit-message` and `chat-title` (#148; no tools: `"*": "deny"`, prompt "You name chats. …": only the title, at most 8 words, in the conversation's language, no quotes, no trailing period); `bash`, `webfetch`, `websearch`, `save_url`, `move_to_sources`, `task`, `question` and `external_directory` denied
 (`save_url` and `move_to_sources` are allowed for `vault` only; `websearch`, `webfetch` and `save_url` are switched on per turn by the backend, see [Web access](#web-access); `move_to_sources` is not in that map, the agent alone decides);
 reading `*.env` denied; snapshots, sharing and auto-update off. The image sets `OPENCODE_ENABLE_EXA=true` and
 `OPENCODE_WEBSEARCH_PROVIDER=exa`; its entrypoint exports the `opencode_password` secret as
@@ -311,7 +313,7 @@ nothing and needs no Web access (the server makes no request). Baked like `open_
 `vault-readonly` (`commit-message` keeps `"*": "deny"`). The web app turns the completed call into an Open chip ([Link
 offers](#link-offers)).
 
-**Custom tool `look_at_image`** (`deploy/opencode/tools/look_at_image.ts`, logic in `deploy/opencode/lib/look-at-image.ts`, #146): `{ path, question? }`. `resolveImage` reuses `resolveNote` (inside the vault, no dot segments), allows png, jpg, jpeg, gif, webp up to 10 MB; `buildRequest` makes an OpenAI chat request (question plus the image as data URL, `stream: false`, `VISION_REQUEST_OPTIONS` merged in); `describeImage` POSTs it to `VISION_BASE_URL/chat/completions` through the egress proxy (Bun's `fetch` `proxy`; the dev Ollama relay is `NO_PROXY`), 120 s timeout, `Bearer VISION_API_KEY` when set, and returns the first choice's text cut at 8000 characters. Errors (`image recognition is not configured`, HTTP status with a short body, never the key) reach the model as tool errors. Allowed for `vault` and `vault-readonly`, not in `WRITE_TOOLS`; an attached file reaches a text-only model as a file part named by its vault path, which the tool description points at.
+**Custom tool `look_at_image`** (`deploy/opencode/tools/look_at_image.ts`, logic in `deploy/opencode/lib/look-at-image.ts`, #146): `{ path, question? }`. `resolveImage` reuses `resolveNote` (inside the vault, no dot segments), allows png, jpg, jpeg, gif, webp up to 10 MB; `buildRequest` makes an OpenAI chat request (question plus the image as data URL, `stream: false`, the model's request options merged in); `visionConfig(env, file)` picks the model and options per call (#148): the `model` of `/vaults/.vision.json` (written by the backend for an admin override, [Chat titles](#chat-titles)) when the file exists and parses, else `VISION_MODEL`; options = `VISION_MODEL_OPTIONS[model]` when the map has it, else `VISION_REQUEST_OPTIONS` (the default model's) when the model is `VISION_MODEL`, else none; `describeImage` POSTs it to `VISION_BASE_URL/chat/completions` through the egress proxy (Bun's `fetch` `proxy`; the dev Ollama relay is `NO_PROXY`), 120 s timeout, `Bearer VISION_API_KEY` when set, and returns the first choice's text cut at 8000 characters. Errors (`image recognition is not configured`, HTTP status with a short body, never the key) reach the model as tool errors. Allowed for `vault` and `vault-readonly`, not in `WRITE_TOOLS`; an attached file reaches a text-only model as a file part named by its vault path, which the tool description points at.
 
 **Custom tool `suggest_next`** (`deploy/opencode/tools/suggest_next.ts`, check in `deploy/opencode/lib/suggestion.ts`, import-free):
 args `{ prompt }`; collapses whitespace, refuses an empty prompt and one over 160 characters (an error the model can
@@ -493,7 +495,7 @@ sequenceDiagram
 ```
 
 - **Request/response** JSON over `fetch`; **streams** as NDJSON over `fetch` (no WebSockets, no SSE to the browser):
-  the vault event stream (`status`, `files-changed`, the agents move, `browser-call` / `browser-call-done`; never ends)
+  the vault event stream (`status`, `files-changed`, the agents move, `browser-call` / `browser-call-done`, `chat-title`; never ends)
   and the chat stream (ends when the turn is idle).
 - **Browser calls** (#151): the backend asks the browser, the browser answers by `POST
   /api/vaults/:id/chats/:chatId/browser-calls/:callId` (bearer-guarded; `404` unknown or expired, `409` already
@@ -1228,6 +1230,67 @@ sequenceDiagram
 - **Cache:** `lastEntries` keeps one entry per session in memory (dies with the process); a cold start loads each
   chat once, afterwards normally only the chat that changed.
 
+## Chat titles {#chat-titles}
+
+#148. Rules and terms: [domain.md](domain.md#chat-title). The backend runs a title job when a turn ends; the model
+behind it (title model) and the vision model are set like the chat model ([Settings](#settings)).
+
+```mermaid
+sequenceDiagram
+  participant W as Web (ChatPane)
+  participant B as Backend (ChatService → ChatTitles)
+  participant O as opencode (agent chat-title)
+  W->>B: POST /prompt (turn n)
+  B-->>W: stream … turn idle (stream ends)
+  B->>B: endTurn → afterTurn(vault, chat, endedAt)
+  B->>O: messages(chat) up to endedAt → n user messages
+  alt n == 2 or n % 10 == 0
+    B->>O: createSession('/vaults') + promptSync(agent chat-title, model = title model)
+    O-->>B: title
+    B->>O: abort + deleteSession
+    B->>O: setTitle (n == 2) | store suggestion (n % 10 == 0, drifted)
+    B-->>W: vault event {type: chat-title, chatId, title, titleSuggestion?}
+  end
+  W->>B: PATCH /chats/:chatId {title} (Rename) | DELETE /chats/:chatId/title-suggestion (Keep)
+```
+
+- **Job** (`chat-title.ts`, `ChatTitles`, shaped like `commit-message.ts`): `afterTurn(vaultId, chatId, endedAt)` is
+  called, not awaited, from `ChatService.endTurn` after the turn finished. It reads the chat's messages created up to
+  `endedAt` (a queued prompt already sent doesn't count); `n` = user messages. `n === 2` → generate; `n >= 10 && n % 10
+  === 0` → drift check; else nothing. Never throws: a failure is logged once with `console.warn`.
+- **Prompt:** the conversation as `User:` / `AI:` blocks of text parts (each cut at 1 500 characters, the whole at
+  12 000, oldest blocks dropped first) and "Write the title of this conversation." A drift check sends only the
+  messages from the tenth-last user message on.
+- **Drift rule in code:** `sameTopic(fresh, current)`: significant words are 4+ letters, compared by their first four
+  letters ("tomato" ~ "tomatoes", "trip" ~ "trips"); the same topic needs at least half of the fresh title's significant
+  words in the current one (one generic word such as "tips" isn't enough); a fresh title without any counts as the same. Asking the model
+  "does the title still fit? KEEP or a new title" got `KEEP` from the dev model 3 of 3 times after a complete change of topic.
+- **Throwaway session in `/vaults`:** `createSession('/vaults', 'chat title')`, `promptSync(…, { agent: 'chat-title',
+  model: settings.titleModel || settings.model })`, 30 s timeout, abort and delete afterwards (also when the timeout hit
+  while the session was still being created). `/vaults` is the vaults dir itself, which no vault's chat list includes
+  (a list shows the sessions of its own directory), so the job never shows there; it is also not in a vault, so a skill
+  refresh can't cut it off. Cost: its tokens don't show in Usage (sums the vault dirs). The session's cwd is every
+  vault, so its isolation rests on the agent's `"*": "deny"` (tested): injected text in a chat can at most shape a title.
+- **Clean and write:** `cleanTitle` takes the first non-empty line, strips Markdown, quotes, a `Title:` prefix and a
+  trailing period, caps 120 characters; empty or `KEEP` → nothing. Before writing, the chat's title is read again: if it
+  changed (a rename) or the chat is gone, nothing is written. Turn 2: `harness.setTitle` (not if the title is equal).
+  Drift: store the suggestion in `config.json` `titleSuggestions[vault][chat]`. Then `emit(vaultId, { type:
+  'chat-title', chatId, title, titleSuggestion? })` on the vault event stream, after the throwaway session is gone.
+- **Routes** (`app.ts`): `ChatSummary.titleSuggestion?` and `ChatDetail.titleSuggestion?` come from the store.
+  `PATCH /vaults/:id/chats/:chatId { title }` (trimmed, 1–500 characters) → `ChatTitles.rename`: `setTitle`, clears the
+  suggestion, emits `chat-title`. `DELETE /vaults/:id/chats/:chatId/title-suggestion` → `dismiss`: clears it, emits
+  `chat-title` with the current title. Deleting a chat or a vault drops its suggestions (`forget`).
+- **Event:** `VaultEvent` gains `{ type: 'chat-title'; chatId; title; titleSuggestion? }`. Web: `store.tsx` `onEvent`
+  keeps it as `chatTitle` (`{ chatId, titleSuggestion?, nonce }`); the chat list reloads on every change, and the open
+  `ChatPane` sets or clears its suggestion from it.
+- **Web:** `ChatPane` shows the **title suggestion bar** above the composer while the open chat has a suggestion:
+  "Rename this chat to “…”?" with **Rename** and **Keep** (`api.renameChat` and `api.keepChatTitle`, the two routes above).
+- **Vision model file:** `vision-model.ts` `syncVisionModel` writes `<vaults>/.vision.json` `{ "model": "<id without
+  the gateway prefix>" }` atomically (temp file + rename), or removes it while the default applies. Called at backend
+  start and after every `PATCH /settings` that touches `visionModel` (a failing write is logged and doesn't fail the
+  save). The file sits on the vaults volume outside every clone; opencode's `look_at_image` reads it per call
+  ([opencode](#opencode-deployopencode)), so a change applies without a restart.
+
 ## Uploads
 
 ```mermaid
@@ -1503,7 +1566,7 @@ the section's):
 | General | `GeneralSection`: `CommitReminderForm`, `Versions` | `GET/PATCH /settings`, `/health` |
 | Vaults | `VaultsSection`: list, details, add, help (the former dialog's body, no `Modal`) | `/vaults` |
 | Secrets & keys | `SecretsSection`: `GitHubTokenForm`, `InstagramSettings`, `SecretTable` | `/settings/github-token`, `/ingest/instagram`, `GET /settings/secrets` |
-| AI | `AiSection` → `AiForm`: model (free text), "Default: …" + **Use default**, Web access switch | `GET/PATCH /settings` |
+| AI | `AiSection` → `AiForm`: model (free text), "Default: …" + **Use default**, **Title model** and **Vision model** the same way (`modelField`; the default is "the chat model" when `ai.title_model` is unset; the vision field only when `visionGateway` is set; a value equal to the default, or blank, is sent as `null` = default), Web access switch | `GET/PATCH /settings` |
 | Usage | `UsageSection`: range 7 / 30 days, tiles, `StackedBars`, tables by model and vault | `GET /usage?days=` |
 | Server | `ServerSection`: range 1 h / 24 h / 7 d, five `Sparkline` cards, status rows. Fetches at the report's `intervalS` (30 s until the first answer) while `document.hidden` is false and again on `visibilitychange`; a switch of range drops answers still in flight; an "updated N s ago" tick re-renders only its own span | `GET /metrics?range=` |
 
@@ -1625,7 +1688,7 @@ for the `secrets` key (every deployment renders anyway; the backend tolerates it
 | Volume `ingest-state` → `/state` | gog's encrypted file keyring (Gmail OAuth client and refresh token), instascraper's session and activity ledger (`home/.config/instascraper/`), login staging dirs, ingest-email's rendered config and locks, the last-run file. Backed up with the server, not in git. | ingest service |
 | `deploy/settings/*.yaml` (git) | The settings of every environment: central file, environment files; gitignored local overlays for dev and prodtest. Secret references only. | operator / developer |
 | `tmp/settings/<env>/` (dev, prodtest), `/opt/karpathy.app/shared/` (target) | Rendered files: `.env` (compose), `opencode.env` (0600), `settings.json` (backend, mounted read-only at `/etc/karpathy/settings.json`), `ingest.json` (0600, the ingest service's profiles, mounted read-only at `/etc/ingest/config.json`). | renderer; Ansible on a target |
-| Volume `config` → `/config/config.json` | `vaults` (config + `cloned` / `cloneError` / `pendingFolders`), `settings` (threshold, web access, `modelOverride` only while ≠ the default model), `githubToken` (plaintext, if set in the app), `aiTouched`, `editStamps` (per vault and path: last AI / human write, epoch ms), `conflicts`, `queued` turns. | backend only |
+| Volume `config` → `/config/config.json` | `vaults` (config + `cloned` / `cloneError` / `pendingFolders`), `settings` (threshold, web access, `modelOverride`, `titleModelOverride` and `visionModelOverride` only while ≠ their defaults), `titleSuggestions` (per vault and chat, #148), `githubToken` (plaintext, if set in the app), `aiTouched`, `editStamps` (per vault and path: last AI / human write, epoch ms), `conflicts`, `queued` turns. | backend only |
 | Volume `config` → `/config/metrics.jsonl` (0600) | The metrics history (#150): one JSON `MetricsSample` per line, every 30 s, 7 days (~3 MB); appended per sample, rewritten atomically once an hour and at start without old or torn lines. Not part of `config.json`. | backend only (opencode can't see the volume) |
 | `/vaults/.preflight/` | Short-lived blobless clones of the attach preflight; emptied at startup. | backend |
 | Volume `opencode-data` | opencode sessions = chat history, including attached files (base64, after opencode's resize), until the chat is deleted. | opencode |
@@ -1823,7 +1886,8 @@ flowchart TB
 | Key | Holds | Overridden by |
 |---|---|---|
 | `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | `dev`, `prodtest`: `omlx`, `omlx/Qwen3-Coder-30B-A3B-Instruct-4bit`; `test`: `ollama`, `ollama/qwen2.5:3b` |
-| `ai.vision_model` | The vision model of `look_at_image` (required; `<gateway>/<model>` on any configured gateway, named by its own prefix — so switching only `ai.gateway` in an overlay keeps it valid; the gateway's kind must speak the OpenAI chat API, and the dev relay's `OLLAMA_UPSTREAM` falls back to the vision gateway's): `openrouter/mistralai/mistral-medium-3-5` (Mistral Small 2603 was rate-limited upstream for the shared OpenRouter key, HTTP 429), with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY` and `VISION_REQUEST_OPTIONS` (the model's `options`, merged into the request) into `opencode.env`. | `dev`, `prodtest`: `omlx/Qwen3-VL-4B-Instruct-4bit`; `test`: `ollama/qwen3-vl:2b` |
+| `ai.title_model` | The model that writes chat titles (#148; optional, `<ai.gateway>/<model>`, listed under that gateway's `models` unless its kind is built in, like `ai.model`: opencode only has `ai.gateway`'s provider). Unset = the chat model in effect, an admin override of it included; the backend's `settings.json` then carries no `title_model`. `settings.yaml` has it as a commented line. | — |
+| `ai.vision_model` | The vision model of `look_at_image` (required; `<gateway>/<model>` on any configured gateway, named by its own prefix — so switching only `ai.gateway` in an overlay keeps it valid; the gateway's kind must speak the OpenAI chat API, and the dev relay's `OLLAMA_UPSTREAM` falls back to the vision gateway's): `openrouter/mistralai/mistral-medium-3-5` (Mistral Small 2603 was rate-limited upstream for the shared OpenRouter key, HTTP 429), with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY`, `VISION_REQUEST_OPTIONS` (the default model's `options`, merged into the request; kept for older images) and `VISION_MODEL_OPTIONS` (#148: JSON `{ "<model id>": options }` of every model of the vision gateway that has `options`, absent when none) into `opencode.env`. An admin can override it in admin mode › AI with another model of the same gateway (same base URL and key): the backend hands the model id to the tool as `/vaults/.vision.json`, and a model without an entry in `VISION_MODEL_OPTIONS` gets no request options. | `dev`, `prodtest`: `omlx/Qwen3-VL-4B-Instruct-4bit`; `test`: `ollama/qwen3-vl:2b` |
 | `ai.web` | `access` (default of the Web access switch), `fetch_cap`, `search_cap` (20 each), `exa_api_key` (optional secret) | — |
 | `auth` | `bearer_token`, `opencode_password` (secret references) | — |
 | `git` | `remote_base` (`https://github.com/`), `author` (`name`, `email`), `github_token` (optional secret) | `dev`, `prodtest`: `file:///remotes/`; author per environment; `hetzner`: author as secrets `git_author_name` / `git_author_email` |
@@ -1838,7 +1902,7 @@ flowchart TB
 
 | Module | Does |
 |---|---|
-| `schema.ts` | Strict zod schema (`settingsSchema`, unknown keys fail), `partialSettingsSchema` for environment files (every key optional at any depth, secret references whole), `crossFieldErrors`: `ai.gateway` names a gateway; `ai.model` / `ai.vision_model` are `<gateway>/<model>` and, unless the kind is built in (`openrouter`, `anthropic`, `openai`), listed under the gateway's `models`; `proxy.tls: dns` needs `proxy.dns.api_token`. |
+| `schema.ts` | Strict zod schema (`settingsSchema`, unknown keys fail), `partialSettingsSchema` for environment files (every key optional at any depth, secret references whole), `crossFieldErrors`: `ai.gateway` names a gateway; `ai.model` / `ai.title_model` (on `ai.gateway`) / `ai.vision_model` are `<gateway>/<model>` and, unless the kind is built in (`openrouter`, `anthropic`, `openai`), listed under the gateway's `models`; `proxy.tls: dns` needs `proxy.dns.api_token`. |
 | `load.ts` | `environments(dir)`, `loadSettings(env, { dir, overlay })`: central file (complete) ← environment file (partial) ← local overlay (dev, prodtest; skipped with `overlay: false`; for other environments an error), merged map by map, validated complete again. Every error names the file (or `<env> (merged)`) and the YAML path. |
 | `secrets.ts` | `secretRefs(settings)`: every reference with its path, from all settings except gateways other than the chosen one. `resolveSecrets(settings, store)`: reads `<store>/<name>`, trims one trailing newline, fails listing every missing non-optional secret. |
 | `render.ts` | Pure functions, settings + resolved secrets in, file text out: `renderComposeEnv`, `renderOpencodeEnv`, `renderOpencodeProviders`, `renderBackendSettings`, `renderIngestConfig`. |
@@ -1850,7 +1914,7 @@ flowchart TB
 |---|---|---|
 | `.env` (0600) | compose interpolation | `DOMAIN`, `TLS_MODE`, `DNS_PROVIDER`, `TZ`, `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (resolved), `GIT_REMOTE_BASE`, `DEFAULT_MODEL` (= `ai.model`), `OLLAMA_UPSTREAM` (only for a gateway with `relay_upstream`), `SETTINGS_DIR` (dev, prodtest: the rendered dir relative to `deploy/`). A superset of the old Ansible `env.j2`, so an older release's `compose.yml` still finds every name (rollback); a target appends its host facts. |
 | `opencode.env` (0600) | opencode (`env_file`) | The gateway's key under its provider's variable (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`; none for `openai-compatible`), `EXA_API_KEY` if set, `WEB_FETCH_CAP`, `WEB_SEARCH_CAP`, `OPENCODE_MODEL`, `OPENCODE_CONFIG_CONTENT` (`{ provider: { <gateway>: … } }`, merged after a vault's own config, see [opencode](#opencode-deployopencode)). Values compose's env-file parser reads back verbatim (`$` escaped). |
-| `settings.json` | backend (`SETTINGS_FILE`) | Only what the backend needs: `auth`, `git` (remote base, resolved author, token), `ai.model`, `ai.web_access`, `commit_reminder_threshold`, `files`, and `secrets` (#150: the secret manifest, names, purpose, optional and set as of the render, never a value; see [Admin mode](#admin-mode)). The compose secrets (`bearer_token`, `opencode_password`, `github_token`, `dns_api_token`) become `{ file: "/run/secrets/<name>" }`; any other reference is resolved inline. |
+| `settings.json` | backend (`SETTINGS_FILE`) | Only what the backend needs: `auth`, `git` (remote base, resolved author, token), `ai` (`model`, `title_model` only when set, `vision_model` without its gateway prefix, `vision_gateway` = the vision model's gateway id, `web_access`; the last three optional in the backend's schema, so an older `settings.json` still loads: title falls back to the chat model, vision to none), `commit_reminder_threshold`, `files`, and `secrets` (#150: the secret manifest, names, purpose, optional and set as of the render, never a value; see [Admin mode](#admin-mode)). The compose secrets (`bearer_token`, `opencode_password`, `github_token`, `dns_api_token`) become `{ file: "/run/secrets/<name>" }`; any other reference is resolved inline. |
 | `ingest.json` (0600) | ingest service (`/etc/ingest/config.json`) | `{ defaults, profiles }`; per profile `vault`, `root`, `label`, `account` and `allowed_senders` with their secrets resolved, and the profile's `settings` merged in. `run.sh` turns it into ingest-email's own config ([Ingest service](#ingest-service-deployingest)). |
 
 **Compose.** `compose.yml` mounts `${SETTINGS_DIR:-.}/settings.json` read-only at `/etc/karpathy/settings.json`
@@ -1880,7 +1944,17 @@ settings' values as defaults; there is no model literal in the code (`DEFAULT_SE
 | Old `config.json` with `settings.model` (before the settings) | on the next save: `modelOverride` only if ≠ the default | the stored model (an older Admin choice that differs from the new default stays in effect) |
 
 `GET /api/settings` returns the effective `model`, `defaultModel` and `modelOverridden`; `PATCH` still checks a new
-model against opencode's model list. The threshold and Web access keep "stored wins": the settings give their value
+model against opencode's model list.
+
+The title and vision model (#148) work the same way: `ConfigStore.open` also takes `titleModel` and `visionModel`
+defaults (from `settings.json`; `''` when absent), and `config.json` holds `titleModelOverride` and
+`visionModelOverride` only while they differ. `GET /api/settings` adds `titleModel`, `defaultTitleModel`,
+`titleModelOverridden`, `visionModel`, `defaultVisionModel`, `visionModelOverridden` and `visionGateway`. `PATCH
+/settings` takes `titleModel` (a string or `null`/blank = default) and checks it against opencode's model list like
+`model` (`400 unknown-model`), and `visionModel` (string or `null`/blank = default), which must start with
+`<visionGateway>/` and have a model part (`400 bad-vision-model`; it is not checked against the gateway). A `PATCH` that
+touches `visionModel` rewrites `/vaults/.vision.json` ([Chat titles](#chat-titles)). The effective title model is
+`titleModel || model`: unset follows the chat model, whatever is in effect. The threshold and Web access keep "stored wins": the settings give their value
 until one is saved in the app.
 
 **Test environment.** `deploy/settings/test.yaml` names the integration tests' models: `apps/backend/test/opencode-container.ts`
@@ -1940,6 +2014,11 @@ The ones that shape the whole system:
   check must be re-run. Backend and opencode run as the same uid so files the AI writes stay committable.
 - **Commit message proposals go through opencode** (agent `commit-message`, a throwaway session that is deleted
   afterwards), not a second LLM client, because only opencode holds provider keys.
+- **Chat titles go through opencode too** (agent `chat-title`, #148), in a throwaway session of the vaults dir itself
+  instead of a vault's dir: in a vault it showed as a "chat title" row in the chat list (sorted first) and a skill
+  refresh could cut it off. The drift check is decided in code (`sameTopic`, word overlap), not by asking the model.
+  The Admin's vision model reaches the tool as a file on the vaults volume, not as a restart of opencode (slow, cuts
+  running turns) or a backend endpoint the tool calls (a new auth path).
 - **Runtime = docker compose in dev and prod**, nothing native in dev except the dev model server (omlx). Rancher Desktop bind
   mounts deliver no inotify events, so the dev `web` and `backend` containers poll for source changes.
 - **Numbered dev stacks, one scheme** (80N0, no stack 0 on 8443): two port schemes is what the hand-written
@@ -2118,6 +2197,14 @@ The ones that shape the whole system:
   models are the files in omlx's `~/.omlx/models`; a missing model fails the test
   fast as *inconclusive: no tool call*. The test container declares image input on the not-pulled `DEAD_MODEL_2`, so `modelInput` is tested without
   a model run.
+- **Chat title tests** (#148): default tier: settings schema and render (`title_model`, `VISION_MODEL_OPTIONS`),
+  `config-store.test.ts` (overrides, suggestions), `chat-title.test.ts` (fake harness: turn 2, drift with and without a
+  shared word, other turns nothing, failure and timeout keep the title, cleaning, rename during the job, session deleted
+  before the event, the `chat-title` agent denies every tool), `vision-model.test.ts`, `look-at-image-tool.test.ts` (override
+  file, options map), `api.test.ts` / `chat.test.ts` (settings validation, routes, event), `Admin` and `ChatPane`
+  component tests; `@llm` (`chat-title.llm.test.ts`): after two turns a short title that isn't the first prompt, after
+  ten turns that left the topic a suggestion; e2e: Admin AI fields save and reset, `@llm` generated title (list has one
+  row before and after).
 - **Command and move tests:** default tier: `command.test.ts` (parse, expand; a `` !`id -u` `` stays literal),
   `agents-standard.test.ts` (scan, move, convert, clashes, inlined imports, the staged link), `api.test.ts` (the move on open and pull, the commit carrying a real symlink, the
   `agents-move` event), `harness-map.test.ts`, `chat.test.ts` (command turns, skill refresh), `known-url.test.ts` (`guardWebCall`),

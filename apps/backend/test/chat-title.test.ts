@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage, VaultEvent } from '@karpathy/shared';
-import { ChatTitles, cleanTitle, sharesWord, transcript } from '../src/chat-title.js';
+import { ChatTitles, cleanTitle, sameTopic, transcript } from '../src/chat-title.js';
 import { ConfigStore } from '../src/config-store.js';
 import type { Harness, PromptInput } from '../src/harness/opencode.js';
 
@@ -94,7 +94,7 @@ describe('ChatTitles.afterTurn', () => {
     expect(t.prompts[0]!.text).not.toMatch(/User: question 10\b/);
   });
 
-  it('a fresh title sharing a significant word with the current one (or KEEP) stores no suggestion', async () => {
+  it('a fresh title on the same topic as the current one (or KEEP) stores no suggestion', async () => {
     for (const answer of ['KEEP', '"Weekend trip planning"', 'Planning the weekend', 'Weekend trips in the Alps', 'Trip ideas']) {
       const t = await setup(20, () => answer, { title: 'Weekend trip planning' });
       await t.titles.afterTurn('v', 'chat');
@@ -188,12 +188,16 @@ describe('cleanTitle', () => {
   });
 });
 
-describe('sharesWord', () => {
-  it('matches a significant word (4+ letters, by its first five) in any case, never short words', () => {
-    expect(sharesWord('Growing tomatoes on balcony', 'Balcony tomato tips')).toBe(true);
-    expect(sharesWord('Sourdough baking basics', 'Growing tomatoes on balcony')).toBe(false);
-    expect(sharesWord('Tipps für den Garten', 'Gartenplanung im Herbst')).toBe(true);
-    expect(sharesWord('How to do it', 'How to go')).toBe(false);
+describe('sameTopic', () => {
+  it('needs at least half of the fresh title\'s significant words (4+ letters, first four compared) in the current one', () => {
+    expect(sameTopic('Balcony tomato tips', 'Growing tomatoes on balcony')).toBe(true);
+    expect(sameTopic('Planning the weekend', 'Weekend trip planning')).toBe(true);
+    expect(sameTopic('Trip ideas', 'Weekend trip planning')).toBe(true);
+    expect(sameTopic('Tipps für den Garten', 'Gartenplanung im Herbst')).toBe(true);
+    // A generic word alone ("tips") doesn't make it the same topic.
+    expect(sameTopic('Sourdough Bread Tips', 'Tomato Growing Tips')).toBe(false);
+    expect(sameTopic('Sourdough baking basics', 'Growing tomatoes on balcony')).toBe(false);
+    expect(sameTopic('How to do it', 'How to go')).toBe(true);
   });
 });
 

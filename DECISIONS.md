@@ -2819,6 +2819,9 @@ edited: 2026-10-21
   last ten turns afresh and decides in code: no significant word (4+ letters, first five compared) in common with the
   current title = drifted. Verified live: "Growing tomatoes on balcony" → suggestion "Sourdough Bread Tips". Crude for
   synonyms ("car" vs "vehicle" would count as drift: one extra suggestion, which Keep dismisses).
+  Changed at 12:50: the new drift LLM test (decision 10) failed — "Sourdough Bread Tips" shared the generic "tips" with
+  the turn-2 title "Tomato Growing Tips". Now the same topic needs at least half of the fresh title's significant words
+  (first four letters compared) in the current title (`sameTopic`).
 
 ## 11:10 — The vision override reaches the tool as a file on the vaults volume, model id only, on the deployed vision gateway {#run-2026-10-21-1056-6}
 

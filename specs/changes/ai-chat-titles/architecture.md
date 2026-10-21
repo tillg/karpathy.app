@@ -1,7 +1,7 @@
 ---
 feature: ai-chat-titles
 title: "Architecture: AI-generated chat titles"
-status: applying
+status: applied
 order: 3
 created: 2026-10-21
 edited: 2026-10-21
@@ -62,8 +62,8 @@ sequenceDiagram
     generate; `n >= 10 && n % 10 === 0` → drift check; else nothing.
   - Prompt text: the conversation as `User:` / `AI:` blocks of text parts (each cut at 1 500 chars, total at
     12 000, oldest dropped first) and "Write the title of this conversation." A drift check sends only the last ten
-    turns and compares the fresh title with the current one in code: no shared significant word (4+ letters, first
-    five compared) = drifted. (Asking the model "does the title still fit?" got `KEEP` from the dev model even after a
+    turns and compares the fresh title with the current one in code (`sameTopic`): drifted unless at least half of
+    the fresh title's significant words (4+ letters, first four compared) are in the current one. (Asking the model "does the title still fit?" got `KEEP` from the dev model even after a
     complete change of topic.)
   - Before writing, the title is read again: renamed or deleted meanwhile → nothing.
   - Runs in a throwaway session of the vaults dir itself (`/vaults`; a vault's chat list shows only sessions of its
@@ -71,7 +71,7 @@ sequenceDiagram
     `promptSync(…, { agent: 'chat-title', model: settings.titleModel || settings.model })`, 30 s timeout, abort +
     delete after. Its tokens don't show in Admin › Usage (which sums the vault dirs).
   - `clean`: first non-empty line, strip quotes/`Title:`/trailing period, cap 120 chars; empty → nothing.
-    Drift: a fresh title sharing a significant word with the current one → nothing.
+    Drift: a fresh title on the current one's topic (`sameTopic`) → nothing.
   - Result: `n === 2` → `harness.setTitle`; drift → store suggestion. Then `emit(vaultId, { type: 'chat-title',
     chatId, title, titleSuggestion? })` through the vault event emitter (after the throwaway session is gone).
   - Never throws; a failure is logged once with `console.warn`.

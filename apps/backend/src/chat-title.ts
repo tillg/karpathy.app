@@ -43,13 +43,17 @@ export function cleanTitle(answer: string): string {
   return t.length > MAX_TITLE ? t.slice(0, MAX_TITLE).trim() : t;
 }
 
-/** Significant words (4+ letters) by their first 5 letters, so "tomato" and "tomatoes" match. */
-const stems = (t: string) => new Set(t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4).map((w) => w.slice(0, 5)));
+/** Significant words (4+ letters) by their first four, so "tomato" and "tomatoes", "trip" and "trips" match. */
+const stems = (t: string) => new Set(t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4).map((w) => w.slice(0, 4)));
 
-/** The two titles name the same thing: they share a significant word. */
-export function sharesWord(a: string, b: string): boolean {
-  const sb = stems(b);
-  return [...stems(a)].some((w) => sb.has(w));
+/**
+ * The fresh title names the current one's topic: at least half of its significant words are in it. One shared generic
+ * word ("tips") isn't enough; a title without significant words can't tell, so it counts as the same.
+ */
+export function sameTopic(fresh: string, current: string): boolean {
+  const words = [...stems(fresh)];
+  const have = stems(current);
+  return words.filter((w) => have.has(w)).length * 2 >= words.length;
 }
 
 /**
@@ -95,7 +99,7 @@ export class ChatTitles {
       // Renamed or deleted meanwhile: the user's choice wins.
       if ((await titleOf()) !== current || !(await this.harness.sessionExists(dir, chatId))) return;
       if (drift) {
-        if (sharesWord(title, current)) return;
+        if (sameTopic(title, current)) return;
         await this.setSuggestion(vaultId, chatId, title);
         this.emit(vaultId, { type: 'chat-title', chatId, title: current, titleSuggestion: title });
       } else {

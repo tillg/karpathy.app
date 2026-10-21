@@ -1,7 +1,7 @@
 ---
 feature: ai-chat-titles
 title: "Domain: AI-generated chat titles"
-status: applying
+status: applied
 order: 2
 created: 2026-10-21
 edited: 2026-10-21
@@ -17,7 +17,7 @@ edited: 2026-10-21
 | **Preliminary title** | The chat's first title: its first prompt (or the first attachment's name), set when the prompt is sent. Unchanged. | `titleFromFirstPrompt` |
 | **Title model** | The model that writes chat titles. Deployment default `ai.title_model` (absent = `ai.model`), Admin may override it. Must be a model of `ai.gateway`. | `ai.title_model`, `Settings.titleModel` |
 | **Generated title** | The title the title model writes after turn 2; replaces the preliminary title. | `ChatTitles.afterTurn` |
-| **Drift check** | After turn 10, 20, 30, …: the title model titles the last ten turns afresh; a title with no significant word in common with the current one has drifted. | `ChatTitles.afterTurn` |
+| **Drift check** | After turn 10, 20, 30, …: the title model titles the last ten turns afresh; a title of which less than half the significant words are in the current one has drifted. | `ChatTitles.afterTurn` |
 | **Title suggestion** | A drift check's new title, kept per chat until the user answers: **Rename** (it becomes the title) or **Keep** (it is dropped). | `ChatSummary.titleSuggestion`, `ConfigData.titleSuggestions` |
 | **Vision model** *(changed)* | Now also selectable in Admin mode › AI: an override on the deployment's vision gateway. | `Settings.visionModel`, `/vaults/.vision.json` |
 

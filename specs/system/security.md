@@ -1,7 +1,7 @@
 ---
 title: "Security: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-15
+edited: 2026-10-21
 ---
 
 # Security: karpathy.app
@@ -91,6 +91,23 @@ User / Admin role line, not an access boundary: the one token is both, so whoeve
   and rewritten through a temp file with the same mode; an unreadable or torn history doesn't stop the backend.
 - No new secret leaves the server and no new component gets one: the sampler reads `/proc`, the disk usage of two
   volumes and opencode's health check.
+
+## Chat titles and the vision model file
+
+AI-written chat titles and the admin's vision model (#148) add two things next to opencode; neither adds a secret or a
+route that reaches a new component.
+
+- **The title session runs in `/vaults`**, the directory of all vault clones, not in one vault (so no vault's chat list
+  shows it). Its isolation rests on the `chat-title` agent's `permission { "*": "deny" }`: no tool at all, so it can't
+  read or write any vault; a test asserts it. What it sees is the text the backend puts in the prompt (the chat's
+  messages, cut at 12 000 characters); text injected into a chat (a page the AI fetched) can at most shape a title or a
+  suggestion, which the user answers with Rename or Keep. The model is `ai.gateway`'s, so no new provider key or egress.
+- **`/vaults/.vision.json`** (`{ "model": "<id>" }`, written atomically by the backend) lies on the vaults volume
+  outside every clone, so it is neither committed nor shown in a file tree. opencode reads it per `look_at_image` call;
+  it holds no secret, only a model id. An admin override must be `<vision gateway>/<model>`: the tool still calls the
+  deployed vision gateway with its own base URL and key, so the file can't redirect a request or send the key
+  elsewhere; a wrong id only fails the call. An agent with write access to `/vaults` itself could change the file, but
+  the vault agents are confined to their own vault.
 
 ## GitHub token
 

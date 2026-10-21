@@ -1,7 +1,7 @@
 ---
 feature: ai-chat-titles
 title: "Plan: AI-generated chat titles"
-status: applying
+status: applied
 order: 4
 created: 2026-10-21
 edited: 2026-10-21
@@ -56,19 +56,19 @@ flowchart LR
   - Depends on: 5
   - Test first: `apps/backend/test/chat.test.ts` › "a turn's end runs the title job", "PATCH renames and clears the suggestion", "DELETE title-suggestion clears it", "deleting a chat drops its suggestion"; `api.test.ts` › "PATCH title validates 1–500 chars". Fail today: no routes.
   - Verify: `npm test -w apps/backend` → all green
-- [ ] Admin › AI: Title model and Vision model fields with Default and Use default
+- [x] Admin › AI: Title model and Vision model fields with Default and Use default
   - Depends on: 3
   - Test first: `apps/web/src/components/Admin.test.tsx` (or the AI section's test) › "title and vision model show their defaults, Use default resets, Save sends titleModel/visionModel (null for the default)". Fails today: no fields.
   - Verify: `npm test -w apps/web` → all green
-- [ ] Chat: suggestion bar (Rename / Keep) and live title updates from the `chat-title` event
+- [x] Chat: suggestion bar (Rename / Keep) and live title updates from the `chat-title` event
   - Depends on: 6
   - Test first: `apps/web/src/components/ChatPane.test.tsx` › "a chat with a titleSuggestion shows the bar; Rename PATCHes the title; Keep DELETEs the suggestion", "a chat-title event updates the list title". Fail today: no bar.
   - Verify: `npm test -w apps/web` → all green
-- [ ] LLM test: a two-turn chat gets a generated title from the real test model
+- [x] LLM test: a two-turn chat gets a generated title from the real test model
   - Depends on: 5
   - Test first: `apps/backend/test/chat-title.llm.test.ts` › "after two turns the title is short and not the first prompt". Fails before step 5's wiring into a real opencode (agent missing from the image).
   - Verify: `npm run test:llm -- chat-title` → green
-- [ ] e2e, README and demo run book
+- [x] e2e, README and demo run book
   - Depends on: 4, 7, 8, 9
   - Test first: `e2e/admin-mode.spec.ts` › "AI: title and vision model save and reset"; `e2e/chat.spec.ts` › "@llm after two turns the chat gets a generated title". Fail today: no fields, no job in the stack.
   - Verify: `just e2e admin-mode chat` → green (`@llm` red only where the dev model fails it on the commit before too); `grep -n "Title model" README.md` and `grep -n "title" ~/git/karpathy_demo_wiki/"Karpathy Demo.md"` match
