@@ -9,7 +9,12 @@ const calls = vi.hoisted(() => [] as string[]);
 vi.mock('3d-force-graph', () => ({
   default: function ForceGraph3D() {
     const g: object = new Proxy({}, {
-      get: (_t, k) => (k === 'then' ? undefined : k === 'controls' ? () => ({ mouseButtons: {}, touches: {} }) : () => { calls.push(String(k)); return g; }),
+      get: (_t, k) => (k === 'then' ? undefined : k === 'controls' ? () => ({ mouseButtons: {}, touches: {} }) : (...args: unknown[]) => {
+        // A getter call (no arguments) answers; a setter chains and is recorded.
+        if (k === 'graphData' && !args.length) return { nodes: [], links: [] };
+        calls.push(String(k));
+        return g;
+      }),
     });
     return g;
   },
