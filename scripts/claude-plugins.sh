@@ -13,9 +13,13 @@ plugins=(
 )
 
 installed="${CLAUDE_CODE_PLUGIN_CACHE_DIR:-$HOME/.claude/plugins}/installed_plugins.json"
+# Only a user-scope install counts: a project-scope one is tied to one path (not worktrees).
+user_installed=$(python3 -c 'import json, sys
+for k, v in json.load(open(sys.argv[1]))["plugins"].items():
+    if any(e.get("scope") == "user" for e in v): print(k)' "$installed" 2>/dev/null)
 missing=()
 for p in "${plugins[@]}"; do
-  grep -q "\"$p\"" "$installed" 2>/dev/null || missing+=("$p")
+  grep -qxF "$p" <<<"$user_installed" || missing+=("$p")
 done
 [ ${#missing[@]} -eq 0 ] && exit 0
 
