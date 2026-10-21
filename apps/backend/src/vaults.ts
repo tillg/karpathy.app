@@ -25,7 +25,7 @@ import { INPUT_DIR, isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@ka
 import { BrowserCalls } from './browser-calls.js';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
-import { queryBase } from './bases.js';
+import { forgetBaseIndex, queryBase } from './bases.js';
 import { filesMentioning, graph, listTree, versionOf, versionOfFile } from './files.js';
 import { SearchIndex } from './search.js';
 import { tidyAttachments, type TidyResult } from './tidy-attachments.js';
@@ -254,6 +254,8 @@ export class Vaults {
         delete c.aiTouched[id];
         delete c.editStamps[id];
       });
+      // The old root's base index no longer describes this vault (new root, branch or repo).
+      forgetBaseIndex(join(this.cloneDir(id), v.root));
       if (repoChange || (branchChange && r.state !== 'ready')) {
         await r.watcher?.close();
         r.watcher = undefined;
@@ -284,6 +286,7 @@ export class Vaults {
       await this.beforeRemove?.(id);
       await r.watcher?.close();
       await rm(this.cloneDir(id), { recursive: true, force: true });
+      forgetBaseIndex(join(this.cloneDir(id), v.root));
       await this.store.update((c) => {
         c.vaults = c.vaults.filter((x) => x.id !== id);
         delete c.aiTouched[id];
@@ -1191,8 +1194,9 @@ export class Vaults {
   private startWatcher(v: StoredVault) {
     const r = this.runtime(v.id);
     const root = join(this.cloneDir(v.id), v.root);
-    // A new watcher means a new root (or a fresh clone): the old index doesn't describe it.
+    // A new watcher means a new root (or a fresh clone): the old indexes don't describe it.
     r.index = undefined;
+    forgetBaseIndex(root);
     r.watcher = new VaultWatcher(
       root,
       async (paths) => {

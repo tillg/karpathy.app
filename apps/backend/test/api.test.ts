@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { INCOMING_PATHS_MAX, MAX_UPLOAD_BYTES, type VaultEvent } from '@karpathy/shared';
 import { makeApp, TOKEN } from './app-helpers.js';
 import { AI_TRAILER } from '../src/repo.js';
+import { baseIndexRoots } from '../src/bases.js';
 import { makeRemote, sh } from './helpers.js';
 
 const cleanups: (() => Promise<void> | void)[] = [];
@@ -835,6 +836,20 @@ describe('files', () => {
     expect(bad.body).toMatchObject({ code: 'base-unsupported', error: expect.stringMatching(/not supported in v1/) });
     expect((await t.api.post(`/vaults/${t.id}/base`, { source: 'filters: [x\n' })).body.code).toBe('base-invalid');
     expect((await t.api.post(`/vaults/${t.id}/base`, {})).status).toBe(400);
+  });
+
+  it('#91 base index of a vault root is dropped when the root changes or the vault is removed', async () => {
+    const t = await vaultApp({ 'Home.md': '# Home\n', 'notes/n1.md': 'n\n', 'notes/Sources/.gitkeep': '', 'notes/Wiki/.gitkeep': '' });
+    const root = t.vaults.vaultRootDir(t.id);
+    expect((await t.api.post(`/vaults/${t.id}/base`, { source: 'filters: true\n' })).status).toBe(200);
+    expect(baseIndexRoots()).toContain(root);
+    expect((await t.api.patch(`/vaults/${t.id}`, { root: 'notes' })).status).toBe(200);
+    expect(baseIndexRoots()).not.toContain(root);
+    const sub = t.vaults.vaultRootDir(t.id);
+    expect((await t.api.post(`/vaults/${t.id}/base`, { source: 'filters: true\n' })).body.rows.map((r: { path: string }) => r.path)).toContain('n1.md');
+    expect(baseIndexRoots()).toContain(sub);
+    expect((await t.api.delete(`/vaults/${t.id}`)).status).toBe(204);
+    expect(baseIndexRoots()).not.toContain(sub);
   });
 
   it('graph nodes carry the frontmatter type', async () => {

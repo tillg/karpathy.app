@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { noteLinks, rewriteLinks } from './relink.js';
+import { linkedFiles, linkRefs, noteLinks, resolveLinkRefs, rewriteLinks } from './relink.js';
 
 const from = 'Wiki/serien/foo.md';
 const to = 'Wiki/serien/foo/foo.md';
@@ -60,5 +60,15 @@ describe('noteLinks', () => {
 
   it('skips self links, missing targets, non-notes, URLs and code', () => {
     expect(links('[[a]] [[nope]] ![[p.png]] [x](https://x.org/b.md) `[[b]]`\n```\n[[Home]]\n```')).toEqual([]);
+  });
+});
+
+describe('linkRefs / resolveLinkRefs', () => {
+  it('lists links in order without code, and resolves them like linkedFiles', () => {
+    const text = 'See [[B]] and [c](sub/C.md), `[[Skip]]`\n```\n[[Skip]]\n```\n![[img.png]] [[A]] [[B]]';
+    const paths = ['A.md', 'B.md', 'sub/C.md', 'img.png', 'Skip.md'];
+    expect(linkRefs(text)).toEqual([{ wiki: 'B' }, { md: 'sub/C.md' }, { wiki: 'img.png' }, { wiki: 'A' }, { wiki: 'B' }]);
+    expect(resolveLinkRefs(linkRefs(text), 'A.md', paths)).toEqual(['B.md', 'sub/C.md', 'img.png']);
+    expect(linkedFiles(text, 'A.md', paths)).toEqual(['B.md', 'sub/C.md', 'img.png']);
   });
 });

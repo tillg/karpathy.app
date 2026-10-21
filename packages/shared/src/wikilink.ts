@@ -33,6 +33,26 @@ const pathSet = (paths: readonly string[]) => {
   return s;
 };
 
+// Per file list: lower-case basename (with and without `.md`) -> the paths with it, in list order. Every candidate
+// of the suffix and basename steps below is in the target basename's bucket, so a link costs one bucket, not the list.
+const names = new WeakMap<readonly string[], Map<string, string[]>>();
+const nameIndex = (paths: readonly string[]) => {
+  let m = names.get(paths);
+  if (!m) {
+    m = new Map();
+    for (const p of paths) {
+      const b = base(p).toLowerCase();
+      for (const k of b.endsWith('.md') ? [b, b.slice(0, -3)] : [b]) {
+        const list = m.get(k);
+        if (list) list.push(p);
+        else m.set(k, [p]);
+      }
+    }
+    names.set(paths, m);
+  }
+  return m;
+};
+
 const dir = (p: string) => p.slice(0, Math.max(0, p.lastIndexOf('/')));
 const depth = (p: string) => p.split('/').length;
 
@@ -54,13 +74,11 @@ export function resolveWikilink(target: string, paths: readonly string[], from?:
   const set = pathSet(paths);
   if (set.has(t)) return t;
   if (set.has(`${t}.md`)) return `${t}.md`;
-  const suffix = pick(paths.filter((p) => p.endsWith(`/${t}.md`) || p.endsWith(`/${t}`)), from);
-  if (suffix) return suffix;
   const name = base(t).toLowerCase();
-  return pick(paths.filter((p) => {
-    const b = base(p).toLowerCase();
-    return b === name || b === `${name}.md`;
-  }), from) ?? null;
+  const bucket = nameIndex(paths).get(name) ?? [];
+  const suffix = pick(bucket.filter((p) => p.endsWith(`/${t}.md`) || p.endsWith(`/${t}`)), from);
+  if (suffix) return suffix;
+  return pick(bucket, from) ?? null;
 }
 
 /**
@@ -79,5 +97,6 @@ export function resolveRelativeLink(href: string, from: string, paths: readonly 
   }
   const p = parts.join('/');
   if (!p) return null;
-  return paths.includes(p) ? p : paths.includes(`${p}.md`) ? `${p}.md` : null;
+  const set = pathSet(paths);
+  return set.has(p) ? p : set.has(`${p}.md`) ? `${p}.md` : null;
 }

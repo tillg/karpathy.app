@@ -4,7 +4,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { linkedFiles, resolveWikilink, type BaseCell, type BaseResult } from '@karpathy/shared';
+import { linkRefs, resolveLinkRefs, resolveWikilink, type BaseCell, type BaseResult, type LinkRef } from '@karpathy/shared';
 import { listTree } from './files.js';
 
 export class BaseError extends Error {
@@ -29,12 +29,20 @@ interface FileRec {
   props: Record<string, unknown>;
   /** Frontmatter and inline tags, without `#`. */
   tags: string[];
-  /** The note's text (Markdown only), for `file.links` / `file.hasLink`. */
-  text: string;
+  /** The note's links as written (Markdown only), for `file.links` / `file.hasLink`; resolved per query. */
+  refs: LinkRef[];
 }
 
 /** Per vault root: each file's record, re-read only when its size or mtime changed. */
 const indexes = new Map<string, Map<string, { key: string; rec: FileRec }>>();
+
+/** Drops the cached index of a vault root (vault removed, root changed). The next query rebuilds it. */
+export function forgetBaseIndex(root: string): void {
+  indexes.delete(root);
+}
+
+/** Vault roots with a cached index (for tests). */
+export const baseIndexRoots = (): string[] => [...indexes.keys()];
 
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
@@ -72,7 +80,7 @@ async function readRec(abs: string, path: string): Promise<{ key: string; rec: F
   let text = '';
   if (/\.md$/i.test(path)) text = await readFile(abs, 'utf8').catch(() => '');
   const { props, body } = frontmatterOf(text);
-  return { key, rec: { path, size: st.size, mtime: st.mtime, ctime: st.birthtimeMs > 0 ? st.birthtime : st.ctime, props, tags: text ? tagsOf(props, body) : [], text } };
+  return { key, rec: { path, size: st.size, mtime: st.mtime, ctime: st.birthtimeMs > 0 ? st.birthtime : st.ctime, props, tags: text ? tagsOf(props, body) : [], refs: text ? linkRefs(text) : [] } };
 }
 
 /** Every vault file (dot folders hidden, as in the file tree) with its frontmatter; unchanged files come from the cache. */
@@ -621,7 +629,7 @@ export async function queryBase(root: string, source: string, opts: { now?: Date
   const rows: { rec: FileRec; ctx: Ctx }[] = [];
   for (const rec of recs) {
     let links: string[] | null = null;
-    const ctx: Ctx = { rec, paths, now, links: () => (links ??= rec.text ? linkedFiles(rec.text, rec.path, paths) : []) };
+    const ctx: Ctx = { rec, paths, now, links: () => (links ??= rec.refs.length ? resolveLinkRefs(rec.refs, rec.path, paths) : []) };
     if (base.filters.every((f) => test(f, ctx))) rows.push({ rec, ctx });
   }
   const keyed = rows.map((r) => ({ ...r, keys: base.sort.map((s) => evaluate(s.node, r.ctx)) }));
