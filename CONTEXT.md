@@ -95,6 +95,10 @@ A link that names a folder on the way to its target (`[[serien/foo]]`, `[Foo](..
 The vault's notes (`.md` files) and the links between them (wikilinks, embeds, relative Markdown links; not in code), shown in 3D by the graph dialog. A view only: it edits nothing.
 _Avoid_: Graph view (Obsidian's plugin), knowledge graph
 
+**Base**:
+A fenced ```base block (or a `.base` file) in Obsidian Bases syntax that the app shows as a live, read-only table of the vault files it matches. The text itself is never changed.
+_Avoid_: Dataview, query, dashboard (a note that holds bases)
+
 **Chat attachment**:
 A vault file sent with a prompt, so the model receives its content (image or PDF), not only its path. It is uploaded first, into a new `Sources/upload-…/` folder per message.
 _Avoid_: Attachment for a file in general

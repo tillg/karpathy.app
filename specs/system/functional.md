@@ -432,6 +432,37 @@ from. While the graph loads, a breathing
 graph animation shows. The graph is read on its first open per vault and kept for the session, so reopening is
 instant; Refresh reads it again (no live updates). three.js loads on first open only.
 
+### Bases (query tables)
+
+A fenced ` ```base ` block in a note shows a **live, read-only table** of the vault's files (#91), in Obsidian Bases
+syntax, so the same note shows the same table in Obsidian. The block's text is never changed.
+
+- **Read mode:** the table in place of the block. **Write mode:** the table in place of the block while the cursor is
+  outside it; the cursor inside (arrow keys, or the table's `</>` button) shows the YAML to edit.
+- A tap on a row opens its file; a `[[wikilink]]` in a cell opens that note. The header shows the view's `name`, the
+  footer the row count ("2 rows", "10 of 37 rows") and what was left out. A wide table scrolls sideways inside its box,
+  never the page.
+- **Live:** the table runs again when vault files change (the AI, a pull, another device, a save), 300 ms after the
+  last change.
+- **v1 syntax** (a subset of [Bases syntax](https://obsidian.md/help/bases/syntax)): `filters` (top level and in the
+  view, joined with AND) as a text or `and` / `or` / `not` lists; expressions with `==` `!=` `>` `<` `>=` `<=` `&&`
+  `||` `!` `+` `-` `*` `/` `%` and parentheses; frontmatter properties (`status`, `note.status`, `note["my prop"]`);
+  `file.name` `basename` `path` `folder` `ext` `size` `ctime` `mtime` `tags` `links` `properties`;
+  `file.inFolder()` (with subfolders), `file.hasTag()` (nested tags too; frontmatter and inline tags), `file.hasProperty()`,
+  `file.hasLink()`; `date()`, `today()`, `now()` and durations (`today() - "1 month"`), `list()`, `number()`, `if()`,
+  `min()`, `max()`; `.contains()` `.containsAll()` `.containsAny()` `.startsWith()` `.endsWith()` `.isEmpty()`
+  `.lower()` `.upper()` `.trim()` `.toString()` `.isTruthy()` `.date()`, `.length`. The first view must be
+  `type: table`: `order` (columns; default `file.name`), `sort` (`- property: … direction: ASC|DESC`; empty values
+  last; default by path), `limit`. `properties: <id>: displayName:` names the columns.
+- **Not in v1:** `formulas` / `formula.*`, `this`, other view types (cards, list, map, …), regular expressions and
+  other functions. Such a block shows "… not supported in v1" in its box; invalid YAML or an expression that can't be
+  read shows "Invalid base: …". `groupBy` and `summaries` are left out with a note in the footer; further views too
+  (only the first is shown).
+- At most 500 rows are shown. All vault files count (attachments too, as in Obsidian; dot folders don't); only
+  Markdown notes have properties and tags.
+- **`.base` files** open like HTML pages: Read shows the table, Write the YAML (page mode). `![[x.base]]` embeds are not
+  rendered.
+
 ### Changes and commits
 
 - **Changes list** with kind (modified, added, deleted, renamed, untracked) and a unified diff per file.
@@ -756,6 +787,7 @@ sequenceDiagram
 | Email (`.eml`, never edited) | Subject, header block, the body (HTML in a sandboxed frame, or text), attachment downloads |
 | Photos and PDFs from the device (Attach button, drop, chat composer) | A new file in the page's own folder or a `Sources/upload-…/` folder; an embed, or a chip sent with the prompt |
 | Search query | Grouped hits with line snippets |
+| A ` ```base ` block or `.base` file (Bases syntax, v1 subset) | A live, read-only table of matching files; or "… not supported in v1" |
 | Chat prompt (`/name args` for a command) | Streamed reply, tool chips, changed notes |
 | The device's time zone and language (sent with every prompt) | The AI's date and time are yours; no chip |
 | The browser's answer to its location prompt (when the AI asks "where am I?") | A chip ("used your location (±12 m)", "location not shared") and the position in the AI's reply context |
@@ -820,6 +852,8 @@ both; a later change can restrict admin mode, taking nothing away from users. Th
   required folder exists only under another name (not just another case) gets a new, empty one.
 - The token test shows an expiry only for tokens GitHub reports one for, and scopes only for classic tokens (the app
   doesn't display scopes today). A tested token is not saved.
+- **Bases:** dates without a zone and `today()` count in UTC (the server's clock); `file.ctime` is when the clone
+  wrote the file, not when the note was created. A `.base` file's YAML has no highlighting.
 - **No rename or move** of notes or folders (except the move into its own folder on a page's first upload or after an AI turn showing pictures), no
   explicit folder creation, no automatic pull (only the count updates on its own), no per-chat model,
   no free chat rename (a title suggestion is the only way to a new title), no global keyboard shortcuts.
