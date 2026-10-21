@@ -271,7 +271,8 @@ The model in the settings is the default; one set in the app (admin mode › AI)
 `just dev up` names their keys and where each one goes now.
 
 **Remote dev host:** the same works on our own dev server `karpathy-dev` (Hetzner, Tailscale only) over SSH, with
-its stacks forwarded to the Mac's `https://localhost:80N0`. Setup and the `~/.ssh/config` entry:
+its stacks forwarded to the Mac's `https://localhost:80N0`. How to work there (connecting with herdr or tmux, ports,
+daily routine, troubleshooting): [docs/dev-server.md](docs/dev-server.md). Setup and the `~/.ssh/config` entry:
 [deploy/README.md › Dev server](deploy/README.md#dev-server). Keys you keep in `~/.config/karpathy/secrets/` serve
 every checkout on a host: `just dev up` copies a key missing in `deploy/secrets/` from there.
 

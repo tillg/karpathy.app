@@ -291,6 +291,10 @@ On the server, once: `git clone https://github.com/tillg/karpathy.app`, `just in
 subscription (the project plugins install in the first session). Then `just dev up`, and open
 `https://localhost:8010` on the Mac. After a reconnect, `just resume` continues the last Claude session.
 
+**Staying connected:** `herdr --remote karpathy-dev` (or `tmux` on the server) keeps `claude` and test runs alive when
+SSH drops; a bare SSH shell takes them down with it. Daily routine, ports, troubleshooting:
+[docs/dev-server.md](../docs/dev-server.md).
+
 - **One dev host at a time:** a Mac dev stack on the same port blocks that `LocalForward` (ssh warns "bind: Address
   already in use"). Stop the Mac's stacks (`just dev down`) before you connect, or the other way round.
 - **Host secrets:** `just dev up` copies each `*_api_key` missing in a checkout's `deploy/secrets/` from

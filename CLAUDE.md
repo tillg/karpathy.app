@@ -114,7 +114,7 @@ header `karpathy #N`).
   any `@llm` spec that still fails against the commit before your change (own worktree and stack) before blaming it —
   the local dev model fails some of them on its own.
 
-The remote dev host `karpathy-dev` (Hetzner, Tailscale only; deploy/README.md › Dev server) is another dev host with
+The remote dev host `karpathy-dev` (Hetzner, Tailscale only; `docs/dev-server.md`) is another dev host with
 its own stacks 1–9 and the same rules. It is Linux: no Keychain, no Rancher, no Lima; the dev topic for ntfy is in
 `tmp/.ntfy_dev_topic` there.
 
