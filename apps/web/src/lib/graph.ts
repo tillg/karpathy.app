@@ -22,10 +22,28 @@ export function typeColors(data: GraphData, c: { entity: string; none: string; p
 /** A note's type as the legend names it. */
 export const typeLabel = (type: string | undefined) => type || 'no type';
 
-/** The graph without the notes of the `hidden` types (legend labels) and their links. */
-export function withoutTypes(data: GraphData, hidden: ReadonlySet<string>): GraphData {
+/** The graph without the notes of the `hidden` types (legend labels) and their links; `center` (the local graph's
+ *  centre) stays whatever its type. */
+export function withoutTypes(data: GraphData, hidden: ReadonlySet<string>, center?: string): GraphData {
   if (!hidden.size) return data;
-  const nodes = data.nodes.filter((n) => !hidden.has(typeLabel(n.type)));
+  const nodes = data.nodes.filter((n) => n.path === center || !hidden.has(typeLabel(n.type)));
   const keep = new Set(nodes.map((n) => n.path));
   return { nodes, links: data.links.filter((l) => keep.has(l.source) && keep.has(l.target)) };
+}
+
+/** The local graph (#92): the notes within `depth` links of `center`, following links both ways (outgoing links and
+ *  backlinks), and every link between them. Empty when `center` is not a note of the graph. */
+export function localGraph(data: GraphData, center: string, depth: number): GraphData {
+  if (!data.nodes.some((n) => n.path === center)) return { nodes: [], links: [] };
+  const near = new Map<string, string[]>();
+  const add = (a: string, b: string) => { const l = near.get(a); if (l) l.push(b); else near.set(a, [b]); };
+  for (const l of data.links) { add(l.source, l.target); add(l.target, l.source); }
+  const seen = new Set([center]);
+  let ring = [center];
+  for (let d = 0; d < depth && ring.length; d++) {
+    const next: string[] = [];
+    for (const p of ring) for (const q of near.get(p) ?? []) if (!seen.has(q)) { seen.add(q); next.push(q); }
+    ring = next;
+  }
+  return { nodes: data.nodes.filter((n) => seen.has(n.path)), links: data.links.filter((l) => seen.has(l.source) && seen.has(l.target)) };
 }
