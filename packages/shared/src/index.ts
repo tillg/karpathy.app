@@ -23,6 +23,10 @@ export interface Settings {
   commitReminderThreshold: number;
   /** `provider/model`; the default comes from deploy/settings/ (`ai.model`). */
   model: string;
+  /** Writes the chat titles (#148); the default comes from `ai.title_model` (else `ai.model`). */
+  titleModel: string;
+  /** The model of look_at_image, `<vision gateway>/<model>`; the default comes from `ai.vision_model`. */
+  visionModel: string;
   /** The AI may search the web and read pages (opencode websearch/webfetch), in every vault. */
   webAccess: boolean;
 }
@@ -39,6 +43,12 @@ export interface SettingsView extends Settings {
   defaultModel: string;
   /** `model` is the Admin's choice, not the default. */
   modelOverridden: boolean;
+  defaultTitleModel: string;
+  titleModelOverridden: boolean;
+  defaultVisionModel: string;
+  visionModelOverridden: boolean;
+  /** The gateway every vision model must be on (its id is the model's prefix); '' when unknown. */
+  visionGateway: string;
   githubToken: { source: 'settings' | 'secret' | 'none'; last4: string | null };
   /** What the current model reads; null when opencode is down or doesn't list the model. */
   modelInput: ModelInput | null;
@@ -208,7 +218,9 @@ export type VaultEvent =
   /** A browser tool waits for the tab `call.tabId` (#151). */
   | { type: 'browser-call'; call: BrowserCall }
   /** The call was answered, timed out or its turn ended: stop answering it. */
-  | { type: 'browser-call-done'; callId: string };
+  | { type: 'browser-call-done'; callId: string }
+  /** A chat's title changed or a drift check suggests a new one (#148); no `titleSuggestion` = none pending. */
+  | { type: 'chat-title'; chatId: string; title: string; titleSuggestion?: string };
 
 // ---- Chat (ACP-shaped: session / prompt / update / tool_call / permission) ----
 
@@ -238,6 +250,8 @@ export interface ChatSummary {
   /** From the last AI reply; absent before the first one. */
   context?: ContextUsage;
   turn: TurnState;
+  /** A drift check's new title, until the user renames or keeps (#148). */
+  titleSuggestion?: string;
 }
 
 /** The file the user has open when a prompt is sent (#143); the AI reads it through its `current_page` tool. */
@@ -301,6 +315,7 @@ export interface ChatDetail {
   turn: TurnState;
   /** The prompt text while its turn is still queued (not yet sent to the harness). */
   queuedText?: string;
+  titleSuggestion?: string;
 }
 
 export type TurnState = 'idle' | 'queued' | 'running';

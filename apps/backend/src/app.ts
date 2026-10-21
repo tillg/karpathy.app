@@ -1,5 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
+import { syncVisionModel } from './vision-model.js';
 import { MAX_ATTACHMENTS, MAX_UPLOAD_BYTES, rawType, type ModelInput, type SecretStatus, type Settings, type SettingsView, type TokenTest, type VaultEvent } from '@karpathy/shared';
 import { bearerAuth } from './auth.js';
 import { aiUnavailable, type ChatService } from './chat.js';
@@ -26,6 +27,8 @@ export interface AppDeps {
   opencodeHealthy?: () => Promise<boolean>;
   /** The models the harness can run right now (configured + credentials): `provider/model` and what they read. */
   availableModels?: () => Promise<{ id: string; input: ModelInput }[]>;
+  /** The deployment's vision gateway (settings.json `ai.vision_gateway`): a vision model override must be on it. */
+  visionGateway?: string;
   /** Release version (APP_VERSION, baked into the image); `dev` for dev and prodtest builds. */
   version?: string;
   /** When the release's images were built (BUILT_AT, ISO 8601, set by the release workflow); unset for local builds. */
@@ -64,8 +67,11 @@ const patchSettings = z.object({
   commitReminderThreshold: z.number({ error: THRESHOLD_MSG }).int({ error: THRESHOLD_MSG }).min(1, { error: THRESHOLD_MSG }).max(1000, { error: THRESHOLD_MSG }).optional(),
   /** null: back to the deployment's default model. */
   model: z.string().trim().regex(/^[^/\s]+\/\S+$/, { error: 'Model: use the form provider/model' }).nullable().optional(),
+  titleModel: z.string().trim().regex(/^[^/\s]+\/\S+$/, { error: 'Title model: use the form provider/model' }).nullable().optional(),
+  visionModel: z.string().trim().nullable().optional(),
   webAccess: z.boolean({ error: 'Web access: must be true or false' }).optional(),
 });
+const chatTitleBody = z.object({ title: z.string().trim().min(1, { error: 'Title: enter a title' }).max(500, { error: 'Title: at most 500 characters' }) });
 const putFile = z.object({ content: z.string(), version: z.string().nullable(), force: z.boolean().optional() });
 const commitBody = z.object({ message: z.string().min(1).max(10_000), paths: z.array(z.string()).optional() });
 const resolveBody = z.object({ path: z.string().min(1), choice: z.enum(['mine', 'theirs', 'both']) });
@@ -150,8 +156,17 @@ export function createApp(d: AppDeps) {
     const settings = d.store.get().settings;
     const list = await models();
     const modelInput = list?.find((m) => m.id === settings.model)?.input ?? null;
-    const defaultModel = d.store.defaultModel;
-    return { ...settings, defaultModel, modelOverridden: settings.model !== defaultModel, githubToken: { source: d.githubToken?.source() ?? 'none', last4: t ? t.slice(-4) : null }, modelInput };
+    const { model: defaultModel, titleModel: defaultTitleModel, visionModel: defaultVisionModel } = d.store.defaults;
+    return {
+      ...settings,
+      defaultModel,
+      modelOverridden: settings.model !== defaultModel,
+      defaultTitleModel,
+      titleModelOverridden: settings.titleModel !== defaultTitleModel,
+      defaultVisionModel,
+      visionModelOverridden: settings.visionModel !== defaultVisionModel,
+      visionGateway: d.visionGateway ?? '',
+      githubToken: { source: d.githubToken?.source() ?? 'none', last4: t ? t.slice(-4) : null }, modelInput };
   };
   api.get('/settings', async (_req, res) => {
     res.json(await settingsView());
@@ -196,15 +211,31 @@ export function createApp(d: AppDeps) {
     res.status(204).end();
   });
   api.patch('/settings', async (req, res) => {
-    const { model, ...body } = patchSettings.parse(req.body);
-    if (model && model !== d.store.get().settings.model) {
+    const { model, titleModel, visionModel, ...body } = patchSettings.parse(req.body);
+    const current = d.store.get().settings;
+    // The chat and the title model run in opencode: they must be among its models.
+    for (const [label, value, now] of [['Model', model, current.model], ['Title model', titleModel, current.titleModel]] as const) {
+      if (!value || value === now) continue;
       const ids = (await models())?.map((m) => m.id);
-      if (ids && !ids.includes(model))
-        throw new HttpError(400, `Model ${model} is not available. Available: ${ids.join(', ') || 'none (no provider configured)'}`, 'unknown-model');
+      if (ids && !ids.includes(value))
+        throw new HttpError(400, `${label} ${value} is not available. Available: ${ids.join(', ') || 'none (no provider configured)'}`, 'unknown-model');
     }
+    // The vision tool calls the deployment's vision gateway itself: only the model id may change.
+    const gw = d.visionGateway ?? '';
+    if (visionModel && (!gw || !visionModel.startsWith(`${gw}/`) || visionModel.length === gw.length + 1))
+      throw new HttpError(400, `Vision model: use a model of the ${gw || 'deployment\'s vision'} gateway, as ${gw || '<gateway>'}/<model>`, 'bad-vision-model');
+    const defaults = d.store.defaults;
     await d.store.update((c) => {
-      c.settings = { ...c.settings, ...body, ...(model !== undefined ? { model: model ?? d.store.defaultModel } : {}) } as Settings;
+      c.settings = {
+        ...c.settings,
+        ...body,
+        ...(model !== undefined ? { model: model ?? defaults.model } : {}),
+        ...(titleModel !== undefined ? { titleModel: titleModel ?? defaults.titleModel } : {}),
+        ...(visionModel !== undefined ? { visionModel: visionModel ?? defaults.visionModel } : {}),
+      } as Settings;
     });
+    if (visionModel !== undefined)
+      await syncVisionModel(d.vaults.vaultsPath(), { visionModel: d.store.get().settings.visionModel, defaultVisionModel: defaults.visionModel, visionGateway: gw });
     res.json(await settingsView());
   });
 
@@ -355,6 +386,14 @@ export function createApp(d: AppDeps) {
   });
   api.delete('/vaults/:id/chats/:chatId', async (req, res) => {
     await chat().remove(req.params.id!, req.params.chatId!);
+    res.status(204).end();
+  });
+  api.patch('/vaults/:id/chats/:chatId', async (req, res) => {
+    await chat().rename(req.params.id!, req.params.chatId!, chatTitleBody.parse(req.body).title);
+    res.status(204).end();
+  });
+  api.delete('/vaults/:id/chats/:chatId/title-suggestion', async (req, res) => {
+    await chat().keepTitle(req.params.id!, req.params.chatId!);
     res.status(204).end();
   });
   api.post('/vaults/:id/chats/:chatId/prompt', async (req, res) => {

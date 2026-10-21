@@ -2,6 +2,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
+import type { Settings } from '@karpathy/shared';
 import { createApp, type AppDeps } from '../src/app.js';
 import { ConfigStore } from '../src/config-store.js';
 import { GitHubToken } from '../src/github-token.js';
@@ -19,13 +20,15 @@ export interface MakeAppOptions {
   env?: Partial<VaultsEnv>;
   /** The deployment's default model (settings `ai.model`). */
   defaultModel?: string;
+  /** Other deployment defaults (title and vision model, …). */
+  defaults?: Partial<Settings>;
 }
 
-export async function makeApp(remoteBase: string, { deps = {}, dirs, githubSecret, env = {}, defaultModel }: MakeAppOptions = {}) {
+export async function makeApp(remoteBase: string, { deps = {}, dirs, githubSecret, env = {}, defaultModel, defaults = {} }: MakeAppOptions = {}) {
   const base = dirs ? null : await mkdtemp(join(tmpdir(), 'kai-app-'));
   const configDir = dirs?.config ?? join(base!, 'config');
   const vaultsDir = dirs?.vaults ?? join(base!, 'vaults');
-  const store = await ConfigStore.open(configDir, defaultModel ? { model: defaultModel } : {});
+  const store = await ConfigStore.open(configDir, { ...defaults, ...(defaultModel ? { model: defaultModel } : {}) });
   const githubToken = new GitHubToken(store, githubSecret);
   // visibleDotDirs as deploy/settings/settings.yaml sets it.
   const vaults = new Vaults(store, { vaultsDir, remoteBase, identity, visibleDotDirs: ['.agents'], githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), ...env });

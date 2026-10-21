@@ -26,6 +26,8 @@ export interface ConfigData {
   conflicts: Record<string, string[]>;
   /** Per-vault queued chat prompts, so a backend restart doesn't drop them (#37). */
   queued: Record<string, ({ chatId: string; text: string; attachments?: string[] } & PromptClient)[]>;
+  /** Per-vault, per-chat title suggestion of a drift check (#148), until the user renames or keeps. */
+  titleSuggestions: Record<string, Record<string, string>>;
   /** GitHub token set in the app; kept out of `settings`, which GET /settings returns verbatim. */
   githubToken?: string;
 }
@@ -34,15 +36,20 @@ export interface ConfigData {
 export const DEFAULT_SETTINGS: Settings = {
   commitReminderThreshold: 4,
   model: '',
+  titleModel: '',
+  visionModel: '',
   webAccess: true,
 };
 
-/** `settings` as stored: the model only as an override of the deployment's default. */
-interface StoredSettings extends Partial<Omit<Settings, 'model'>> {
-  modelOverride?: string;
+/** The model settings, each stored only as an override of the deployment's default, under this key. */
+const OVERRIDES = { model: 'modelOverride', titleModel: 'titleModelOverride', visionModel: 'visionModelOverride' } as const;
+type ModelKey = keyof typeof OVERRIDES;
+
+/** `settings` as stored: the models only as overrides of the deployment's defaults. */
+type StoredSettings = Partial<Omit<Settings, ModelKey>> & { [K in ModelKey as (typeof OVERRIDES)[K]]?: string } & {
   /** Before the model default moved to the settings files, the model itself was stored. */
   model?: string;
-}
+};
 
 /**
  * The backend-only config store: one JSON file on the config volume. Writes go to a temp
@@ -54,13 +61,18 @@ export class ConfigStore {
 
   private constructor(
     private readonly file: string,
-    /** The deployment's default model (settings `ai.model`); the Admin's choice is stored only if it differs. */
-    readonly defaultModel: string,
+    /** The deployment's defaults (deploy/settings/); a model the Admin picks is stored only if it differs from its default. */
+    readonly defaults: Settings,
   ) {}
+
+  /** The deployment's default model (settings `ai.model`). */
+  get defaultModel(): string {
+    return this.defaults.model;
+  }
 
   static async open(dir: string, defaults: Partial<Settings> = {}): Promise<ConfigStore> {
     const base = { ...DEFAULT_SETTINGS, ...defaults };
-    const store = new ConfigStore(join(dir, 'config.json'), base.model);
+    const store = new ConfigStore(join(dir, 'config.json'), base);
     let raw: Partial<Omit<ConfigData, 'settings'>> & { settings?: StoredSettings } = {};
     try {
       raw = JSON.parse(await readFile(store.file, 'utf8')) as typeof raw;
@@ -74,19 +86,25 @@ export class ConfigStore {
       editStamps: raw.editStamps ?? {},
       conflicts: raw.conflicts ?? {},
       queued: raw.queued ?? {},
+      titleSuggestions: raw.titleSuggestions ?? {},
       ...(raw.githubToken ? { githubToken: raw.githubToken } : {}),
     };
     return store;
   }
 
-  /** Stored settings over the defaults; the model is the override, else the default. */
-  private withOverride({ modelOverride, model, ...rest }: StoredSettings, base: Settings): Settings {
-    return { ...base, ...rest, model: modelOverride ?? model ?? base.model };
+  /** Stored settings over the defaults; each model is its override, else the default. */
+  private withOverride({ modelOverride, titleModelOverride, visionModelOverride, model, ...rest }: StoredSettings, base: Settings): Settings {
+    return { ...base, ...rest, model: modelOverride ?? model ?? base.model, titleModel: titleModelOverride ?? base.titleModel, visionModel: visionModelOverride ?? base.visionModel };
   }
 
-  /** What goes to disk: the model only while it differs from the default. */
-  private stored({ model, ...rest }: Settings): StoredSettings {
-    return { ...rest, ...(model !== this.defaultModel ? { modelOverride: model } : {}) };
+  /** What goes to disk: each model only while it differs from its default. */
+  private stored(settings: Settings): StoredSettings {
+    const out: Record<string, unknown> = { ...settings };
+    for (const [key, override] of Object.entries(OVERRIDES) as [ModelKey, string][]) {
+      delete out[key];
+      if (settings[key] !== this.defaults[key]) out[override] = settings[key];
+    }
+    return out as StoredSettings;
   }
 
   get(): Readonly<ConfigData> {

@@ -265,6 +265,38 @@ describe('vault admin', () => {
     expect((await api.patch('/settings', { model: 'nope/x' })).status).toBe(400);
   });
 
+  it('settings: title model defaults, override checked against the harness models, null resets', async () => {
+    const models = [{ id: 'ollama/a', input: { image: false, pdf: false } }, { id: 'ollama/b', input: { image: false, pdf: false } }];
+    const { api } = await makeApp('file:///nowhere/', { defaultModel: 'ollama/a', defaults: { titleModel: 'ollama/a' }, deps: { availableModels: async () => models } });
+    expect((await api.get('/settings')).body).toMatchObject({ titleModel: 'ollama/a', defaultTitleModel: 'ollama/a', titleModelOverridden: false });
+    expect((await api.patch('/settings', { titleModel: 'ollama/b' })).body).toMatchObject({ titleModel: 'ollama/b', titleModelOverridden: true, model: 'ollama/a' });
+    const bad = await api.patch('/settings', { titleModel: 'nope/x' });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toMatch(/Title model nope\/x is not available/);
+    expect((await api.patch('/settings', { titleModel: null })).body).toMatchObject({ titleModel: 'ollama/a', titleModelOverridden: false });
+  });
+
+  it('settings: vision model must be on the vision gateway; null resets', async () => {
+    const { api } = await makeApp('file:///nowhere/', { defaults: { visionModel: 'openrouter/m/see' }, deps: { visionGateway: 'openrouter' } });
+    expect((await api.get('/settings')).body).toMatchObject({ visionModel: 'openrouter/m/see', defaultVisionModel: 'openrouter/m/see', visionModelOverridden: false, visionGateway: 'openrouter' });
+    expect((await api.patch('/settings', { visionModel: 'openrouter/other/see' })).body).toMatchObject({ visionModel: 'openrouter/other/see', visionModelOverridden: true });
+    for (const v of ['ollama/x', 'openrouter/', 'openrouter']) {
+      const r = await api.patch('/settings', { visionModel: v });
+      expect(r.status, v).toBe(400);
+      expect(r.body.error).toMatch(/Vision model: use a model of the openrouter gateway/);
+    }
+    expect((await api.patch('/settings', { visionModel: null })).body).toMatchObject({ visionModel: 'openrouter/m/see', visionModelOverridden: false });
+  });
+
+  it('settings: a vision override is written to the vaults volume for look_at_image, the default removes it', async () => {
+    const { api, dirs } = await makeApp('file:///nowhere/', { defaults: { visionModel: 'openrouter/m/see' }, deps: { visionGateway: 'openrouter' } });
+    const file = join(dirs.vaults, '.vision.json');
+    await api.patch('/settings', { visionModel: 'openrouter/other/see' });
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ model: 'other/see' });
+    await api.patch('/settings', { visionModel: null });
+    await expect(readFile(file, 'utf8')).rejects.toThrow(/ENOENT/);
+  });
+
   it('settings answer while opencode hangs: modelInput null', async () => {
     const { api } = await makeApp('file:///nowhere/', { deps: { availableModels: () => new Promise(() => undefined) } });
     const t0 = Date.now();
