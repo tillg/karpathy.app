@@ -2784,6 +2784,9 @@ edited: 2026-10-21
   change touches the `/research` skill or its tools; never weaken a test.
 - **Alternatives:** tune the prompt or the test (out of scope, weakens a model-behaviour test); block the release.
 - **Consequences:** if `/research` keeps missing on OpenRouter's default model, it deserves its own issue.
+  Re-run (12:25): 31/32 again, this time `@llm /research plan` (reply didn't match `/web access/i`); each of the two
+  `/research` tests passed in one of the attempts. Baseline: `main`'s weekly nightly has been red since 2026-10-05
+  (#162 `save_url`). Proceeded with the release; filed #163 for the two flaky `/research` tests.
 
 ## 11:44 — Archive `remove-ollama` with its decisions open {#run-2026-10-21-1058-4}
 
