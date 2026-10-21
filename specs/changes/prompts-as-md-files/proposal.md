@@ -1,7 +1,7 @@
 ---
 feature: prompts-as-md-files
 title: "Proposal: AI prompts as .md files"
-status: proposed
+status: applied
 order: 1
 created: 2026-10-21
 edited: 2026-10-21
@@ -14,7 +14,7 @@ edited: 2026-10-21
 ## Why
 
 The instructions the app gives the model are spread over TypeScript string literals and one JSON
-value. They sit in eight tool files, three backend modules, the vision helper and `opencode.json`.
+value. They sit in three backend modules, the vision helper, `opencode.json` and eight tool files.
 To read or tune what the model is told, you have to know where each one hides, and you have to edit
 code to change it. Prompt work is the main tuning knob for small models, and the `@llm` tests often
 fail for prompt reasons, so this matters a lot. The issue asks for one place, one file per prompt,
@@ -23,9 +23,8 @@ and an ADR so the rule sticks.
 ## What changes
 
 - **One directory, `prompts/` at the repo root.** Every model-facing instruction text is one `.md`
-  file in it. Structured data goes in YAML frontmatter, and only where a prompt needs it:
-  - the template variables it takes;
-  - a tool's argument descriptions.
+  file in it, except tool descriptions (see below). The only structured data is the list of
+  template variables, in YAML frontmatter.
 - **One small loader, `prompts/load.ts`.** It reads a file once, at module load, and fills in
   `{{variable}}` placeholders. It refuses a missing, unknown or unused variable. Both runtimes use the
   same loader: the backend (Node) and the opencode container (Bun).
@@ -38,7 +37,6 @@ and an ADR so the rule sticks.
 
 | Prompt | Today | New file |
 |---|---|---|
-| Tool descriptions + argument descriptions (8 tools: `suggest_next`, `current_page`, `open_note`, `open_url`, `look_at_image`, `user_location`, `move_to_sources`, `save_url`) | `deploy/opencode/tools/*.ts`, `SAVE_URL_DESCRIPTION` in `lib/save-url.ts` | `prompts/tools/<tool>.md` |
 | Commit-message agent's system prompt | `opencode.json` → `agent.commit-message.prompt` | `prompts/agents/commit-message.md` |
 | Commit-message request (files, stat, diff) | `apps/backend/src/commit-message.ts` | `prompts/commit-message-request.md` |
 | Local-time line | `apps/backend/src/harness/local-time.ts` | `prompts/local-time.md` |
@@ -47,6 +45,10 @@ and an ADR so the rule sticks.
 
 ### Out of scope
 
+- **Tool descriptions and argument descriptions** (decided 2026-10-21, after apply). They are part
+  of a tool's definition, so they stay in `deploy/opencode/tools/<id>.ts` next to the signature and
+  the code. `SAVE_URL_DESCRIPTION` stays in `lib/save-url.ts`. They were moved to `prompts/tools/` at
+  first and then moved back.
 - **Tool output text**, which a tool *returns* to the model as data: the md-lint "Fix them now"
   report, the known-url refusals, and the result and error messages of `save_url` and `open_page`.
   These are tool results, not instructions. The ADR names them as the line.
@@ -58,6 +60,13 @@ and an ADR so the rule sticks.
   belong to the vault.
 - **Rewording any prompt.** Better prompts come later, and they will be easy once the prompts live
   in files.
+- **Rewrapping.** Bodies stay verbatim: a one-paragraph prompt stays on one line.
+- **Model parameters** (`max_tokens`, temperature, model) in prompt files. They stay in code or in
+  `deploy/settings/`.
+- **Runtime overrides.** There is no admin setting and no vault override for a prompt; prompts change
+  through git and a deploy.
+- **Dev hot reload of tool prompts.** It needs an opencode image rebuild, like tool code today.
+  Follow-up idea: bind-mount `prompts/` into the dev opencode container and restart it.
 
 ```mermaid
 flowchart LR
@@ -69,7 +78,7 @@ flowchart LR
   end
   subgraph after[After: prompts/*.md]
     P[(prompts/)] --> L[prompts/load.ts]
-    L --> T2[tools] --> OC2[opencode]
+    T2[tools/*.ts<br/>descriptions stay] --> OC2[opencode]
     L --> B2[backend] --> OC2
     L --> V2[look_at_image] --> VM2[vision model]
     P -- "{file:…}" --> J2[opencode.json]
@@ -78,21 +87,16 @@ flowchart LR
 
 ## Tests that change by design
 
-Two existing tests assert prompt text in its *current location*, so they have to follow the text.
-That is a relocation, not a weakening. They keep the same assertions against the new file:
-
-- `apps/backend/test/suggest-next-tool.test.ts` › "suggest_next description" reads
-  `deploy/opencode/tools/suggest_next.ts` as text. It will read `prompts/tools/suggest_next.md`.
-- `apps/backend/test/save-url.test.ts` imports `SAVE_URL_DESCRIPTION`. It will load
-  `prompts/tools/save_url.md`.
-
-Approving this proposal approves those two edits. The temporary golden fixture of the
-characterization test is also removed at the end (plan, last step).
+The temporary golden fixture of the characterization test is removed at the end (plan, step 11).
+`suggest-next-tool.test.ts` and `save-url.test.ts` were moved to the prompt files for a while.
+They are back at `HEAD`, because the tool descriptions stayed in code.
 
 ## Expected outcome
 
-- `ls prompts/` lists every instruction the app gives a model, and editing one is a Markdown edit.
+- `ls prompts/` lists every instruction the app gives a model outside the tool definitions, and
+  editing one is a Markdown edit.
 - Every existing test stays green, including `npm run test:llm`, with no change to the text the
   model sees.
-- A new inline tool description or prompt string fails `just check`.
+- A long inline prompt string in the backend, an unused prompt file, a non-`{file:}` agent prompt or
+  a `prompts/tools/` directory fails `just check`.
 - ADR 0006 is in `docs/adr/`.

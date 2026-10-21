@@ -1,5 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
+import { prompt } from '../../../prompts/load.js';
 import { resolveNote } from './resolve-note.js';
 
 // The look_at_image tool's logic (import-free of opencode, so the backend tests load it): reads an image of the
@@ -11,7 +12,7 @@ const MIME: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg'
 const MAX_BYTES = 10 * 1024 * 1024;
 const MAX_ANSWER = 8000;
 const TIMEOUT_MS = 120_000;
-const DEFAULT_QUESTION = 'Describe this image thoroughly: what it shows, its layout, colours and any people, objects or places. Transcribe all text in it exactly.';
+const DEFAULT_QUESTION = prompt('look-at-image-question').text;
 
 /** The Admin's vision-model override. A literal on purpose: the backend writes it on the shared vaults volume (apps/backend/src/vision-model.ts). */
 export const VISION_FILE = '/vaults/.vision.json';

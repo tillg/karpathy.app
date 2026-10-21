@@ -1,11 +1,24 @@
+import type { Change } from '@karpathy/shared';
 import type { ConfigStore } from './config-store.js';
 import type { Harness } from './harness/opencode.js';
 import type { Vaults } from './vaults.js';
+import { prompt } from '../../../prompts/load.js';
 
-const MAX_DIFF = 32 * 1024;
+export const MAX_DIFF = 32 * 1024;
 const TIMEOUT_MS = 15_000;
 
+const COMMIT_REQUEST = prompt('commit-message-request');
+
 export const fallbackMessage = (n: number) => `Update ${n} file${n === 1 ? '' : 's'}`;
+
+/** The user message of the commit-message turn: the changed files, the stat and the diff (cut at MAX_DIFF). */
+export function commitRequest(files: Pick<Change, 'kind' | 'path'>[], stat: string, diff: string): string {
+  return COMMIT_REQUEST.render({
+    files: files.map((f) => `${f.kind}: ${f.path}`).join('\n'),
+    stat: stat.trim(),
+    diff: diff.length > MAX_DIFF ? `${diff.slice(0, MAX_DIFF)}\n[diff truncated]` : diff,
+  });
+}
 
 export interface CommitMessages {
   propose(vaultId: string): Promise<{ message: string; fallback: boolean }>;
@@ -40,17 +53,7 @@ export class OpencodeCommitMessages implements CommitMessages {
       return '[diff left out: the secret scan could not run]';
     });
     const dir = this.dirOf(vaultId);
-    const text = [
-      'Write the commit message for these changes.',
-      '',
-      'Files:',
-      ...files.map((f) => `${f.kind}: ${f.path}`),
-      '',
-      stat.trim(),
-      '',
-      'Diff:',
-      diff.length > MAX_DIFF ? `${diff.slice(0, MAX_DIFF)}\n[diff truncated]` : diff,
-    ].join('\n');
+    const text = commitRequest(files, stat, diff);
     let sessionId: string | undefined;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
