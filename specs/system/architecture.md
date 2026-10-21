@@ -81,11 +81,12 @@ flowchart LR
 - **Note graph** (`GraphPane`, #130): a layer inside `#detail` (absolute, over the note), shown while the store's
   `graphOpen` is set (sidebar graph button; `openNote` clears it). The note underneath stays mounted and `inert`, so
   drafts, cursor and scroll survive. It fetches `GET /vaults/:id/graph` on the first open per vault and keeps the
-  result in a module-level `Map` for the session (Refresh drops it); the `3d-force-graph` instance is built once per
+  result in a module-level `Map` for the session (Refresh drops it; an open `.md` note missing from it fetches it again,
+once per note, so a note made since gets its local graph); the `3d-force-graph` instance is built once per
   data and only paused while hidden, so reopening is instant. three.js is imported dynamically so the main bundle
   stays without it; the chunk (~1.4 MB) stays under Workbox's 2 MiB precache limit. Offline, a first open shows the
-  fetch error. `lib/graph.ts` decides what is shown (`shownGraph`: the `Wiki` folder, any case, unless "Show all" or
-  the vault has none) and the colours (`typeColors`: the node's frontmatter `type`, read by the backend; `entity` =
+  fetch error. `lib/graph.ts` decides what is shown (`shownGraph`: the `Wiki` folder, any case, unless the bar's
+  Local | Wiki | All is on All or the vault has none) and the colours (`typeColors`: the node's frontmatter `type`, read by the backend; `entity` =
   `--tint`, untyped = `--label3`, other types `--graph-1…6` by name; `withoutTypes` drops the types unchecked in the
   legend, kept in localStorage `karpathy.graphHiddenTypes`). The same node objects feed both views, so
   toggling keeps the layout. A CSS-only "breathing graph" shows until the first engine tick. Node labels are DOM
@@ -93,7 +94,9 @@ flowchart LR
   **Local graph** (#92): the store's `graphScope` (`local` | `wiki` | `all`, session only) picks the view; the
   outline's "Local graph" sets `local` and opens the pane. `localGraph` (`lib/graph.ts`) takes the notes within the
   depth (1 or 2, localStorage `karpathy.graphDepth`) of the open note over the same `/graph` data, following links both
-  ways, and every link between them; `withoutTypes` keeps the centre. On the same `3d-force-graph` instance the local
+  ways, and every link between them; `localView` drops the hidden types first (`withoutTypes`, which keeps the
+  centre) and then takes the neighbourhood, so a hidden note bridges nothing in. Only the local view depends on the open
+  note: in Wiki / All a note switch only repaints. On the same `3d-force-graph` instance the local
   view switches to `numDimensions(2)` on its own node objects (so the vault's 3D layout is untouched; going back sets
   3 before handing the vault's nodes back), stronger charge and faster alpha decay, one-finger/left-button pan, and
   `nodeThreeObject` name sprites (canvas text, cached per note, disposed with the graph). The camera fits the notes

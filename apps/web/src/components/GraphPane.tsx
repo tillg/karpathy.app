@@ -1,7 +1,7 @@
 import type { GraphData } from '@karpathy/shared';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, errorText } from '../lib/api';
-import { localGraph, shownGraph, typeColors, typeLabel, withoutTypes } from '../lib/graph';
+import { localGraph, localView, shownGraph, typeColors, typeLabel, withoutTypes } from '../lib/graph';
 import { useApp } from '../store';
 import { Icon } from './Icon';
 
@@ -69,10 +69,14 @@ export function GraphPane() {
   const current = note?.path;
   // The local graph needs an open note that is in the graph; without one the scope falls back to the Wiki view.
   const center = data && current && data.nodes.some((n) => n.path === current) ? current : undefined;
-  const local = scope === 'local' && !!center;
-  // `base`: the open note's neighbourhood, Wiki or all; `view`: without the types switched off in the legend.
-  const base = useMemo(() => data && (local ? localGraph(data, center!, depth) : shownGraph(data, scope === 'all')), [data, local, center, depth, scope]);
-  const view = useMemo(() => base && withoutTypes(base, hidden, local ? center : undefined), [base, hidden, local, center]);
+  // Only the local graph follows the open note: in the Wiki and All views a note switch keeps the layout.
+  const localCenter = scope === 'local' ? center : undefined;
+  const local = !!localCenter;
+  const all = scope === 'all';
+  // `base`: the open note's neighbourhood, Wiki or all (the legend lists its types); `view`: what is drawn, without
+  // the types switched off in the legend (in the local graph before its neighbourhood is taken: no islands).
+  const base = useMemo(() => data && (localCenter ? localGraph(data, localCenter, depth) : shownGraph(data, all)), [data, localCenter, depth, all]);
+  const view = useMemo(() => data && base && (localCenter ? localView(data, localCenter, depth, hidden) : withoutTypes(base, hidden)), [data, base, localCenter, depth, hidden]);
   const colors = useMemo(() => data && typeColors(data, COLORS), [data]);
   const live = useRef<Live | null>(null);
   /** Set when the local graph changes or is left: the camera fits the notes once the layout settles. */
@@ -91,6 +95,22 @@ export function GraphPane() {
     api.graph(activeId).then((graph) => { cache.set(activeId, graph); if (!gone) setLoaded({ vault: activeId, graph }); }, (e) => !gone && setError(errorText(e)));
     return () => { gone = true; };
   }, [open, activeId, data]);
+
+  // A note made after the graph was read (by the AI, a pull, another device) is not in it: then the graph is read
+  // again, once per note, so the local graph can centre on it.
+  const reread = useRef<string | null>(null);
+  const activeRef = useRef(activeId);
+  activeRef.current = activeId;
+  useEffect(() => {
+    if (!open || !activeId || !data || !current || center || !/\.md$/i.test(current)) return;
+    const key = `${activeId}\n${current}`;
+    if (reread.current === key) return;
+    reread.current = key;
+    api.graph(activeId).then((graph) => {
+      cache.set(activeId, graph);
+      if (activeRef.current === activeId) setLoaded({ vault: activeId, graph });
+    }, () => { /* the graph read before stays */ });
+  }, [open, activeId, data, current, center]);
 
   useEffect(() => {
     const el = host.current;

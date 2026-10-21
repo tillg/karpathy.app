@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { localGraph, shownGraph, typeColors, withoutTypes } from './graph';
+import { localGraph, localView, shownGraph, typeColors, withoutTypes } from './graph';
 
 const data = {
   nodes: [{ path: 'Home.md' }, { path: 'Wiki/a.md', type: 'entity' }, { path: 'wiki/b.md', type: 'topic' }, { path: 'Wiki/c.md', type: 'concept' }],
@@ -60,4 +60,14 @@ it('shows a note without links alone, and nothing for a note that is not in the 
 it('never hides the centre with its type', () => {
   const typed = { nodes: [{ path: 'c.md', type: 'topic' }, { path: 'a.md', type: 'topic' }], links: [{ source: 'c.md', target: 'a.md' }] };
   expect(withoutTypes(typed, new Set(['topic']), 'c.md')).toEqual({ nodes: [typed.nodes[0]], links: [] });
+});
+
+it('localView hides types before taking the neighbourhood: no islands behind a hidden note, the centre stays', () => {
+  const chain = {
+    nodes: [{ path: 'a.md', type: 'topic' }, { path: 'b.md', type: 'source' }, { path: 'c.md', type: 'topic' }, { path: 'd.md', type: 'topic' }],
+    links: [{ source: 'a.md', target: 'b.md' }, { source: 'b.md', target: 'c.md' }, { source: 'a.md', target: 'd.md' }],
+  };
+  expect(localView(chain, 'a.md', 2, new Set(['source'])).nodes.map((n) => n.path)).toEqual(['a.md', 'd.md']);
+  expect(localView(chain, 'a.md', 2, new Set(['topic'])).nodes.map((n) => n.path)).toEqual(['a.md', 'b.md']);
+  expect(localView(chain, 'a.md', 2, new Set())).toEqual(localGraph(chain, 'a.md', 2));
 });

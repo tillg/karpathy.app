@@ -138,7 +138,7 @@ New sources (mails, links, Instagram posts) are fetched on the server, no Mac ne
 ## Status
 
 MVP (spec milestone M4) implemented: vaults from GitHub, file tree, CodeMirror editor with
-live preview and `[[wikilinks]]`, search (several words find notes with all of them, `"quotes"` for a phrase), a 3D graph of the notes and their links in the note pane (graph button in the sidebar; the Wiki folder by default, "Show all" for the rest; coloured by note type, types switched on/off in the legend; kept for the session; tap a note to open it), uncommitted changes / diff / discard, Commit & Push
+live preview and `[[wikilinks]]`, search (several words find notes with all of them, `"quotes"` for a phrase), a 3D graph of the notes and their links in the note pane (graph button in the sidebar; Local | Wiki | All: the open note's neighbourhood, the Wiki folder (default) or every note; coloured by note type, types switched on/off in the legend; kept for the session; tap a note to open it), uncommitted changes / diff / discard, Commit & Push
 with an AI-proposed message, conflict resolution, and a streaming AI chat that reads and
 edits the vault through opencode. Ask the AI to show you a note ("open my reading list") and it
 opens notes in the editor through its `open_note` tool (on a phone or a smaller iPad when the reply is
