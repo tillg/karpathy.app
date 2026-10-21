@@ -59,7 +59,7 @@ Every feature was built test-first by its own agent in its own worktree, with un
 | E2E of the new features plus regressions (Chromium desktop and iPhone) | 39 passed; the `@llm` chat-title test failed in the batch and passed twice alone (known: its tests share one vault) |
 | Exploratory test with many German, English and French notes, light and dark, phone width | all five features worked; one local-graph bug found and fixed (a single note showed an empty canvas) |
 | Adversarial review of the whole run | 20 findings, all fixed test-first and merged |
-| Release v0.0.34 | `check` hit the known intermittent #162 (`save_url`); re-run |
+| Release v0.0.34 | built and published: every job green after one re-run of `check` (the known intermittent #162, `save_url`) |
 
 The review findings that mattered most:
 
