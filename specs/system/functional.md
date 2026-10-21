@@ -461,7 +461,8 @@ syntax, so the same note shows the same table in Obsidian. The block's text is n
   footer the row count ("2 rows", "10 of 37 rows") and what was left out. A wide table scrolls sideways inside its box,
   never the page.
 - **Live:** the table runs again when vault files change (the AI, a pull, another device, a save), 300 ms after the
-  last change.
+  last change. A change while a query is running starts a new one; a late answer to the older query never replaces a
+  newer table. A failed run (server or network error) is shown but not kept: the next mount or change asks again.
 - **v1 syntax** (a subset of [Bases syntax](https://obsidian.md/help/bases/syntax)): `filters` (top level and in the
   view, joined with AND) as a text or `and` / `or` / `not` lists; expressions with `==` `!=` `>` `<` `>=` `<=` `&&`
   `||` `!` `+` `-` `*` `/` `%` and parentheses; frontmatter properties (`status`, `note.status`, `note["my prop"]`);

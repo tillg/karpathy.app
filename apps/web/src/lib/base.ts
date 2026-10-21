@@ -12,13 +12,15 @@ export interface BaseCtx {
   follow(inner: string): void;
 }
 
-type Outcome = { result: BaseResult } | { error: string };
+/** `lasting`: an error that depends only on the source (invalid / unsupported), so it may be cached like a result. */
+type Outcome = { result: BaseResult } | { error: string; lasting?: boolean };
 
 /** Per vault: bumped by every change of its files, so cached results know they are stale. */
 const epochs = new Map<string, number>();
 const listeners = new Map<string, Set<() => void>>();
 /** The last outcome per vault and source, so a re-mounted block (a re-render, a streamed chat answer) shows at once. */
 const cache = new Map<string, { epoch: number; outcome: Outcome }>();
+/** Running queries per vault, source and epoch: a query started before a change is never reused after it. */
 const inflight = new Map<string, Promise<Outcome>>();
 
 /** Files of `vault` changed (event stream): shown bases run again. */
@@ -37,24 +39,28 @@ export function resetBases() {
 
 const keyOf = (vault: string, source: string) => `${vault}\n${source}`;
 
-function message(e: unknown): string {
-  if (e instanceof ApiError && e.code === 'base-unsupported') return e.message;
-  if (e instanceof ApiError && e.code === 'base-invalid') return `Invalid base: ${e.message}`;
-  return `Couldn't run this base: ${e instanceof Error ? e.message : String(e)}`;
+function failure(e: unknown): Outcome {
+  if (e instanceof ApiError && e.code === 'base-unsupported') return { error: e.message, lasting: true };
+  if (e instanceof ApiError && e.code === 'base-invalid') return { error: `Invalid base: ${e.message}`, lasting: true };
+  // A 5xx or a network error may be gone on the next try: shown, never cached.
+  return { error: `Couldn't run this base: ${e instanceof Error ? e.message : String(e)}` };
 }
 
-function run(vault: string, source: string): Promise<Outcome> {
+/** The query for the vault's current epoch; resolves with the epoch it describes. */
+function run(vault: string, source: string): Promise<Outcome & { epoch: number }> {
   const key = keyOf(vault, source);
   const epoch = epochs.get(vault) ?? 0;
-  const running = inflight.get(key);
-  if (running) return running;
-  const p = api.base(vault, source).then((result): Outcome => ({ result }), (e: unknown): Outcome => ({ error: message(e) })).then((outcome) => {
-    if (inflight.get(key) === p) inflight.delete(key);
-    cache.set(key, { epoch, outcome });
+  const runKey = `${key}\n${epoch}`;
+  const running = inflight.get(runKey);
+  if (running) return running.then((o) => ({ ...o, epoch }));
+  const p = api.base(vault, source).then((result): Outcome => ({ result }), failure).then((outcome) => {
+    inflight.delete(runKey);
+    const prev = cache.get(key);
+    if (('result' in outcome || outcome.lasting) && (!prev || prev.epoch <= epoch)) cache.set(key, { epoch, outcome });
     return outcome;
   });
-  inflight.set(key, p);
-  return p;
+  inflight.set(runKey, p);
+  return p.then((o) => ({ ...o, epoch }));
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
@@ -170,9 +176,15 @@ export function mountBase(host: HTMLElement, source: string, ctx: BaseCtx, onEdi
   });
   let alive = true;
   const key = keyOf(ctx.vault, source);
-  const refresh = () => void run(ctx.vault, source).then((o) => { if (alive) render(box, o, onEdit); });
+  // The newest epoch shown: an older query that answers late doesn't replace a newer table.
+  let shown = -1;
+  const refresh = () => void run(ctx.vault, source).then((o) => {
+    if (!alive || o.epoch < shown) return;
+    shown = o.epoch;
+    render(box, o, onEdit);
+  });
   const hit = cache.get(key);
-  if (hit) render(box, hit.outcome, onEdit);
+  if (hit) { render(box, hit.outcome, onEdit); shown = hit.epoch; }
   else box.append(el('div', 'base-msg muted', 'Loading…'));
   if (!hit || hit.epoch !== (epochs.get(ctx.vault) ?? 0)) refresh();
   // Several files change at once (a pull, an AI turn): one run after they settle.
