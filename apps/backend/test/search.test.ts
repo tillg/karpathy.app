@@ -108,6 +108,14 @@ describe('SearchIndex', () => {
     expect(await v.paths('similar')).toEqual(['b.md']);
   });
 
+  it('a typo finds a word indexed by a short stem, in the name and in the text, and marks it', async () => {
+    const v = await vault({ 'Kitchen Renovation.md': `# Plan\n\n${EN}\n`, 'b.md': `${EN} The renovation of the kitchen starts in May.\n` });
+    expect(await v.paths('renovaton')).toEqual(['Kitchen Renovation.md', 'b.md']);
+    expect(v.index.languageOf('b.md')).toBe('en');
+    const [hit] = (await v.q('renovaton')).filter((h) => h.path === 'b.md');
+    expect(hit!.text.slice(...hit!.ranges![0]!)).toBe('renovation');
+  });
+
   it('several words: all must match; a quoted phrase matches as written', async () => {
     const v = await vault({ 'a.md': 'Similaun\n\nCevedale\n', 'b.md': 'Similaun Cevedale\n', 'c.md': 'Similaun\n' });
     expect((await v.paths('similaun cevedale')).sort()).toEqual(['a.md', 'b.md']);

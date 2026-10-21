@@ -32,8 +32,16 @@ const DETECT_SAMPLE = 600;
 /** Words of one query looked up at most (a longer query ignores the rest). */
 export const MAX_QUERY_WORDS = 20;
 /** Field weights: a word in the file name counts most, then headings, then frontmatter. */
-const BOOST = { title: 3, headings: 2, meta: 1.5, path: 1, body: 1 };
+const BOOST = { title: 3, headings: 2, meta: 1.5, path: 1, body: 1, titleWords: 3, words: 1 };
+/**
+ * Fields an exact or prefix lookup searches: the stems. `titleWords` and `words` hold the note's distinct words unstemmed
+ * (folded) and are searched only by the typo lookup: a stem can be too short for it ("renovaton" is 4 edits from the
+ * English stem "renov", 1 from "renovation").
+ */
+const STEM_FIELDS = ['title', 'headings', 'meta', 'path', 'body'];
 const FIELDS = Object.keys(BOOST) as (keyof typeof BOOST)[];
+/** Shorter words are never looked up with typo tolerance, so the unstemmed fields leave them out. */
+const MIN_FUZZY = 4;
 
 /** The languages with a stemmer; the detector chooses only among these. */
 export type Lang = 'de' | 'en' | 'fr' | 'es' | 'it';
@@ -113,6 +121,13 @@ export function wordTerms(word: string, lang: Lang | null): string[] {
 function queryVariants(word: string): string[] {
   const w = word.toLowerCase();
   return [...new Set([fold(w), ...LANGS.map((l) => fold(STEM[l](w)))])];
+}
+
+/** The distinct folded words of `text` that a typo lookup may reach (not stemmed). */
+function plainWords(text: string): string {
+  const raw = new Set<string>();
+  for (const m of text.matchAll(WORD)) if (m[0].length >= MIN_FUZZY && m[0].length <= MAX_TOKEN) raw.add(m[0]);
+  return [...new Set([...raw].map(fold))].join(' ');
 }
 
 function indexText(text: string, lang: Lang | null): string {
@@ -247,7 +262,7 @@ export class SearchIndex {
     extractField: (doc, field) => (doc as unknown as Record<string, string>)[field] ?? '',
     tokenize: (s) => (s ? s.split(' ') : []),
     processTerm: (t) => t,
-    searchOptions: { boost: BOOST, tokenize: (s) => [s], processTerm: (t) => t },
+    searchOptions: { boost: BOOST, fields: STEM_FIELDS, tokenize: (s) => [s], processTerm: (t) => t },
   });
   private docs = new Map<string, DocMeta>();
   /** Unknown changes: the next search lists the files and compares every size and mtime. Initially the index is empty. */
@@ -382,6 +397,8 @@ export class SearchIndex {
       headings: indexText(headings, lang),
       meta: indexText(meta, lang),
       body: indexText(body, lang),
+      titleWords: plainWords(path.slice(slash + 1).normalize('NFC')),
+      words: plainWords(`${slash < 0 ? '' : path.slice(0, slash).normalize('NFC')}\n${meta}\n${body}`),
     };
     this.docs.set(path, { mtimeMs: st.mtimeMs, size: st.size, lang, text });
     if (this.ms.has(path)) this.ms.replace(doc);
@@ -397,11 +414,12 @@ export class SearchIndex {
       const isRaw = v === g.raw;
       const results: SearchResult[] = this.ms.search(v, {
         prefix: !fuzzy && g.prefix && isRaw && v.length >= 2,
-        fuzzy: fuzzy && isRaw && v.length >= 4 ? 0.25 : false,
+        fuzzy: fuzzy && isRaw && v.length >= MIN_FUZZY ? 0.25 : false,
         maxFuzzy: 2,
+        ...(fuzzy && isRaw ? { fields: FIELDS } : {}),
       });
       for (const r of results) {
-        const byName = Object.values(r.match).some((fields) => fields.includes('title'));
+        const byName = Object.values(r.match).some((fields) => fields.includes('title') || fields.includes('titleWords'));
         const cur = out.get(r.id as string);
         if (!cur) out.set(r.id as string, { score: r.score, terms: new Set(r.terms), byName });
         else {
@@ -468,7 +486,7 @@ export class SearchIndex {
       if (ENCODED_LINE.test(line.trim())) continue;
       const ws = words(line);
       const ranges: [number, number][] = [];
-      for (const w of ws) if (w.word.length <= MAX_TOKEN && wordTerms(w.word, lang).some((t) => r.terms.has(t))) ranges.push([w.start, w.end]);
+      for (const w of ws) if (w.word.length <= MAX_TOKEN && (r.terms.has(fold(w.word)) || wordTerms(w.word, lang).some((t) => r.terms.has(t)))) ranges.push([w.start, w.end]);
       const folded = ws.map((w) => fold(w.word));
       for (const p of phrases)
         for (let k = 0; k + p.length <= ws.length; k++) if (p.every((x, j) => folded[k + j] === x)) ranges.push([ws[k]!.start, ws[k + p.length - 1]!.end]);

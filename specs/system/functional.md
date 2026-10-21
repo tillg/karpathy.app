@@ -421,7 +421,8 @@ snippets, the matched words marked; capped at 200 hits ("refine your search"); o
   `cheval` finds "chevaux". Each note's language (German, English, French, Spanish or Italian) is detected when it is
   indexed, or taken from a `lang:` in its frontmatter; very short notes match in all of them.
 - The last word also matches as the beginning of a word (`handt` finds "Handtuch"), so results come while typing.
-  A word that matches nothing is looked up with typo tolerance (`glaicer` finds "glacier").
+  A word that matches nothing is looked up with typo tolerance (`glaicer` finds "glacier", `renovaton` finds
+  "Renovation", in the file name or the text).
 - **Whole words only:** a word is found from its beginning, never from inside a longer word: `tuch` does not find
   "Handtuch" (nor `tuch` the file `Handtuch.md`). Search for the compound, or its beginning.
 - **File names and paths:** the full file name counts, extension included (`pdf` finds every PDF, `report.pdf` and
