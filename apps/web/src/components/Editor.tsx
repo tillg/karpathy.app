@@ -131,6 +131,11 @@ export const Editor = forwardRef<EditorHandle, Props>(function Editor(props, ref
             resolve: (e) => latest.current.resolveEmbed(e),
             ctx: () => latest.current.embedCtx(),
             epoch: () => latest.current.mediaEpoch,
+          }, {
+            ctx: () => {
+              const e = latest.current.embedCtx();
+              return { vault: e.vault, open: (p) => e.onOpen?.(p), follow: (i) => latest.current.onWikilink(i) };
+            },
           }),
         ro.current.of([EditorState.readOnly.of(props.readOnly), EditorView.editable.of(!props.readOnly)]),
         hide.current.of(props.hideFrontmatter ? hideLines : []),

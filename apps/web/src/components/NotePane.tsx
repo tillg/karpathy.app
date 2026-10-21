@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { frontmatterFields, renderMarkdown, splitFrontmatter, type FieldValue } from '../lib/markdown';
 import { isPdf, isUploadable } from '@karpathy/shared';
+import { mountBase, mountBases } from '../lib/base';
 import { mountEmbed, mountEmbeds, type Mounted } from '../lib/embed';
 import { mediaKind } from '../lib/media';
 import { fileKind, viewMode } from '../lib/lang';
@@ -48,6 +49,19 @@ export function Markdown({ text, className, base, startLine }: { text: string; c
     m.vault = activeId;
   }, [html, activeId, mediaEpoch]);
   useEffect(() => () => { for (const x of mounted.current.list) x.stop(); mounted.current.list = []; }, []);
+  // ```base blocks (#91): live tables; a re-mount of the same block shows its last result at once.
+  const follow = useRef<(inner: string) => void>(() => {});
+  follow.current = (inner) => {
+    if (base === undefined) return followLink(inner);
+    const l = parseWikilink(inner);
+    const p = l.target ? resolveWikilink(l.target, paths, base) : null;
+    if (p) void openNote(p, undefined, l.heading);
+    else toast(`No page “${l.target}” yet`);
+  };
+  useLayoutEffect(() => {
+    if (!host.current || !activeId) return;
+    return mountBases(host.current, { vault: activeId, open: (p) => void live.current.openNote(p), follow: (i) => follow.current(i) });
+  }, [html, activeId]);
   return (
     <div className={className} ref={host} dangerouslySetInnerHTML={{ __html: html }}
       onClick={(e) => {
@@ -104,6 +118,19 @@ function ReadView({ text, onCopied }: { text: string; onCopied(): void }) {
   );
 }
 
+/** A `.base` file in Read mode (#91): its table, live like a ```base block. */
+function BaseFileView({ text }: { text: string }) {
+  const { activeId, openNote, followLink } = useApp();
+  const host = useRef<HTMLDivElement>(null);
+  const live = useRef({ openNote, followLink });
+  live.current = { openNote, followLink };
+  useLayoutEffect(() => {
+    if (!host.current || !activeId) return;
+    return mountBase(host.current, text, { vault: activeId, open: (p) => void live.current.openNote(p), follow: (i) => live.current.followLink(i) });
+  }, [text, activeId]);
+  return <div className="read rd" data-testid="base-file" ref={host} />;
+}
+
 /** A media file or other binary file opened on its own: the player or file card, never an editor. */
 function MediaView({ path }: { path: string }) {
   const { activeId, toast, mediaEpoch } = useApp();
@@ -136,11 +163,13 @@ export function NotePane({ inert }: { inert?: boolean }) {
   // What the open file is (#126): only notes have the Markdown tools; a code file is always its editor.
   const kind = note ? fileKind(note.path, !!note.binary) : null;
   const isNote = kind === 'note';
-  const textual = kind === 'note' || kind === 'html' || kind === 'code';
+  const textual = kind === 'note' || kind === 'html' || kind === 'base' || kind === 'code';
+  // A page: Write shows its source, Read renders it; it keeps the page mode, not the notes' mode.
+  const page = kind === 'html' || kind === 'base';
   // HTML pages keep their own Write/Read preference (page mode). A hit position (search hit, AI open at a
   // line) in a page shows its source, since the rendered page has no lines; the preference stays.
   const [hitSeen, setHitSeen] = useState(0);
-  const hitWrite = kind === 'html' && !!note?.goto && note.goto.nonce !== hitSeen;
+  const hitWrite = page && !!note?.goto && note.goto.nonce !== hitSeen;
   const mode = hitWrite ? 'write' : kind ? viewMode(kind, s.mode, s.pageMode) : s.mode;
   const editor = useRef<EditorHandle>(null);
   const rctx = useRenderCtx();
@@ -206,8 +235,8 @@ export function NotePane({ inert }: { inert?: boolean }) {
     if (hitWrite) setHitSeen(note!.goto!.nonce);
     stopRestore.current();
     const sc = s.scrollRef.current;
-    pendingLine.current = kind === 'html' ? null : (mode === 'write' ? editor.current?.topLine() : sc && topBlockLine(sc)) ?? null;
-    (kind === 'html' ? s.setPageMode : setMode)(m);
+    pendingLine.current = page ? null : (mode === 'write' ? editor.current?.topLine() : sc && topBlockLine(sc)) ?? null;
+    (page ? s.setPageMode : setMode)(m);
   };
   useEffect(() => {
     const line = pendingLine.current;
@@ -361,7 +390,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
           <>
             {isNote && <button id="outline-button" className={`ib${outlineOpen ? ' on' : ''}`} title="Outline" aria-expanded={outlineOpen} data-testid="outline-button"
               onPointerDown={() => setSel(readSelection())} onClick={() => openOutline(!outlineOpen)}><Icon n="list_bullet" /></button>}
-            {(isNote || kind === 'html') && (
+            {(isNote || page) && (
               <div className="seg" role="group" aria-label="Mode" data-testid="mode-toggle">
                 <button className={mode === 'write' ? 'on' : ''} aria-pressed={mode === 'write'} data-testid="mode-write" onClick={() => switchMode('write')}>Write</button>
                 <button className={mode === 'read' ? 'on' : ''} aria-pressed={mode === 'read'} data-testid="mode-read" onClick={() => switchMode('read')}>Read</button>
@@ -417,6 +446,8 @@ export function NotePane({ inert }: { inert?: boolean }) {
                   hideFrontmatter={showForm} onFrontmatter={(f) => setFmFor({ key: noteKey!, fm: f })} onRevealFrontmatter={() => setYamlFor(note.path)} />
               : kind === 'html'
                 ? <HtmlView key={note.path} vault={s.activeId!} path={note.path} text={s.currentText()} paths={s.paths} />
+                : kind === 'base'
+                ? <BaseFileView text={s.currentText()} />
                 : <ReadView text={s.currentText()} onCopied={() => s.toast('Copied')} />}
             <div className="dfoot" data-testid="save-state">
               {note.uploading ? 'Uploading…' : note.saving ? 'Saving…' : note.dirty ? '● Unsaved changes' : 'Saved'}{readOnly ? ' · read-only' : ''}

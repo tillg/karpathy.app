@@ -21,6 +21,8 @@ describe('fileKind', () => {
       ['a.eml', false, 'email'],
       ['Mail/A.EML', false, 'email'],
       ['a.eml', true, 'email'],
+      ['Dash/Tasks.base', false, 'base'],
+      ['a.BASE', false, 'base'],
     ];
     for (const [path, binary, kind] of cases) expect(fileKind(path, binary), path).toBe(kind);
   });
@@ -52,6 +54,10 @@ describe('viewMode', () => {
     expect(viewMode('html', 'read', 'write')).toBe('write');
     expect(viewMode('html', 'write', 'read')).toBe('read');
     expect(viewMode('code', 'read', 'read')).toBe('write');
+  });
+  it('a .base file has Write (its YAML) and Read (the table), like an HTML page (#91)', () => {
+    expect(viewMode('base', 'write', 'read')).toBe('read');
+    expect(viewMode('base', 'read', 'write')).toBe('write');
   });
   it('emails are always Read (#166)', () => {
     expect(viewMode('email', 'write', 'write')).toBe('read');
