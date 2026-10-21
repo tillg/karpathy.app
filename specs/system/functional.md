@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-16
+edited: 2026-10-21
 ---
 
 # Functional: karpathy.app
@@ -85,7 +85,7 @@ bookmarked link work; after a reload straight into admin mode, **Done** goes to 
 | **General** | Commit reminder threshold (1–1000 changed files, own **Save**); **Version** (see [Access](#access)) |
 | **Vaults** | Vault list, details, Add vault, "What is a vault?" (below) |
 | **Secrets & keys** | GitHub token, Instagram login, and the status of every deployment secret (below) |
-| **AI** | Model (`provider/model`, server-wide; the server rejects models opencode doesn't offer; free text, no picker), "Default: …" line with **Use default**, **Web access** switch, **Save settings** |
+| **AI** | Model (`provider/model`, server-wide; the server rejects models opencode doesn't offer; free text, no picker), "Default: …" line with **Use default**, **Title model** and **Vision model** the same way, **Web access** switch, **Save settings** |
 | **Usage** | Tokens and cost over time, by day, model and vault ([Usage](#usage)) |
 | **Server** | CPU, memory, load and disk over time, opencode status, uptime ([Server](#server)) |
 
@@ -148,6 +148,14 @@ Three views, switched inside the section. Details and Add vault have an "All vau
     default back into the field. Saving the default removes the override, so a later change of the deployment's
     default applies again; saving another model keeps it as an override until then. The threshold and the switch
     also start from the deployment's settings, but there a saved value keeps winning.
+  - **Title model and Vision model** (#148), two more fields under the model, each with its own "Default: …" line and
+    **Use default** like the model, saved with **Save settings**. The **Title model** writes the chat titles
+    ([Chat with the AI](#chat-with-the-ai)); its default is "the chat model" (whichever model is in effect, an
+    override included) until the deployment's settings name one (`ai.title_model`), and it must be a model opencode
+    offers. The **Vision model** is the model of the `look_at_image` tool; it shows only when the deployment has a
+    vision gateway and takes a model of that gateway (`<gateway>/<model>`; another gateway is a settings change). It
+    applies from the next image on, without a restart; the model id isn't checked on save, so a wrong one shows as the
+    tool's error. A blank field means the default.
 - **Usage** and **Server:** see [Usage](#usage) and [Server](#server).
 
 #### Checked attach
@@ -307,6 +315,8 @@ flowchart LR
   and a selection already copied aren't copied again (clearing it first re-arms the copy). A refused clipboard write
   (no secure context, no permission) is silent. Read mode does the same on the rendered page (same gestures and rules):
   it copies the selection's visible text (e.g. "AeroPress", not `[[aeropress]]`), and only a selection inside the page.
+  The chat's messages do the same (rendered text, only a selection inside the message list); the composer doesn't,
+  since there you select text to replace it.
 - **Outline and note info** (#79): the list button in the note header (notes only, left of Write/Read) shows the
   note's headings, indented by level, the same in both modes; headings in code, the frontmatter and `%%comments%%`
   aren't listed. A tap jumps there: Write mode scrolls the heading's line to the top without moving the cursor or
@@ -440,7 +450,16 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
 - **Swap note and chat** (wide layout, chat open): the round ⇄ button on the divider at the top puts the chat in the
   large main column and the note in the 380 px side column, and back. Nothing is lost on a swap (streaming, typed
   text, cursor, scroll, undo); the browser remembers the choice across reloads; closing the chat keeps it.
-- **Chat list** per vault (full first-prompt title, cut by the column width with the full title as tooltip;
+- **Chat titles** (#148): a new chat is titled with its first prompt (the *preliminary title*). When its 2nd turn ends,
+  the **title model** writes a short title from what has been discussed, in the chat's language, and it replaces the
+  preliminary one. Every 10th turn (10, 20, 30, …) the title model titles the last ten turns afresh; if that title
+  shares less than half of its significant words with the current one, the chat has drifted and a bar above the composer asks "Rename this
+  chat to “…”?" with **Rename** (the suggestion becomes the title) and **Keep** (it is dropped). The suggestion stays
+  until answered, also after a reload and on any other device; the next drift check replaces an unanswered one. The
+  list and an open chat follow a new title live. A failing or slow title model changes nothing and shows no error;
+  a chat renamed or deleted while the title is being written keeps the user's choice. There is no free rename. Chats
+  from before the feature get their first drift check at their next multiple of 10.
+- **Chat list** per vault (title as above, cut by the column width with the full title as tooltip;
   running/queued marker, **last entry**, context bar; delete); **new chat**; **resume** any chat, also on
   another device mid-turn. The last entry (time of the chat's last message, #140) shows in the device's format as
   the time today, date and time this year, date with year and time before (`en-US`: `02:22 PM`, `Oct 3, 02:22 PM`,
@@ -478,7 +497,7 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
 - **The AI opens notes** when asked ("show me my reading list"): on the wide layout right away, on a phone or in the
   tablet overlay when the reply is done, never while the user is editing (then a notice "AI opened …" and the chip).
   Reloading a chat never reopens anything; a wrong path goes back to the AI as a tool error. Works in conflict too.
-- **Images** (#146): the AI can interpret images of the vault and attached ones through its `look_at_image` tool, which asks a separate vision model (`ai.vision_model`; production `mistralai/mistral-medium-3-5` via ZDR providers) and returns its description; the chat shows a `look_at_image <path>` chip. PDFs and SVGs are not supported.
+- **Images** (#146): the AI can interpret images of the vault and attached ones through its `look_at_image` tool, which asks a separate vision model (`ai.vision_model`; production `mistralai/mistral-medium-3-5` via ZDR providers; an admin can pick another model of the same gateway in Admin mode › AI) and returns its description; the chat shows a `look_at_image <path>` chip. PDFs and SVGs are not supported.
 - **Suggested next prompt** (#145): at the end of a reply the AI may call `suggest_next`; the text shows greyed out in the
   empty composer (no chip) with a small "↹ Tab" button on keyboard devices and "Tap to use" on touch. **Tab** (or a tap)
   puts it into the composer and sends nothing; **Enter** sends it. Typing, sending or a new turn removes it; clearing the
@@ -731,7 +750,8 @@ sequenceDiagram
 | Clone, pull or open of a vault in Anthropic's layout | `AGENTS.md`, `.agents/skills/`, the skill link, a notice (uncommitted changes) |
 | Commit message | Commit on GitHub (or an unpushed commit), toast |
 | Conflict choice per file | Resolved file(s), possibly a `.conflict-<date>` copy |
-| Admin mode: reminder threshold (General), model (or Use default) and Web access (AI) | A model override stored only while it differs from the deployment's default |
+| Admin mode: reminder threshold (General), model, title model and vision model (each or Use default) and Web access (AI) | A model override stored only while it differs from the deployment's default |
+| Chat turns 2, 10, 20, … | A generated title (turn 2); a title suggestion bar (Rename / Keep) after a drift check |
 | URLs in prompts and notes, web search queries (AI) | Web chips; pages and results in the chat only |
 | "Add a picture of X from <URL>" (AI) | A new media file or PDF in the vault (changed chip) and an embed in the note |
 | Mail to an ingest profile's Gmail label; a folder dropped into `Input/` | Input items (and sibling items for its links) in `Input/`, the input count |
@@ -787,7 +807,11 @@ both; a later change can restrict admin mode, taking nothing away from users. Th
   doesn't display scopes today). A tested token is not saved.
 - **No rename or move** of notes or folders (except the move into its own folder on a page's first upload), no
   explicit folder creation, no automatic pull (only the count updates on its own), no per-chat model,
-  no chat rename, no global keyboard shortcuts.
+  no free chat rename (a title suggestion is the only way to a new title), no global keyboard shortcuts.
+- **Chat titles:** the drift check is a word-overlap heuristic: a synonym ("car" vs "vehicle") counts as drift and
+  gives one extra suggestion, which **Keep** dismisses; a new topic named with half of the old title's words is missed. Title calls
+  don't show in Usage (their throwaway sessions run outside the vaults). The vision and title model fields take only
+  models of the deployment's gateways (title: `ai.gateway`, vision: the vision gateway).
 - **Admin mode:**
   - **Usage** counts only what opencode still stores: a deleted chat drops out of the totals, and throwaway sessions (commit-message
     proposals) count only while they exist. The first report after a backend start reads every chat once and is slower.

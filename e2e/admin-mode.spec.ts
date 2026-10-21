@@ -57,36 +57,76 @@ for (const tag of ['', ' @iphone']) {
   });
 }
 
-test('AI: the model field, Use default and Web access behave as in the old Settings dialog', async ({ page, api }) => {
-  const cur = await api.settings() as Awaited<ReturnType<typeof api.settings>> & { defaultModel: string; modelOverridden: boolean };
-  const refusal = await (await api.ctx.fetch('/api/settings', { method: 'PATCH', data: { model: 'nope/none' } })).json();
-  const other = String(refusal.error).replace(/.*Available: /, '').split(', ').find((m) => m !== cur.defaultModel)!;
-  expect(other).toBeTruthy();
-  try {
-    await openApp(page);
-    await openSettings(page, 'ai');
-    const model = page.getByTestId('settings-model');
-    const hint = page.getByTestId('settings-model-default');
-    await expect(hint).toHaveText(`Default: ${cur.defaultModel}`);
-    await model.fill(other);
-    await page.getByTestId('settings-save').click();
-    await expect(page.getByTestId('settings-saved')).toBeVisible();
-    await expect(hint).toHaveAttribute('data-overridden', 'true');
-    expect(await api.settings()).toMatchObject({ model: other, modelOverridden: true });
-    await page.getByTestId('settings-model-reset').click();
-    await expect(model).toHaveValue(cur.defaultModel);
-    await page.getByTestId('settings-save').click();
-    await expect(hint).toHaveAttribute('data-overridden', 'false');
-    await expect(page.getByTestId('settings-model-reset')).toHaveCount(0);
-    // Web access: toggle, save, the backend has it.
-    const web = page.getByTestId('settings-web-access');
-    const before = await web.isChecked();
-    await web.setChecked(!before);
-    await page.getByTestId('settings-save').click();
-    await expect.poll(async () => (await api.settings()).webAccess).toBe(!before);
-  } finally {
-    await api.ctx.fetch('/api/settings', { method: 'PATCH', data: { model: cur.modelOverridden ? cur.model : null, webAccess: cur.webAccess } });
-  }
+// Both change the server-wide settings (Save sends every AI field): one after the other.
+test.describe('AI settings', () => {
+  test.describe.configure({ mode: 'serial' });
+
+  test('AI: the model field, Use default and Web access behave as in the old Settings dialog', async ({ page, api }) => {
+    const cur = await api.settings() as Awaited<ReturnType<typeof api.settings>> & { defaultModel: string; modelOverridden: boolean };
+    const refusal = await (await api.ctx.fetch('/api/settings', { method: 'PATCH', data: { model: 'nope/none' } })).json();
+    const other = String(refusal.error).replace(/.*Available: /, '').split(', ').find((m) => m !== cur.defaultModel)!;
+    expect(other).toBeTruthy();
+    try {
+      await openApp(page);
+      await openSettings(page, 'ai');
+      const model = page.getByTestId('settings-model');
+      const hint = page.getByTestId('settings-model-default');
+      await expect(hint).toHaveText(`Default: ${cur.defaultModel}`);
+      await model.fill(other);
+      await page.getByTestId('settings-save').click();
+      await expect(page.getByTestId('settings-saved')).toBeVisible();
+      await expect(hint).toHaveAttribute('data-overridden', 'true');
+      expect(await api.settings()).toMatchObject({ model: other, modelOverridden: true });
+      await page.getByTestId('settings-model-reset').click();
+      await expect(model).toHaveValue(cur.defaultModel);
+      await page.getByTestId('settings-save').click();
+      await expect(hint).toHaveAttribute('data-overridden', 'false');
+      await expect(page.getByTestId('settings-model-reset')).toHaveCount(0);
+      // Web access: toggle, save, the backend has it.
+      const web = page.getByTestId('settings-web-access');
+      const before = await web.isChecked();
+      await web.setChecked(!before);
+      await page.getByTestId('settings-save').click();
+      await expect.poll(async () => (await api.settings()).webAccess).toBe(!before);
+    } finally {
+      await api.ctx.fetch('/api/settings', { method: 'PATCH', data: { model: cur.modelOverridden ? cur.model : null, webAccess: cur.webAccess } });
+    }
+  });
+
+  test('AI: title model and vision model show their defaults, save an override and go back with Use default (#148)', async ({ page, api }, info) => {
+    // Server-wide settings: a second browser project running it at the same time would reset them under this one.
+    test.skip(info.project.name !== 'desktop', 'runs in the desktop project only');
+    type View = Awaited<ReturnType<typeof api.settings>> & { titleModel: string; defaultTitleModel: string; titleModelOverridden: boolean; visionModel: string; defaultVisionModel: string; visionModelOverridden: boolean; visionGateway: string };
+    const cur = await api.settings() as View;
+    const refusal = await (await api.ctx.fetch('/api/settings', { method: 'PATCH', data: { titleModel: 'nope/none' } })).json();
+    expect(String(refusal.error)).toMatch(/Title model nope\/none is not available/);
+    const other = String(refusal.error).replace(/.*Available: /, '').split(', ').find((m) => m !== cur.defaultTitleModel)!;
+    const otherVision = `${cur.visionGateway}/some-other-vision-model`;
+    try {
+      await openApp(page);
+      await openSettings(page, 'ai');
+      const title = page.getByTestId('settings-title-model');
+      const vision = page.getByTestId('settings-vision-model');
+      await expect(title).toHaveValue(cur.defaultTitleModel);
+      await expect(vision).toHaveValue(cur.defaultVisionModel);
+      await expect(page.getByTestId('settings-title-model-default')).toHaveText(`Default: ${cur.defaultTitleModel || 'the chat model'}`);
+      await expect(page.getByTestId('settings-vision-model-default')).toHaveText(`Default: ${cur.defaultVisionModel}`);
+      await title.fill(other);
+      await vision.fill(otherVision);
+      await page.getByTestId('settings-save').click();
+      await expect(page.getByTestId('settings-saved')).toBeVisible();
+      expect(await api.settings()).toMatchObject({ titleModel: other, titleModelOverridden: true, visionModel: otherVision, visionModelOverridden: true });
+      await page.getByTestId('settings-title-model-reset').click();
+      await page.getByTestId('settings-vision-model-reset').click();
+      await expect(title).toHaveValue(cur.defaultTitleModel);
+      await expect(vision).toHaveValue(cur.defaultVisionModel);
+      await page.getByTestId('settings-save').click();
+      await expect.poll(async () => (await api.settings()) as View).toMatchObject({ titleModelOverridden: false, visionModelOverridden: false });
+      await expect(page.getByTestId('settings-title-model-reset')).toHaveCount(0);
+    } finally {
+      await api.ctx.fetch('/api/settings', { method: 'PATCH', data: { titleModel: cur.titleModelOverridden ? cur.titleModel : null, visionModel: cur.visionModelOverridden ? cur.visionModel : null } });
+    }
+  });
 });
 
 test('Secrets: the dev stack\'s secrets show Set', async ({ page }) => {

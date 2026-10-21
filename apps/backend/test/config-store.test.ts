@@ -9,14 +9,14 @@ const dir = () => mkdtemp(join(tmpdir(), 'cfg-'));
 describe('ConfigStore', () => {
   it('starts with default settings (threshold 4, no model without the deployment default, web access on)', async () => {
     const s = await ConfigStore.open(await dir());
-    expect(s.get().settings).toEqual({ commitReminderThreshold: 4, model: '', webAccess: true });
+    expect(s.get().settings).toEqual({ commitReminderThreshold: 4, model: '', titleModel: '', visionModel: '', webAccess: true });
     expect(s.get().vaults).toEqual([]);
   });
 
   it('webAccess defaults to true, also for an old config without the key', async () => {
     const d = await dir();
     await writeFile(join(d, 'config.json'), JSON.stringify({ vaults: [], settings: { commitReminderThreshold: 9, model: 'a/b' } }));
-    expect((await ConfigStore.open(d)).get().settings).toEqual({ commitReminderThreshold: 9, model: 'a/b', webAccess: true });
+    expect((await ConfigStore.open(d)).get().settings).toEqual({ commitReminderThreshold: 9, model: 'a/b', titleModel: '', visionModel: '', webAccess: true });
   });
 
   it('persists vault CRUD across reopen', async () => {
@@ -64,12 +64,29 @@ describe('ConfigStore', () => {
     expect((await raw()).modelOverride).toBe('m/2');
     const b = await ConfigStore.open(d, { model: 'd/3' });
     expect(b.get().settings.model).toBe('m/2');
-    expect(b.defaultModel).toBe('d/3');
+    expect(b.defaults.model).toBe('d/3');
     // (c) picking the default removes the override
     await b.update((c) => { c.settings.model = 'd/3'; });
     expect(await raw()).not.toHaveProperty('modelOverride');
     // (d) so the next default applies
     expect((await ConfigStore.open(d, { model: 'd/4' })).get().settings.model).toBe('d/4');
+  });
+
+  it('title and vision model are stored only as overrides of their own defaults', async () => {
+    const d = await dir();
+    const raw = async () => JSON.parse(await readFile(join(d, 'config.json'), 'utf8')).settings;
+    const defaults = { model: 'd/chat', titleModel: 'd/title', visionModel: 'v/see' };
+    const a = await ConfigStore.open(d, defaults);
+    expect(a.get().settings).toMatchObject(defaults);
+    expect(a.defaults).toMatchObject(defaults);
+    await a.update((c) => { c.settings.titleModel = 'd/other'; c.settings.visionModel = 'v/other'; });
+    expect(await raw()).toMatchObject({ titleModelOverride: 'd/other', visionModelOverride: 'v/other' });
+    expect(await raw()).not.toHaveProperty('titleModel');
+    const b = await ConfigStore.open(d, { ...defaults, titleModel: 'd/title2' });
+    expect(b.get().settings).toMatchObject({ titleModel: 'd/other', visionModel: 'v/other' });
+    await b.update((c) => { c.settings.titleModel = 'd/title2'; c.settings.visionModel = 'v/see'; });
+    expect(await raw()).not.toHaveProperty('titleModelOverride');
+    expect(await raw()).not.toHaveProperty('visionModelOverride');
   });
 
   it('a legacy persisted model becomes an override only if it differs from the default', async () => {

@@ -334,6 +334,11 @@ export class Vaults {
     r.fetchTimer = undefined;
   }
 
+  /** An event from another service (chat titles, #148) to the vault's event stream. */
+  publish(id: string, e: VaultEvent) {
+    this.emit(id, e);
+  }
+
   private emit(id: string, e: VaultEvent) {
     for (const fn of this.rt.get(id)?.listeners ?? []) fn(e);
   }

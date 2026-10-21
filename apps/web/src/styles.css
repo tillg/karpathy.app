@@ -355,6 +355,8 @@ a.tc { text-decoration: none; cursor: pointer; }
 .turn-state { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--label2); }
 .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--label3); border-top-color: var(--tint); animation: rot .7s linear infinite; flex: none; display: inline-block; }
 @keyframes rot { to { transform: rotate(360deg); } }
+.title-suggest { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; font-size: 13.5px; color: var(--label2); }
+.title-suggest span { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
 .comp { flex: none; border-top: .5px solid var(--sep); background: var(--mat); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); padding: 8px 12px calc(10px + env(safe-area-inset-bottom)); }
 .inrow { display: flex; align-items: flex-end; gap: 8px; }
 /* Context meter (#140): a 3 px track, filled by how much of the model's context the chat uses. */

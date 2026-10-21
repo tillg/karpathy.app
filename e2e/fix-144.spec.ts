@@ -39,3 +39,30 @@ test('144 selecting text in Read mode copies it too', async ({ page, context, ap
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).not.toBe('x');
   expect(['gamma', 'delta']).toContain((await page.evaluate(() => navigator.clipboard.readText())).trim());
 });
+
+test('144 selecting text in the chat copies it too', async ({ page, context, vault, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Chromium only: WebKit refuses clipboard-read/clipboard-write permissions');
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await openApp(page, vault.id);
+  if ((await page.locator('#chat').getAttribute('inert')) !== null) await page.getByTestId('chat-toggle').click();
+  await page.getByTestId('new-chat').click();
+  const messages = page.getByTestId('chat-messages');
+  await expect(messages).toContainText('New chat');
+
+  await page.evaluate(() => navigator.clipboard.writeText('x'));
+  await messages.getByText(/New chat/).dblclick({ position: { x: 8, y: 8 } }); // on "New"
+  await expect(page.getByTestId('toast')).toHaveText('Copied');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).not.toBe('x');
+
+  // Keyboard selection (shift+arrows) copies too.
+  await page.evaluate(() => navigator.clipboard.writeText('x'));
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).not.toBe('x');
+
+  // Text in the composer isn't copied on select: selecting to replace it must keep the clipboard.
+  await page.evaluate(() => navigator.clipboard.writeText('keep-me'));
+  await page.getByTestId('chat-composer').fill('hello world');
+  await page.getByTestId('chat-composer').dblclick();
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('keep-me');
+});

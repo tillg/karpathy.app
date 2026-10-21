@@ -46,6 +46,8 @@ export const settingsSchema = z.strictObject({
   ai: z.strictObject({
     gateway: z.string(),
     model: z.string(),
+    /** Writes the chat titles (#148); a model of `gateway`. Absent = `model`. */
+    title_model: z.string().optional(),
     /** Looks at images for the chat model (the look_at_image tool); a model of `gateway`, which must speak the OpenAI chat API. */
     vision_model: z.string(),
     web: z.strictObject({
@@ -102,9 +104,10 @@ export function visionGatewayId(s: Settings): string {
 export function crossFieldErrors(s: Settings): string[] {
   const errors: string[] = [];
   // A model setting is `<gateway>/<model id>`: the chat model on ai.gateway, the vision model on the gateway its prefix names.
-  const checkModel = (key: 'model' | 'vision_model', gatewayId: string) => {
+  const checkModel = (key: 'model' | 'title_model' | 'vision_model', gatewayId: string) => {
     const gw = s.gateways[gatewayId];
     const model = s.ai[key];
+    if (model === undefined) return;
     const prefix = `${gatewayId}/`;
     if (!gw) return errors.push(`ai.${key}: no gateway "${gatewayId}" (${Object.keys(s.gateways).join(', ')})`);
     const known = Object.keys(gw.models ?? {}).map((m) => prefix + m);
@@ -113,7 +116,10 @@ export function crossFieldErrors(s: Settings): string[] {
       errors.push(`ai.${key}: ${model} is not one of ${known.join(', ')}`);
   };
   if (!s.gateways[s.ai.gateway]) errors.push(`ai.gateway: no gateway "${s.ai.gateway}" (${Object.keys(s.gateways).join(', ')})`);
-  else checkModel('model', s.ai.gateway);
+  else {
+    checkModel('model', s.ai.gateway);
+    checkModel('title_model', s.ai.gateway);
+  }
   const visionGateway = visionGatewayId(s);
   checkModel('vision_model', visionGateway);
   if (s.gateways[visionGateway]?.kind === 'anthropic')

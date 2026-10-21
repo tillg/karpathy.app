@@ -15,7 +15,14 @@ export const backendSettingsSchema = z.strictObject({
     author: z.strictObject({ name: z.string(), email: z.string() }),
     github_token: file.optional(),
   }),
-  ai: z.strictObject({ model: z.string(), web_access: z.boolean() }),
+  /** `title_model` and the vision fields are absent in an older settings.json. */
+  ai: z.strictObject({
+    model: z.string(),
+    title_model: z.string().optional(),
+    vision_model: z.string().optional(),
+    vision_gateway: z.string().optional(),
+    web_access: z.boolean(),
+  }),
   commit_reminder_threshold: z.number().int(),
   files: z.strictObject({
     visible_dot_dirs: z.array(z.string().regex(/^\.[^/]+$/, 'a dot-dir name starts with "."').refine((d) => d !== '.git', '.git is never shown')),
@@ -33,6 +40,11 @@ export interface BackendSettings {
   remoteBase: string;
   identity: { name: string; email: string };
   defaultModel: string;
+  /** '' = the chat model in effect. */
+  defaultTitleModel: string;
+  /** `<vision gateway>/<model>`; '' in an older settings.json. */
+  defaultVisionModel: string;
+  visionGateway: string;
   webAccess: boolean;
   commitReminderThreshold: number;
   visibleDotDirs: string[];
@@ -57,6 +69,9 @@ export function loadBackendSettings(path: string): BackendSettings {
     remoteBase: s.git.remote_base,
     identity: s.git.author,
     defaultModel: s.ai.model,
+    defaultTitleModel: s.ai.title_model ?? '',
+    defaultVisionModel: s.ai.vision_model && s.ai.vision_gateway ? `${s.ai.vision_gateway}/${s.ai.vision_model}` : '',
+    visionGateway: s.ai.vision_gateway ?? '',
     webAccess: s.ai.web_access,
     commitReminderThreshold: s.commit_reminder_threshold,
     visibleDotDirs: s.files.visible_dot_dirs,

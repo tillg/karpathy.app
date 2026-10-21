@@ -125,6 +125,29 @@ test('@llm AI write → changed chip, "Open changed page", changes counter incre
   await expect(page.locator('.cm-content')).toContainText('AI note');
 });
 
+test('@llm after two turns the chat gets a title from the title model (#148)', async ({ page }) => {
+  await openApp(page, vault.id);
+  if ((await page.locator('#chat').getAttribute('inert')) !== null) await page.getByTestId('chat-toggle').click();
+  await page.getByTestId('new-chat').click();
+  await send(page, 'hi');
+  await expect(page.getByTestId('assistant-message')).toHaveCount(1, { timeout: TURN });
+  await waitIdle(page);
+  await send(page, 'Give me three tips for growing tomatoes on a balcony. Answer in two sentences, use no tools.');
+  await expect(page.getByTestId('assistant-message')).toHaveCount(2, { timeout: TURN });
+  await waitIdle(page);
+  // The title job runs after the turn; the chat list learns the new title from the vault event.
+  await page.getByTestId('chat-back').click();
+  // The job's throwaway session never shows in the list: the chat is the only item all along.
+  const items = page.getByTestId('chat-item');
+  await expect(items).toHaveCount(1);
+  const name = items.first().locator('.nm');
+  await expect(name).toHaveText(/\S/);
+  await expect(name).not.toHaveText(/^\s*hi\s*$/, { timeout: TURN });
+  await expect(items).toHaveCount(1);
+  await page.screenshot({ path: test.info().outputPath('chat-title.png') });
+  await page.getByTestId('chat-delete').first().click();
+});
+
 test('@llm Stop aborts a running turn', async ({ page }) => {
   await openApp(page, vault.id);
   await page.getByTestId('new-chat').click();

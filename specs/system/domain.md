@@ -1,7 +1,7 @@
 ---
 title: "Domain: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-16
+edited: 2026-10-21
 ---
 
 # Domain: karpathy.app
@@ -78,6 +78,12 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Context used** | The tokens of the chat's **last AI reply** (input + output + reasoning + cache read + cache write): what the next request starts from. Measured against the window of the model that reply ran with. | `ContextUsage.used` |
 | **Context usage** | *used / window* of a chat, e.g. `3,560 / 16,384`; only *used* when the window is unknown. Levels: normal < 70 % ≤ warning < 90 % ≤ critical. | `ContextUsage`; web `ContextMeter` |
 | **Compaction** | opencode summarizing a long chat to free its context; the next reply's context used drops, and the meter's tooltip says so. | opencode |
+| **Turn** | One user message of a chat and the AI's reply to it. A chat's turn count is its number of user messages (a queued prompt sent while a turn ends counts for the next turn). | `messages.filter(m => m.role === 'user').length` |
+| **Preliminary title** | A chat's first title: its first prompt (or the first attachment's name), set when the prompt is sent. | `titleFromFirstPrompt` |
+| **Title model** | The model that writes chat titles (#148). Unset in the settings (`ai.title_model`) it is the chat model in effect, an admin override of the chat model included; an admin may set another model of `ai.gateway` in admin mode › AI (stored as `titleModelOverride` only while it differs from the default). | `ai.title_model`, `Settings.titleModel` |
+| **Generated title** | The title the title model writes when turn 2 ends, from what has been discussed (short, in the chat's language); it replaces the preliminary title. Never an error: a failing or slow title model leaves the title as it is. | `ChatTitles.afterTurn` |
+| **Drift check** | When turn 10, 20, 30, … ends: the title model titles the last ten turns afresh; the chat drifted unless at least half of the fresh title's significant words (4+ letters, first four compared) are in the current one. A word-overlap rule in code, not a question to the model: small models answered "keep" even after a complete change of topic. | `ChatTitles.afterTurn`, `sameTopic` |
+| **Title suggestion** | The fresh title of a drift check, kept per chat until the user answers: **Rename** (it becomes the title) or **Keep** (it is dropped); the next drift check replaces it. Shown as a bar above the composer; survives a reload and shows on every device. | `ChatSummary.titleSuggestion`, `ConfigData.titleSuggestions` |
 | **Turn** | One user prompt in a chat plus everything the AI reads and changes in response. States `idle`, `queued` (waiting for another turn or for the sync), `running`. | `TurnState` |
 | **Prompt (body)** | What the web app posts to start a turn: `{ text, attachments?, openPage?, tabId?, timeZone?, locale? }`. `tabId`, `timeZone` and `locale` are the sending tab's id and the [user time zone](#vocabulary); they are queued with the turn, so a queued turn still knows its answering tab and its zone. | `promptBody` (`app.ts`) |
 | **Vault event stream** | The never-ending NDJSON stream a browser keeps open while it shows a vault: `status`, `files-changed`, the agents move, and the browser calls (`browser-call`, `browser-call-done`). On connect it sends the current status, the last agents move and the still pending browser calls before the live events, so a reload or a PWA back in the foreground still answers. | `GET /vaults/:id/events`, `VaultEvent` |
@@ -92,7 +98,7 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **User time zone** | The IANA time zone and locale of the tab that sent the prompt, captured when it is sent and kept with the turn (also a queued one). | `timeZone`, `locale` (prompt body) |
 | **Local time** | The current date, time, weekday and UTC offset in the user time zone, computed on the server from the server clock when the turn is sent to opencode, and given to the model as a hidden line with every prompt (no tool). Needs no answer from the browser, so it works with the phone locked and for a queued turn. Without a user time zone: the deployment's `timezone` setting. | `localTimeLine` (harness), synthetic text part |
 | **User location** | The answering device's position from the Geolocation API (high accuracy), as precise as the device reports it, with accuracy in meters and the age of the fix. No place name. | `user_location` tool |
-| **Vision model** | The model that looks at images for the chat model (`ai.vision_model`, on the gateway its prefix names, not selectable in the app), reached through the `look_at_image` tool. | `ai.vision_model`, `VISION_*` |
+| **Vision model** | The model that looks at images for the chat model (`ai.vision_model`, on the gateway its prefix names), reached through the `look_at_image` tool. Selectable in admin mode › AI (#148), but only a model of the deployment's vision gateway (same base URL and key): the override is stored as `visionModelOverride` while it differs from the default and reaches the tool as `/vaults/.vision.json`. A vision model on another gateway is a settings change. | `ai.vision_model`, `Settings.visionModel`, `VISION_*` |
 | **Suggestion / ghost text** | One short prompt the AI proposes as the user's next message: the latest completed `suggest_next` call after the last user message, shown greyed out in the empty composer while no turn runs. Not a tool chip. **Accepting** it (Tab, or a tap on the button) copies it into the composer; only Enter sends. Derived from the chat history, so it survives a reload. | `ToolCall.suggestion`, `nextSuggestion` |
 | **Live event vs. history** | Live events arrive on the chat stream while a turn runs; history is the stored chat loaded on reload or when a chat is opened. Only a live open request moves the UI; history shows the chip and moves nothing. | `ChatEvent` vs. `api.chat` |
 | **AI-touched** | The set of paths the AI changed since the last commit. A commit that includes one of them gets the `Co-authored-by: karpathy.app agent` trailer. When a pull turns unpushed commits back into uncommitted changes, the files of those carrying the trailer join the set again. | `config.aiTouched`; `PullResult.aiPaths` |
@@ -231,8 +237,8 @@ alone (project `karpathy-app`), not numbered stacks.
 | **Orphan stack** | A project `karpathy-app-N` whose owning checkout was deleted. Any checkout's `just dev up N` may take it over. | `stack_state` |
 | **Remembered stack** | The number in `<checkout>/tmp/dev/stack`, written by `just dev up` and deleted by `just dev down`. Every later `dev`, `e2e` and `prodtest` command in that checkout uses it. A checkout holds at most one stack. | `stack_resolve`, `stack_remember` |
 | **Paired prodtest** | The prod images as project `karpathy-app-N-prodtest` on 80N5, taking N from the checkout's dev stack (remembered in `tmp/prodtest/stack` while it runs, so it outlives `just dev down`). | `just prodtest` |
-| **Native omlx** | The dev LLM server on the Mac itself (omlx, an MLX-based OpenAI-compatible server; Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models/<model id>`), shared by all stacks and their prodtests. An outside service, like a cloud provider. | `brew services start omlx` |
-| **Model relay** | The per-stack Caddy (service `model-relay`, dev and prodtest) that opencode reaches as `model-relay.internal:8000`; it passes only the OpenAI-compatible `/v1` API to the native model server (omlx) and answers 403 to everything else. Where it finds the server is the gateway's `relay_upstream` (`MODEL_UPSTREAM`): `host.docker.internal:8000` (omlx). | `deploy/proxy/Caddyfile.model-relay` |
+| **Test model** | The model the tests run on: always OpenRouter, everywhere (backend `@llm` locally and weekly in CI, e2e, prodtest): the production models, inherited by `deploy/settings/test.yaml`; `LLM_TEST_MODEL` / `LLM_VISION_MODEL` pick other OpenRouter models. No key (`OPENROUTER_API_KEY` or `deploy/secrets/openrouter_api_key`) → the `@llm` tests stop with a message before any container starts. | `testModels()`, `pickTestModels()` |
+| **Dead model** | A declared model the provider doesn't have: every turn on it fails at once with a non-retryable error, so the default tier exercises the whole turn lifecycle without an LLM. It sits on a test-only provider `dead` pointing at opencode's own port (401): offline, no key, not a model source. | `DEAD_MODEL`, `DEAD_MODEL_2` |
 | **Stack label** | `karpathy #N`, the header brand (vault switcher) on dev stack N, so a browser tab shows which stack it is. Everywhere else the brand is `karpathy.app`. | `lib/brand.ts` › `brandName` |
 
 ### Settings
@@ -245,11 +251,11 @@ Terms for configuring the app per environment ([architecture.md](architecture.md
 | **Environment** | A named way the stack runs: `dev` (dev stack N), `prodtest`, `test` (CI and the backend's integration tests) and `hetzner` (production). It exists exactly when `deploy/settings/<env>.yaml` exists. Every target is an environment; not every environment is a target. | `environments()` |
 | **Central settings file** | `deploy/settings/settings.yaml`, committed: every setting with the value all environments share. Must validate on its own as complete settings. | `settingsSchema` |
 | **Environment file** | `deploy/settings/<env>.yaml`, committed: the same shape, but only what that environment overrides (all keys optional, unknown keys still fail). | `partialSettingsSchema` |
-| **Local overlay** | Optional, gitignored `deploy/settings/dev.local.yaml` or `prodtest.local.yaml`: one developer's own choices on top (e.g. "use OpenRouter"). Never read for `test` or a target (a `local.local.yaml` or `hetzner.local.yaml` is an error) and ignored by the tests (`--no-local`). Replaces the hand-edited `deploy/.env`. | `loadSettings(env, { overlay })` |
+| **Local overlay** | Optional, gitignored `deploy/settings/dev.local.yaml` or `prodtest.local.yaml`: one developer's own choices on top (e.g. another model). Never read for `test` or a target (a `local.local.yaml` or `hetzner.local.yaml` is an error) and ignored by the tests (`--no-local`). Replaces the hand-edited `deploy/.env`. | `loadSettings(env, { overlay })` |
 | **Effective settings** | The central file deep-merged with the environment file and (dev, prodtest) the local overlay: maps merge key by key; scalars, lists and secret references replace. Validated as complete again, plus cross-field rules. `just settings show <env>` prints them. | `loadSettings()` |
 | **Secret reference** | A setting value `{ secret: <name> }`, optionally `optional: true`: *which* secret a component needs, never its value. The name (`[a-z][a-z0-9_]*`) is a file name in the secret store. Any string setting may be one (production's git author is). | `secretRef`, `secretRefs()` |
 | **Secret store** | A directory with one file per secret name, read when rendering: `deploy/secrets/` (dev), `tmp/prodtest/secrets/` (prodtest), and on a deployment a private temp dir on the Ansible controller filled from the target's vault. A missing or empty file fails unless the reference is optional. | `resolveSecrets()` |
-| **Gateway** | A named way to reach LLMs, the key is opencode's provider id: a kind (`openrouter`, `anthropic`, `openai`: built into opencode, any model id is valid; `openai-compatible`: only its listed models), optional base URL, API key (a secret reference), the model relay's upstream and per-model options (e.g. OpenRouter's zero-data-retention routing). `ai.gateway` picks one per environment. | `gateways`, `BUILT_IN_KINDS` |
+| **Gateway** | A named way to reach LLMs, the key is opencode's provider id: a kind (`openrouter`, `anthropic`, `openai`: built into opencode, any model id is valid; `openai-compatible`: only its listed models), optional base URL, API key (a secret reference) and per-model options (e.g. OpenRouter's zero-data-retention routing). `ai.gateway` picks one per environment; `openrouter` is the only one configured. | `gateways`, `BUILT_IN_KINDS` |
 | **Default model** | `ai.model` of the effective settings, `<gateway>/<model id>`. What the backend and opencode use unless an admin overrode it.  | `settings.json` `ai.model`, `ConfigStore.defaultModel` |
 | **Model override** | The model an admin typed in admin mode › AI (free text, no picker), stored in `config.json` only while it differs from the default model; choosing the default again removes it, so the next default change reaches the installation. | `modelOverride`, `SettingsView.modelOverridden` |
 | **Rendered files** | What the renderer writes from the effective settings for components that can't read YAML: the compose `.env`, `opencode.env` (API key, web caps, model, provider config), the backend's `settings.json` and the ingest service's `ingest.json`. Generated, never edited, never committed. | `just settings render`, `tmp/settings/<env>/` |
@@ -452,7 +458,7 @@ more.
 | **Public web** | Serves fetched pages; untrusted. |
 | **Obsidian / other git clients** | Change the same GitHub repo from other devices; their changes arrive on the next pull and can cause a conflict. |
 | **GitHub** | Hosts the vault repos; the backend clones, fetches and pushes with the GitHub token, and asks `GET /user` to test it. |
-| **LLM provider** (the environment's gateway: OpenRouter in production; the native omlx on the Mac in dev and prodtest) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
+| **LLM provider** (the environment's gateway: OpenRouter everywhere, in production, dev, prodtest and tests) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
 
 ## Processes
 
@@ -708,6 +714,24 @@ sequenceDiagram
   B->>O: answer (once)
   O->>O: continues the reply with the position
 ```
+
+### Chat title
+
+A chat's title follows the chat (#148):
+
+```mermaid
+stateDiagram-v2
+    [*] --> Preliminary: first prompt sent
+    Preliminary --> Generated: turn 2 ends (title model)
+    Generated --> Suggested: turn 10·k ends, drifted
+    Suggested --> Generated: Rename (suggestion becomes the title)
+    Suggested --> Generated: Keep (suggestion dropped)
+    Suggested --> Suggested: next drift check replaces it
+```
+
+The job runs when a turn ends and never blocks or fails a turn. A rename by the user or a deleted chat while the title
+model works wins: nothing is written. Chats older than the feature get their first drift check at their next multiple of
+10 turns. There is no free rename: the only way to a new title is accepting a suggestion.
 
 ### Command turn
 

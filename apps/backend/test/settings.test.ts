@@ -30,11 +30,20 @@ describe('loadBackendSettings', () => {
       remoteBase: 'file:///remotes/',
       identity: { name: 'Dev User', email: 'dev@example.com' },
       defaultModel: 'openrouter/qwen2.5:3b',
+      defaultTitleModel: '',
+      defaultVisionModel: '',
+      visionGateway: '',
       webAccess: true,
       commitReminderThreshold: 4,
       visibleDotDirs: ['.agents'],
       secrets: [],
     });
+  });
+
+  it('reads title_model, vision_model and vision_gateway; an older settings.json falls back', async () => {
+    const f = await rendered((s) => (s.ai = { model: 'gw/a', title_model: 'gw/t', vision_model: 'vl-2b', vision_gateway: 'gw', web_access: true }));
+    expect(loadBackendSettings(f)).toMatchObject({ defaultModel: 'gw/a', defaultTitleModel: 'gw/t', defaultVisionModel: 'gw/vl-2b', visionGateway: 'gw' });
+    expect(loadBackendSettings(await rendered())).toMatchObject({ defaultTitleModel: '', defaultVisionModel: '', visionGateway: '' });
   });
 
   it('settings.json without `secrets` loads as [], one with the manifest passes it on', async () => {

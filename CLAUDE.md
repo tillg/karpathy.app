@@ -110,6 +110,11 @@ header `karpathy #N`).
 - Never `down`, restart or exec into a stack another checkout owns, and never start one with raw
   `docker compose` (no hand-written port overrides in `tmp/`).
 - `just e2e` and `just prodtest` target this checkout's stack automatically. Run `just dev down` when done.
+- The Playwright MCP browser refuses a stack's Caddy CA (`ERR_CERT_AUTHORITY_INVALID`): look at the UI through a
+  Playwright script with `ignoreHTTPSErrors: true` (token in `localStorage['karpathy.token']`, as `e2e/helpers.ts`
+  `openApp` does) or through `just e2e` screenshots, and read the shot of the changed spot.
+- A new worktree has no `deploy/secrets/` (gitignored): copy the main clone's. Without `openrouter_api_key` there,
+  `just dev up` stops; a dummy key still runs `just e2e --grep-invert @llm` (no model turns).
 - A full `just e2e` on a busy Mac fails dozens of tests that pass alone: re-run with `just e2e --last-failed`, and check
   any `@llm` spec that still fails against the commit before your change (own worktree and stack) before blaming it —
   the local dev model fails some of them on its own.

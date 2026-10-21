@@ -1,7 +1,7 @@
 ---
 title: "Deployment: releases, targets and operations"
 created: 2026-10-02
-edited: 2026-10-16
+edited: 2026-10-21
 ---
 
 # Deployment: releases, targets and operations
@@ -132,8 +132,7 @@ runs without role `app`); role `app` asserts it equals the rendered `DOMAIN` and
 Not targets, and not deployed by the playbook: the **dev stacks** on the Mac (stack N, project `karpathy-app-N`,
 on https://localhost:80N0, started with `just dev up [N]`) and their **paired prodtest** (the prod images built
 locally as `karpathy-app-N-prodtest` on https://localhost:80N5, `just prodtest`). They are the environments `dev`
-and `prodtest`; both use the native omlx on the Mac as the model unless a developer's local overlay picks another
-gateway. Details: [architecture.md](architecture.md#dev-stacks).
+and `prodtest`; both use production's OpenRouter models (key in `deploy/secrets/openrouter_api_key`). Details: [architecture.md](architecture.md#dev-stacks).
 
 ## The playbook
 
@@ -386,7 +385,7 @@ flowchart LR
   `site/style.css` equal the app's in `apps/web/src/styles.css` (light and dark).
 - **Screenshots:** `node site/capture.mjs [--ask "<question>"]` against this checkout's `just prodtest` with the
   demo vault (a bare clone at `tmp/dev/remotes/tillg/karpathy_demo_wiki.git`, vault id `demo-wiki`): WebKit, one
-  context per device class, `cwebp -noalpha -q 82`. `--ask` writes a chat to the prodtest vault; the local model's
+  context per device class, `cwebp -noalpha -q 82`. `--ask` writes a chat to the prodtest vault; the model's
   answers vary, so every shot is viewed before it is committed.
 - **Website deploy:** `.github/workflows/pages.yml` on pushes to `main` that touch the site, the icons or the app's
   stylesheet, and on manual dispatch. Release tags don't deploy it.

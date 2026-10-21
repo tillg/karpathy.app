@@ -8,6 +8,7 @@ import { OpencodeHarness } from './harness/opencode.js';
 import { MetricsSampler } from './metrics.js';
 import { loadBackendSettings } from './settings.js';
 import { UsageService } from './usage.js';
+import { syncVisionModel } from './vision-model.js';
 import { Vaults } from './vaults.js';
 
 /** deploy/settings/, rendered by `just settings render` (compose mounts it). */
@@ -26,7 +27,9 @@ const env = {
   deployed: process.env.DEPLOYED_AT || undefined,
 };
 
-const store = await ConfigStore.open(env.configDir, { model: settings.defaultModel, webAccess: settings.webAccess, commitReminderThreshold: settings.commitReminderThreshold });
+const store = await ConfigStore.open(env.configDir, { model: settings.defaultModel, titleModel: settings.defaultTitleModel, visionModel: settings.defaultVisionModel, webAccess: settings.webAccess, commitReminderThreshold: settings.commitReminderThreshold });
+// look_at_image reads the Admin's vision model from the vaults volume: make the file match the store.
+await syncVisionModel(env.vaultsDir, { visionModel: store.get().settings.visionModel, defaultVisionModel: settings.defaultVisionModel, visionGateway: settings.visionGateway });
 const githubToken = new GitHubToken(store, settings.githubToken, process.env.GITHUB_API_BASE);
 const vaults = new Vaults(store, { vaultsDir: env.vaultsDir, remoteBase: settings.remoteBase, visibleDotDirs: settings.visibleDotDirs, githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), identity: settings.identity });
 await vaults.init();
@@ -46,7 +49,7 @@ const metrics = new MetricsSampler({ dir: env.configDir, vaultsDir: env.vaultsDi
 await metrics.start();
 const commitMessages = new OpencodeCommitMessages(vaults, store, harness, (id) => chat.dir(id));
 
-const app = createApp({ token: settings.token, vaults, store, githubToken, secrets: settings.secrets, chat, usage, metrics, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), version: env.version, built: env.built, deployed: env.deployed,
+const app = createApp({ token: settings.token, vaults, store, githubToken, secrets: settings.secrets, chat, usage, metrics, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), visionGateway: settings.visionGateway, version: env.version, built: env.built, deployed: env.deployed,
   // The ingest service's internal endpoint (Admin › Instagram): container wiring, the token a compose secret.
   ...(process.env.INGEST_URL && process.env.INGEST_TOKEN_FILE ? { ingest: { url: process.env.INGEST_URL, token: readFileSync(process.env.INGEST_TOKEN_FILE, 'utf8').trim() } } : {}) });
 const server = app.listen(env.port, () => console.log(`backend listening on :${env.port}`));
