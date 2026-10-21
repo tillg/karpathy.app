@@ -23,7 +23,8 @@ import { INPUT_DIR, isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@ka
 import { BrowserCalls } from './browser-calls.js';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
-import { filesMentioning, graph, listTree, search, versionOf, versionOfFile } from './files.js';
+import { filesMentioning, graph, listTree, versionOf, versionOfFile } from './files.js';
+import { SearchIndex } from './search.js';
 import { tidyAttachments, type TidyResult } from './tidy-attachments.js';
 import { Git, GitError, type GitIdentity } from './git.js';
 import { VaultLock } from './lock.js';
@@ -84,6 +85,8 @@ interface Runtime {
   legacySeen?: string;
   /** The last agents move, for a client that connects later. */
   lastMove?: AgentsMove & { at: number };
+  /** Search index of the vault root (#138): built on the first search, then kept fresh by the watcher and every mutation. */
+  index?: SearchIndex;
   /** `Repo.fileHistory` for this HEAD and root (#122); concurrent listings share one run. */
   history?: { key: string; map: Promise<Map<string, FileHistory>> };
 }
@@ -347,6 +350,8 @@ export class Vaults {
   /** Coalesces status recomputation (lock changes, file events, git ops). */
   emitStatusSoon(id: string) {
     const r = this.rt.get(id);
+    // Whatever changed the status may have changed files: the next search compares sizes and mtimes first.
+    r?.index?.markStale();
     if (!r || r.statusTimer) return;
     r.statusTimer = setTimeout(() => {
       r.statusTimer = undefined;
@@ -673,7 +678,9 @@ export class Vaults {
     this.requireReady(id);
     if (!q.trim()) return { hits: [], truncated: false };
     if (/[\r\n]/.test(q)) throw new HttpError(400, 'search text must be a single line', 'bad-query');
-    return search(this.vaultRootDir(id), q);
+    const r = this.runtime(id);
+    r.index ??= new SearchIndex(this.vaultRootDir(id), (msg) => console.log(`[${id}] ${msg}`));
+    return r.index.search(q);
   }
 
   async graph(id: string): Promise<GraphData> {
@@ -1121,13 +1128,19 @@ export class Vaults {
   private startWatcher(v: StoredVault) {
     const r = this.runtime(v.id);
     const root = join(this.cloneDir(v.id), v.root);
-    r.watcher = new VaultWatcher(root, async (paths) => {
-      const files = await Promise.all(
-        paths.map(async (path) => ({ path, version: await versionOfFile(join(root, path)) })),
-      );
-      this.emit(v.id, { type: 'files-changed', files });
-      this.emitStatusSoon(v.id);
-    });
+    // A new watcher means a new root (or a fresh clone): the old index doesn't describe it.
+    r.index = undefined;
+    r.watcher = new VaultWatcher(
+      root,
+      async (paths) => {
+        const files = await Promise.all(
+          paths.map(async (path) => ({ path, version: await versionOfFile(join(root, path)) })),
+        );
+        this.emit(v.id, { type: 'files-changed', files });
+        this.emitStatusSoon(v.id);
+      },
+      (path) => r.index?.markStale(path),
+    );
   }
 }
 
