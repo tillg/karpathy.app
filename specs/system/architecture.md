@@ -521,14 +521,17 @@ sequenceDiagram
   busy chat; it refuses an 11th waiting prompt of a chat (`409 queue-full`). `turnState` puts `running` before
   `queued`. The chat detail lists the chat's entries (`queued: QueuedPrompt[]`); the chat stream sends `{ type:
   'queue', queued, started? }` whenever they change (`started`: the id that just left the queue, sent before its
-  `running`). A turn that ends while more of its chat's prompts wait emits `turn queued` instead of `idle` and keeps
+  `running`); a new chat stream starts with a `queue` snapshot after its `turn` event, since a prompt may have started
+  since the client loaded the chat. A turn that ends while more of its chat's prompts wait emits `turn queued` instead of `idle` and keeps
   the chat's streams open, so the client follows the next turn without a reload. `DELETE
   /vaults/:id/chats/:chatId/queue/:promptId` (`unqueue`, `404 not-queued` once started) and `POST …/abort` (all of the
-  chat's entries, then `harness.abort` of a running turn) return `ReturnedPrompt`s: text plus the files that still
+  chat's entries, then `harness.abort` of a running turn; a turn that left the queue but has not been sent to opencode
+  yet is marked aborted, never sent, and returned too) return `ReturnedPrompt`s: text plus the files that still
   exist as composer chips (`version` from `versionOfFile`, `mime`, `size`). The web (`ChatPane`) chains its prompt
   POSTs so quick sends keep their order, shows a busy chat's prompt as a queued bubble at once (local id until the
   answer), an idle chat's as the pending bubble; `adoptStarted` turns a `started` entry into the pending bubble and
-  hands back one that never ran; `withReturned` merges returned prompts into the composer. A prompt is never sent into
+  hands back one that never ran; `withReturned` merges returned prompts into the composer. A failed pull before a turn removes that turn by
+  identity: one taken back while it waited for the lock leaves the queue's next prompt alone. A prompt is never sent into
   a busy opencode session (as Claude Code's mid-turn messages are): the per-vault lock, the pull before each turn and
   the idle-based turn end all rely on one prompt per turn, so the queue stays in the backend.
 

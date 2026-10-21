@@ -571,7 +571,7 @@ describe('chat API against a real opencode container', () => {
     t.chat.stream(t.id, chatId, (e) => got.push(e), () => undefined);
     release();
     await waitIdle(t.chat, t.id, chatId);
-    const i = got.findIndex((e) => e.type === 'queue');
+    const i = got.findIndex((e) => e.type === 'queue' && e.started);
     expect(got[i]).toEqual({ type: 'queue', queued: [], started: a });
     expect(got.findIndex((e) => e.type === 'turn' && e.state === 'running')).toBeGreaterThan(i);
   });
@@ -610,6 +610,72 @@ describe('chat API against a real opencode container', () => {
     const users = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body.messages.filter((m: { role: string }) => m.role === 'user');
     expect(users.map((m: { parts: { type: string; text?: string }[] }) => m.parts.find((x) => x.type === 'text')?.text)).toEqual(['still runs']);
   }, 90_000);
+
+  it('a pull that fails for a prompt taken back while it waited for the lock drops no other prompt (#155)', async () => {
+    const t = await setup();
+    const release = await t.vaults.lock(t.id).acquireExclusive();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    const pull = t.vaults.pullUnlocked.bind(t.vaults);
+    let failures = 1;
+    t.vaults.pullUnlocked = async (id: string) => {
+      if (failures-- > 0) throw new Error('remote gone');
+      return pull(id);
+    };
+    const a = (await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'taken back' })).body.id;
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'still runs' });
+    expect((await t.api.delete(`/vaults/${t.id}/chats/${chatId}/queue/${a}`)).status).toBe(200);
+    const got: ChatEvent[] = [];
+    t.chat.stream(t.id, chatId, (e) => got.push(e), () => undefined);
+    release();
+    const end = Date.now() + 30_000;
+    while ((await userAgents(t.raw, t.dir, chatId)).length < 1 || t.chat.turnState(t.id, chatId) !== 'idle') {
+      if (Date.now() > end) throw new Error('the queued prompt was dropped');
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const users = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body.messages.filter((m: { role: string }) => m.role === 'user');
+    expect(users.map((m: { parts: { type: string; text?: string }[] }) => m.parts.find((x) => x.type === 'text')?.text)).toEqual(['still runs']);
+    // The taken-back prompt's failed pull is nobody's error.
+    expect(got.some((e) => e.type === 'error' && /pull before the turn failed/.test(e.message))).toBe(false);
+  }, 60_000);
+
+  it('Stop after the prompt left the queue but before it reached opencode: it never runs and comes back (#155)', async () => {
+    const t = await setup();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    await mkdir(join(t.vaults.vaultRootDir(t.id), 'Sources/upload-s'), { recursive: true });
+    await writeFile(join(t.vaults.vaultRootDir(t.id), 'Sources/upload-s/a.png'), 'png-bytes');
+    // The attachment check is the last step before opencode: hold the turn there.
+    let reached!: () => void;
+    const atCheck = new Promise<void>((r) => { reached = r; });
+    let go!: () => void;
+    const gate = new Promise<void>((r) => { go = r; });
+    const check = t.vaults.checkAttachment.bind(t.vaults);
+    t.vaults.checkAttachment = async (id: string, path: string) => {
+      reached();
+      await gate;
+      return check(id, path);
+    };
+    const id = (await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'too late', attachments: ['Sources/upload-s/a.png'] })).body.id;
+    await atCheck;
+    const r = await t.api.post(`/vaults/${t.id}/chats/${chatId}/abort`);
+    expect(r.status).toBe(200);
+    expect(r.body.restored).toEqual([{ id, text: 'too late', attachments: [expect.objectContaining({ path: 'Sources/upload-s/a.png' })] }]);
+    go();
+    await waitIdle(t.chat, t.id, chatId);
+    await new Promise((res) => setTimeout(res, 500));
+    expect(await userAgents(t.raw, t.dir, chatId)).toEqual([]);
+    expect(t.vaults.lock(t.id).isFree).toBe(true);
+  });
+
+  it('a stream opened while prompts wait starts with the queue as it is now (#155)', async () => {
+    const t = await setup();
+    await t.vaults.lock(t.id).acquireExclusive(); // never released: the turns stay queued
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    const a = (await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'one' })).body.id;
+    const b = (await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'two' })).body.id;
+    const got: ChatEvent[] = [];
+    t.chat.stream(t.id, chatId, (e) => got.push(e), () => undefined);
+    expect(got).toEqual([{ type: 'turn', state: 'queued', waiting: 'sync' }, { type: 'queue', queued: [{ id: a, text: 'one' }, { id: b, text: 'two' }] }]);
+  });
 
   it('stream: queued → running → idle over NDJSON; idle chat ends immediately', async () => {
     const t = await setup();

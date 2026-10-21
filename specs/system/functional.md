@@ -981,8 +981,6 @@ both; a later change can restrict admin mode, taking nothing away from users. Th
     5 × 20 MB per prompt).
   - Uploads stay in the git history for good; there is no per-vault quota.
   - PNG, GIF and WebP are uploaded as they are, metadata included.
-  - Stopping a prompt that is already leaving the queue (its pull runs) puts its text back, but not its attachments:
-    their files stay in `Sources/upload-…/` (Stop, Edit and ✕ on a queued bubble give the files back or delete them).
   - Images a moved page embeds aren't moved with it.
   - A synthesized drop with files isn't reliable in WebKit's automation: Safari drag and drop is checked by hand.
   - Still to be checked by hand: on a real iPhone, **Take photo** opening the camera, **Choose file** offering
