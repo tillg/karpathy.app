@@ -204,24 +204,27 @@ function AiForm() {
     setVisionModel(settings.visionModel);
     setWebAccess(settings.webAccess);
   }, [settings]);
-  /** Sent only when changed; the default value goes as null (back to default). */
-  const optional = (value: string, current: string | undefined, dflt: string | undefined) =>
-    settings && value.trim() !== current ? (value.trim() === dflt ? null : value.trim()) : undefined;
+  /** Sent only when changed; the default (or nothing) goes as null: back to the default. */
+  const changed = (key: 'titleModel' | 'visionModel', value: string, dflt: string) => {
+    const v = value.trim();
+    return settings && v !== settings[key] ? { [key]: v === dflt || !v ? null : v } : {};
+  };
   const s = useSettingsSave(
     () => (!model.trim() ? 'Model: enter provider/model, or use the default.' : null),
     () => ({
       model: model.trim(), webAccess,
-      ...(settings && titleModel.trim() !== settings.titleModel ? { titleModel: optional(titleModel, settings.titleModel, settings.defaultTitleModel) } : {}),
-      ...(settings && visionModel.trim() !== settings.visionModel ? { visionModel: optional(visionModel, settings.visionModel, settings.defaultVisionModel) } : {}),
+      ...changed('titleModel', titleModel, settings?.defaultTitleModel ?? ''),
+      ...changed('visionModel', visionModel, settings?.defaultVisionModel ?? ''),
     }),
   );
+  /** `dflt` '' = the chat model (an unset title model follows it). */
   const modelField = (id: string, label: string, hint: string, value: string, set: (v: string) => void, dflt: string, overridden: boolean) => (
     <>
       <label className="field"><span>{label}</span>
-        <input data-testid={`settings-${id}`} value={value} autoCapitalize="off" spellCheck={false} onChange={(e) => { set(e.target.value); s.setSaved(false); }} /></label>
+        <input data-testid={`settings-${id}`} value={value} placeholder={dflt ? undefined : 'Same as the chat model'} autoCapitalize="off" spellCheck={false} onChange={(e) => { set(e.target.value); s.setSaved(false); }} /></label>
       <p className="muted">{hint}</p>
       <div className="model-default">
-        <span className="muted" data-testid={`settings-${id}-default`} data-overridden={String(overridden)}>Default: {dflt}</span>
+        <span className="muted" data-testid={`settings-${id}-default`} data-overridden={String(overridden)}>Default: {dflt || 'the chat model'}</span>
         {value.trim() !== dflt && (
           <button type="button" className="btn g sm" data-testid={`settings-${id}-reset`} onClick={() => { set(dflt); s.setSaved(false); }}>Use default</button>
         )}
@@ -241,7 +244,7 @@ function AiForm() {
         </div>
       )}
       {settings && modelField('title-model', 'Title model (provider/model)', 'Writes the chat titles. Starts as the chat model.', titleModel, setTitleModel, settings.defaultTitleModel, settings.titleModelOverridden)}
-      {settings && modelField('vision-model', 'Vision model (provider/model)', `A model of the ${settings.visionGateway} gateway that reads images (look_at_image).`, visionModel, setVisionModel, settings.defaultVisionModel, settings.visionModelOverridden)}
+      {settings?.visionGateway && modelField('vision-model', 'Vision model (provider/model)', `A model of the ${settings.visionGateway} gateway that reads images (look_at_image).`, visionModel, setVisionModel, settings.defaultVisionModel, settings.visionModelOverridden)}
       <div className="switch-row">
         <div>
           <label htmlFor="settings-web-access">Web access</label>

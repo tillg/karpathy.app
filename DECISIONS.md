@@ -190,6 +190,8 @@ edited: 2026-10-21
   - [11:10 — Title after the 2nd turn; drift check after turn 10, 20, 30, … as a suggestion the user accepts or dismisses](#run-2026-10-21-1056-5)
   - [11:10 — The vision override reaches the tool as a file on the vaults volume, model id only, on the deployed vision gateway](#run-2026-10-21-1056-6)
   - [11:38 — Per-step gate on the feature branch is the workspace's suite; the full `npm test` gates the merge into `main`](#run-2026-10-21-1056-7)
+  - [11:45 — Dev stack on a host-published Ollama container (test models), since this Mac has no omlx](#run-2026-10-21-1056-8)
+  - [12:00 — Review triage: fix all defects and the drift method; leave the shared one-shot helper and the Admin field duplication](#run-2026-10-21-1056-9)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2775,6 +2777,8 @@ edited: 2026-10-21
   needs the title model).
 - **Consequences:** the Admin title-model field shows the deployment default = the chat model's default until the key is set.
   An Admin chat-model override does not change the title model.
+  Changed at 12:00 (review): unset now means "the chat model in effect", an Admin override of the chat model
+  included — settings.json carries `title_model` only when set, and the Admin field shows "Default: the chat model".
 
 ## 11:10 — Titles from a tool-less `chat-title` agent in a throwaway opencode session, like commit messages {#run-2026-10-21-1056-4}
 
@@ -2809,6 +2813,11 @@ edited: 2026-10-21
 - **Why:** follows the issue; the suggestion survives a reload and shows on every device.
 - **Alternatives:** count assistant replies (same in practice); rename UI in the list (not asked).
 - **Consequences:** chats older than this feature get their first drift check at their next multiple of 10.
+  Changed at 12:00: asking "does the title still fit? reply KEEP or a new title" got KEEP from the dev model 3 of 3
+  times after a complete change of topic (tomatoes → 8 turns of sourdough). The drift check now has the model title the
+  last ten turns afresh and decides in code: no significant word (4+ letters, first five compared) in common with the
+  current title = drifted. Verified live: "Growing tomatoes on balcony" → suggestion "Sourdough Bread Tips". Crude for
+  synonyms ("car" vs "vehicle" would count as drift: one extra suggestion, which Keep dismisses).
 
 ## 11:10 — The vision override reaches the tool as a file on the vaults volume, model id only, on the deployed vision gateway {#run-2026-10-21-1056-6}
 
@@ -2838,3 +2847,40 @@ edited: 2026-10-21
   harms nobody.
 - **Alternatives:** full suite per commit (slow); squash everything into one commit at the end (loses the step history).
 - **Consequences:** an intermediate commit on the branch may be red in another workspace; the merge commit is the one that counts.
+
+## 11:45 — Dev stack on a host-published Ollama container (test models), since this Mac has no omlx {#run-2026-10-21-1056-8}
+
+- **Status:** open
+- **Overrides:** `CLAUDE.md` › Architecture — the dev model is a native omlx on the Mac
+- **Context:** `just dev up` refused: "no model server answers at 127.0.0.1:8000"; `omlx` isn't installed (no
+  `~/.omlx`), there is no native Ollama, and `deploy/secrets/` has no OpenRouter key. e2e needs a stack with a model.
+- **Question:** install omlx (Homebrew + ~17 GB models), or run the stack on something already here?
+- **Decision:** a container `kai-dev148-ollama` publishing `127.0.0.1:11434`, on the test volume `kai-spike-ollama`
+  (qwen2.5:3b; I pulled qwen3-vl:2b into it, which CI also pulls), plus a gitignored
+  `.worktrees/148-chat-titles/deploy/settings/dev.local.yaml` (`ai: { gateway: ollama, model: ollama/qwen2.5:3b,
+  vision_model: ollama/qwen3-vl:2b }`), and an `ollama` shim (`docker exec`) on PATH for `dev.sh`'s pull check.
+- **Why:** reversible, no change to the Mac's installs, the same models as `test.yaml`.
+- **Alternatives:** `brew install omlx` and the model downloads (big, changes the user's machine).
+- **Consequences:** undo: `just dev down` in the worktree, `docker rm -f kai-dev148-ollama`. The main clone's stack 1
+  also points at 127.0.0.1:8000 and has no working model either (not touched). The `remove-ollama` worktree may change
+  how dev models run; this setup is for this run only.
+
+## 12:00 — Review triage: fix all defects and the drift method; leave the shared one-shot helper and the Admin field duplication {#run-2026-10-21-1056-9}
+
+- **Status:** open
+- **Context:** `/spec:adversarial-code-review` (three axes) on `main...HEAD`, plus my own live drift run.
+- **Question:** which findings to fix before the merge?
+- **Decision:** fixed (test-first each): turn count races a queued prompt (count only messages up to the turn's end);
+  a blank vision/title model is saved as an override (blank = default now); the title model ignored an Admin
+  chat-model override (unset = chat model in effect); a rename during the job was overwritten and a chat deleted
+  during the drift check got a suggestion (title re-read, chat checked); a timeout during session creation leaked the
+  session; the dead `harnessConfigIn` check; a failed `.vision.json` write turned a saved PATCH into a 500 (logged
+  now); the vision field without a vision gateway (hidden now); the unused `defaultModel` getter; the drift prompt
+  (see decision 5). Left: one shared one-shot helper for `chat-title.ts` and `commit-message.ts` (would refactor the
+  commit-message code, outside the issue); the hand-written chat-model field next to the new `modelField` in Admin;
+  `VISION_REQUEST_OPTIONS` kept next to `VISION_MODEL_OPTIONS` (older images read it).
+- **Why:** the fixed ones are behaviour a user can hit; the left ones are style.
+- **Alternatives:** fix everything (larger diff in code the issue doesn't touch).
+- **Consequences:** security note from the review: the title session's cwd is `/vaults` (all vaults); its isolation
+  rests on the `chat-title` agent's `"*": "deny"` (tested in `chat-title.test.ts`). Prompt-injected text in a chat
+  can at most shape the title.

@@ -65,11 +65,6 @@ export class ConfigStore {
     readonly defaults: Settings,
   ) {}
 
-  /** The deployment's default model (settings `ai.model`). */
-  get defaultModel(): string {
-    return this.defaults.model;
-  }
-
   static async open(dir: string, defaults: Partial<Settings> = {}): Promise<ConfigStore> {
     const base = { ...DEFAULT_SETTINGS, ...defaults };
     const store = new ConfigStore(join(dir, 'config.json'), base);

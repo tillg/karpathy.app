@@ -274,6 +274,9 @@ describe('vault admin', () => {
     expect(bad.status).toBe(400);
     expect(bad.body.error).toMatch(/Title model nope\/x is not available/);
     expect((await api.patch('/settings', { titleModel: null })).body).toMatchObject({ titleModel: 'ollama/a', titleModelOverridden: false });
+    // A cleared field means the default too.
+    await api.patch('/settings', { titleModel: 'ollama/b' });
+    expect((await api.patch('/settings', { titleModel: '' })).body).toMatchObject({ titleModel: 'ollama/a', titleModelOverridden: false });
   });
 
   it('settings: vision model must be on the vision gateway; null resets', async () => {
@@ -286,6 +289,8 @@ describe('vault admin', () => {
       expect(r.body.error).toMatch(/Vision model: use a model of the openrouter gateway/);
     }
     expect((await api.patch('/settings', { visionModel: null })).body).toMatchObject({ visionModel: 'openrouter/m/see', visionModelOverridden: false });
+    await api.patch('/settings', { visionModel: 'openrouter/other/see' });
+    expect((await api.patch('/settings', { visionModel: '  ' })).body).toMatchObject({ visionModel: 'openrouter/m/see', visionModelOverridden: false });
   });
 
   it('settings: a vision override is written to the vaults volume for look_at_image, the default removes it', async () => {

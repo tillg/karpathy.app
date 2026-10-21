@@ -77,7 +77,7 @@ export class ChatService {
     /** The vaults dir as the harness sees it (`/vaults` in compose). */
     private readonly harnessVaultsDir: string,
   ) {
-    this.titles = new ChatTitles(vaults, store, harness, (id) => this.dir(id), harnessVaultsDir, (id, e) => vaults.publish(id, e));
+    this.titles = new ChatTitles(store, harness, (id) => this.dir(id), harnessVaultsDir, (id, e) => vaults.publish(id, e));
   }
 
   /** Opens one event subscription per ready vault; adopts turns still running in opencode. */
@@ -537,7 +537,7 @@ export class ChatService {
     this.finish(vaultId, chatId);
     void this.kick(vaultId);
     // After the 2nd turn a title, every 10th a drift check (#148); never holds up the next turn.
-    void this.titles.afterTurn(vaultId, chatId);
+    void this.titles.afterTurn(vaultId, chatId, Date.now());
   }
 
   private finish(vaultId: string, chatId: string) {

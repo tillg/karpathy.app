@@ -34,7 +34,7 @@ list is hard to scan.
 flowchart LR
   P[1st prompt] -->|now| T0[title = prompt text]
   T2[turn 2 ends] -->|title model| T1[title = summary]
-  T10[turn 10, 20, … ends] -->|title model: KEEP or new| S{drifted?}
+  T10[turn 10, 20, … ends] -->|title model: fresh title of the last 10 turns| S{drifted?}
   S -- yes --> B[suggestion bar: Rename / Keep]
   S -- no --> N[nothing]
 ```

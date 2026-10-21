@@ -23,7 +23,7 @@ export interface Settings {
   commitReminderThreshold: number;
   /** `provider/model`; the default comes from deploy/settings/ (`ai.model`). */
   model: string;
-  /** Writes the chat titles (#148); the default comes from `ai.title_model` (else `ai.model`). */
+  /** Writes the chat titles (#148); the default comes from `ai.title_model`. '' = the chat model in effect. */
   titleModel: string;
   /** The model of look_at_image, `<vision gateway>/<model>`; the default comes from `ai.vision_model`. */
   visionModel: string;

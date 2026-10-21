@@ -64,7 +64,7 @@ describe('ConfigStore', () => {
     expect((await raw()).modelOverride).toBe('m/2');
     const b = await ConfigStore.open(d, { model: 'd/3' });
     expect(b.get().settings.model).toBe('m/2');
-    expect(b.defaultModel).toBe('d/3');
+    expect(b.defaults.model).toBe('d/3');
     // (c) picking the default removes the override
     await b.update((c) => { c.settings.model = 'd/3'; });
     expect(await raw()).not.toHaveProperty('modelOverride');

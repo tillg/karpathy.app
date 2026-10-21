@@ -1,7 +1,6 @@
 import type { ChatMessage, VaultEvent } from '@karpathy/shared';
 import type { ConfigStore } from './config-store.js';
 import type { Harness } from './harness/opencode.js';
-import type { Vaults } from './vaults.js';
 
 const TIMEOUT_MS = 30_000;
 /** The conversation the title model reads, at most: fits a 16K-token dev model with room to answer. */
@@ -44,6 +43,15 @@ export function cleanTitle(answer: string): string {
   return t.length > MAX_TITLE ? t.slice(0, MAX_TITLE).trim() : t;
 }
 
+/** Significant words (4+ letters) by their first 5 letters, so "tomato" and "tomatoes" match. */
+const stems = (t: string) => new Set(t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4).map((w) => w.slice(0, 5)));
+
+/** The two titles name the same thing: they share a significant word. */
+export function sharesWord(a: string, b: string): boolean {
+  const sb = stems(b);
+  return [...stems(a)].some((w) => sb.has(w));
+}
+
 /**
  * AI-written chat titles (#148): after turn 2 the title model replaces the preliminary title (the first prompt); after
  * turn 10, 20, … it checks for drift and a new title becomes a suggestion the user accepts or dismisses. Runs like
@@ -53,7 +61,6 @@ export function cleanTitle(answer: string): string {
  */
 export class ChatTitles {
   constructor(
-    private readonly vaults: Pick<Vaults, 'harnessConfigIn'>,
     private readonly store: ConfigStore,
     private readonly harness: Harness,
     private readonly dirOf: (vaultId: string) => string,
@@ -67,25 +74,32 @@ export class ChatTitles {
     return this.store.get().titleSuggestions[vaultId]?.[chatId];
   }
 
-  /** Called when a turn ended. */
-  async afterTurn(vaultId: string, chatId: string): Promise<void> {
+  /**
+   * Called when a turn ended at `endedAt` (ms): only messages up to then count, so a queued prompt the next turn has
+   * already sent doesn't shift the turn count.
+   */
+  async afterTurn(vaultId: string, chatId: string, endedAt = Infinity): Promise<void> {
     try {
-      if (this.vaults.harnessConfigIn(vaultId)) return;
       const dir = this.dirOf(vaultId);
-      const messages = await this.harness.messages(dir, chatId);
-      const turns = messages.filter((m) => m.role === 'user').length;
+      const messages = (await this.harness.messages(dir, chatId)).filter((m) => m.createdAt <= endedAt);
+      const users = messages.flatMap((m, i) => (m.role === 'user' ? [i] : []));
+      const turns = users.length;
       const drift = turns >= DRIFT_EVERY && turns % DRIFT_EVERY === 0;
       if (turns !== TITLE_TURN && !drift) return;
-      const current = (await this.harness.listSessions(dir)).find((s) => s.id === chatId)?.title ?? '';
-      const text = drift
-        ? `${transcript(messages)}\n\nCurrent title: ${current}\n\nDoes the current title still describe this conversation? If it does, reply exactly KEEP. If not, reply with a better title.`
-        : `${transcript(messages)}\n\nWrite the title of this conversation.`;
-      const title = cleanTitle(await this.ask(text));
-      if (!title || title.toUpperCase() === 'KEEP' || title === current) return;
+      const titleOf = async () => (await this.harness.listSessions(dir)).find((s) => s.id === chatId)?.title;
+      const current = (await titleOf()) ?? '';
+      // A drift check titles the last ten turns afresh: small models answer "keep" to "does the title still fit?".
+      const recent = drift ? messages.slice(users[turns - DRIFT_EVERY]) : messages;
+      const title = cleanTitle(await this.ask(`${transcript(recent)}\n\nWrite the title of this conversation.`));
+      if (!title || title.toUpperCase() === 'KEEP') return;
+      // Renamed or deleted meanwhile: the user's choice wins.
+      if ((await titleOf()) !== current || !(await this.harness.sessionExists(dir, chatId))) return;
       if (drift) {
+        if (sharesWord(title, current)) return;
         await this.setSuggestion(vaultId, chatId, title);
         this.emit(vaultId, { type: 'chat-title', chatId, title: current, titleSuggestion: title });
       } else {
+        if (title === current) return;
         await this.harness.setTitle(dir, chatId, title);
         this.emit(vaultId, { type: 'chat-title', chatId, title });
       }
@@ -133,15 +147,18 @@ export class ChatTitles {
     let sessionId: string | undefined;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
+    const created = this.harness.createSession(dir, 'chat title');
     try {
       const work = (async () => {
-        sessionId = await this.harness.createSession(dir, 'chat title');
+        sessionId = await created;
         return this.harness.promptSync(dir, sessionId, { text, agent: 'chat-title', model: settings.titleModel || settings.model }, ctrl.signal);
       })();
       const aborted = new Promise<never>((_, rej) => ctrl.signal.addEventListener('abort', () => rej(new Error('timeout'))));
       return await Promise.race([work, aborted]);
     } finally {
       clearTimeout(timer);
+      // Timed out while the session was still being created: it still has to go.
+      sessionId ??= await created.catch(() => undefined);
       if (sessionId) {
         const id = sessionId;
         await this.harness.abort(dir, id).catch(() => undefined);

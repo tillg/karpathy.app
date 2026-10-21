@@ -130,7 +130,6 @@ describe('renderBackendSettings', () => {
     });
     expect(s.ai).toEqual({
       model: 'openrouter/z-ai/glm-5.3',
-      title_model: 'openrouter/z-ai/glm-5.3',
       vision_model: 'mistralai/mistral-medium-3-5',
       vision_gateway: 'openrouter',
       web_access: true,
@@ -145,11 +144,12 @@ describe('renderBackendSettings', () => {
 });
 
 describe('renderBackendSettings title model', () => {
-  it('title_model defaults to ai.model; a set one is passed on', () => {
+  it('title_model is passed on only when set (unset = follow the chat model, also an Admin override of it)', () => {
     const dir = tempDir({ 'settings.yaml': CENTRAL, 'x.yaml': 'ai: { title_model: ollama/vision }\n' });
     expect(JSON.parse(renderBackendSettings(loadSettings('x', { dir }), SECRETS)).ai.title_model).toBe('ollama/vision');
     const dev = JSON.parse(renderBackendSettings(loadSettings('dev', { overlay: false }), SECRETS)).ai;
-    expect(dev).toMatchObject({ title_model: dev.model, vision_model: 'Qwen3-VL-4B-Instruct-4bit', vision_gateway: 'omlx' });
+    expect(dev.title_model).toBeUndefined();
+    expect(dev).toMatchObject({ vision_model: 'Qwen3-VL-4B-Instruct-4bit', vision_gateway: 'omlx' });
   });
 });
 

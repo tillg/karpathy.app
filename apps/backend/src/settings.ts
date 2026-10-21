@@ -40,6 +40,7 @@ export interface BackendSettings {
   remoteBase: string;
   identity: { name: string; email: string };
   defaultModel: string;
+  /** '' = the chat model in effect. */
   defaultTitleModel: string;
   /** `<vision gateway>/<model>`; '' in an older settings.json. */
   defaultVisionModel: string;
@@ -68,7 +69,7 @@ export function loadBackendSettings(path: string): BackendSettings {
     remoteBase: s.git.remote_base,
     identity: s.git.author,
     defaultModel: s.ai.model,
-    defaultTitleModel: s.ai.title_model ?? s.ai.model,
+    defaultTitleModel: s.ai.title_model ?? '',
     defaultVisionModel: s.ai.vision_model && s.ai.vision_gateway ? `${s.ai.vision_gateway}/${s.ai.vision_model}` : '',
     visionGateway: s.ai.vision_gateway ?? '',
     webAccess: s.ai.web_access,

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage, VaultEvent } from '@karpathy/shared';
-import { ChatTitles, cleanTitle, transcript } from '../src/chat-title.js';
+import { ChatTitles, cleanTitle, sharesWord, transcript } from '../src/chat-title.js';
 import { ConfigStore } from '../src/config-store.js';
 import type { Harness, PromptInput } from '../src/harness/opencode.js';
 
@@ -30,6 +30,7 @@ function fakeHarness(messages: ChatMessage[], reply: (input: PromptInput) => Pro
       return reply(input);
     },
     abort: async () => undefined,
+    sessionExists: async (_dir: string, id: string) => sessions.has(id),
     deleteSession: async (_dir: string, id: string) => {
       sessions.delete(id);
       log.push('delete');
@@ -46,8 +47,7 @@ async function setup(turns: number, reply: (input: PromptInput) => Promise<strin
   const store = await ConfigStore.open(await mkdtemp(join(tmpdir(), 'titles-')), { model: 'p/chat', titleModel: 'p/title' });
   const h = fakeHarness(chatOf(turns), reply, opts.title);
   const events: VaultEvent[] = [];
-  const vaults = { harnessConfigIn: () => null };
-  const titles = new ChatTitles(vaults, store, h.harness, () => '/vaults/v', '/vaults', (_id: string, e: VaultEvent) => { h.log.push('emit'); events.push(e); }, opts.timeoutMs ?? 2000);
+  const titles = new ChatTitles(store, h.harness, () => '/vaults/v', '/vaults', (_id: string, e: VaultEvent) => { h.log.push('emit'); events.push(e); }, opts.timeoutMs ?? 2000);
   return { ...h, store, titles, events };
 }
 
@@ -76,24 +76,67 @@ describe('ChatTitles.afterTurn', () => {
     expect(t.prompts[0]!.model).toBe('p/chat');
   });
 
-  it('turn 10 stores a suggestion and keeps the title', async () => {
+  it('turn 10 titles the last ten turns afresh; a title with no word in common becomes a suggestion, the title stays', async () => {
     const t = await setup(10, () => 'Budget for the new kitchen', { title: 'Weekend trip planning' });
     await t.titles.afterTurn('v', 'chat');
     expect(t.sessions.get('chat')).toBe('Weekend trip planning');
     expect(t.titles.suggestion('v', 'chat')).toBe('Budget for the new kitchen');
-    expect(t.prompts[0]!.text).toContain('Current title: Weekend trip planning');
     expect(t.events).toEqual([{ type: 'chat-title', chatId: 'chat', title: 'Weekend trip planning', titleSuggestion: 'Budget for the new kitchen' }]);
     // It survives a restart (config store).
     expect(t.store.get().titleSuggestions).toEqual({ v: { chat: 'Budget for the new kitchen' } });
   });
 
-  it('KEEP or the same title stores no suggestion', async () => {
-    for (const answer of ['KEEP', 'keep.', '"Weekend trip planning"']) {
+  it('the drift check reads only the last ten turns', async () => {
+    const t = await setup(20, () => 'Budget for the new kitchen', { title: 'Weekend trip planning' });
+    await t.titles.afterTurn('v', 'chat');
+    expect(t.prompts[0]!.text).toContain('User: question 11');
+    expect(t.prompts[0]!.text).toContain('User: question 20');
+    expect(t.prompts[0]!.text).not.toMatch(/User: question 10\b/);
+  });
+
+  it('a fresh title sharing a significant word with the current one (or KEEP) stores no suggestion', async () => {
+    for (const answer of ['KEEP', '"Weekend trip planning"', 'Planning the weekend', 'Weekend trips in the Alps', 'Trip ideas']) {
       const t = await setup(20, () => answer, { title: 'Weekend trip planning' });
       await t.titles.afterTurn('v', 'chat');
       expect(t.titles.suggestion('v', 'chat'), answer).toBeUndefined();
       expect(t.events, answer).toEqual([]);
     }
+  });
+
+  it('a title set meanwhile (the user renamed) is not overwritten', async () => {
+    const t: Awaited<ReturnType<typeof setup>> = await setup(2, () => { t.sessions.set('chat', 'My own name'); return 'Generated'; });
+    await t.titles.afterTurn('v', 'chat');
+    expect(t.sessions.get('chat')).toBe('My own name');
+    expect(t.events).toEqual([]);
+  });
+
+  it('a chat deleted during the drift check gets no suggestion', async () => {
+    const t: Awaited<ReturnType<typeof setup>> = await setup(10, () => { t.sessions.delete('chat'); return 'Budget for the new kitchen'; }, { title: 'Weekend trip planning' });
+    await t.titles.afterTurn('v', 'chat');
+    expect(t.store.get().titleSuggestions).toEqual({});
+  });
+
+  it('a timeout while the throwaway session is still being created still deletes it', async () => {
+    let release!: () => void;
+    const t = await setup(2, () => 'x', { timeoutMs: 20 });
+    const h = t.harness as unknown as { createSession: (d: string, title?: string) => Promise<string> };
+    const create = h.createSession;
+    h.createSession = (d, title) => new Promise((r) => { release = () => void create(d, title).then(r); });
+    const done = t.titles.afterTurn('v', 'chat');
+    await new Promise((r) => setTimeout(r, 50));
+    release();
+    await done;
+    expect(t.sessions.has('tmp')).toBe(false);
+  });
+
+  it("counts only the turns up to the one that ended: a queued prompt already sent doesn't shift the count", async () => {
+    const t = await setup(2, () => 'Weekend trip planning');
+    const h = t.harness as unknown as { messages: () => Promise<ChatMessage[]> };
+    const msgs = await h.messages();
+    h.messages = async () => [...msgs, msg('user', 'queued question', 100)];
+    await t.titles.afterTurn('v', 'chat', 50);
+    expect(t.sessions.get('chat')).toBe('Weekend trip planning');
+    expect(t.prompts[0]!.text).not.toContain('queued question');
   });
 
   it('turns 1, 3, 9 and 11 do nothing', async () => {
@@ -145,6 +188,15 @@ describe('cleanTitle', () => {
   });
 });
 
+describe('sharesWord', () => {
+  it('matches a significant word (4+ letters, by its first five) in any case, never short words', () => {
+    expect(sharesWord('Growing tomatoes on balcony', 'Balcony tomato tips')).toBe(true);
+    expect(sharesWord('Sourdough baking basics', 'Growing tomatoes on balcony')).toBe(false);
+    expect(sharesWord('Tipps für den Garten', 'Gartenplanung im Herbst')).toBe(true);
+    expect(sharesWord('How to do it', 'How to go')).toBe(false);
+  });
+});
+
 describe('transcript', () => {
   it('cuts long messages and drops the oldest first to fit the cap', () => {
     const msgs = [msg('user', 'old '.repeat(2000), 0), msg('assistant', 'reply', 1), msg('user', 'newest question', 2)];
@@ -159,6 +211,5 @@ describe('opencode.json', () => {
   it('the chat-title agent may use no tool', async () => {
     const config = JSON.parse(await readFile(new URL('../../../deploy/opencode/opencode.json', import.meta.url), 'utf8'));
     expect(config.agent['chat-title']).toMatchObject({ mode: 'primary', permission: { '*': 'deny' } });
-    expect(config.agent['chat-title'].prompt).toMatch(/KEEP/);
   });
 });

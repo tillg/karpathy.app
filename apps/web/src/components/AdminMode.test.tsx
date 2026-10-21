@@ -242,6 +242,22 @@ describe('admin mode', () => {
       await waitFor(() => expect(patches(api)).toEqual([{ model: 'x/y', webAccess: false, titleModel: null }]));
     });
 
+    it('AI: an unset title model follows the chat model; without a vision gateway there is no vision field', async () => {
+      const api = await inAdmin('ai', { 'GET /api/settings': { ...SETTINGS, titleModel: '', defaultTitleModel: '', visionGateway: '' }, 'PATCH /api/settings': (b: object) => ({ ...SETTINGS, ...b }) });
+      const title = (await sec('ai').findByTestId('settings-title-model')) as HTMLInputElement;
+      expect(title.value).toBe('');
+      expect(title.placeholder).toBe('Same as the chat model');
+      expect(sec('ai').getByTestId('settings-title-model-default').textContent).toBe('Default: the chat model');
+      expect(sec('ai').queryByTestId('settings-title-model-reset')).toBeNull();
+      expect(sec('ai').queryByTestId('settings-vision-model')).toBeNull();
+      fireEvent.change(title, { target: { value: 'x/small' } });
+      fireEvent.click(sec('ai').getByTestId('settings-title-model-reset'));
+      expect(title.value).toBe('');
+      fireEvent.change(title, { target: { value: 'x/small' } });
+      fireEvent.click(sec('ai').getByTestId('settings-save'));
+      await waitFor(() => expect(patches(api)).toEqual([{ model: 'x/y', webAccess: false, titleModel: 'x/small' }]));
+    });
+
     it('"Manage vaults…" opens #admin/vaults; "Edit vault" opens that vault\'s details', async () => {
       await inAdmin('general');
       fireEvent.click(screen.getByRole('button', { name: 'Done' }));

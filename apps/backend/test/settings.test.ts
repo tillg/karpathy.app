@@ -30,7 +30,7 @@ describe('loadBackendSettings', () => {
       remoteBase: 'file:///remotes/',
       identity: { name: 'Dev User', email: 'dev@example.com' },
       defaultModel: 'ollama/qwen2.5:3b',
-      defaultTitleModel: 'ollama/qwen2.5:3b',
+      defaultTitleModel: '',
       defaultVisionModel: '',
       visionGateway: '',
       webAccess: true,
@@ -43,7 +43,7 @@ describe('loadBackendSettings', () => {
   it('reads title_model, vision_model and vision_gateway; an older settings.json falls back', async () => {
     const f = await rendered((s) => (s.ai = { model: 'ollama/a', title_model: 'ollama/t', vision_model: 'qwen3-vl:2b', vision_gateway: 'ollama', web_access: true }));
     expect(loadBackendSettings(f)).toMatchObject({ defaultModel: 'ollama/a', defaultTitleModel: 'ollama/t', defaultVisionModel: 'ollama/qwen3-vl:2b', visionGateway: 'ollama' });
-    expect(loadBackendSettings(await rendered())).toMatchObject({ defaultTitleModel: 'ollama/qwen2.5:3b', defaultVisionModel: '', visionGateway: '' });
+    expect(loadBackendSettings(await rendered())).toMatchObject({ defaultTitleModel: '', defaultVisionModel: '', visionGateway: '' });
   });
 
   it('settings.json without `secrets` loads as [], one with the manifest passes it on', async () => {

@@ -139,7 +139,8 @@ export function renderBackendSettings(s: Settings, secrets: Secrets): string {
     },
     ai: {
       model: s.ai.model,
-      title_model: s.ai.title_model ?? s.ai.model,
+      // Unset: the titles follow the chat model in effect (an Admin override included).
+      title_model: s.ai.title_model,
       // The vision model without its gateway prefix, as the tool sends it; an Admin override must be on the same gateway.
       vision_model: s.ai.vision_model.slice(visionGatewayId(s).length + 1),
       vision_gateway: visionGatewayId(s),

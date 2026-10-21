@@ -63,12 +63,14 @@ const patchVault = z.object({
   root: z.string().trim().max(500).optional(),
 });
 const THRESHOLD_MSG = 'Commit reminder: enter a whole number between 1 and 1000';
+const blankToNull = (v: unknown) => (typeof v === 'string' && !v.trim() ? null : v);
 const patchSettings = z.object({
   commitReminderThreshold: z.number({ error: THRESHOLD_MSG }).int({ error: THRESHOLD_MSG }).min(1, { error: THRESHOLD_MSG }).max(1000, { error: THRESHOLD_MSG }).optional(),
   /** null: back to the deployment's default model. */
   model: z.string().trim().regex(/^[^/\s]+\/\S+$/, { error: 'Model: use the form provider/model' }).nullable().optional(),
-  titleModel: z.string().trim().regex(/^[^/\s]+\/\S+$/, { error: 'Title model: use the form provider/model' }).nullable().optional(),
-  visionModel: z.string().trim().nullable().optional(),
+  /** null or blank: back to the default. */
+  titleModel: z.preprocess(blankToNull, z.string().trim().regex(/^[^/\s]+\/\S+$/, { error: 'Title model: use the form provider/model' }).nullable().optional()),
+  visionModel: z.preprocess(blankToNull, z.string().trim().nullable().optional()),
   webAccess: z.boolean({ error: 'Web access: must be true or false' }).optional(),
 });
 const chatTitleBody = z.object({ title: z.string().trim().min(1, { error: 'Title: enter a title' }).max(500, { error: 'Title: at most 500 characters' }) });
@@ -234,8 +236,10 @@ export function createApp(d: AppDeps) {
         ...(visionModel !== undefined ? { visionModel: visionModel ?? defaults.visionModel } : {}),
       } as Settings;
     });
+    // Saved either way; a failed write is fixed by the next save or restart (main.ts writes it at startup).
     if (visionModel !== undefined)
-      await syncVisionModel(d.vaults.vaultsPath(), { visionModel: d.store.get().settings.visionModel, defaultVisionModel: defaults.visionModel, visionGateway: gw });
+      await syncVisionModel(d.vaults.vaultsPath(), { visionModel: d.store.get().settings.visionModel, defaultVisionModel: defaults.visionModel, visionGateway: gw })
+        .catch((e) => console.warn('vision model file:', (e as Error).message));
     res.json(await settingsView());
   });
 
