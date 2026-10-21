@@ -333,6 +333,11 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   `127.0.0.1:80N1` only, for debugging; opencode and web stay unpublished on the internal network. The dev model is
   OpenRouter, reached through the egress proxy like in production; no model server runs on the Mac, so there is no
   admin API a prompt-injected AI could reach.
+- **Dev server** (`karpathy-dev`): reachable only over Tailscale after bootstrap, no public ports; its dev stacks
+  bind only to its loopback and are reached through SSH forwards. It holds no prod vaults and no prod secrets: only
+  the dev OpenRouter/Exa keys (host secrets, mode 600) and a fine-grained GitHub token limited to `karpathy.app`,
+  `karpathy_demo_wiki` and `ingest_email`. The developer's login user is uid 1000 with sudo and Docker there,
+  accepted because the box is a separate, single-developer dev host.
 - **Production server:** reachable only over Tailscale. The Hetzner firewall blocks all inbound traffic; the app,
   Beszel and Gatus bind the tailnet IP. SSH takes keys only, no root login. The operator logs in as `ops` (sudo);
   uid 1000, the app's user, has no login, no sudo and no Docker access, so a container breakout doesn't reach root

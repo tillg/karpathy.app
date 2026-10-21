@@ -1766,9 +1766,11 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 
 ### Dev stacks {#dev-stacks}
 
-Several agents develop on the Mac at once, each in its own checkout (main clone or `.worktrees/<name>`), and each
+Several agents develop on a dev host at once (the Mac or the remote dev host `karpathy-dev`,
+[deployment.md](deployment.md#dev-server)), each in its own checkout (main clone or `.worktrees/<name>`), and each
 needs a running stack for e2e tests and screenshots. Stack N (1–9) is compose project `karpathy-app-N` and owns the
-port block 80N0–80N9 (vocabulary: [domain.md](domain.md#development)).
+port block 80N0–80N9 on that host (vocabulary: [domain.md](domain.md#development)). Everything below is the same on
+both hosts; on Linux the Mac-only hints (restart Rancher, `brew install jq`, the Keychain) get Linux wording.
 
 ```mermaid
 flowchart TD
@@ -1819,7 +1821,12 @@ flowchart TD
 - **Model.** No model server runs on the Mac or in a stack: dev and prodtest inherit production's OpenRouter models
   (`dev.yaml` / `prodtest.yaml` have no `ai` block). opencode reaches OpenRouter through the egress proxy like
   production; the key is `deploy/secrets/openrouter_api_key` (dev; `just prodtest` copies `deploy/secrets/*_api_key`).
-  `dev.sh up` needs no model check or pull; a missing key stops it at `settings_render`.
+  `dev.sh up` needs no model check or pull.
+- **Host secrets.** Before rendering, `secrets_from_host` (`deploy/stack.sh`) copies each
+  `~/.config/karpathy/secrets/*_api_key` missing or empty in the checkout's `deploy/secrets/` (mode 600); a key the
+  checkout has wins. So a new worktree starts without copying keys. Without the OpenRouter key in either place,
+  `dev.sh up` stops before the render and names both places. Copying (not reading through) keeps the render and the
+  settings package unchanged.
 - **Stack label.** The dev `web` service sets `VITE_STACK=N`; `brandName()` (`apps/web/src/lib/brand.ts`) makes the
   vault switcher's brand `karpathy #N`. The prod PWA is built without it and keeps `karpathy.app`, as do the token
   screen, the chat author line and `<title>`.
