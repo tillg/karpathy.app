@@ -825,6 +825,18 @@ describe('files', () => {
     });
   });
 
+  it('#91 base evaluates a Bases block over the vault; unsupported syntax is a 422 with a clear message', async () => {
+    const t = await vaultApp({ 'Wiki/a.md': '---\nconfidence: low\n---\n', 'Wiki/b.md': '---\nconfidence: high\n---\n', 'c.md': 'x\n' });
+    const r = await t.api.post(`/vaults/${t.id}/base`, { source: 'filters:\n  and:\n    - file.inFolder("Wiki")\n    - \'confidence == "low"\'\nviews:\n  - type: table\n    order: [file.name, confidence]\n' });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ view: null, columns: [{ id: 'file.name', label: 'file name' }, { id: 'confidence', label: 'confidence' }], rows: [{ path: 'Wiki/a.md', cells: [{ link: 'Wiki/a.md', text: 'a.md' }, 'low'] }], total: 1, notices: [] });
+    const bad = await t.api.post(`/vaults/${t.id}/base`, { source: 'views:\n  - type: cards\n' });
+    expect(bad.status).toBe(422);
+    expect(bad.body).toMatchObject({ code: 'base-unsupported', error: expect.stringMatching(/not supported in v1/) });
+    expect((await t.api.post(`/vaults/${t.id}/base`, { source: 'filters: [x\n' })).body.code).toBe('base-invalid');
+    expect((await t.api.post(`/vaults/${t.id}/base`, {})).status).toBe(400);
+  });
+
   it('graph nodes carry the frontmatter type', async () => {
     const t = await vaultApp({ 'Wiki/a.md': '---\ntags: [x]\ntype: entity\n---\n# A\n', 'Wiki/b.md': '---\ntype: "concept"  # note\n---\n', 'c.md': 'type: entity\n' });
     expect((await t.api.get(`/vaults/${t.id}/graph`)).body.nodes).toEqual([{ path: 'c.md' }, { path: 'Wiki/a.md', type: 'entity' }, { path: 'Wiki/b.md', type: 'concept' }]);

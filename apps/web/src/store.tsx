@@ -12,6 +12,7 @@ import { loadSortFilter, saveSortFilter, usesDates, type TreeSortFilter } from '
 import { formatAdminRoute, formatRoute, parseRoute, routeState, type AdminSection, type RouteState } from './lib/route';
 import { fileKind, viewMode } from './lib/lang';
 import { parseWikilink, resolveWikilink } from './lib/wikilink';
+import { baseChanged } from './lib/base';
 
 
 const SHOWN_MOVES_KEY = 'karpathy.shownMoves';
@@ -898,6 +899,8 @@ function useAppState() {
     if (e.type === 'browser-call-done') return;
     if (e.type === 'chat-title') return setChatTitle({ chatId: e.chatId, ...(e.titleSuggestion ? { titleSuggestion: e.titleSuggestion } : {}), nonce: Date.now() });
     setChangesNonce((x) => x + 1);
+    // Shown ```base tables run again (#91).
+    baseChanged(vault);
     if (e.files.some((f) => f.path === SCHEMA_PATH)) void loadSchema(vault);
     // A skill written outside a pull (by the AI, a save, a service): chips and the Ingest button reload commands (#134).
     if (e.files.some((f) => f.path.startsWith('.agents/skills/'))) setCommandsNonce((n) => n + 1);

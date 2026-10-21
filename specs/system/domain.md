@@ -70,6 +70,7 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Move into own folder** | What the app does to a flat page before its first upload from the editor: `Wiki/foo.md` → `Wiki/foo/foo.md` (into an existing `foo/` folder in any case), plus the link rewrite. The only move the app makes. *Avoid:* rename. | `Vaults.moveIntoOwnFolder` |
 | **Path-form link** | A link that names a folder on the way to its target (`[[serien/foo]]`, `[Foo](../serien/foo.md)`), as opposed to a **bare link** (`[[foo]]`). A move breaks path-form links to the page in Obsidian, so the app rewrites them; percent-encoded links keep their encoding. | `rewriteLinks` (`packages/shared`) |
 | **Note graph** | The vault's notes (`.md` files) as nodes and the links between them as edges: wikilinks, embeds and relative Markdown links, resolved like the editor resolves them; links in code, self links and links to non-notes don't count. Read when the graph dialog opens, never cached. A view only. | `noteLinks` (`packages/shared`), `GET /vaults/:id/graph` |
+| **Base** | A fenced ` ```base ` block (or a `.base` file) in Obsidian Bases syntax: filters, a table view and display names. Shown as a live, read-only table of the files it matches; the text is never changed. v1 understands a subset and says "not supported in v1" for the rest. | `apps/backend/src/bases.ts`, web `lib/base.ts`, `POST /vaults/:id/base` |
 | **Source folder (upload)** | Where a chat message's attachments go: `Sources/upload-YYYY-MM-DD-HHMMSS/` (the device's local time of the first upload, `-2` … if taken), one per message. The AI writes the source page into it when it ingests. | `Vaults.upload` with `source` |
 | **Upload name** | The device's file name, cleaned (`<>:"\|?*\#^[]` and control characters → `-`, no leading dot, at most 80 characters), or `photo-YYYYMMDD-HHMMSS.jpg` for a camera photo. A name taken anywhere in the vault (case-insensitive) gets `-2`, `-3` …, so the bare `![[name]]` is unambiguous. | web `uploadName`; server `writeNew` |
 | **Photo preparation** | What the browser does to a JPEG or HEIC before upload: at most 2048 px on the long edge, re-encoded as JPEG 0.85, metadata (GPS, camera) dropped. Other formats go as they are. | web `lib/attach.ts` `prepare` |
@@ -391,6 +392,7 @@ mail that isn't UTF-8 is still an email), then the backend's text check, then th
 | `a.md`, `A.MD`, `a.markdown` | note |
 | `a.html`, `a.htm` | HTML page |
 | `a.eml`, `A.EML` (UTF-8 or not) | email |
+| `a.base`, `A.BASE` | base (Read: its table; Write: its YAML) |
 | `a.mdx`, `a.txt`, `a.py`, `Dockerfile`, `a.unknown` | code file (`.txt`, `.unknown`: plain text) |
 | `a.svg`, `a.png` | media file |
 | `a.pdf`, `a.zip`, text that isn't UTF-8 | binary file |

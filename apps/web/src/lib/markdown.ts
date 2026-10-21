@@ -216,6 +216,11 @@ export function toHtml(md: string, exists: (target: string) => boolean, opts: { 
       },
     }],
     renderer: {
+      // A ```base block (#91): a placeholder carrying its source (DOMPurify trims it, so no final line break, as in Write mode); the app mounts the live table (lib/base).
+      code({ text, lang }) {
+        if ((lang ?? '').trim().split(/\s/)[0]!.toLowerCase() !== 'base') return false;
+        return `<div class="base-block" data-base="${esc(text)}" data-ek="${esc(ek)}"></div>\n`;
+      },
       // `![alt](path)`: a placeholder the app fills with the file (never an <img src>: the bytes need the bearer token).
       image({ href, text }) {
         if (!resolveEmbed) return false;
@@ -307,7 +312,7 @@ function linkHook(ctx: RenderCtx) {
   };
 }
 
-const EMBED_ATTRS = ['data-path', 'data-kind', 'data-width', 'data-alt', 'data-target'];
+const EMBED_ATTRS = ['data-path', 'data-kind', 'data-width', 'data-alt', 'data-target', 'data-base'];
 
 /** Only the renderer's own embed placeholders (marked with this render's `ek`) keep their embed attributes. */
 function embedHook(ek: string) {
@@ -317,7 +322,7 @@ function embedHook(ek: string) {
     node.removeAttribute('data-ek');
     if (ours) return;
     for (const a of EMBED_ATTRS) node.removeAttribute(a);
-    node.classList.remove('embed');
+    node.classList.remove('embed', 'base-block');
     if (!node.getAttribute('class')) node.removeAttribute('class');
   };
 }

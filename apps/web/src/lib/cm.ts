@@ -5,6 +5,7 @@ import { HighlightStyle, defaultHighlightStyle, ensureSyntaxTree, syntaxHighligh
 import { type Compartment, EditorSelection, EditorState, type Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
+import { mountBase, type BaseCtx } from './base';
 import { mountEmbed, type EmbedCtx } from './embed';
 import { commentRanges, frontmatterEndLine, inComment } from './markdown';
 import { EMBED_RE, knownNatural, mdEmbed, wikiEmbed, type Embed, type Resolved } from './media';
@@ -262,6 +263,81 @@ function embeds(hooks: EmbedHooks): Extension {
   });
 }
 
+/** What the base tables need from the app (#91); read when a table is mounted. */
+export interface BaseHooks {
+  ctx(): BaseCtx;
+}
+
+/** A ```base block shown as its live table; the block's text stays in the document. */
+class BaseWidget extends WidgetType {
+  constructor(readonly source: string, readonly hooks: BaseHooks) { super(); }
+  eq(o: BaseWidget) { return o.source === this.source; }
+  toDOM(view: EditorView) {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-base';
+    // Edit: the cursor goes to the block's first line, which shows its source again.
+    const edit = () => {
+      const pos = view.posAtDOM(wrap);
+      const line = view.state.doc.lineAt(pos);
+      view.dispatch({ selection: { anchor: Math.min(line.to + 1, view.state.doc.length) } });
+      view.focus();
+    };
+    (wrap as HTMLElement & { stop?: () => void }).stop = mountBase(wrap, this.source, this.hooks.ctx(), edit);
+    return wrap;
+  }
+  destroy(dom: HTMLElement & { stop?: () => void }) { dom.stop?.(); }
+  // Taps belong to the table (open a row, scroll it sideways): the editor doesn't move the cursor.
+  ignoreEvent() { return true; }
+}
+
+/** The closed ```base blocks after the frontmatter: their first and last line and the text in between. */
+function baseBlocks(state: EditorState): { from: number; to: number; source: string }[] {
+  const out: { from: number; to: number; source: string }[] = [];
+  const tree = ensureSyntaxTree(state, state.doc.length, 50) ?? syntaxTree(state);
+  const fmEnd = frontmatterEnd(state);
+  tree.iterate({
+    enter: (n) => {
+      if (n.name !== 'FencedCode') return;
+      const info = n.node.getChild('CodeInfo');
+      const marks = n.node.getChildren('CodeMark');
+      if (!info || marks.length < 2 || state.doc.sliceString(info.from, info.to).trim().toLowerCase() !== 'base') return false;
+      const first = state.doc.lineAt(n.from);
+      const last = state.doc.lineAt(n.to);
+      if (first.number <= fmEnd || last.number <= first.number) return false;
+      const inner = first.number + 1 <= last.number - 1 ? state.doc.sliceString(state.doc.line(first.number + 1).from, state.doc.line(last.number - 1).to) : '';
+      out.push({ from: first.from, to: last.to, source: inner });
+      return false;
+    },
+  });
+  return out;
+}
+
+/**
+ * Base blocks as tables while the selection is outside them (Obsidian's live preview); a cursor in a block
+ * shows its source. Block replaces must come from state.
+ */
+function bases(hooks: BaseHooks): Extension {
+  const build = (state: EditorState, blocks: ReturnType<typeof baseBlocks>) => {
+    const sel = state.selection.ranges;
+    return Decoration.set(blocks
+      .filter((b) => !sel.some((r) => r.from <= b.to && r.to >= b.from))
+      .map((b) => Decoration.replace({ block: true, widget: new BaseWidget(b.source, hooks) }).range(b.from, b.to)));
+  };
+  const field = StateField.define<{ blocks: ReturnType<typeof baseBlocks>; deco: DecorationSet }>({
+    create: (state) => {
+      const blocks = baseBlocks(state);
+      return { blocks, deco: build(state, blocks) };
+    },
+    update(v, tr) {
+      if (!tr.docChanged && !tr.selection && !tr.effects.some((e) => e.is(refreshLinks))) return v;
+      const blocks = tr.docChanged ? baseBlocks(tr.state) : v.blocks;
+      return { blocks, deco: build(tr.state, blocks) };
+    },
+    provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
+  });
+  return field;
+}
+
 /**
  * A code file (#126): the language's colors once its chunk has loaded (into `lang`), no Markdown decorations.
  * Unknown names, or a chunk that can't load (offline), stay plain text.
@@ -271,8 +347,8 @@ export function codeView(path: string, lang: Compartment, view: () => EditorView
   return [lang.of([]), syntaxHighlighting(defaultHighlightStyle), EditorView.lineWrapping, EditorView.editorAttributes.of({ class: 'cm-code' })];
 }
 
-export function liveMarkdown(exists: (target: string) => boolean, open: (inner: string) => void, embedHooks: EmbedHooks): Extension {
-  return [markdown(), syntaxHighlighting(style), lines, wikilinks(exists, open), embeds(embedHooks), EditorView.lineWrapping];
+export function liveMarkdown(exists: (target: string) => boolean, open: (inner: string) => void, embedHooks: EmbedHooks, baseHooks?: BaseHooks): Extension {
+  return [markdown(), syntaxHighlighting(style), lines, wikilinks(exists, open), embeds(embedHooks), baseHooks ? bases(baseHooks) : [], EditorView.lineWrapping];
 }
 
 /** Whether a key release ends a Shift-based selection worth copying (#144); Cmd/Ctrl combos (select-all, find next) never copy. */

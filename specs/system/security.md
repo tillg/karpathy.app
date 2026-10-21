@@ -316,6 +316,11 @@ prod proxy adds a strict **CSP** (`default-src 'self'`, `script-src 'self'`, `ob
 `X-Frame-Options DENY`, and `Permissions-Policy: geolocation=(self)` (#151: the location API stays with the app's own
 origin; nothing else is restricted by it).
 
+**Bases** (#91): a base table is built with `createElement` / `textContent`, never from HTML strings; its
+placeholder's `data-base` survives sanitizing only with the render's `ek` mark. The query is read-only, runs over the
+vault root's listing only (symlinks and dot folders are not followed) and is capped at 100 000 characters of source and
+500 rows.
+
 **Media files** are untrusted bytes too:
 
 - Embeds render as `data-*` placeholders that survive DOMPurify; the elements are created with `createElement` and a

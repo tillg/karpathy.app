@@ -90,6 +90,16 @@ flowchart LR
   legend, kept in localStorage `karpathy.graphHiddenTypes`). The same node objects feed both views, so
   toggling keeps the layout. A CSS-only "breathing graph" shows until the first engine tick. Node labels are DOM
   elements with `textContent`, never HTML strings; a `ResizeObserver` keeps the canvas at the pane size.
+- **Bases** (`lib/base.ts`, #91): `mountBase(host, source, ctx, onEdit?)` builds the table with `createElement` /
+  `textContent` (plain DOM, like embeds) from `POST /vaults/:id/base`. Read mode: `marked`'s `code` renderer turns a
+  `base` fence into `<div class="base-block" data-base="…">` (marked with the render's `ek`, so a note's raw HTML
+  can't forge one; DOMPurify trims the attribute) and `Markdown` mounts every placeholder (`mountBases`). Write mode:
+  a `StateField` in `lib/cm.ts` (`bases`) finds closed `FencedCode` nodes with info `base` after the frontmatter and
+  replaces each with a block `BaseWidget` while no selection range touches it; `ignoreEvent` keeps taps in the table,
+  the `</>` button puts the cursor on the block's first line. `.base` files are file kind `base` (page mode, like HTML;
+  `BaseFileView`). Results are cached per vault and source (a re-mount shows the last one at once) and stale once the
+  vault's epoch moves: the store calls `baseChanged(vault)` on every `files-changed` event, shown tables re-run 300 ms
+  later. Width: `contain: inline-size` on the box, `.base-scroll` scrolls sideways.
 - **Chat opens notes** (`lib/chat.ts`, `ChatPane` `useChat`): a pure open tracker per chat view (`seen`, `later`,
   `loaded`). The first history load only marks completed `open_note` calls as seen; later loads (reattach,
   visibility change) and live events open unseen completed calls. Outside the wide layout the last open of the turn
@@ -225,6 +235,7 @@ flowchart TB
 | `ingest.ts` | `callIngest`: proxies the Instagram routes to the ingest service's endpoint ([Ingest](#ingest)). |
 | `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure (its dirty check and stash leave `<root>/Input` out), commit, push, conflict sides and resolution; hardened `runGit`. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
 | `files.ts`, `paths.ts` | Tree listing, versions (content hash), ripgrep search (also `filesMentioning` for the move's link scan), the note graph (`graph`: notes + links via the shared `noteLinks`, for `GET /vaults/:id/graph`); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
+| `bases.ts` | Bases query tables (#91): `parseBase` (YAML via `yaml`, core schema; v1 subset, `BaseError` `base-invalid` / `base-unsupported` → 422), a Pratt parser and evaluator for filter expressions (unsupported names refused before any file is read), and the file index: per vault root, every file's size, times, frontmatter and tags, re-read only when size or mtime changed (stat per query, no watcher coupling). `queryBase` filters, sorts (empty last, path as tie-break), caps at `limit` / 500 rows and serializes cells (`BaseCell`: dates as `YYYY-MM-DD[ HH:mm]`, `file.name` / `basename` / `path` as links). `POST /vaults/:id/base` `{ source }`. |
 | `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`, and `fetch` and `refresh` through `tryShared`, which never queues; exclusive: every other git operation). `fetch` and `refresh` are quiet: they don't change `busy`. `holds(label)` tells whether a shared holder with that label exists. |
 | `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events. |
 | `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. Also the command list (`commands()`, name-clash rule, skill stamp and refresh) and command turns (`instructionsFor`) ([Commands](#commands)). |

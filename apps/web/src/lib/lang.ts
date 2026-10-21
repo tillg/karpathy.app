@@ -3,7 +3,7 @@ import { LanguageDescription } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { mediaKind } from '@karpathy/shared';
 
-export type FileKind = 'note' | 'html' | 'code' | 'email' | 'media' | 'binary';
+export type FileKind = 'note' | 'html' | 'base' | 'code' | 'email' | 'media' | 'binary';
 
 export function fileKind(path: string, binary: boolean): FileKind {
   if (mediaKind(path)) return 'media';
@@ -12,12 +12,14 @@ export function fileKind(path: string, binary: boolean): FileKind {
   if (binary) return 'binary';
   if (/\.(md|markdown)$/i.test(path)) return 'note';
   if (/\.html?$/i.test(path)) return 'html';
+  // An Obsidian base (#91): YAML in Write mode, its table in Read mode.
+  if (/\.base$/i.test(path)) return 'base';
   return 'code';
 }
 
-/** The mode a file shows in: notes follow the mode preference, HTML pages the page mode, code files are always Write, emails always Read. */
+/** The mode a file shows in: notes follow the mode preference, HTML pages and bases the page mode, code files are always Write, emails always Read. */
 export function viewMode(kind: FileKind, mode: 'write' | 'read', pageMode: 'write' | 'read'): 'write' | 'read' {
-  return kind === 'code' ? 'write' : kind === 'email' ? 'read' : kind === 'html' ? pageMode : mode;
+  return kind === 'code' ? 'write' : kind === 'email' ? 'read' : kind === 'html' || kind === 'base' ? pageMode : mode;
 }
 
 /** The language a code file is colored with, by its name; null = plain text. Each language loads lazily. */

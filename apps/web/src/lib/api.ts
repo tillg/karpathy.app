@@ -1,4 +1,5 @@
 import type {
+  BaseResult,
   BrowserCallResult,
   ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData, MetricsRange, MetricsReport,
   OpenPage, SearchHit, SecretStatus, Settings, SettingsView, TokenTest, UploadResult, UsageDays, UsageReport, Vault, VaultConfig, VaultStatus,
@@ -107,6 +108,8 @@ export const api = {
   search: (id: string, text: string, signal?: AbortSignal) =>
     json<{ hits: SearchHit[]; truncated: boolean }>('GET', `${v(id)}/search?q=${encodeURIComponent(text)}`, undefined, signal),
   graph: (id: string) => json<GraphData>('GET', `${v(id)}/graph`),
+  /** Runs a fenced ```base block's source over the vault (#91). */
+  base: (id: string, source: string) => json<BaseResult>('POST', `${v(id)}/base`, { source }),
 
   changes: (id: string) => json<Change[]>('GET', `${v(id)}/changes`),
   diff: (id: string, path: string) => json<Diff>('GET', `${v(id)}/changes/diff?${q(path)}`),

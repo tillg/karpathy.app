@@ -737,3 +737,23 @@ details.nums .num { text-align: right; font-variant-numeric: tabular-nums; }
 #admin-mode.phone .hide-phone { display: none; }
 #admin-mode.phone .show-phone { display: block; }
 .gh .status { text-transform: none; letter-spacing: 0; }
+
+/* ```base tables (#91): read-only, the table scrolls sideways inside its box, never the page. */
+.base-view { box-sizing: border-box; max-width: 100%; min-width: 0; contain: inline-size; margin: 6px 0 12px; border: .5px solid var(--sep); border-radius: 12px; background: var(--bg2); font-family: var(--font); font-size: 14px; overflow: hidden; }
+.base-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: .5px solid var(--sep); font-size: 12.5px; font-weight: 600; color: var(--label2); }
+.base-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.base-edit { font: 600 12px var(--mono); color: var(--tint); }
+.base-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.base-table { border-collapse: collapse; width: 100%; display: table; }
+.rd .base-table { display: table; max-width: none; overflow: visible; }
+.base-table th, .base-table td { border: 0; border-bottom: .5px solid var(--sep); padding: 6px 10px; text-align: left; vertical-align: top; white-space: nowrap; }
+.base-table th { font-size: 12.5px; font-weight: 600; color: var(--label2); }
+.base-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.base-table tbody tr { cursor: pointer; }
+.base-table tbody tr:hover { background: var(--fill); }
+.base-table tbody tr:last-child td { border-bottom: 0; }
+.base-link { color: var(--tint); text-decoration: none; font-weight: 500; }
+.base-foot { padding: 5px 10px; border-top: .5px solid var(--sep); font-size: 12px; color: var(--label2); }
+.base-msg { padding: 10px; font-size: 13.5px; color: var(--label2); }
+.base-msg[data-testid="base-error"] { color: var(--red); }
+.editor .cm-base { box-sizing: border-box; width: 100%; max-width: 100%; contain: inline-size; padding: 0 6px; font-family: var(--font); line-height: 1.4; white-space: normal; }
