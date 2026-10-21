@@ -1,0 +1,6 @@
+# false on a remote dev host (dev.yml): no deploy user, the login user (admin_user) takes uid/gid 1000.
+base_app_user: true
+# The user that must own uid/gid 1000: the deploy user on a target, the login user on a dev host.
+base_uid_user: "{{ deploy_user if base_app_user else admin_user }}"
+base_uid: "{{ deploy_uid if base_app_user else admin_uid }}"
+base_gid: "{{ deploy_gid if base_app_user else admin_uid }}"

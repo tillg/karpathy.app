@@ -1,0 +1,100 @@
+# What a checkout on a remote dev host needs for `just check`, `just dev up`, `just e2e` and `claude`
+# (Docker comes from role docker).
+- name: Command-line tools
+  ansible.builtin.apt:
+    name: [git, just, ripgrep, jq, netcat-openbsd]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: NodeSource apt repo (Node 22)
+  ansible.builtin.deb822_repository:
+    name: nodesource
+    types: deb
+    uris: https://deb.nodesource.com/node_22.x
+    suites: nodistro
+    components: main
+    signed_by: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+
+- name: GitHub CLI apt repo
+  ansible.builtin.deb822_repository:
+    name: github-cli
+    types: deb
+    uris: https://cli.github.com/packages
+    suites: stable
+    components: main
+    signed_by: https://cli.github.com/packages/githubcli-archive-keyring.gpg
+
+- name: Node 22 and gh
+  ansible.builtin.apt:
+    name: [nodejs, gh]
+    state: present
+    update_cache: true
+
+# The native installer, per user into ~/.local/bin (on the login shell's PATH); it updates itself.
+- name: Claude Code CLI
+  ansible.builtin.shell: set -o pipefail && curl -fsSL https://claude.ai/install.sh | bash
+  args:
+    executable: /bin/bash
+    creates: /home/{{ admin_user }}/.local/bin/claude
+  become: true
+  become_user: "{{ admin_user }}"
+
+# Browser and system libraries for `just e2e`; --with-deps installs the libraries through sudo.
+- name: Playwright Chromium {{ devtools_playwright_version }}
+  ansible.builtin.shell: >-
+    npx -y playwright@{{ devtools_playwright_version }} install --with-deps chromium
+    && touch ~/.cache/ms-playwright/.karpathy-{{ devtools_playwright_version }}
+  args:
+    executable: /bin/bash
+    creates: /home/{{ admin_user }}/.cache/ms-playwright/.karpathy-{{ devtools_playwright_version }}
+  become: true
+  become_user: "{{ admin_user }}"
+
+# Host secrets: the provider keys every checkout falls back to (deploy/stack.sh secrets_from_host).
+- name: Host secrets folder
+  ansible.builtin.file:
+    path: /home/{{ admin_user }}/.config/karpathy/secrets
+    state: directory
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0700"
+
+- name: Host secrets
+  ansible.builtin.copy:
+    dest: /home/{{ admin_user }}/.config/karpathy/secrets/{{ item.key }}
+    content: "{{ item.value }}"
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0600"
+  loop: "{{ devtools_host_secrets | dict2items | selectattr('value') }}"
+  loop_control:
+    label: "{{ item.key }}"
+  no_log: true
+
+# The fine-grained GitHub token (karpathy.app, karpathy_demo_wiki, ingest_email) for git over HTTPS.
+- name: Git's credential helper
+  ansible.builtin.command: git config --global --get credential.helper  # noqa: command-instead-of-module
+  register: devtools_git_helper
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+  become_user: "{{ admin_user }}"
+
+- name: Git stores credentials
+  ansible.builtin.command: git config --global credential.helper store  # noqa: command-instead-of-module
+  when: devtools_github_token | length > 0 and devtools_git_helper.stdout != 'store'
+  changed_when: true
+  become: true
+  become_user: "{{ admin_user }}"
+
+- name: GitHub token as git credential
+  ansible.builtin.copy:
+    dest: /home/{{ admin_user }}/.git-credentials
+    content: "https://x-access-token:{{ devtools_github_token }}@github.com\n"
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0600"
+  when: devtools_github_token | length > 0
+  no_log: true

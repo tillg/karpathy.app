@@ -12,7 +12,7 @@ install:
 dev action="up" *args:
     deploy/dev.sh {{action}} {{args}}
 
-# Resume this checkout's last Claude Code session (e.g. after reconnecting to a codespace); extra args go to claude
+# Resume this checkout's last Claude Code session (e.g. after reconnecting to a remote dev host); extra args go to claude
 resume *args:
     claude --continue {{args}}
 
@@ -29,7 +29,7 @@ check:
     npm test
     just settings check
     bash deploy/stack.test.sh
-    bash .devcontainer/seed.test.sh
+    bash deploy/ansible/dev.test.sh
     bash deploy/check-preflight.test.sh
     bash deploy/ingest/run.test.sh
     bash deploy/ingest/compose.test.sh
@@ -105,6 +105,10 @@ deploy target *args:
 deploy-check target *args:
     deploy/ansible/deploy.sh check {{target}} {{args}}
 
+# Set up the remote dev host karpathy-dev (deploy/README.md, "Dev server"): `just devhost [--check] [--bootstrap <public-ip>]`
+devhost *args:
+    deploy/devhost.sh {{args}}
+
 # Copy a target's access token to the clipboard; `--qr` also prints a login QR code for a phone/iPad
 token target *flag:
     deploy/ansible/token.sh {{target}} {{flag}}
@@ -113,9 +117,17 @@ token target *flag:
 ingest-auth target email:
     deploy/ansible/ingest-auth.sh {{target}} {{email}}
 
-# Copy an ntfy topic to the clipboard (subscribe to it in the ntfy app): a target's alert topic, or `dev` for dev progress (Keychain karpathy-ntfy-dev)
+# Copy an ntfy topic to the clipboard (subscribe to it in the ntfy app): a target's alert topic, or `dev` for dev progress (Keychain karpathy-ntfy-dev; tmp/.ntfy_dev_topic without a Keychain). Without a clipboard (a remote dev host) it prints the topic
 ntfy-topic target:
-    {{ if target == "dev" { "security find-generic-password -s karpathy-ntfy-dev -w" } else { "deploy/ansible/vault-get.sh " + target + " vault_ntfy_topic" } }} | tr -d '\n' | pbcopy && echo "ntfy topic for {{target}} copied to the clipboard."
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ "{{target}}" != dev ]; then topic=$(deploy/ansible/vault-get.sh "{{target}}" vault_ntfy_topic)
+    elif command -v security >/dev/null; then topic=$(security find-generic-password -s karpathy-ntfy-dev -w)
+    else topic=$(cat tmp/.ntfy_dev_topic 2>/dev/null) || { echo "no Keychain here: put the dev topic into tmp/.ntfy_dev_topic" >&2; exit 1; }
+    fi
+    topic=$(printf %s "$topic" | tr -d '\n')
+    if command -v pbcopy >/dev/null; then printf %s "$topic" | pbcopy && echo "ntfy topic for {{target}} copied to the clipboard."
+    else echo "ntfy topic for {{target}}: $topic"; fi
 
 # Watch Hetzner for a cheaper server (CX23/CAX11), twice a day with an ntfy push: `just hetzner-watch install|uninstall|now`
 hetzner-watch action:

@@ -273,8 +273,10 @@ export async function stackDown(url = BASE_URL): Promise<string | null> {
   try {
     if ((await ctx.get(`${url}/healthz`, { timeout: 5000 })).ok()) return null;
   } catch { /* refused or timed out */ } finally { await ctx.dispose(); }
-  return `dev stack ${url} stopped answering. If every published port refuses at once, Rancher's port forwarder died: `
-    + '`rdctl shutdown && open -a "Rancher Desktop"`, then re-run the failed tests (`just e2e --last-failed`).';
+  const cause = process.platform === 'darwin'
+    ? 'If every published port refuses at once, Rancher\'s port forwarder died: `rdctl shutdown && open -a "Rancher Desktop"`'
+    : 'Check its containers (`just dev ps`, `just dev logs`)';
+  return `dev stack ${url} stopped answering. ${cause}, then re-run the failed tests (\`just e2e --last-failed\`).`;
 }
 
 export const test = base.extend<{ api: Api; vault: TestVault; cspGuard: void; stackGuard: void }>({

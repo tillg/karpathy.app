@@ -51,6 +51,7 @@ jobs:
       - run: ansible-lint
       - run: |
           ansible-playbook -i inventories/hetzner --vault-id hetzner@vault-pass-client.sh --syntax-check site.yml
+          ansible-playbook -i inventories/dev --vault-id dev@vault-pass-client.sh --syntax-check dev.yml
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

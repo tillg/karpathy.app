@@ -4,11 +4,15 @@
 # Run: bash deploy/check-preflight.sh (first step of `just check`); CHECK_IGNORE_LOAD=1 skips the load check.
 set -uo pipefail
 
-# preflight <load average (1 min)> <cores> <docker answers: 1|0>
+# preflight <load average (1 min)> <cores> <docker answers: 1|0> [<os, default: uname>]
 preflight() {
-  local load=$1 cores=$2 docker_ok=$3
+  local load=$1 cores=$2 docker_ok=$3 os=${4:-$(uname)}
   if [ "$docker_ok" != 1 ]; then
-    echo "Docker doesn't answer: restart Rancher Desktop (rdctl shutdown && open -a \"Rancher Desktop\")" >&2
+    if [ "$os" = Darwin ]; then
+      echo "Docker doesn't answer: restart Rancher Desktop (rdctl shutdown && open -a \"Rancher Desktop\")" >&2
+    else
+      echo "Docker doesn't answer: is the daemon running (sudo systemctl restart docker) and are you in the docker group?" >&2
+    fi
     return 1
   fi
   if awk -v l="$load" -v n="$cores" 'BEGIN { exit !(l > 3 * n) }'; then

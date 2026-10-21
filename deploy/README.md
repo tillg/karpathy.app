@@ -92,8 +92,8 @@ when the whole box is gone.
 | **prodtest** | https://localhost:80N5 | The prod images built from the working tree, paired with dev stack N | `just prodtest` |
 | **hetzner** target | https://app.karpathy.app | Production: Hetzner server, reachable only over Tailscale | `just deploy hetzner` |
 
-dev and prodtest run in the Mac's Docker (Rancher Desktop); the target is a real Ubuntu host
-managed by Ansible.
+dev and prodtest run on a dev host: the Mac's Docker (Rancher Desktop) or the remote dev host
+`karpathy-dev` ([Dev server](#dev-server)). The target is a real Ubuntu host managed by Ansible.
 
 ## The `just` recipes
 
@@ -105,10 +105,12 @@ managed by Ansible.
 |---|---|
 | `just install` | `npm install` for the workspace (after a clone or in a fresh worktree). |
 | `just dev [up [N]\|down\|logs\|ps\|token\|stacks]` | This checkout's dev stack N on :80N0 (`up` without N: the remembered one, else the first free); `stacks` lists who owns which stack; `token` prints the access token. |
-| `just check` | Lint, typecheck, the unit + integration tests and the dev-stack tooling tests. |
+| `just check` | Lint, typecheck, the unit + integration tests and the dev-stack tooling tests, including `ansible/dev.test.sh` (the dev server playbook against a privileged Ubuntu container: a few minutes, needs the internet). |
 | `just test [args]` | The unit + integration tests only. |
 | `just e2e [args]` | Playwright against this checkout's dev stack. |
 | `just prodtest [up\|down\|e2e]` | The prod images on :80N5 (paired with dev stack N), and the e2e suite against them. |
+| `just resume [args]` | Continues this checkout's last Claude Code session (`claude --continue`), e.g. after reconnecting to the dev server. |
+| `just devhost [--check] [--bootstrap <public-ip>]` | Sets up the remote dev host `karpathy-dev` with `ansible/dev.yml` ([Dev server](#dev-server)); `--check` is a dry run. |
 
 **Release and deploy**
 
@@ -128,7 +130,7 @@ managed by Ansible.
 | `just token <target>` | Copies the target's access token to the clipboard. |
 | `just token <target> --qr` | Also prints a QR code of the login link `<app url>/#token=…`: scan it on the iPad or phone and the app opens, logged in. The QR code is a credential: don't screenshot or share it. |
 | `just ingest-auth <target> <email>` | Gives the target's ingest service Gmail access: pipes this Mac's gog OAuth client (`gog auth credentials`) and the account's refresh token (Keychain, from `gog auth add <email>`) into its container. Nothing is printed or stored on the way. `dev` = this checkout's dev stack. |
-| `just ntfy-topic <target>` | Copies the target's ntfy alert topic to the clipboard, to subscribe to it in the ntfy app (and in healthchecks.io's ntfy and webhook integrations, see below). `dev` copies the dev-progress topic (`karpathy-development-…`, Keychain item `karpathy-ntfy-dev`; agents post progress there, never on the alert topics). |
+| `just ntfy-topic <target>` | Copies the target's ntfy alert topic to the clipboard, to subscribe to it in the ntfy app (and in healthchecks.io's ntfy and webhook integrations, see below). `dev` copies the dev-progress topic (`karpathy-development-…`, Keychain item `karpathy-ntfy-dev`; agents post progress there, never on the alert topics). Without a Keychain (the dev server) it reads `tmp/.ntfy_dev_topic`, and without a clipboard it prints the topic. |
 
 **Operations**
 
@@ -241,6 +243,62 @@ commit and push everything first; only uncommitted changes would be lost.
 
 Each fresh server requests a new certificate; Let's Encrypt allows 5 for the same name per week.
 
+## Dev server
+
+`karpathy-dev` is a remote dev host: our own always-on Hetzner server, separate from prod, reached only over
+Tailscale. It is a dev host like the Mac: `just dev up`, `just check`, `just e2e` and `claude` work there in several
+worktrees at once, with the same stack rules (stacks 1–9, one per checkout). Its stacks open on the Mac at
+`https://localhost:80N0` through SSH port forwards. The playbook is `ansible/dev.yml`: roles `base`, `tailscale`,
+`docker` (shared with prod) and `devtools` (Node 22, `just`, ripgrep, jq, netcat, `gh`, the Claude Code CLI,
+Playwright's Chromium). Your login has uid 1000 (sudo, docker) and there is no `deploy` user. It holds no prod data.
+
+**Setting it up:**
+
+1. Book it in the Hetzner console: **CAX41** (ARM, 16 vCPU, 32 GB), Ubuntu 24.04, your SSH key, firewalls
+   `no-inbound` + `setup-ssh`, **backups on** (it holds uncommitted work). Note its public IP.
+2. Tailscale admin console: create an auth key tagged `tag:server`, pre-approved, single-use.
+3. Create a fine-grained GitHub token for `karpathy.app`, `karpathy_demo_wiki` and `ingest_email` (Contents
+   read/write; Pull requests read/write if agents should open PRs).
+4. `just secrets dev`: the OpenRouter key, the Exa key (optional), the GitHub token, the Tailscale key. The vault's
+   password is the Keychain item `karpathy-ansible-dev` (keep a copy in your password manager).
+5. `just devhost --bootstrap <public-ip>`. At the end root login is off and the server is on the tailnet as
+   `karpathy-dev`; you log in as yourself (`admin_user` in `ansible/inventories/dev/group_vars/all/main.yml`, keys in
+   `ansible/keys/dev.pub`). The keys land in `~/.config/karpathy/secrets/` (the host secrets every checkout falls back
+   to) and the GitHub token in your git credentials.
+6. Detach the `setup-ssh` firewall: from now on no port is open to the internet.
+7. `just devhost` again (over Tailscale) to see it report `changed=0`. Later runs keep it up to date; `--check` shows
+   what would change.
+
+**Connecting:** add this to the Mac's `~/.ssh/config`, then `ssh karpathy-dev` (or VS Code › Remote-SSH ›
+`karpathy-dev`):
+
+```
+Host karpathy-dev
+  HostName karpathy-dev
+  ServerAliveInterval 30
+  LocalForward 8010 localhost:8010
+  LocalForward 8020 localhost:8020
+  LocalForward 8030 localhost:8030
+  LocalForward 8040 localhost:8040
+  LocalForward 8050 localhost:8050
+  LocalForward 8060 localhost:8060
+  LocalForward 8070 localhost:8070
+  LocalForward 8080 localhost:8080
+  LocalForward 8090 localhost:8090
+```
+
+On the server, once: `git clone https://github.com/tillg/karpathy.app`, `just install`, `claude` and log in with the
+subscription (the project plugins install in the first session). Then `just dev up`, and open
+`https://localhost:8010` on the Mac. After a reconnect, `just resume` continues the last Claude session.
+
+- **One dev host at a time:** a Mac dev stack on the same port blocks that `LocalForward` (ssh warns "bind: Address
+  already in use"). Stop the Mac's stacks (`just dev down`) before you connect, or the other way round.
+- **Host secrets:** `just dev up` copies each `*_api_key` missing in a checkout's `deploy/secrets/` from
+  `~/.config/karpathy/secrets/`, so new worktrees need no keys. A checkout's own key wins. This works on the Mac too:
+  put your keys there once.
+- **arm64:** like the Mac. `just prodtest` there tests the arm64 images; CI and the release build cover amd64.
+- **No monitoring:** automatic security updates come from `base`; an outage shows when you connect.
+
 ## Where things are
 
 ```
@@ -250,8 +308,9 @@ deploy/
   compose.prodtest.yml     prodtest overrides
   dev.sh                   behind `just dev`
   backend/ proxy/ opencode/ web/   Dockerfiles and their config (Caddyfile, opencode.json)
-  ansible/                 the playbook: site.yml, roles/, inventories/hetzner/,
+  ansible/                 the playbooks: site.yml (targets), dev.yml (dev server), roles/, inventories/hetzner/ and dev/,
                            deploy.sh (just deploy), fill_vault.py (just secrets), token.sh (just token)
+  devhost.sh               behind `just devhost`
   hetzner-watch/           the availability check behind `just hetzner-watch`
 ```
 

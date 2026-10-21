@@ -1,0 +1,18 @@
+# Host settings for the remote dev host `dev` (dev.yml, `just devhost`). Secrets: vault.yml (vault_*), `just secrets dev`.
+target: dev
+tailscale_enabled: true
+tailscale_hostname: karpathy-dev
+timezone: Europe/Berlin
+# The developer's login (uid 1000, sudo, docker), the same name as on the Mac so `ssh karpathy-dev` needs no User.
+admin_user: tgartner
+# The developer's SSH keys (keys/dev.pub, one per line). Not in the inventory dir: Ansible would parse the file as an
+# inventory and make a host of it.
+admin_authorized_keys: "{{ lookup('file', playbook_dir ~ '/keys/dev.pub').splitlines() }}"
+
+# Single-use, tagged tag:server, pre-approved; only used when the host joins the tailnet.
+tailscale_authkey: "{{ vault_tailscale_authkey }}"
+# The host secrets every checkout on the dev host falls back to, and the fine-grained token for git.
+devtools_host_secrets:
+  openrouter_api_key: "{{ vault_openrouter_api_key }}"
+  exa_api_key: "{{ vault_exa_api_key }}"
+devtools_github_token: "{{ vault_github_token }}"

@@ -114,9 +114,9 @@ header `karpathy #N`).
   any `@llm` spec that still fails against the commit before your change (own worktree and stack) before blaming it —
   the local dev model fails some of them on its own.
 
-A GitHub Codespace (`.devcontainer/`, README › Codespaces) is another dev host with its own stacks. Its models come
-from OpenRouter, as everywhere. It has no Keychain (secrets come from Codespaces secrets) and no Lima.
-`$CODESPACES` is set there.
+The remote dev host `karpathy-dev` (Hetzner, Tailscale only; deploy/README.md › Dev server) is another dev host with
+its own stacks 1–9 and the same rules. It is Linux: no Keychain, no Rancher, no Lima; the dev topic for ntfy is in
+`tmp/.ntfy_dev_topic` there.
 
 ## Progress messages (ntfy)
 

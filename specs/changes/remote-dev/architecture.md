@@ -32,7 +32,7 @@ edited: 2026-10-21
 | The app is opened from a Mac (or laptop) through a `localhost` forward; iPad/phone-only use is out of scope | A host-agnostic Caddy dev site plus Vite live reload behind a public URL | Nothing in the proxy or Vite changes. On an iPad you get the shell and `claude`, not the running app. |
 | Claude Code logs in with the subscription (`claude` login once per dev host) | `ANTHROPIC_API_KEY` (per-token API billing) | Uses the existing subscription. The API key stays an optional fallback. |
 | No personal `~/.claude` config on the dev host: the project's `CLAUDE.md` and plugins are enough | A dotfiles repo with a portable subset; copying `~/.claude` in at create time | Simplest. A dotfiles repo is the follow-up if the personal rules are missed. |
-| `remove-ollama` merges to `main` first; this change follows after its smoke test | Merge both together | `remove-ollama` is nearly done and this change builds on it (OpenRouter only). |
+| The change that removes the local model server merges to `main` first; this change follows after its smoke test | Merge both together | That change is nearly done and this change builds on it (OpenRouter only). |
 | A separate dev server, not the prod server | Dev stacks on prod (`app.karpathy.app`) | Prod stays a box nobody logs into: agents with a shell, Docker and a GitHub token stay away from prod's data, and `e2e` doesn't compete with prod. Prod (CPX22) is too small anyway. |
 | Reached over Tailscale only: SSH (terminal or VS Code Remote-SSH) plus `ssh -L 80N0:localhost:80N0` for the app; no public ports | Public SSH; Tailscale to the app port directly | Same model as prod. Caddy's dev site answers only for `localhost`, so the tunnel keeps proxy and Vite unchanged. |
 | Always on | Created from a snapshot on demand and deleted afterwards | Clones, stacks and Claude sessions persist; a few euros a month, no create/delete scripting. |
@@ -53,10 +53,11 @@ edited: 2026-10-21
 
 ### Host secrets fallback
 
-`dev.sh up` renders the settings with the checkout's `deploy/secrets/`. Before that, for each key a setting names
-(`openrouter_api_key`, `exa_api_key`), a file missing in the checkout is copied from `~/.config/karpathy/secrets/`
-(mode 600). A file the checkout already has wins. When neither has the OpenRouter key, the render fails with the
-existing missing-secret error, which also names the host-secrets folder. Copying (not reading through) keeps the render
+`dev.sh up` renders the settings with the checkout's `deploy/secrets/`. Before that, `secrets_from_host`
+(`deploy/stack.sh`) copies each `~/.config/karpathy/secrets/*_api_key` missing (or empty) in the checkout (mode 600);
+`*_api_key` is the provider-key convention `just prodtest` already uses. A file the checkout already has wins. When
+neither has the OpenRouter key, `dev.sh up` stops before the render with a message naming both places; the settings
+package's missing-secret error stays as it is (prod's render shares it). Copying (not reading through) keeps the render
 and the settings package unchanged.
 
 ### Ansible: one `base`, two kinds of host

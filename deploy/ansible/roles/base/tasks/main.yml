@@ -1,27 +1,28 @@
 # App and login users, sshd hardening, unattended upgrades, timezone.
-- name: Look up uid {{ deploy_uid }}
+# base_app_user false (dev.yml, a remote dev host): no deploy user; the login user takes uid/gid 1000 instead.
+- name: Look up uid {{ base_uid }}
   ansible.builtin.getent:
     database: passwd
-    key: "{{ deploy_uid }}"
+    key: "{{ base_uid }}"
     fail_key: false
 
 # Another user on 1000 (e.g. a VM's default user) would own the vaults: stop rather than pick another uid.
-- name: Uid free or already the deploy user, uid {{ deploy_uid }}
+- name: Uid 1000 free or already {{ base_uid_user }}
   ansible.builtin.assert:
     # getent keys its result by user name (or by the uid, with value None, when there is none).
-    that: ansible_facts.getent_passwd | dict2items | rejectattr('value', 'none') | map(attribute='key') | list in [[], [deploy_user]]
-    fail_msg: "uid {{ deploy_uid }} belongs to another user; the images and /srv/vaults need it for {{ deploy_user }}"
+    that: ansible_facts.getent_passwd | dict2items | rejectattr('value', 'none') | map(attribute='key') | list in [[], [base_uid_user]]
+    fail_msg: "uid {{ base_uid }} belongs to another user; the images and /srv/vaults need it for {{ base_uid_user }}"
 
-- name: Look up gid {{ deploy_gid }}
+- name: Look up gid {{ base_gid }}
   ansible.builtin.getent:
     database: group
-    key: "{{ deploy_gid }}"
+    key: "{{ base_gid }}"
     fail_key: false
 
-- name: Gid free or already the deploy group, gid {{ deploy_gid }}
+- name: Gid 1000 free or already the group {{ base_uid_user }}
   ansible.builtin.assert:
-    that: ansible_facts.getent_group | dict2items | rejectattr('value', 'none') | map(attribute='key') | list in [[], [deploy_user]]
-    fail_msg: "gid {{ deploy_gid }} belongs to another group; the images and /srv/vaults need it for {{ deploy_user }}"
+    that: ansible_facts.getent_group | dict2items | rejectattr('value', 'none') | map(attribute='key') | list in [[], [base_uid_user]]
+    fail_msg: "gid {{ base_gid }} belongs to another group; the images and /srv/vaults need it for {{ base_uid_user }}"
 
 # Two users with one job each (a container breakout must not land on a sudoer):
 # - deploy (uid 1000): the app's uid inside the containers and owner of /srv/vaults. No login,
@@ -31,6 +32,7 @@
   ansible.builtin.group:
     name: "{{ deploy_user }}"
     gid: "{{ deploy_gid }}"
+  when: base_app_user
 
 - name: App user
   ansible.builtin.user:
@@ -39,11 +41,19 @@
     group: "{{ deploy_user }}"
     password: "!"
     update_password: on_create
+  when: base_app_user
+
+- name: Login group, gid {{ base_gid }}
+  ansible.builtin.group:
+    name: "{{ admin_user }}"
+    gid: "{{ base_gid }}"
+  when: not base_app_user
 
 - name: Login user
   ansible.builtin.user:
     name: "{{ admin_user }}"
     uid: "{{ admin_uid }}"
+    group: "{{ omit if base_app_user else admin_user }}"
     shell: /bin/bash
     password: "!"
     update_password: on_create
@@ -65,7 +75,7 @@
 # Taking deploy's login, sudo and docker rights away while Ansible is logged in as deploy would cut
 # off the run itself: only when connected as someone else (ops, root, or the VM's own user).
 - name: App user loses login, sudo and docker
-  when: ansible_user | default('') != deploy_user
+  when: base_app_user and ansible_user | default('') != deploy_user
   block:
     - name: No sudo for the app user
       ansible.builtin.file:
