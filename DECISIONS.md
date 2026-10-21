@@ -193,6 +193,8 @@ edited: 2026-10-21
   - [11:45 — Dev stack on a host-published Ollama container (test models), since this Mac has no omlx](#run-2026-10-21-1056-8)
   - [12:00 — Review triage: fix all defects and the drift method; leave the shared one-shot helper and the Admin field duplication](#run-2026-10-21-1056-9)
   - [12:02 — Retro: an LLM test for the drift check; a CLAUDE.md line on looking at a stack in a browser](#run-2026-10-21-1056-10)
+  - [12:51 — Archive `ai-chat-titles` with its decisions open](#run-2026-10-21-1056-11)
+  - [12:51 — A PR into `main` instead of pushing `main`; #148 closes when it is merged](#run-2026-10-21-1056-12)
 - [2026-10-21 10:58 — Finish remove-ollama (#157): merge, verify, archive, release and deploy](#run-2026-10-21-1058)
   - [11:00 — Bring `remove-ollama` up to date by merging `main` into it, not by rebasing](#run-2026-10-21-1058-1)
   - [11:05 — Run the model tier in CI (its `OPENROUTER_API_KEY` secret); no local OpenRouter key](#run-2026-10-21-1058-2)
@@ -2921,6 +2923,33 @@ edited: 2026-10-21
 - **Consequences:** `npm run test:llm` grows by ~2 min (ten short turns with qwen2.5:3b). The existing model e2e still
   runs in both the desktop and webkit-desktop projects at once (a cross-project race on server-wide settings, rare,
   pre-existing; not changed).
+  13:05: (1) caught a second miss: the drift LLM test failed on a shared generic word ("tips"), see decision 5.
+
+## 12:51 — Archive `ai-chat-titles` with its decisions open {#run-2026-10-21-1056-11}
+
+- **Status:** open
+- **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`
+- **Context:** all ten plan steps ticked; the full `npm test` is green on the merged branch; the title LLM tests passed
+  before the merge of #157 (no OpenRouter key here to re-run them after it); `/research` LLM tests fail on `main` too.
+- **Question:** archive now, or leave the change open until the decisions are reviewed?
+- **Decision:** archive; decisions 1–12 of this run stay `open` and are listed in the archive commit.
+- **Why:** inside `/autonomous` nobody can review them; the system description should match the code that ships.
+- **Alternatives:** leave `specs/changes/ai-chat-titles/` open (system docs lag the code).
+- **Consequences:** a reverted decision becomes a `/spec:tweak` later.
+
+## 12:51 — A PR into `main` instead of pushing `main`; #148 closes when it is merged {#run-2026-10-21-1056-12}
+
+- **Status:** open
+- **Context:** decision 1 planned a merge into `main`; the parallel run of today (decision run-2026-10-21-1058-5) found a
+  direct push to `main` refused as "merge without review", and you merged its PR #164 yourself.
+- **Question:** push `main`, or open a PR?
+- **Decision:** a PR `feat/148-chat-titles` → `main` with `Closes #148`; a comment on #148 says what shipped. No release
+  or deploy (the task didn't ask for one).
+- **Why:** same rule as the other run; a review step is what you asked for there.
+- **Alternatives:** push `main` (refused before).
+- **Consequences:** #148 closes when the PR is merged; the demo run book (`karpathy_demo_wiki`, commit 50bea47, not
+  pushed) goes out with the next release.
+
 # 2026-10-21 10:58 — Finish remove-ollama (#157): merge, verify, archive, release and deploy {#run-2026-10-21-1058}
 
 - **Started by:** `/autonomous` (finishing `/spec:apply remove-ollama`, then `/spec:archive remove-ollama`)
