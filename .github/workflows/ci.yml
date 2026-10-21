@@ -11,7 +11,10 @@ jobs:
   default:
     runs-on: ubuntu-latest
     steps:
+      # Full history: the secret scan checks every commit, not only the last one (#141).
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - run: bash deploy/gitleaks/scan-repo.sh
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: sudo apt-get update && sudo apt-get install -y ripgrep

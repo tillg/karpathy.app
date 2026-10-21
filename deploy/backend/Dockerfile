@@ -2,6 +2,9 @@
 FROM node:22-alpine AS base
 # tzdata: git commit times follow TZ (compose).
 RUN apk add --no-cache git ripgrep tzdata
+# gitleaks: the commit's secret scan (#141); pinned and checksum-verified by the script.
+COPY deploy/gitleaks/install.sh /tmp/gitleaks-install.sh
+RUN sh /tmp/gitleaks-install.sh /usr/local/bin && rm /tmp/gitleaks-install.sh
 ARG APP_UID=1000
 ARG APP_GID=1000
 # Mount points owned by the app user, so fresh named volumes inherit the ownership.

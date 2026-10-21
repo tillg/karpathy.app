@@ -114,8 +114,12 @@ export const api = {
   discard: (id: string, path: string, version?: string | null) =>
     json<void>('POST', `${v(id)}/discard?${q(path)}${version !== undefined ? `&version=${encodeURIComponent(String(version))}` : ''}`),
   commitMessage: (id: string, signal: AbortSignal) => json<{ message: string }>('POST', `${v(id)}/commit-message`, undefined, signal),
-  /** `paths` = the changed files the user reviewed; 409 `changes-moved` if others arrived (#33). */
-  commit: (id: string, message: string, paths?: string[]) => json<CommitResult>('POST', `${v(id)}/commit`, { message, paths }),
+  /**
+   * `paths` = the changed files the user reviewed; 409 `changes-moved` if others arrived (#33). 422 `secrets` with
+   * `findings` if the changes hold possible secrets; `allowSecrets` = their fingerprints, to commit anyway (#141).
+   */
+  commit: (id: string, message: string, paths?: string[], allowSecrets?: string[]) =>
+    json<CommitResult>('POST', `${v(id)}/commit`, { message, paths, ...(allowSecrets ? { allowSecrets } : {}) }),
   push: (id: string) => json<CommitResult>('POST', `${v(id)}/push`),
   pull: (id: string) => json<VaultStatus>('POST', `${v(id)}/pull`),
   conflictSides: (id: string, path: string) => json<{ mine: string | null; theirs: string | null }>('GET', `${v(id)}/conflicts/sides?${q(path)}`),

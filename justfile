@@ -21,9 +21,10 @@ site port="8099":
     site/build.sh
     python3 -m http.server {{port}} --bind 127.0.0.1 -d _site
 
-# Lint, typecheck and unit + integration tests
+# Secret scan (gitleaks), lint, typecheck and unit + integration tests
 check:
     bash deploy/check-preflight.sh
+    bash deploy/gitleaks/scan-repo.sh
     npm run lint
     npm run typecheck
     npm test

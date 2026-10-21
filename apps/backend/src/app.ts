@@ -75,7 +75,7 @@ const patchSettings = z.object({
 });
 const chatTitleBody = z.object({ title: z.string().trim().min(1, { error: 'Title: enter a title' }).max(500, { error: 'Title: at most 500 characters' }) });
 const putFile = z.object({ content: z.string(), version: z.string().nullable(), force: z.boolean().optional() });
-const commitBody = z.object({ message: z.string().min(1).max(10_000), paths: z.array(z.string()).optional() });
+const commitBody = z.object({ message: z.string().min(1).max(10_000), paths: z.array(z.string()).optional(), allowSecrets: z.array(z.string().max(2_000)).max(1_000).optional() });
 const resolveBody = z.object({ path: z.string().min(1), choice: z.enum(['mine', 'theirs', 'both']) });
 // The file open in the UI (#143): a vault path like any other, checked here and again by the AI's current_page tool.
 const openPage = z.object({
@@ -355,7 +355,7 @@ export function createApp(d: AppDeps) {
   });
   api.post('/vaults/:id/commit', async (req, res) => {
     const b = commitBody.parse(req.body);
-    res.json(await d.vaults.commit(req.params.id!, b.message, b.paths));
+    res.json(await d.vaults.commit(req.params.id!, b.message, b.paths, b.allowSecrets));
   });
   api.post('/vaults/:id/push', async (req, res) => {
     res.json(await d.vaults.push(req.params.id!));

@@ -76,6 +76,28 @@ component, optional and set flags; no value).
 opencode never receives the GitHub or bearer token; the ingest service receives none of the app's secrets (bearer,
 GitHub, opencode password, provider keys), only its own two.
 
+## Secret scan before a push
+
+Secrets can sneak into a vault's data (an ingested mail with a login link that carries a token, a pasted config), into
+this repo's code or into its settings. Both are scanned with **gitleaks**, pinned (8.30.1) and checksum-verified by
+`deploy/gitleaks/install.sh` (#141).
+
+- **Vault commits.** `Vaults.commit` stages the vault's changes, then runs `gitleaks git --staged` on them
+  (`apps/backend/src/secret-scan.ts`) before `git commit`. A finding refuses the commit with 422 `secrets`: file
+  (vault path), line, rule and a masked hint (at most the first four characters; gitleaks redacts the rest before
+  the backend sees it). The secret itself is never in a response, a log or the UI. Nothing is committed or pushed;
+  the change stays uncommitted. The scan **fails closed**: if gitleaks can't run, the commit is refused (503
+  `secret-scan-failed`).
+- **Overrides, both deliberate.** *Commit anyway* in the dialog resends the fingerprints of the findings the user
+  was shown (`allowSecrets`); the backend scans again and refuses any finding not in that list, so a secret that
+  arrived meanwhile still blocks. The backend logs each acknowledged finding (file, line, rule). A
+  `.gitleaksignore` at the vault repo's root (fingerprints) is honoured: it is a visible, committed file. Not
+  honoured: inline `gitleaks:allow` markers (a mail could carry one next to a real token) and a vault
+  `.gitleaks.toml` (the AI or an ingest could write one to switch rules off); gitleaks' default rules always apply.
+- **This repo.** `deploy/gitleaks/scan-repo.sh` scans the whole history, staged, unstaged and untracked (not
+  ignored) files, and prints findings redacted. It is the first step of `just check` and of CI (full-history
+  checkout). Test fixtures build fake tokens at runtime, so the repo holds none.
+
 ## Admin mode: usage and metrics
 
 Admin mode (#150) adds three read-only routes, `GET /api/settings/secrets`, `GET /api/usage` and `GET /api/metrics`, all
@@ -357,6 +379,12 @@ kinds, strings only) and can only change which fields and flags the form shows; 
 
 ## Gaps (known, not built)
 
+- **Secret scan limits** (#141): only the app's Commit & Push is scanned. Commits made elsewhere (Obsidian, a
+  terminal) and pushed straight to GitHub are not; turning on GitHub push protection on the vault repos would
+  cover them. gitleaks finds known token formats and high-entropy `key=value` pairs, not every password. Before
+  the scan, the commit-message proposal has already sent the diff, secret included, to the LLM provider (as the
+  AI sees any note it reads). Fingerprints contain the line number, so an edit above a `.gitleaksignore`d line
+  revives the finding.
 - No rate limiting on the token check.
 - **The exact position can be exfiltrated by prompt injection** (#151): a hostile page in a vault can tell the AI to
   call `user_location` and put the result into a `webfetch` URL to an attacker's host, a `websearch` query or a note.
