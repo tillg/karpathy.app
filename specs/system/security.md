@@ -318,8 +318,9 @@ origin; nothing else is restricted by it).
 
 **Bases** (#91): a base table is built with `createElement` / `textContent`, never from HTML strings; its
 placeholder's `data-base` survives sanitizing only with the render's `ek` mark. The query is read-only, runs over the
-vault root's listing only (symlinks and dot folders are not followed) and is capped at 100 000 characters of source and
-500 rows.
+vault root's listing only (symlinks and dot folders are not followed) and is capped at 100 000 characters of source,
+256 levels of nesting (deeper is a 422 "Invalid base", never a stack overflow) and 500 rows. Property lookups read only
+a note's own keys, never inherited object members.
 
 **Media files** are untrusted bytes too:
 

@@ -475,7 +475,8 @@ syntax, so the same note shows the same table in Obsidian. The block's text is n
 - **Not in v1:** `formulas` / `formula.*`, `this`, other view types (cards, list, map, …), regular expressions and
   other functions. Such a block shows "… not supported in v1" in its box; invalid YAML or an expression that can't be
   read shows "Invalid base: …". `groupBy` and `summaries` are left out with a note in the footer; further views too
-  (only the first is shown).
+  (only the first is shown). An expression or filter tree nested more than 256 levels deep is invalid too.
+  Only a note's own properties count: `constructor` or `__proto__` are plain (usually missing) properties.
 - At most 500 rows are shown. All vault files count (attachments too, as in Obsidian; dot folders don't); only
   Markdown notes have properties and tags.
 - **`.base` files** open like HTML pages: Read shows the table, Write the YAML (page mode). `![[x.base]]` embeds are not
