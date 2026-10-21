@@ -48,4 +48,41 @@ describe('chat titles with a real model', () => {
     chat.close();
     await t.vaults.close();
   }, 900_000);
+
+  it('after ten turns that left the title\'s topic, a suggestion with a new title appears and the title stays', async () => {
+    const remote = await makeRemote({ 'Home.md': '# Home\n' }, { name: `d${Math.random().toString(36).slice(2, 7)}` });
+    const t = await makeApp(remote.remoteBase, { dirs: { config: join(base, `config-${Math.random()}`), vaults: vaultsDir } });
+    await t.store.update((c) => { c.settings.model = LLM_MODEL; c.settings.titleModel = LLM_MODEL; });
+    const chat = new ChatService(t.vaults, t.store, new OpencodeHarness(oc.url, oc.password), '/vaults');
+    const id = await t.addVault(remote.repo, { name: remote.repo.split('/')[1] });
+    const { chatId } = await chat.create(id);
+    const turn = async (text: string) => {
+      await chat.prompt(id, chatId, text);
+      await new Promise<void>((resolve) => chat.stream(id, chatId, () => undefined, resolve));
+    };
+    await turn('Give me one tip for growing tomatoes on a balcony. One sentence, use no tools.');
+    await turn('Which tomato variety suits a small pot? One sentence, use no tools.');
+    // Small models answer "keep" when asked whether a title still fits (#148): the check must not rely on that.
+    const end2 = Date.now() + 120_000;
+    let title = '';
+    while (!/tomat/i.test(title) && Date.now() < end2) {
+      await new Promise((r) => setTimeout(r, 1000));
+      title = (await chat.get(id, chatId)).title;
+    }
+    if (!/tomat/i.test(title)) throw new Error(`INCONCLUSIVE: the turn-2 title doesn't name tomatoes: ${title}`);
+    for (const q of ['flour for sourdough bread', 'proofing time for sourdough', 'oven temperature for sourdough bread', 'feeding a sourdough starter',
+      'why sourdough bread turns out dense', 'baking sourdough in a Dutch oven', 'scoring sourdough bread', 'storing baked sourdough bread'])
+      await turn(`A question about ${q}: answer in one sentence, use no tools.`);
+    const end = Date.now() + 120_000;
+    let d = await chat.get(id, chatId);
+    while (!d.titleSuggestion && Date.now() < end) {
+      await new Promise((r) => setTimeout(r, 1000));
+      d = await chat.get(id, chatId);
+    }
+    expect(d.titleSuggestion).toBeTruthy();
+    expect(d.titleSuggestion).not.toMatch(/tomat/i);
+    expect(d.title).toBe(title);
+    chat.close();
+    await t.vaults.close();
+  }, 900_000);
 });

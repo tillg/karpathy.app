@@ -192,6 +192,7 @@ edited: 2026-10-21
   - [11:38 — Per-step gate on the feature branch is the workspace's suite; the full `npm test` gates the merge into `main`](#run-2026-10-21-1056-7)
   - [11:45 — Dev stack on a host-published Ollama container (test models), since this Mac has no omlx](#run-2026-10-21-1056-8)
   - [12:00 — Review triage: fix all defects and the drift method; leave the shared one-shot helper and the Admin field duplication](#run-2026-10-21-1056-9)
+  - [12:02 — Retro: an LLM test for the drift check; a CLAUDE.md line on looking at a stack in a browser](#run-2026-10-21-1056-10)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2884,3 +2885,23 @@ edited: 2026-10-21
 - **Consequences:** security note from the review: the title session's cwd is `/vaults` (all vaults); its isolation
   rests on the `chat-title` agent's `"*": "deny"` (tested in `chat-title.test.ts`). Prompt-injected text in a chat
   can at most shape the title.
+
+## 12:02 — Retro: an LLM test for the drift check; a CLAUDE.md line on looking at a stack in a browser {#run-2026-10-21-1056-10}
+
+- **Status:** open
+- **Context:** what went wrong in this run: (1) the drift check passed every unit test but did nothing with a real
+  model (the KEEP bias), found only by a hand-run of ten turns; the plan's LLM test covered turn 2 only. (2) The first
+  e2e for the generated title passed vacuously (it read the list before it loaded, then matched the throwaway session's
+  row); caught only by reading the screenshot, which also revealed the "chat title" row bug. (3) The Playwright MCP
+  browser couldn't open the stack (Caddy's CA). (4) Two e2e tests that change server-wide settings raced each other.
+  (5) No dev model on this Mac (decision 8).
+- **Question:** which mechanical fixes, at which level?
+- **Decision:** project level, applied: (1) `chat-title.llm.test.ts` › "after ten turns that left the title's topic, a
+  suggestion … appears" (would have failed on the KEEP version, as the hand-run showed); (2) the e2e now asserts the
+  list has exactly one row before and after the title change; (3) a CLAUDE.md line under "Parallel dev stacks"; (4) the
+  AI settings e2e tests run serially in one describe. Plugin level, drafted only: none.
+- **Why:** (1) and (2) turn what I caught by hand into tests; (3) saves the next run the detour.
+- **Alternatives:** trust the Caddy CA in the MCP browser (changes the user's browser profile).
+- **Consequences:** `npm run test:llm` grows by ~2 min (ten short turns with qwen2.5:3b). The existing model e2e still
+  runs in both the desktop and webkit-desktop projects at once (a cross-project race on server-wide settings, rare,
+  pre-existing; not changed).
