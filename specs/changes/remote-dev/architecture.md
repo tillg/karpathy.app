@@ -17,7 +17,7 @@ edited: 2026-10-21
 | `deploy/ansible/inventories/dev/` | `hosts.yml` (host `karpathy-dev`, `ansible_user` = the developer's login), `group_vars/all/main.yml`, `group_vars/all/vault.yml` (Ansible Vault: OpenRouter and Exa keys, GitHub token, Tailscale auth key). Vault password from the Keychain item `karpathy-ansible-dev` through `vault-pass-client.sh`. |
 | `deploy/ansible/roles/base` | Gets a switch for a dev host: the login user takes uid/gid 1000 with sudo and the docker group, and no `deploy` user is created. Prod is unchanged. |
 | `deploy/ansible/roles/tailscale` | Hostname from a variable (`karpathy-dev` here). |
-| `deploy/ansible/roles/devtools` | New. Pinned Node 22, `just`, ripgrep, jq, netcat, `gh`, the Claude Code CLI, Playwright Chromium with its system deps. Writes the host secrets to `~/.config/karpathy/secrets/` (mode 600) and the GitHub token as the login user's git credential. |
+| `deploy/ansible/roles/devtools` | New. Pinned Node 22, `just`, ripgrep, jq, netcat, `gh`, Ansible (`just check` renders a role template), the Claude Code CLI, Playwright Chromium with its system deps. Writes the host secrets to `~/.config/karpathy/secrets/` (mode 600), the GitHub token as the login user's git credential and their git identity (`devtools_git_user`). |
 | `deploy/devhost.sh` | Behind `just devhost [--check] [--bootstrap <ip>]`: runs `dev.yml` against the `dev` inventory, the first run as root on the public IP. |
 | `deploy/dev.sh` (or `stack.sh`) | Host-secrets fallback: a key missing in the checkout's `deploy/secrets/` is taken from `~/.config/karpathy/secrets/`. |
 | `deploy/README.md` | "Dev server": booking (CAX41, Ubuntu 24.04, SSH key, firewall rules, backups on), Tailscale tag, vault, `just devhost`, the `~/.ssh/config` entry. |

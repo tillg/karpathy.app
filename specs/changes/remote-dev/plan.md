@@ -58,6 +58,9 @@ flowchart LR
 - [x] Document the dev server: `deploy/README.md` (booking, Tailscale tag, vault, `just devhost`, `~/.ssh/config` entry with `LocalForward` 8010…8090, the port clash with Mac stacks), a pointer in `README.md`, a short note in `CLAUDE.md` (the remote dev host is a dev host; same stack rules)
   - Test first: none — docs
   - Verify: `grep -q 'Dev server' deploy/README.md && grep -q karpathy-dev README.md CLAUDE.md`
+- [x] Found in the smoke test: `devtools` installs Ansible and sets the login user's git identity (`devtools_git_user`); `stack.test.sh` passes on Linux (GNU `stat` first, own git identity for its commit)
+  - Test first: `deploy/ansible/dev.test.sh` › "ansible answers --version" › "git user.name" › "git user.email" — failed: the role installed neither
+  - Verify: `bash deploy/ansible/dev.test.sh` green; `just check` green on `karpathy-dev`
 - [ ] Smoke test on the real server
   - Test first: none — needs the booked server
   - Verify: `just devhost --bootstrap <ip>` then `just devhost` green; `ssh karpathy-dev` over Tailscale; in a fresh clone `just check` green, `just dev up` prints stack 1, https://localhost:8010 on the Mac loads and one chat turn is answered; a second worktree's stack 2 starts without copying keys; `just e2e` green; `claude` lists the project plugins; after reconnecting, `just resume` continues the session

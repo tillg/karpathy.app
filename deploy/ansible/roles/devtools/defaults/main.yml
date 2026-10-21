@@ -9,3 +9,5 @@ devtools_just_url: >-
 # dev vault (inventories/dev/group_vars/all/main.yml).
 devtools_host_secrets: {}
 devtools_github_token: ""
+# The login user's git identity (name, email) for commits on the dev host; empty fields are not set.
+devtools_git_user: {}

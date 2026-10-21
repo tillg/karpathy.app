@@ -16,3 +16,7 @@ devtools_host_secrets:
   openrouter_api_key: "{{ vault_openrouter_api_key }}"
   exa_api_key: "{{ vault_exa_api_key }}"
 devtools_github_token: "{{ vault_github_token }}"
+# Who commits from the dev host (the same identity as on the Mac).
+devtools_git_user:
+  name: Till Gartner
+  email: till.gartner@gmail.com

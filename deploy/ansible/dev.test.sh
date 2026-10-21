@@ -31,7 +31,8 @@ user=dev
 vars=$(cat <<EOF
 {"target": "devtest", "tailscale_enabled": false, "timezone": "Europe/Berlin", "admin_user": "$user",
  "admin_authorized_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEz0bHnKXzR7hb0h7FVmJ0wXqZ8r7Yy1oGg0ZsVnQk2B devtest"],
- "devtools_host_secrets": {"openrouter_api_key": "or-test", "exa_api_key": "exa-test"}, "devtools_github_token": "gh-test"}
+ "devtools_host_secrets": {"openrouter_api_key": "or-test", "exa_api_key": "exa-test"}, "devtools_github_token": "gh-test",
+ "devtools_git_user": {"name": "Dev Test", "email": "dev@example.invalid"}}
 EOF
 )
 mkdir -p "$here/../../tmp"
@@ -56,7 +57,7 @@ as_user 'docker info >/dev/null' >/dev/null && ok "login user can use Docker" ||
 
 # devtools: what `just check`, `just dev up`, `just e2e` and `claude` need, on the login shell's PATH.
 [[ "$(as_user 'node --version')" == v22.* ]] && ok "node is v22" || bad "node is v22" "$(as_user 'node --version')"
-for tool in just rg jq gh claude; do
+for tool in just rg jq gh claude ansible; do
   as_user "$tool --version" >/dev/null && ok "$tool answers --version" || bad "$tool answers --version" "$(as_user "$tool --version" | tail -1)"
 done
 # herdr's and tmux's panes are interactive non-login shells: they read ~/.bashrc, not ~/.profile.
@@ -78,5 +79,7 @@ for k in openrouter_api_key:or-test exa_api_key:exa-test; do
 done
 eq "git credential for github.com returns the token" \
   "$(as_user "printf 'protocol=https\nhost=github.com\n\n' | git credential fill" | sed -n 's/^password=//p')" gh-test
+eq "git user.name" "$(as_user 'git config --global user.name')" "Dev Test"
+eq "git user.email" "$(as_user 'git config --global user.email')" "dev@example.invalid"
 
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

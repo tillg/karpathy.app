@@ -2,7 +2,7 @@
 # (Docker comes from role docker).
 - name: Command-line tools
   ansible.builtin.apt:
-    name: [git, ripgrep, jq, netcat-openbsd]
+    name: [git, ripgrep, jq, netcat-openbsd, ansible-core]   # ansible: `just check` renders a role template
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -104,6 +104,19 @@
   loop_control:
     label: "{{ item.key }}"
   no_log: true
+
+# The identity commits from the dev host carry.
+- name: Git identity
+  ansible.builtin.shell: |  # noqa: command-instead-of-module
+    [ "$(git config --global --get user.{{ item.key }})" = {{ item.value | quote }} ] && exit 0
+    git config --global user.{{ item.key }} {{ item.value | quote }} && echo changed
+  register: devtools_git_identity
+  changed_when: "'changed' in devtools_git_identity.stdout"
+  loop: "{{ devtools_git_user | dict2items | selectattr('value') }}"
+  loop_control:
+    label: user.{{ item.key }}
+  become: true
+  become_user: "{{ admin_user }}"
 
 # The fine-grained GitHub token (karpathy.app, karpathy_demo_wiki, ingest_email) for git over HTTPS.
 - name: Git's credential helper

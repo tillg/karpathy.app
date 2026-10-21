@@ -95,7 +95,7 @@ checkout() { local d; d=$(mktemp -d); git -C "$d" init -q; echo "$d"; }
   source "$here/stack.sh"
   c=$(checkout); cd "$c" || exit 1
   unset STACK
-  git commit -q --allow-empty -m init && git worktree add -q --detach "$c/.worktrees/w" 2>/dev/null
+  git -c user.name=test -c user.email=test@example.invalid commit -q --allow-empty -m init && git worktree add -q --detach "$c/.worktrees/w" 2>/dev/null
   w=$(cd "$c/.worktrees/w" && pwd -P)
   n=$(stack_first_free)
   mkdir -p "$w/tmp/dev" && echo "$n" > "$w/tmp/dev/stack"
@@ -180,7 +180,7 @@ grep -q 'settings_render prodtest' "$here/../justfile" && ok "just prodtest rend
 
 # Host secrets (~/.config/karpathy/secrets/): a key the checkout's deploy/secrets/ lacks comes from there, so a new
 # worktree works without copying keys.
-mode() { stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"; }
+mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }   # GNU first: GNU `stat -f` means file-system status
 (
   fails=0
   source "$here/stack.sh"

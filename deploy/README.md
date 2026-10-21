@@ -249,7 +249,7 @@ Each fresh server requests a new certificate; Let's Encrypt allows 5 for the sam
 Tailscale. It is a dev host like the Mac: `just dev up`, `just check`, `just e2e` and `claude` work there in several
 worktrees at once, with the same stack rules (stacks 1–9, one per checkout). Its stacks open on the Mac at
 `https://localhost:80N0` through SSH port forwards. The playbook is `ansible/dev.yml`: roles `base`, `tailscale`,
-`docker` (shared with prod) and `devtools` (Node 22, `just`, ripgrep, jq, netcat, `gh`, the Claude Code CLI,
+`docker` (shared with prod) and `devtools` (Node 22, `just`, ripgrep, jq, netcat, `gh`, Ansible, the Claude Code CLI,
 Playwright's Chromium). Your login has uid 1000 (sudo, docker) and there is no `deploy` user. It holds no prod data.
 
 **Setting it up:**
@@ -264,7 +264,8 @@ Playwright's Chromium). Your login has uid 1000 (sudo, docker) and there is no `
 5. `just devhost --bootstrap <public-ip>`. At the end root login is off and the server is on the tailnet as
    `karpathy-dev`; you log in as yourself (`admin_user` in `ansible/inventories/dev/group_vars/all/main.yml`, keys in
    `ansible/keys/dev.pub`). The keys land in `~/.config/karpathy/secrets/` (the host secrets every checkout falls back
-   to) and the GitHub token in your git credentials.
+   to), the GitHub token in your git credentials, and your git name and email (`devtools_git_user`, same file) in
+   your global git config.
 6. Detach the `setup-ssh` firewall: from now on no port is open to the internet.
 7. `just devhost` again (over Tailscale) to see it report `changed=0`. Later runs keep it up to date; `--check` shows
    what would change.
