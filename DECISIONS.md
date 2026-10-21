@@ -211,6 +211,13 @@ edited: 2026-10-21
   - [19:19 — Demo run book chapters committed in the demo vault but not pushed (no release in this run)](#run-2026-10-21-1919-5)
   - [19:45 — #141: gitleaks (pinned binary) over the staged diff at commit time, fail closed](#run-2026-10-21-1919-6)
   - [19:45 — #141: "Commit anyway" for the shown findings plus `.gitleaksignore`; inline allows and vault configs ignored](#run-2026-10-21-1919-7)
+  - [20:45 — #155: queue prompts in the backend, behind the running turn, not inside it](#run-2026-10-21-1919-8)
+  - [20:45 — #155: Stop and Edit hand queued prompts back into the composer; 10 per chat](#run-2026-10-21-1919-9)
+  - [20:45 — #138: in-memory MiniSearch BM25 index with per-note language and Snowball stems, replacing ripgrep](#run-2026-10-21-1919-10)
+  - [20:45 — #138: ranking changes three old search test expectations](#run-2026-10-21-1919-11)
+  - [20:45 — #92: local graph as a Local scope of the existing graph pane, flat 2D, opened from the outline](#run-2026-10-21-1919-12)
+  - [20:45 — #91: Bases evaluated in the backend; strict v1 subset, table view only, 500 rows](#run-2026-10-21-1919-13)
+  - [20:45 — #91: in Write mode the table replaces the block while the cursor is outside it](#run-2026-10-21-1919-14)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3181,3 +3188,95 @@ edited: 2026-10-21
 - **Alternatives:** hard block without override; `.gitleaksignore` only.
 - **Consequences:** a deliberate tap still pushes a secret (logged by file, line, rule). The AI commit-message
   proposal still sees the diff before the scan (filed as a follow-up issue).
+
+## 20:45 — #155: queue prompts in the backend, behind the running turn, not inside it {#run-2026-10-21-1919-8}
+
+- **Status:** open
+- **Context:** issue #155 ("send the next command while the AI works, like Claude Code"); `chat.ts` already had a
+  per-vault queue with one running turn.
+- **Question:** inject the new prompt into the running opencode session (as Claude Code does), or queue it?
+- **Decision:** queue it on the server per chat (each with an id, persisted, `queue` stream events, `DELETE …/queue/:id`);
+  it starts when the current turn ends. A busy chat no longer answers 409.
+- **Why:** the per-vault lock, the pull before each turn and the end-of-turn detection all assume one prompt per turn;
+  a server queue survives reload and shows on other devices.
+- **Alternatives:** opencode's own mid-turn handling (breaks turn bookkeeping); a browser-only queue (lost on close).
+- **Consequences:** the AI sees a queued message only after its current reply. Revisit if opencode offers clean
+  mid-turn input.
+
+## 20:45 — #155: Stop and Edit hand queued prompts back into the composer; 10 per chat {#run-2026-10-21-1919-9}
+
+- **Status:** open
+- **Context:** issue #155; what Stop does to waiting messages wasn't specified.
+- **Question:** after Stop, should queued prompts still run? How does Edit work?
+- **Decision:** Stop aborts the turn and returns every queued prompt (with its files) into the composer, oldest first;
+  Edit = take one back into the composer; ✕ drops it. A failed turn returns only its own prompt and the queue goes on.
+  At most 10 queued prompts per chat (`409 queue-full`).
+- **Why:** like Claude Code's Esc: nothing runs that the user didn't want, nothing is lost; one mechanism for Edit and Stop.
+- **Alternatives:** keep the queue after Stop (starts right away); edit in place.
+- **Consequences:** the cap of 10 is arbitrary.
+
+## 20:45 — #138: in-memory MiniSearch BM25 index with per-note language and Snowball stems, replacing ripgrep {#run-2026-10-21-1919-10}
+
+- **Status:** open
+- **Context:** issue #138 ("handtuch" didn't find "Handtücher"; asks for ranking, stemming, language detection at save time).
+- **Question:** which index, stemmer and language detector, and where does the index live?
+- **Decision:** MiniSearch 7.2.0 (BM25, prefix, fuzzy, incremental), `@orama/stemmers` 3.1.18 (de/en/fr/es/it, German
+  ue/oe/ae as umlauts), `franc-min` 6.2.0 (local statistical detector; frontmatter `lang:` wins). Index per vault in
+  memory, built on vault open / first search, updated per saved or watched file, fully re-checked after pull/discard.
+  Boosts: name ×3, headings ×2, frontmatter ×1.5. Typo tolerance only for words that match nothing. Query words are
+  tried in every language's stem.
+- **Why:** no extra service, deterministic, no LLM call; MiniSearch keeps no note text.
+- **Alternatives:** Orama, FlexSearch, SQLite FTS5, an on-disk index; tinyld/eld; an LLM for language detection.
+- **Consequences:** a 10,000-note vault costs ~60–85 MB and 20–28 s to build (loaded host). Symbol-only queries (`++`)
+  find nothing now. Limits (200 hits, 1 MB files by name only) are constants, not settings.
+
+## 20:45 — #138: ranking changes three old search test expectations {#run-2026-10-21-1919-11}
+
+- **Status:** open
+- **Overrides:** `/autonomous` — never weaken a test to get to green
+- **Context:** `api.test.ts` cases for #7, #99 and #107 asserted ripgrep's order (path order, name-only hit inside the cap).
+- **Question:** keep the old order or let BM25 decide?
+- **Decision:** results are in score order; the three tests were rewritten to assert the new order (each with a
+  comment), and #7's name-only hit gets its own query. No test was removed.
+- **Why:** score order is the point of the issue; each test still checks the bug it was written for.
+- **Alternatives:** keep path order (no ranking).
+- **Consequences:** review the three rewritten assertions in `apps/backend/test/api.test.ts`.
+
+## 20:45 — #92: local graph as a Local scope of the existing graph pane, flat 2D, opened from the outline {#run-2026-10-21-1919-12}
+
+- **Status:** open
+- **Context:** issue #92; the app already has the 3D vault graph (#130) and no backlinks panel.
+- **Question:** where does the local graph live and how does it look on a phone?
+- **Decision:** a Local scope (Local | Wiki | All) of the same pane and `3d-force-graph` instance, switched to 2D with
+  names under every dot; depth 1 | 2 remembered per browser; opened by "Local graph" at the foot of the outline panel
+  or sheet; the sidebar graph button reopens the last scope. Unresolved links are left out.
+- **Why:** one data source, legend and colour scheme; 3D balls with names were unreadable on a phone; the phone's note
+  bar is full (#139).
+- **Alternatives:** a second renderer; a note-bar button; the sidebar button defaulting to Local.
+- **Consequences:** discoverability is medium. At depth 2, hub pages (`index`, `log`) pull in most of the wiki
+  (follow-up idea: don't expand through hubs).
+
+## 20:45 — #91: Bases evaluated in the backend; strict v1 subset, table view only, 500 rows {#run-2026-10-21-1919-13}
+
+- **Status:** open
+- **Context:** issue #91; Obsidian Bases syntax checked against the official obsidian-help sources.
+- **Question:** what does v1 support, and what happens with the rest?
+- **Decision:** `POST /vaults/:id/base` evaluates filters (and/or/not, operators, `file.*` properties and functions,
+  dates and durations, string/list methods) over a stat-checked frontmatter index; the first view must be a table
+  (`order`, `sort`, `limit`, display names). Formulas, `this`, other view types, regex and unknown functions are refused
+  ("not supported in v1") before any file is read; `groupBy`/`summaries`/extra views are left out with a footer note.
+  Every file counts (as in Obsidian), at most 500 rows, dates without a zone in UTC. `.base` files open like HTML pages.
+- **Why:** wrong results are worse than a clear refusal; the client would have to fetch every note.
+- **Alternatives:** lenient parsing; client-side evaluation; Dataview syntax.
+- **Consequences:** one `stat` per file per query (unmeasured on large vaults); `file.ctime` is the clone's write time.
+
+## 20:45 — #91: in Write mode the table replaces the block while the cursor is outside it {#run-2026-10-21-1919-14}
+
+- **Status:** open
+- **Context:** issue #91 asks for the table in Write (live preview) mode too.
+- **Question:** show the table instead of the YAML, or below it?
+- **Decision:** a CodeMirror block widget replaces the fence while no selection touches it (as Obsidian does); moving
+  the cursor in, or the `</>` button, shows the YAML. The file text never changes.
+- **Why:** matches Obsidian's live preview; keeps the note short on a phone.
+- **Alternatives:** table under the visible source.
+- **Consequences:** a cursor already on the block shows its source, not the table.
