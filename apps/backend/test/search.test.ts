@@ -1,8 +1,9 @@
-import { mkdtemp, mkdir, rm, unlink, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, mkdir, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { detectLanguage, fold, SearchIndex, wordTerms } from '../src/search.js';
+import { detectLanguage, fold, MAX_QUERY_WORDS, parseQuery, SearchIndex, wordTerms } from '../src/search.js';
 
 const DE = 'Gestern haben wir im Kaufhaus neue Handtücher gekauft. Die alten Tücher waren schon ganz dünn und hatten Löcher.';
 const EN = 'Yesterday we went to the department store and bought new towels, because the old ones were worn out and thin.';
@@ -160,6 +161,58 @@ describe('SearchIndex', () => {
     v.index.markStale('b.md');
     v.index.markStale('.trash/c.md');
     expect(await v.paths('alpha')).toEqual(['a.md', 'b.md']);
+  });
+
+  it('finds files by full name and extension (as the old path search did)', async () => {
+    const v = await vault({ 'docs/report.pdf': Buffer.from([0x25, 0x50, 0, 1]), 'Meeting.md': 'agenda\n', 'other.md': 'x\n' });
+    expect(await v.paths('pdf')).toEqual(['docs/report.pdf']);
+    expect(await v.paths('report.pdf')).toEqual(['docs/report.pdf']);
+    expect(await v.paths('Meeting.md')).toEqual(['Meeting.md']);
+    expect(await v.paths('docs/report')).toEqual(['docs/report.pdf']);
+  });
+
+  it('a long query: repeated words count once, at most MAX_QUERY_WORDS words are looked up', async () => {
+    expect(parseQuery('the '.repeat(1000))).toHaveLength(1);
+    expect(parseQuery('Glacier glacier "a b" "A B" glacier')).toHaveLength(2);
+    expect(parseQuery(Array.from({ length: 200 }, (_, i) => `w${i}x`).join(' '))).toHaveLength(MAX_QUERY_WORDS);
+    const v = await vault({ 'a.md': 'the glacier\n', 'b.md': 'the moraine\n' });
+    expect((await v.paths('the '.repeat(1000))).sort()).toEqual(['a.md', 'b.md']);
+  });
+
+  it('an incremental update never follows a symlink out of the vault', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'outside-'));
+    dirs.push(outside);
+    await writeFile(join(outside, 'secret.md'), 'topsecretvalue\n');
+    const v = await vault({ 'a.md': 'x\n' });
+    await v.index.warm();
+    await symlink(join(outside, 'secret.md'), join(v.root, 'link.md'));
+    await symlink(outside, join(v.root, 'linkdir'));
+    v.index.markStale('link.md');
+    v.index.markStale('linkdir/secret.md');
+    expect(await v.q('topsecretvalue')).toEqual([]);
+  });
+
+  it('an incremental update respects .gitignore like the full listing', async () => {
+    const v = await vault({ '.gitignore': 'ignored/\n', 'a.md': 'x\n' });
+    execFileSync('git', ['init', '-q'], { cwd: v.root });
+    await v.index.warm();
+    await mkdir(join(v.root, 'ignored'));
+    await writeFile(join(v.root, 'ignored/b.md'), 'needle\n');
+    await writeFile(join(v.root, 'c.md'), 'needle\n');
+    v.index.markStale('ignored/b.md');
+    v.index.markStale('c.md');
+    expect(await v.paths('needle')).toEqual(['c.md']);
+    v.index.markStale();
+    expect(await v.paths('needle')).toEqual(['c.md']);
+  });
+
+  it('a changed .gitignore re-lists the vault', async () => {
+    const v = await vault({ 'a.md': 'needle\n', 'b.md': 'needle\n' });
+    execFileSync('git', ['init', '-q'], { cwd: v.root });
+    expect(await v.paths('needle')).toEqual(['a.md', 'b.md']);
+    await writeFile(join(v.root, '.gitignore'), 'b.md\n');
+    v.index.markStale('.gitignore');
+    expect(await v.paths('needle')).toEqual(['a.md']);
   });
 
   it('caps at 200 hits and says so', async () => {

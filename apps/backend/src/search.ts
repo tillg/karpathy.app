@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
-import { readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import type { Stats } from 'node:fs';
+import { lstat, readFile } from 'node:fs/promises';
 import { stemmer as stemDe } from '@orama/stemmers/german';
 import { stemmer as stemEn } from '@orama/stemmers/english';
 import { stemmer as stemEs } from '@orama/stemmers/spanish';
@@ -9,6 +9,7 @@ import { stemmer as stemIt } from '@orama/stemmers/italian';
 import { franc } from 'franc-min';
 import MiniSearch, { type SearchResult } from 'minisearch';
 import type { SearchHit } from '@karpathy/shared';
+import { resolveInVault } from './paths.js';
 
 /**
  * Ranked full-text search over one vault root (#138): a lazily built, incrementally refreshed in-memory index
@@ -28,6 +29,8 @@ const MAX_TOKEN = 40;
 const MIN_DETECT = 40;
 /** How much of a note the detector reads. */
 const DETECT_SAMPLE = 600;
+/** Words of one query looked up at most (a longer query ignores the rest). */
+export const MAX_QUERY_WORDS = 20;
 /** Field weights: a word in the file name counts most, then headings, then frontmatter. */
 const BOOST = { title: 3, headings: 2, meta: 1.5, path: 1, body: 1 };
 const FIELDS = Object.keys(BOOST) as (keyof typeof BOOST)[];
@@ -120,12 +123,8 @@ function indexText(text: string, lang: Lang | null): string {
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
-/** A file name without its extension (`.md` notes are named without it). */
-function baseName(path: string): string {
-  const name = path.slice(path.lastIndexOf('/') + 1);
-  const dot = name.lastIndexOf('.');
-  return dot > 0 ? name.slice(0, dot) : name;
-}
+/** Files whose change can change what the listing leaves out: the next search re-lists the vault. */
+const IGNORE_FILES = new Set(['.gitignore', '.ignore', '.rgignore']);
 
 interface DocMeta {
   mtimeMs: number;
@@ -154,16 +153,43 @@ export function queryTerms(q: string): string[] {
   return terms.length > 0 ? terms : [q];
 }
 
-function parseQuery(q: string): Term[] {
+/**
+ * The query as terms to look up. A repeated word counts once, and at most MAX_QUERY_WORDS words are looked up
+ * (the rest are ignored): ranking is synchronous, one index lookup per word.
+ */
+export function parseQuery(q: string): Term[] {
   const raw = [...q.matchAll(/"([^"]*)"|(\S+)/g)].map((m) => ({ text: (m[1] ?? m[2] ?? '').trim(), quoted: m[1] !== undefined })).filter((t) => t.text);
   const out: Term[] = [];
+  const seen = new Map<string, Group>();
+  let budget = MAX_QUERY_WORDS;
   raw.forEach((t, i) => {
-    const ws = words(t.text.normalize('NFC')).map((w) => w.word).filter((w) => w.length <= MAX_TOKEN);
-    if (!ws.length) return;
+    const ws = words(t.text.normalize('NFC'))
+      .map((w) => w.word)
+      .filter((w) => w.length <= MAX_TOKEN);
+    if (!ws.length || budget <= 0) return;
     const last = i === raw.length - 1 && !t.quoted;
-    if (t.quoted && ws.length > 1) out.push({ phrase: ws.map(fold), groups: ws.map((w) => ({ raw: fold(w), variants: queryVariants(w), prefix: false })) });
+    if (t.quoted && ws.length > 1) {
+      const phrase = ws.slice(0, budget).map(fold);
+      const key = `"${phrase.join(' ')}`;
+      if (seen.has(key)) return;
+      const groups = ws.slice(0, budget).map((w) => ({ raw: fold(w), variants: queryVariants(w), prefix: false }));
+      seen.set(key, groups[0]!);
+      budget -= groups.length;
+      out.push({ phrase, groups });
+      return;
+    }
     // "only-name" is two words; the last one typed is a prefix ("handt" finds "Handtuch").
-    else ws.forEach((w, j) => out.push({ phrase: [], groups: [{ raw: fold(w), variants: queryVariants(w), prefix: last && j === ws.length - 1 }] }));
+    ws.forEach((w, j) => {
+      const g = { raw: fold(w), variants: queryVariants(w), prefix: last && j === ws.length - 1 };
+      const prev = seen.get(g.raw);
+      // The word as a whole and as a prefix: both must match, which the whole word alone says.
+      if (prev) prev.prefix &&= g.prefix;
+      else if (budget > 0) {
+        seen.set(g.raw, g);
+        budget--;
+        out.push({ phrase: [], groups: [g] });
+      }
+    });
   });
   return out;
 }
@@ -175,6 +201,21 @@ function hasRun(seq: string[], phrase: string[]): boolean {
     return true;
   }
   return false;
+}
+
+/** The paths (relative to `root`) git ignores; none outside a git repository. */
+function gitIgnored(root: string, paths: string[]): Promise<Set<string>> {
+  return new Promise((resolve, reject) => {
+    const child = execFile('git', ['check-ignore', '-z', '--stdin'], { cwd: root, maxBuffer: 16 * 1024 * 1024 }, (err, out) => {
+      const code = (err as { code?: number } | null)?.code;
+      // Exit code 1 = nothing ignored; 128 = not a git repository (ripgrep then applies no .gitignore either).
+      if (err && code !== 1 && code !== 128) reject(err);
+      else resolve(new Set(out.split('\0').filter(Boolean)));
+    });
+    // Outside a repository git exits without reading its input.
+    child.stdin?.on('error', () => {});
+    child.stdin?.end(paths.join('\0'));
+  });
 }
 
 /** ripgrep's file list (hidden and git-ignored files left out, as the old ripgrep search did). */
@@ -226,7 +267,7 @@ export class SearchIndex {
    * (a folder moved, a pull): the next search re-lists the vault and re-reads what differs.
    */
   markStale(path?: string) {
-    if (path) this.forced.add(path);
+    if (path && !IGNORE_FILES.has(path.slice(path.lastIndexOf('/') + 1))) this.forced.add(path);
     else this.full = true;
   }
 
@@ -260,8 +301,12 @@ export class SearchIndex {
     let indexed = 0;
     try {
       if (!full) {
-        // Hidden paths are never searched (ripgrep's listing leaves them out too).
-        for (const p of forced) if (!p.split('/').some((seg) => seg.startsWith('.')) && (await this.update(p, true))) indexed++;
+        // Hidden and git-ignored paths are never searched (ripgrep's listing leaves them out too).
+        const visible = [...forced].filter((p) => !p.split('/').some((seg) => seg.startsWith('.')));
+        const ignored = visible.length ? await gitIgnored(this.root, visible) : new Set<string>();
+        for (const p of visible)
+          if (ignored.has(p)) this.drop(p);
+          else if (await this.update(p, true)) indexed++;
       } else {
         const files = await listFiles(this.root);
         const listed = new Set(files);
@@ -289,14 +334,21 @@ export class SearchIndex {
     if (this.ms.has(path)) this.ms.discard(path);
   }
 
+  /** The file's absolute path; null if it is gone, not a regular file, or reached through a symlink (never followed). */
+  private async regularFile(path: string): Promise<{ abs: string; st: Stats } | null> {
+    const abs = await resolveInVault(this.root, path).catch(() => null);
+    const st = abs ? await lstat(abs).catch(() => null) : null;
+    return abs && st?.isFile() ? { abs, st } : null;
+  }
+
   /** (Re-)indexes one file if it is new, changed or `force`d; true if it did. */
   private async update(path: string, force: boolean): Promise<boolean> {
-    const abs = join(this.root, path);
-    const st = await stat(abs).catch(() => null);
-    if (!st?.isFile()) {
+    const f = await this.regularFile(path);
+    if (!f) {
       this.drop(path);
       return false;
     }
+    const { abs, st } = f;
     const old = this.docs.get(path);
     if (old && !force && old.mtimeMs === st.mtimeMs && old.size === st.size) return false;
     let content = '';
@@ -324,7 +376,8 @@ export class SearchIndex {
     const slash = path.lastIndexOf('/');
     const doc = {
       id: path,
-      title: indexText(baseName(path).normalize('NFC'), lang),
+      // The full file name: `report.pdf`, `pdf` and `Meeting.md` find it, as the old ripgrep path search did.
+      title: indexText(path.slice(slash + 1).normalize('NFC'), lang),
       path: indexText(slash < 0 ? '' : path.slice(0, slash).normalize('NFC'), lang),
       headings: indexText(headings, lang),
       meta: indexText(meta, lang),
@@ -398,8 +451,10 @@ export class SearchIndex {
   }
 
   private async content(path: string): Promise<string | null> {
+    const f = await this.regularFile(path);
+    if (!f) return null;
     if (!this.docs.get(path)?.text) return '';
-    const text = await readFile(join(this.root, path), 'utf8').catch(() => null);
+    const text = await readFile(f.abs, 'utf8').catch(() => null);
     return text === null ? null : text.normalize('NFC');
   }
 
