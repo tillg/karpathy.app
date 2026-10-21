@@ -15,6 +15,8 @@ export class VaultWatcher {
   constructor(
     private readonly root: string,
     onChange: (paths: string[]) => void | Promise<void>,
+    /** Every raw event at once, undebounced (the search index marks the path stale). */
+    onEvent?: (event: string, path: string) => void,
   ) {
     this.w = watch(root, {
       ignoreInitial: true,
@@ -24,6 +26,7 @@ export class VaultWatcher {
       },
     });
     this.w.on('all', (event, p) => {
+      onEvent?.(event, relative(this.root, p).split(sep).join('/'));
       if (event === 'addDir' || event === 'unlinkDir') return;
       this.pending.add(relative(this.root, p).split(sep).join('/'));
       clearTimeout(this.timer);

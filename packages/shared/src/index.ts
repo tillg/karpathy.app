@@ -160,10 +160,13 @@ export interface PutFileRequest {
   version: string | null;
 }
 
+/** One result line of `GET /vaults/:id/search`; `line` 0 = found by file name or path only (`text` is the path). */
 export interface SearchHit {
   path: string;
   line: number;
   text: string;
+  /** The matched words in `text` as [start, end) offsets (stems and folded forms included, so not always the query text). */
+  ranges?: [number, number][];
 }
 
 /** `GET /vaults/:id/graph`: the notes (`.md` files, with their frontmatter `type` if set) and the links between them. */

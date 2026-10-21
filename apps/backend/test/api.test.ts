@@ -173,7 +173,7 @@ describe('vault admin', () => {
       { path: 'Sources', type: 'dir' },
       { path: 'Wiki', type: 'dir' },
     ]);
-    expect((await t.api.get(`/vaults/${id}/search?q=needle`)).body.hits).toEqual([{ path: 'a.md', line: 1, text: 'inside needle' }]);
+    expect((await t.api.get(`/vaults/${id}/search?q=needle`)).body.hits).toEqual([{ path: 'a.md', line: 1, text: 'inside needle', ranges: [[7, 13]] }]);
     expect((await t.api.get(`/vaults/${id}/file?path=../top.md`)).status).toBe(400);
     const bad = await t.api.post('/vaults', { name: 'x', repo: remote.repo, root: 'nope' });
     expect(bad.status).toBe(422);
@@ -845,11 +845,11 @@ describe('files', () => {
   it('search finds content and file names', async () => {
     const t = await vaultApp();
     const hits = (await t.api.get(`/vaults/${t.id}/search?q=ALPHA`)).body;
-    expect(hits).toEqual({ hits: [{ path: 'notes/n1.md', line: 1, text: 'alpha beta' }], truncated: false });
+    expect(hits).toEqual({ hits: [{ path: 'notes/n1.md', line: 1, text: 'alpha beta', ranges: [[0, 5]] }], truncated: false });
     // "other" is in the name Other.md and in Home.md's content: content hits win, name-only hits only for files without one.
     expect((await t.api.get(`/vaults/${t.id}/search?q=other`)).body.hits).toEqual([
-      { path: 'Other.md', line: 1, text: 'other' },
-      { path: 'Home.md', line: 2, text: 'See [[Other]]' },
+      { path: 'Other.md', line: 1, text: 'other', ranges: [[0, 5]] },
+      { path: 'Home.md', line: 2, text: 'See [[Other]]', ranges: [[6, 11]] },
     ]);
   });
 
@@ -863,7 +863,10 @@ describe('files', () => {
     expect(a).toEqual(b);
     expect(a.truncated).toBe(true);
     expect(a.hits).toHaveLength(200);
-    expect(a.hits.filter((h: { line: number }) => h.line === 0).map((h: { path: string }) => h.path)).toEqual(['only-name-needle.md']);
+    // Ranked (#138): the 120 notes with "needle" in name and text fill the 200 hits before the name-only match,
+    // so the name-only hit is checked with a query of its own. None of the 120 is shown by name only.
+    expect(a.hits.filter((h: { line: number }) => h.line === 0)).toEqual([]);
+    expect((await t.api.get(`/vaults/${t.id}/search?q=only%20needle`)).body.hits).toEqual([{ path: 'only-name-needle.md', line: 0, text: 'only-name-needle.md' }]);
     expect((await t.api.get(`/vaults/${t.id}/search?q=%22needle%20two%22`)).body.truncated).toBe(false);
   });
 
@@ -875,11 +878,13 @@ describe('files', () => {
       'Wiki/z-name-only-SIMILAUN-x.md': 'nothing',
     });
     const hits = (await t.api.get(`/vaults/${t.id}/search?q=Similaun`)).body.hits as { path: string; line: number }[];
+    // Name matches first (#99); within each group BM25 ranks (#138): the named note that also mentions it in the
+    // text before the name-only one, the short mention before the longer one (no longer path order).
     expect(hits.map((h) => h.path)).toEqual([
-      'Wiki/z-name-only-SIMILAUN-x.md',
       'Wiki/tours/similaun.md',
-      'A/mentions.md',
+      'Wiki/z-name-only-SIMILAUN-x.md',
       'B/also.md',
+      'A/mentions.md',
     ]);
   });
 
@@ -891,15 +896,32 @@ describe('files', () => {
       'd.md': 'similaun cevedale together\n',
     });
     const q = async (s: string) => (await t.api.get(`/vaults/${t.id}/search?q=${encodeURIComponent(s)}`)).body.hits;
+    // Ranked by BM25 (#138), no longer by path: the shortest notes with both words first, the longer a.md last.
     expect(await q('similaun CEVEDALE')).toEqual([
-      { path: 'a.md', line: 1, text: 'Similaun is high' },
-      { path: 'a.md', line: 3, text: 'and Cevedale too' },
-      { path: 'c.md', line: 1, text: 'similaun' },
-      { path: 'c.md', line: 3, text: 'cevedale' },
-      { path: 'd.md', line: 1, text: 'similaun cevedale together' },
+      { path: 'c.md', line: 1, text: 'similaun', ranges: [[0, 8]] },
+      { path: 'c.md', line: 3, text: 'cevedale', ranges: [[0, 8]] },
+      { path: 'd.md', line: 1, text: 'similaun cevedale together', ranges: [[0, 8], [9, 17]] },
+      { path: 'a.md', line: 1, text: 'Similaun is high', ranges: [[0, 8]] },
+      { path: 'a.md', line: 3, text: 'and Cevedale too', ranges: [[4, 12]] },
     ]);
-    expect(await q('"similaun cevedale"')).toEqual([{ path: 'd.md', line: 1, text: 'similaun cevedale together' }]);
+    expect(await q('"similaun cevedale"')).toEqual([{ path: 'd.md', line: 1, text: 'similaun cevedale together', ranges: [[0, 17]] }]);
     expect(((await q('similaun')) as unknown[]).length).toBe(4);
+  });
+
+  it('#138 "handtuch" finds a note with "Handtücher" (stemming, umlauts); a saved note is found at once', async () => {
+    const t = await vaultApp({ 'Haushalt.md': '# Einkauf\nNeue Handtücher für das Bad kaufen\n' });
+    const q = async (s: string) => (await t.api.get(`/vaults/${t.id}/search?q=${encodeURIComponent(s)}`)).body.hits;
+    expect(await q('handtuch')).toEqual([{ path: 'Haushalt.md', line: 2, text: 'Neue Handtücher für das Bad kaufen', ranges: [[5, 15]] }]);
+    await t.api.put(`/vaults/${t.id}/file?path=Bad.md`, { content: 'Ein Handtuch fehlt\n', version: null });
+    expect((await q('handtücher')).map((h: { path: string }) => h.path)).toEqual(['Bad.md', 'Haushalt.md']);
+  });
+
+  it('#138 a file written outside the app (the AI, a pull) is found once the watcher reports it', async () => {
+    const t = await vaultApp();
+    const q = async (s: string) => ((await t.api.get(`/vaults/${t.id}/search?q=${encodeURIComponent(s)}`)).body.hits as { path: string }[]).map((h) => h.path);
+    expect(await q('gletscher')).toEqual([]);
+    await writeFile(join(t.vaults.vaultRootDir(t.id), 'Gletscher.md'), 'Die Gletscher schmelzen\n');
+    await expect.poll(() => q('gletscher'), { timeout: 5000 }).toEqual(['Gletscher.md']);
   });
 
   it('new file whose path differs only in case from an existing one → 409 exists-case (#6)', async () => {

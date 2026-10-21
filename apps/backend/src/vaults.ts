@@ -26,7 +26,8 @@ import { BrowserCalls } from './browser-calls.js';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
 import { queryBase } from './bases.js';
-import { filesMentioning, graph, listTree, search, versionOf, versionOfFile } from './files.js';
+import { filesMentioning, graph, listTree, versionOf, versionOfFile } from './files.js';
+import { SearchIndex } from './search.js';
 import { tidyAttachments, type TidyResult } from './tidy-attachments.js';
 import { Git, GitError, type GitIdentity } from './git.js';
 import { VaultLock } from './lock.js';
@@ -90,6 +91,8 @@ interface Runtime {
   legacySeen?: string;
   /** The last agents move, for a client that connects later. */
   lastMove?: AgentsMove & { at: number };
+  /** Search index of the vault root (#138): built on the first search, then kept fresh by the watcher and every mutation. */
+  index?: SearchIndex;
   /** `Repo.fileHistory` for this HEAD and root (#122); concurrent listings share one run. */
   history?: { key: string; map: Promise<Map<string, FileHistory>> };
 }
@@ -352,6 +355,14 @@ export class Vaults {
     for (const fn of this.rt.get(id)?.listeners ?? []) fn(e);
   }
 
+  /**
+   * Files changed through the backend: the search index catches up before the next search, without waiting for the
+   * watcher. A path: just that file; none: anything may have changed (pull, discard, a move with relinks).
+   */
+  private filesChanged(id: string, path?: string) {
+    this.rt.get(id)?.index?.markStale(path);
+  }
+
   /** Coalesces status recomputation (lock changes, file events, git ops). */
   emitStatusSoon(id: string) {
     const r = this.rt.get(id);
@@ -490,6 +501,7 @@ export class Vaults {
         throw new HttpError(409, 'file changed since it was loaded', 'stale', { currentVersion: current });
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, content);
+      this.filesChanged(id, normalizeRel(path));
       await this.stampHuman(id, normalizeRel(path));
       this.emitStatusSoon(id);
       return { version: versionOf(content) };
@@ -506,6 +518,7 @@ export class Vaults {
       if ('source' in target) {
         const path = await this.writeNew(id, await this.sourceFolder(id, target.source, target.at), name, bytes);
         await this.stampHuman(id, path);
+        this.filesChanged(id, path);
         this.emitStatusSoon(id);
         return { path, version: versionOf(bytes), size: bytes.length };
       }
@@ -515,6 +528,8 @@ export class Vaults {
       const moved = move ? await this.moveIntoOwnFolder(id, note, folder, write) : undefined;
       const path = moved?.path ?? (await write(folder));
       await this.stampHuman(id, path);
+      // A move into the note's own folder relinks other notes too.
+      this.filesChanged(id);
       this.emitStatusSoon(id);
       return { path, version: versionOf(bytes), size: bytes.length, ...(moved ? { moved: { from: note, to: moved.to }, rewritten: moved.rewritten } : {}) };
     });
@@ -673,6 +688,7 @@ export class Vaults {
       if (current !== version) throw new HttpError(409, 'file changed since it was loaded', 'stale', { currentVersion: current });
       await rm(abs);
       await this.removeEmptiedFolders(id, abs);
+      this.filesChanged(id, normalizeRel(path));
       this.emitStatusSoon(id);
     });
   }
@@ -681,7 +697,14 @@ export class Vaults {
     this.requireReady(id);
     if (!q.trim()) return { hits: [], truncated: false };
     if (/[\r\n]/.test(q)) throw new HttpError(400, 'search text must be a single line', 'bad-query');
-    return search(this.vaultRootDir(id), q);
+    return this.searchIndex(id).search(q);
+  }
+
+  /** The vault's search index, created empty on first use (it builds itself on its first search or warm-up). */
+  private searchIndex(id: string): SearchIndex {
+    const r = this.runtime(id);
+    r.index ??= new SearchIndex(this.vaultRootDir(id), (msg) => console.log(`[${id}] ${msg}`));
+    return r.index;
   }
 
   async base(id: string, source: string): Promise<BaseResult> {
@@ -762,6 +785,8 @@ export class Vaults {
           release();
         }
       }
+      // An app opened the vault: build the search index in the background, so the first search doesn't wait.
+      this.searchIndex(id).warm().catch((e) => console.warn(`[${id}] search index:`, (e as Error).message));
     }
     return this.status(id);
   }
@@ -792,6 +817,7 @@ export class Vaults {
       });
       r.conflict = true;
     } else await this.agentsMove(id);
+    this.filesChanged(id);
     this.emitStatusSoon(id);
     return result;
   }
@@ -932,6 +958,7 @@ export class Vaults {
         if (s.ai === undefined && s.human === undefined) delete c.editStamps[id]![rel];
       });
     });
+    this.filesChanged(id);
     this.emitStatusSoon(id);
   }
 
@@ -955,6 +982,7 @@ export class Vaults {
         else delete c.conflicts[id];
       });
     });
+    this.filesChanged(id);
     this.emitStatusSoon(id);
     return this.status(id);
   }
@@ -1006,6 +1034,7 @@ export class Vaults {
     if (this.runtime(id).conflict) return { moved: [], rewritten: [], skipped: [] };
     const r = await tidyAttachments(this.vaultRootDir(id), { notes: pages });
     if (r.moved.length) await this.markAiTouched(id, [...r.moved.flatMap((m) => [m.from, m.to]), ...r.rewritten]);
+    if (r.moved.length) this.filesChanged(id);
     return r;
   }
 
@@ -1162,13 +1191,20 @@ export class Vaults {
   private startWatcher(v: StoredVault) {
     const r = this.runtime(v.id);
     const root = join(this.cloneDir(v.id), v.root);
-    r.watcher = new VaultWatcher(root, async (paths) => {
-      const files = await Promise.all(
-        paths.map(async (path) => ({ path, version: await versionOfFile(join(root, path)) })),
-      );
-      this.emit(v.id, { type: 'files-changed', files });
-      this.emitStatusSoon(v.id);
-    });
+    // A new watcher means a new root (or a fresh clone): the old index doesn't describe it.
+    r.index = undefined;
+    r.watcher = new VaultWatcher(
+      root,
+      async (paths) => {
+        const files = await Promise.all(
+          paths.map(async (path) => ({ path, version: await versionOfFile(join(root, path)) })),
+        );
+        this.emit(v.id, { type: 'files-changed', files });
+        this.emitStatusSoon(v.id);
+      },
+      // A folder event (a folder moved in or out) may stand for many files: then everything is compared.
+      (event, path) => r.index?.markStale(event === 'addDir' || event === 'unlinkDir' ? undefined : path),
+    );
   }
 }
 

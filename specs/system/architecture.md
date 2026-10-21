@@ -57,7 +57,7 @@ flowchart LR
 | Layer | Technology |
 |---|---|
 | Web | React 19, Vite 8, TypeScript, CodeMirror 6 (`lang-markdown`, own live-preview decorations), `marked` 18 + DOMPurify, vite-plugin-pwa (Workbox), framework7-icons. No router library (hash routes), no state library (one context hook). |
-| Backend | Node 22, Express, TypeScript run with `tsx` (no build step), zod validation, chokidar, `@opencode-ai/sdk` v2, `git`, `ripgrep` and `gitleaks` (the commit's secret scan, pinned) binaries. |
+| Backend | Node 22, Express, TypeScript run with `tsx` (no build step), zod validation, chokidar, `@opencode-ai/sdk` v2, `git`, `ripgrep` and `gitleaks` (the commit's secret scan, pinned) binaries; vault search: MiniSearch 7 (BM25 index), `@orama/stemmers` (Snowball), `franc-min` (language detection). |
 | Agent harness | `opencode serve` 1.18.25 (pinned image `ghcr.io/anomalyco/opencode`), provider-agnostic; gateway and default model per environment from `deploy/settings/` (OpenRouter `z-ai/glm-5.3` in production, dev, prodtest and every test: no local model server). |
 | Proxy | Caddy 2.10 built with a `caddy-dns/<provider>` module (GoDaddy) for DNS-01. |
 | Shared | `packages/shared`: TypeScript types for the API (no runtime schemas). |
@@ -234,10 +234,11 @@ flowchart TB
 | `github-token.ts` | `GitHubToken`: the server-wide token (stored over secret), its source, `GET /user` identity check, redaction of every value seen. |
 | `ingest.ts` | `callIngest`: proxies the Instagram routes to the ingest service's endpoint ([Ingest](#ingest)). |
 | `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure (its dirty check and stash leave `<root>/Input` out), commit, push, conflict sides and resolution; hardened `runGit`. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
-| `files.ts`, `paths.ts` | Tree listing, versions (content hash), ripgrep search (also `filesMentioning` for the move's link scan), the note graph (`graph`: notes + links via the shared `noteLinks`, for `GET /vaults/:id/graph`); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
+| `search.ts` | The vault search (#138): `SearchIndex` per vault root, text analysis (`fold`, `detectLanguage`, `wordTerms`), ranking and hit lines ([Vault search](#vault-search)). |
+| `files.ts`, `paths.ts` | Tree listing, versions (content hash), `filesMentioning` (ripgrep, for the move's link scan), the note graph (`graph`: notes + links via the shared `noteLinks`, for `GET /vaults/:id/graph`); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
 | `bases.ts` | Bases query tables (#91): `parseBase` (YAML via `yaml`, core schema; v1 subset, `BaseError` `base-invalid` / `base-unsupported` → 422), a Pratt parser and evaluator for filter expressions (unsupported names refused before any file is read), and the file index: per vault root, every file's size, times, frontmatter and tags, re-read only when size or mtime changed (stat per query, no watcher coupling). `queryBase` filters, sorts (empty last, path as tie-break), caps at `limit` / 500 rows and serializes cells (`BaseCell`: dates as `YYYY-MM-DD[ HH:mm]`, `file.name` / `basename` / `path` as links). `POST /vaults/:id/base` `{ source }`. |
 | `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`, and `fetch` and `refresh` through `tryShared`, which never queues; exclusive: every other git operation). `fetch` and `refresh` are quiet: they don't change `busy`. `holds(label)` tells whether a shared holder with that label exists. |
-| `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events. |
+| `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events; every raw event also goes undebounced to the search index (`onEvent`). |
 | `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. Also the command list (`commands()`, name-clash rule, skill stamp and refresh) and command turns (`instructionsFor`) ([Commands](#commands)). |
 | `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface (`commands(dir)`, `refresh(dir)` next to prompt, models and events) and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`; `ToolCall.suggestion` is set from the `prompt` of `suggest_next`; `ToolCall.url` is set for `webfetch`, `open_url` and `save_url` (also in `WRITE_TOOLS`, so a download is a changed file and gets an AI stamp). `move_to_sources` is in `WRITE_TOOLS` too: its chip path is `Sources/<name>`, `writtenPaths` reports every moved file's old and new path from the tool's `metadata.files`. Context usage (#140): `mapMessageInfo` sets an assistant message's `context.used` from its `tokens` (`total`, else input + output + reasoning + cache read + write; 0 → none), and the harness adds `context.limit` by the message's model on chat load and stream, from `ModelLimits`. See [Chat context usage](#chat-context-usage). Usage (#150): `Harness.usageSessions(dir)` lists every session of a directory, children included and without a limit (`usageSessions()` in `map.ts`), and `Harness.sessionUsage(dir, id)` maps a session's messages to `UsageRow`s (`usageRows()`: per assistant message `created`, `provider/model`, tokens, cost, `completed`; metadata only). |
 | `usage.ts` | `UsageService.report(days)` (#150): lists each vault's sessions through a `UsageSource`, reads a session's rows only when its `time.updated` moved (cache per directory and session, concurrency 4, unfinished replies not cached), sums by day (process timezone), model and vault; a failing vault is logged and left out. See [Admin mode](#admin-mode). |
@@ -1151,6 +1152,45 @@ cache remembered from an earlier load when there is one, so Back lands without l
 - **PDF Open:** `window.open('', '_blank')` synchronously in the click (Safari blocks it after an `await`), then the
   tab's location becomes a blob re-typed `application/pdf`, so only the browser's PDF viewer can show it.
 - **Tap on an image** calls `onOpen(path)` → `store.openNote`, which pushes a history entry.
+
+## Vault search
+
+`GET /vaults/:id/search?q=` (#138) answers from an in-memory index per vault root (`SearchIndex` in `search.ts`, held
+in the vault's runtime state), not by scanning files.
+
+- **Index:** MiniSearch (BM25) over five fields per file: `title` (file name without extension, boost 3), `headings`
+  (Markdown heading lines, 2), `meta` (the frontmatter block, 1.5), `path` (folders, 1), `body` (the text without
+  frontmatter, 1). The files are ripgrep's listing (`rg --files`: hidden and git-ignored files left out, as the old
+  ripgrep search did). Binary files (a NUL byte in the first 8 kB) and files over 1 MB are indexed by name and path only.
+  Lines of base64 (mail attachments) and "words" over 40 characters are skipped. MiniSearch keeps no document text.
+- **Terms:** a word is `[\p{L}\p{M}\p{N}]+` of the NFC text (so `only-name-needle` is three words). Its term is the
+  Snowball stem (`@orama/stemmers`) of the lower-cased word in the file's language, then folded: diacritics stripped,
+  `ß` → `ss`, `æ`/`œ` → `ae`/`oe` (`fold`). German first turns `ue`/`oe`/`ae` into umlauts (Snowball's German2), so
+  `Handtuecher`, `Handtücher` and `handtucher` all give `handtuch`.
+- **Language per file, at index time:** `lang:`/`language:` in the frontmatter if it names a supported language, else
+  `franc-min` (a trigram model: small, local, deterministic, no LLM) on the first 600 characters of the body,
+  restricted to German, English, French, Spanish and Italian (the languages with a stemmer). Under 40 characters there
+  is no language: the file's words get the stems of all five languages. The first build logs the file count, time and
+  languages (`search index: N files in T ms, languages {…}`).
+- **Query:** words, or `"quoted phrases"`. Each word matches by any of its variants (the folded word and its folded
+  stem in each language; best variant's score counts); every word must match (AND); scores add up. The last word,
+  unless quoted, is also a prefix. A word that matches nothing at all is looked up fuzzily (edit distance up to a
+  quarter of its length, at most 2). A phrase is matched by its words, then kept only if one line (or the path) holds
+  the folded words in a row. A word without letters or digits (`++`) is ignored.
+- **Order:** files whose name matches every word first (#99), then by score, then by path.
+- **Hits:** files are read in that order: each matching line (up to 20 per file; a line over 300 characters is cut
+  around its first match) becomes a hit with `ranges`, the offsets of the matched words (a word matches when one of its
+  terms matched; a phrase marks its whole run). A file found only by name or path gets one hit with line 0. At most
+  200 hits; `truncated` says there were more. The web app marks the ranges (`markedSnippet`), centered like before (#54).
+- **Freshness:** the index is built on the vault's first search, or in the background when an app opens the vault
+  (`Vaults.open`), in chunks of 64 files that yield to the event loop. Afterwards it is never rebuilt, only caught up
+  before a search: a path reported by the watcher (raw events, not debounced) or saved, uploaded or deleted through
+  the API is re-read alone; a folder event, a pull, a discard, a conflict resolution, an upload that moves a note into
+  its own folder or an attachment tidy-up re-lists the files and re-reads those whose size or mtime changed. A root
+  change or a new clone starts a new index; removing the vault drops it.
+- **Cost:** about 60–85 MB heap and some 10–20 s for a synthetic vault of 10,000 notes of 3 kB each (on a loaded dev
+  host), most of it stemming, MiniSearch inserts and language detection; a query over it takes 0.3–1 s when thousands
+  of files match, milliseconds otherwise. Typical vaults (hundreds to a few thousand notes) build in well under 5 s.
 
 ## Text files
 
