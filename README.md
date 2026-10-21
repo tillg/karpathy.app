@@ -354,9 +354,18 @@ from the official marketplace. The spec skills come only from there: the `.claud
 a different, vendored set.
 
 After cloning: start `claude` in the repo and **trust the folder**. In that first session a
-`SessionStart` hook installs any of the four plugins that are missing (`claude plugin install …
---scope project`); they load from the **next** session on (restart, or `/reload-plugins`). When
-adding or removing a plugin, keep the hook's list in sync with `enabledPlugins`.
+`SessionStart` hook runs `scripts/claude-plugins.sh`, which installs any of the four plugins that are
+missing (`--scope user`); they load from the **next** session on (restart, or `/reload-plugins`). When
+adding or removing a plugin, keep the script's lists in sync with `enabledPlugins`.
+
+Cloud sessions (Claude Code on the web) ignore `enabledPlugins` and `extraKnownMarketplaces`, and a
+hook runs too late for the same session. There, add this line to the cloud environment's **setup
+script** (claude.ai environment settings, not in the repo), so the plugins exist before Claude Code
+starts:
+
+```bash
+bash scripts/claude-plugins.sh
+```
 
 ### Reports
 

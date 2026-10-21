@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "f=\"${CLAUDE_CODE_PLUGIN_CACHE_DIR:-$HOME/.claude/plugins}/installed_plugins.json\"; for p in claude-security@claude-plugins-official spec@till-claude-code-marketplace md2html@till-claude-code-marketplace mattpocock-skills@mattpocock; do grep -q \"\\\"$p\\\"\" \"$f\" 2>/dev/null || claude plugin install \"$p\" --scope project >/dev/null 2>&1; done; exit 0"
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/claude-plugins.sh"
           }
         ]
       }
