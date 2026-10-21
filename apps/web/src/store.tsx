@@ -368,7 +368,10 @@ function useAppState() {
         setNote({ path, loaded: '', loadNonce: Date.now(), version: f.version, dirty: false, saving: false, binary: true });
         return 'ok';
       }
-      const d = getDraft(drafts(), vault, path);
+      // An email is never edited: a draft left from before it had its own view (#166) is dropped, not restored.
+      const email = fileKind(path, false) === 'email';
+      if (email) dropDraft(drafts(), vault, path);
+      const d = email ? null : getDraft(drafts(), vault, path);
       const act = draftAction(d, f.version, f.content);
       if (act === 'none' && d) dropDraft(drafts(), vault, path);
       const text = act === 'none' ? f.content : d!.text;

@@ -242,7 +242,7 @@ mark { background: rgba(245,158,11,.35); color: var(--label); border-radius: 3px
 .email-head dt { color: var(--label2); }
 .email-head dd { margin: 0; overflow-wrap: anywhere; }
 .email-atts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
-.email-atts .file-card { color: inherit; text-decoration: none; }
+.email-atts .file-card { color: inherit; border: 0; font: inherit; text-align: left; cursor: pointer; }
 .email-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 16px; line-height: 1.5; }
 .editor .cm-editor.cm-code { font-size: 14px; line-height: 1.5; }
 .editor .cm-editor.cm-code .cm-scroller { font-family: var(--mono); }

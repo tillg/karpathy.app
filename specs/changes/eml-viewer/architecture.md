@@ -31,12 +31,13 @@ flowchart TB
   note / html / code. The email check comes before `binary` because `GET /file` reports a mail with Latin-1 or
   8-bit parts as `binary: true, content: ''`; the viewer never uses that content.
 - `viewMode('email', …)` → `'read'` (emails have no mode; places and `openPage` record Read).
-- `store.tsx` needs no change: `openNote` still calls `GET /file` first (version, existence, events), so file
-  events, deletes and the back arrow work as for any file.
+- `store.tsx`: `openNote` still calls `GET /file` first (version, existence, events), so file events, deletes and
+  the back arrow work as for any file. One change in `load`: an email's local draft (left from when `.eml` opened
+  in the code view) is dropped, never restored or autosaved.
 
 ### Parsing (`lib/email.ts`, new)
 
-`parseEmail(bytes: ArrayBuffer): Promise<ParsedEmail>` wraps **postal-mime** (MIT-0, no dependencies, browser
+`parseEmail(bytes: ArrayBuffer | Uint8Array): Promise<ParsedEmail>` wraps **postal-mime** (MIT-0, no dependencies, browser
 build, handles RFC 2047 headers, charsets incl. Latin-1/windows-1252, quoted-printable, base64, `multipart/*`).
 Pinned to an exact version (`4.0.11`; the 4.0.x releases since 4.0.0 are bug fixes and hardening, e.g. limits on
 part count and address nesting). Its own types are the source for the result shape; the wrapper reduces it to
@@ -48,14 +49,18 @@ interface ParsedEmail {
   from?: string; to: string[]; cc: string[]; replyTo: string[];   // "Name <address>" or the address
   date?: Date;                             // invalid / missing → undefined
   html?: string; text?: string;
-  inline: Map<string, { type: string; bytes: ArrayBuffer }>;      // contentId without <> → image part
+  inline: Map<string, { type: string; bytes: ArrayBuffer }>;      // contentId without <>, decoded, lower case → image part
   attachments: { name: string; type: string; bytes: ArrayBuffer }[];
 }
 ```
 
-- **Inline vs attachment:** a part whose `contentId` the HTML body references as `cid:` is inline; every other
-  non-body part (incl. a `message/rfc822` forward) is an attachment. An attachment without a file name is named
-  `attachment-N` with an extension from its type when known.
+- **Inline vs attachment:** an image part of at most 10 MB whose `contentId` a `src="cid:…"` in the HTML body names
+  is inline (RFC 2392: the reference is percent-decoded and compared without case). Every other non-body part is
+  an attachment, incl. an image named only in CSS or too big to inline (so nothing goes missing) and a
+  `message/rfc822` forward (`rfc822Attachments: true`, else postal-mime merges it into the body). An attachment
+  without a file name is named `attachment-N` with an extension from its type when known.
+- `bodyHtml(mail)` (DOM, after parsing) sets each `cid:` `src` to its inline part's `data:` URL; an unknown one
+  loses its `src` and keeps only its alt text.
 - Address groups and display names come from postal-mime; the wrapper only formats.
 - postal-mime doesn't throw on garbage (it returns an empty mail), so `parseEmail` throws when it finds no subject,
   no From and no body; the view then shows "This email can't be shown." (no partial render).
@@ -69,30 +74,29 @@ chunk: the main bundle and the PWA precache limits stay as they are.
   (a pull that changes the file re-renders it). Not `textual`: no mode toggle, outline, find, attach, properties,
   save footer. The header keeps Delete ("Delete file") as for other non-note files.
 - **Bytes, without a second download:** a UTF-8 mail (most are: quoted-printable and base64 are ASCII) already
-  came whole with `GET /file`, so the view parses `new TextEncoder().encode(currentText())`; valid UTF-8 round-trips
-  byte-exact, CRLF included. Only a `binary: true` mail is fetched again: `rawHead` first, over
-  `MAX_PREVIEW_BYTES` (50 MB) the file card with "Load anyway" as `MediaView` shows it, then `api.raw` →
-  `arrayBuffer()`. Bytes are not put in the object-URL cache (parsed once, then dropped).
+  came whole with `GET /file`, so the view parses `new TextEncoder().encode(note.loaded)`; valid UTF-8 round-trips
+  byte-exact, CRLF included. Only a `binary: true` mail is fetched again: `rawHead` first, then `api.raw` →
+  `arrayBuffer()`. Either way, a mail over `MAX_PREVIEW_BYTES` (50 MB) shows a file card with "Load anyway" first
+  (parsing it would freeze the tab). Bytes are not put in the object-URL cache (parsed once, then dropped).
 - **Title while parsing:** the file name; the subject replaces it once parsing is done (stays the file name when
   the subject is empty).
 - **Title:** the subject (`h2.note-title`), else the file name. `.note-title` is visually hidden app-wide (the
   breadcrumb shows the path), so the subject also shows on screen as `.email-subject` above the header block.
 - **Header block:** a definition list (`dl.email-head`, `data-testid="email-head"`), React text nodes only (no
   HTML from the mail reaches the app DOM). Date with `toLocaleString()` of the browser.
-- **HTML body:** `src`/`background` values `cid:<id>` are replaced by `data:` URLs from `inline` first (same
-  10 MB per image cap as HTML pages; over it the image is dropped, its alt text stays; a `background` attribute
-  with a `data:` URL is then removed by DOMPurify, so such a background just doesn't show), then the string goes
-  through the **unchanged** `preparePage` with the email's own path. `preparePage` matches `cid:` as a remote
-  scheme, so the substitution must come first; it keeps `data:` images, turns remote images into links, gives
-  remote links `target=_blank` and strips scripts, forms, frames, `meta`, `base`. The result shows in the same
-  `iframe.html-view` with the same sandbox (`allow-popups allow-popups-to-escape-sandbox
-  allow-top-navigation-by-user-activation`; no `allow-scripts`, no `allow-same-origin`) and therefore under the
-  app's CSP.
+- **HTML body:** `bodyHtml(mail)` first (`preparePage` matches `cid:` as a remote scheme and would turn the image
+  into a link), then `preparePage` with the email's own path and no vault files (relative references resolve to
+  nothing). It keeps `data:` images, turns remote images into links, gives remote links `target=_blank` and strips
+  scripts, forms, frames, `meta`, `base`. One change to `preparePage`, for HTML pages too: image-map `<area>` links
+  are rewritten like `<a>`, and a `#` link loses its `target`, so no link in a page can move the app by itself. The
+  result shows in the same `iframe.html-view` with the same sandbox (`SANDBOX`, shared with `HtmlView`: no
+  `allow-scripts`, no `allow-same-origin`) and therefore under the app's CSP.
 - **Text body** (no HTML part): `<div class="email-text">` with `white-space: pre-wrap`, plain text node, not
   through `marked`.
-- **Attachments:** a list of cards styled like `.file-card` (name, size via `human()`), each a `<a download>`
-  with a `blob:` URL made on render and revoked on unmount. Not `mountEmbed`'s `fileCard`: that one takes a vault
-  path, and attachments aren't vault files.
+- **Attachments:** a list of buttons styled like `.file-card` (name, size via `human()`). A tap makes a `blob:` URL
+  of the bytes as `application/octet-stream` (never the mail's type, so an HTML or SVG attachment can't open as a
+  page of the app), saves it through a temporary `<a download>` and revokes it. Not `mountEmbed`'s `fileCard`: that
+  one takes a vault path, and attachments aren't vault files.
 
 ### Styling
 

@@ -3,6 +3,7 @@ import { cleanup, render, waitFor } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MAX_PREVIEW_BYTES } from '../lib/media';
 import { fakeApi } from '../test/fake-api';
 import { EmailView } from './EmailView';
 
@@ -13,11 +14,7 @@ const text = (name: string) => bytes(name).toString('utf8');
 const RAW = 'GET /api/vaults/v/raw';
 const HEAD = 'HEAD /api/vaults/v/raw';
 
-beforeEach(() => {
-  localStorage.setItem('karpathy.token', 't');
-  let n = 0;
-  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: () => `blob:att-${++n}`, revokeObjectURL: () => {} }));
-});
+beforeEach(() => { localStorage.setItem('karpathy.token', 't'); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 
 describe('EmailView (#166)', () => {
@@ -40,8 +37,8 @@ describe('EmailView (#166)', () => {
     expect(doc).not.toContain('cid:');
     expect(doc).toMatch(/<a [^>]*href="https:\/\/example\.com\/track\.png"/);
     const atts = r.getAllByTestId('email-attachment');
-    expect(atts.map((a) => [a.getAttribute('download'), a.getAttribute('href')])).toEqual([['report.pdf', 'blob:att-1']]);
-    expect(atts[0]!.textContent).toContain('588 B');
+    // A button: the blob (as octet-stream, never the mail's type) is made only on a tap.
+    expect(atts.map((a) => [a.tagName, a.textContent])).toEqual([['BUTTON', 'report.pdf588 B']]);
     expect(api.calls.filter((c) => c.call === RAW || c.call === HEAD)).toEqual([]);
   });
 
@@ -65,6 +62,13 @@ describe('EmailView (#166)', () => {
     expect(api.calls.some((c) => c.call === RAW)).toBe(false);
   });
 
+  it('a UTF-8 mail over the preview limit asks first too', async () => {
+    fakeApi();
+    const r = render(<EmailView vault="v" path="big.eml" text={'a'.repeat(MAX_PREVIEW_BYTES + 1)} binary={false} />);
+    expect(await r.findByTestId('file-load')).toBeTruthy();
+    expect(r.queryByTestId('email-head')).toBeNull();
+  });
+
   it('plain: the text body keeps its line breaks, no frame', async () => {
     fakeApi();
     const r = render(<EmailView vault="v" path="plain.eml" text={text('plain.eml')} binary={false} />);
@@ -76,7 +80,7 @@ describe('EmailView (#166)', () => {
   it('bytes that are no mail: "This email can\'t be shown."', async () => {
     fakeApi();
     const r = render(<EmailView vault="v" path="x.eml" text={'\u0000garbage'} binary={false} />);
-    expect(await r.findByText('This email can’t be shown.')).toBeTruthy();
+    expect((await r.findByTestId('email-error')).textContent).toBe('x.emlThis email can’t be shown.');
     expect(r.container.querySelector('.note-title')!.textContent).toBe('x.eml');
   });
 });

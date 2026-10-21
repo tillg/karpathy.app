@@ -79,6 +79,21 @@ test('a search hit in a mail opens the mail', async ({ page, vault }) => {
   await expect(page.frameLocator('[data-testid="email-body"]').locator('h1')).toHaveText('Notes');
 });
 
+test('a draft left from when a mail opened as code is dropped, never shown or saved', async ({ page, vault }) => {
+  seed(vault);
+  const key = `karpathy.draft:${vault.id}:Mail/alternative.eml`;
+  await page.addInitScript(([k]) => {
+    if (!localStorage.getItem('karpathy.e2e-draft')) {
+      localStorage.setItem(k!, JSON.stringify({ base: 'old', text: 'From: x@example.org\r\nSubject: Draft\r\n\r\nedited\r\n' }));
+      localStorage.setItem('karpathy.e2e-draft', '1');
+    }
+  }, [key]);
+  await openApp(page, vault.id);
+  await openMail(page, 'alternative.eml', 'Notes on the Analytical Engine');
+  expect(await page.evaluate((k) => localStorage.getItem(k), key)).toBeNull();
+  await expect(page.getByTestId('stale-dialog')).toHaveCount(0);
+});
+
 test('the next note after a mail opens as before', async ({ page, vault }) => {
   seed(vault);
   await openApp(page, vault.id);

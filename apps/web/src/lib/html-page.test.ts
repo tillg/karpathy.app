@@ -72,6 +72,15 @@ describe('preparePage (#126)', () => {
     expect(anchor!.getAttribute('target')).toBeNull();
   });
 
+  it('no link can move the app by itself: image-map areas are rewritten like links, a #anchor loses its target (#166)', async () => {
+    const out = doc(await preparePage('<html><body><map name="m"><area href="https://evil.example/" target="_top"></map>'
+      + '<a href="#/v/Other.md" target="_top">x</a></body></html>', ctx()));
+    const area = out.querySelector('area')!;
+    expect(area.getAttribute('target')).toBe('_blank');
+    expect(area.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(out.querySelector('a')!.getAttribute('target')).toBeNull();
+  });
+
   it('a path that leaves the vault is never loaded', async () => {
     const c = ctx();
     await preparePage('<html><body><img src="../../secret.png"></body></html>', c);
