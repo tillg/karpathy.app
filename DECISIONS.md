@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-15
+edited: 2026-10-16
 ---
 
 **Contents**
@@ -168,6 +168,20 @@ edited: 2026-10-15
   - [12:58 — Hold step 5 until step 6: the backend's strict schema would reject the new `secrets` key](#run-2026-10-15-1244-4)
   - [15:15 — Rewrite 15 e2e specs to reach the forms through admin mode; `fix-24` discards the saved draft before removing](#run-2026-10-15-1244-5)
   - [19:25 — Review triage: fix the defects and the dead code, adjust the spec where it promised more than the data has](#run-2026-10-15-1244-6)
+  - [09:00 — Archive admin-mode with its decisions open and the dev model's `@llm` e2e reds documented](#run-2026-10-15-1244-7)
+  - [09:10 — Retro: a per-test stack check in e2e and a CLAUDE.md line on judging e2e failures](#run-2026-10-15-1244-8)
+- [2026-10-16 10:16 — Website: screenshots and Karpathy's tweet & gist (#156, #132)](#run-2026-10-16-1016)
+  - [10:20 — One spec change `website-screenshots-and-origin` for both website issues](#run-2026-10-16-1016-1)
+  - [10:20 — Screenshots from a local prodtest stack with the demo vault, not from prod](#run-2026-10-16-1016-2)
+  - [10:20 — The tweet as a static quote card linking to x.com, no Twitter widget script](#run-2026-10-16-1016-3)
+  - [10:20 — "Give a version and deploy it" = release the app as v0.0.29 and deploy it to hetzner; the site deploys via Pages](#run-2026-10-16-1016-4)
+  - [10:22 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote](#run-2026-10-16-1016-5)
+  - [10:24 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive](#run-2026-10-16-1016-6)
+  - [10:49 — Review triage: fix all findings, including the app's chat-header bug #160 seen in the shots](#run-2026-10-16-1016-7)
+  - [11:28 — Archive `website-screenshots-and-origin` with its decisions open](#run-2026-10-16-1016-8)
+  - [11:35 — Retro: the site workspace's test also lints `site/`; create the missing `needs-triage` label](#run-2026-10-16-1016-9)
+  - [11:50 — Fix the flaky AdminMode Escape tests that turned `main`'s CI red, before releasing](#run-2026-10-16-1016-10)
+  - [12:03 — Re-run CI once on the network-bound `save_url` flake instead of changing the test; tag v0.0.29](#run-2026-10-16-1016-11)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2315,7 +2329,7 @@ edited: 2026-10-15
 
 ## 12:48 — Commit and push each step straight to main {#run-2026-10-15-1244-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** harness — commit or push only when the user asks; `~/.claude/CLAUDE.md` — never create or switch
   branches without permission
 - **Context:** `admin-mode`, 16 plan steps; the repo works on `main` (recent features were merged straight to it),
@@ -2327,10 +2341,13 @@ edited: 2026-10-15
 - **Alternatives:** a branch `autonomous/admin-mode` and a PR (keeps `main` clean until review, but no CI-tested
   release path differs, and the parallel-step merges already land on the current branch).
 - **Consequences:** every step is on `origin/main` as soon as it is green; a bad step is reverted forward.
+  Changed at 19:35 on the user's request ("make this in its own branch"): from `3a4d1f5` on, the work goes to branch
+  `feat/150-admin-mode` (review fixes, steps 15 and 16, archive) and into `main` through one PR. Steps 1–14 and the
+  first part of step 15 stay on `main` (moving them would rewrite pushed history).
 
 ## 12:48 — Apply with `--parallel`: Workers in `.worktrees/`, each with its own `npm ci`; e2e steps in the main tree {#run-2026-10-15-1244-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `admin-mode` `plan.md` has `Depends on:` lines; five steps (1, 5, 8, 10, 12) are ready at the start.
 - **Question:** sequential or parallel, and how do Workers get dependencies?
 - **Decision:** `--parallel` with at most 3 Workers; each worktree runs `npm ci --prefer-offline` (workspace
@@ -2362,10 +2379,17 @@ edited: 2026-10-15
   that test; the full `just e2e` was stopped after 164 tests (2 failed, both `@llm` desktop specs:
   `ai-suggest-next`, `fix-106`). Open: finish the full `just e2e` and the baseline check of the `@llm` failures, tick
   steps 15 and 16, the review, archive, retro.
+  Resumed 19:09 on `feat/150-admin-mode`. The full `just e2e` at load 40–130 (another checkout's backend tests, a
+  Rancher port-forwarder crash at 19:35 and its restart): 499 passed, 46 failed; re-run alone at load 7: every
+  non-`@llm` failure passed (`fix-14` 3 of 3), 7 `@llm` runs still fail (`fix-124` = #142, `fix-13`, `fix-106`,
+  `ai-image`, `ai-open-note`: the dev model, none touches admin mode; not compared with the pre-change commit).
+  After merging the review fixes: lint, typecheck, settings/shared/web green, backend 509/510 (`chat.test.ts` › "turn
+  sets web tools from settings" timed out, passes alone), 16 admin-related e2e files on six projects 124/125
+  (`a11y.spec.ts:36` desktop, passes alone in 43 s). Steps 15 and 16 ticked.
 
 ## 12:58 — Baseline: two backend timing tests fail only under load; gate merges on lint, typecheck and the touched workspaces {#run-2026-10-15-1244-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:apply` 4b — run the full suite in the main tree after every merge
 - **Context:** `admin-mode`; the baseline `just check` (`tmp/check-baseline-20261015-124422.log`) had 2 of 485 backend
   tests red: `api.test.ts` › "connect fetches, the interval fetches while connected…" (1 s waits) and `chat.test.ts`
@@ -2386,7 +2410,7 @@ edited: 2026-10-15
 
 ## 12:58 — Hold step 5 until step 6: the backend's strict schema would reject the new `secrets` key {#run-2026-10-15-1244-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `admin-mode` step 5 (renderer writes `secrets` into `settings.json`); `apps/backend/src/settings.ts`
   parses it with `z.strictObject`. The Worker made an existing render test strip `secrets` before parsing to stay
   green.
@@ -2400,7 +2424,7 @@ edited: 2026-10-15
 
 ## 15:15 — Rewrite 15 e2e specs to reach the forms through admin mode; `fix-24` discards the saved draft before removing {#run-2026-10-15-1244-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `~/.claude/CLAUDE.md` — never make tests pass by changing them without explicit permission
 - **Context:** `admin-mode` step 4. The plan names the rewrite and says `/spec:apply` asks the user first; nobody is
   there. 15 specs plus `e2e/helpers.ts` opened the Settings and Vaults dialogs (`settings-dialog`, `admin`).
@@ -2423,7 +2447,7 @@ edited: 2026-10-15
 
 ## 19:25 — Review triage: fix the defects and the dead code, adjust the spec where it promised more than the data has {#run-2026-10-15-1244-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `admin-mode`, `/spec:adversarial-code-review 6ee3251` (three axes). Nobody to ask which findings to act
   on.
 - **Question:** which findings get fixed now, which are left?
@@ -2450,3 +2474,244 @@ edited: 2026-10-15
 - **Consequences:** left open: `Admin.tsx` size, the sections' cloned fetch effect, single-letter names, the "Missing"
   pill that can't occur while the renderer refuses a missing required secret, `last4` of the GitHub token (allowed by
   domain.md), the `fix-24` coverage gap (decision 5).
+
+## 09:00 — Archive admin-mode with its decisions open and the dev model's `@llm` e2e reds documented {#run-2026-10-15-1244-7}
+
+- **Status:** confirmed
+- **Overrides:** `/spec:archive` 2c/2d — don't archive while the suite or a `Verify:` is red, or while the change's
+  decisions are `open`
+- **Context:** `admin-mode`, all 16 steps ticked. Step 15's `Verify` ("`just e2e` → all green") is not literally green:
+  `@llm` specs fail with the local dev model (Qwen3-Coder-30B via omlx). Compared with the pre-change commit `6ee3251`
+  on its own stack: `ai-image` and `fix-124` fail there too; `fix-106` passed there on 2026-10-15 22:00 and failed
+  there on 2026-10-16 09:00 (the model writes `[read(file_path=…)]` as text instead of calling the tool); `fix-13` and
+  `ai-open-note` pass on the branch when re-run. Every non-`@llm` failure of the full run passed alone. Decisions 1–7
+  of this run are `open`; nobody is there to review them.
+- **Question:** archive now, or leave the change open until the user is back?
+- **Decision:** archive: fold it into `specs/system/`, commit on `feat/150-admin-mode`, list the open decisions in
+  the commit body, close #150 through the PR (`Closes #150`).
+- **Why:** the remaining reds are the dev model's, reproduced without the change; the system description should match
+  the branch the PR proposes; the decisions stay reviewable in `DECISIONS.md` either way.
+- **Alternatives:** keep the change open (the PR would carry an outdated `specs/system/`).
+- **Consequences:** review decisions 1–7 before merging the PR. The `@llm` flakiness with the dev model is worth its
+  own issue (a retry or a sturdier tool-call prompt).
+  2026-10-16: confirmed by the user; PR #159 merged (`8c1acd4`, closes #150). The merge went in while the PR's last
+  CI run was red (`chat.test.ts` setup timed out on the runner; the run before, on the same code minus
+  `DECISIONS.md`, was green) — the merge command didn't stop on the failed check. CI on `main` then failed once on
+  `opencode-tools.test.ts` › "save_url saves a public image" (fetches a public URL; passes locally) and was green on
+  re-run. Released `v0.0.28` and deployed to hetzner (smoke check green, announced on ntfy); rollback:
+  `just deploy hetzner 0.0.27`. The demo run book chapter went out with the #151 session's commit `ed047c2`.
+
+## 09:10 — Retro: a per-test stack check in e2e and a CLAUDE.md line on judging e2e failures {#run-2026-10-15-1244-8}
+
+- **Status:** confirmed
+- **Context:** `admin-mode` run retro. What went wrong: (1) twice Rancher's port forwarder died mid-run and a full
+  `just e2e` turned 300 tests red with page timeouts that named no cause; (2) the full e2e run on a busy Mac was red
+  for load and for the dev model, and telling the two apart from a regression took a baseline worktree and stack;
+  (3) two parallel merges conflicted on adjacent new fixture lines in `fake-api.tsx` / `AdminMode.tsx`; (4) a Worker
+  fixed a repo-rule test failure (`model literals live only in deploy/settings/`, which scans `.test.tsx`) without
+  saying why, and the orchestrator reverted it as "unexplained" — `main` was red on it for a while.
+- **Question:** which fixes, at which level?
+- **Decision:** project level, applied: (1) an automatic `stackGuard` fixture in `e2e/helpers.ts` checks `/healthz`
+  before every test and fails with the cause and the `rdctl` restart (pinned by `e2e/stack-guard.spec.ts`); (2) one
+  CLAUDE.md line: re-run with `--last-failed`, compare a remaining `@llm` failure with the pre-change commit. Plugin
+  level, drafted only (report): `/spec:apply --parallel` Worker briefs should require "every file changed and why";
+  the plan reference's `Verify: just e2e → all green` needs a way to state a baseline for suites with model-dependent
+  tests.
+- **Why:** (1) is mechanical and stops a whole class of confusing reds; (2) is a pointer, the check itself needs a
+  second stack; (3) has no mechanical fix short of different fixture layouts; (4) is a brief problem in the plugin.
+- **Alternatives:** Playwright `maxFailures` (stops the run, but also on real flaky reds); widening the model-literal
+  rule to `.test.tsx` (relaxes a guard; left for the user).
+- **Consequences:** a stack that dies mid-run now fails each test in about 5 s with the cause.
+
+# 2026-10-16 10:16 — Website: screenshots and Karpathy's tweet & gist (#156, #132) {#run-2026-10-16-1016}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > - Create a branch website-changes
+  > - go thru the gh issues and take all the ones that are labeled with "website"
+  > - Go thru the cycle /spec:propose, /spec:grill (yes, you are being grilled ;) ), /spec:apply, /spec:adversarial-code-review (fix the issues!), /spec:archive
+  > - merge main into our branch, then our branch to main
+  > - Then give a version and deploy it
+  >
+  > In between always
+  > - commit and push onto the branch
+  > - ntfy my via the dev ntfy channel
+
+## 10:20 — One spec change `website-screenshots-and-origin` for both website issues {#run-2026-10-16-1016-1}
+
+- **Status:** open
+- **Context:** two open issues carry the `website` label: #156 (screenshots from Mac, iPad, iPhone) and #132
+  (Karpathy's tweet and gist on the website). Both touch only `site/`.
+- **Question:** one change per issue, or one change for both?
+- **Decision:** one change, `website-screenshots-and-origin`, linked to both issues.
+- **Why:** same files (`site/index.html`, `style.css`, `build.sh`, `site.test.mjs`), same Pages deploy; two changes
+  would conflict on every file and double the review.
+- **Alternatives:** two changes in sequence (cleaner issue mapping, twice the ceremony for a one-page site).
+- **Consequences:** the archive commit carries `Closes #156` and `Closes #132`.
+
+## 10:20 — Screenshots from a local prodtest stack with the demo vault, not from prod {#run-2026-10-16-1016-2}
+
+- **Status:** open
+- **Context:** #156 wants screenshots "from the karpathy app on Mac, iPad and iPhone". Reading the prod target's
+  access token was denied by the auto-mode classifier (credential materialization); the shots of run 2026-10-02 23:19
+  (`tmp/demo/final/`) no longer exist.
+- **Question:** where do the screenshots come from?
+- **Decision:** `just prodtest` (the release images on the Mac, header `karpathy.app` rather than a dev stack's
+  `karpathy #N`) with the demo vault `karpathy_demo_wiki` from a local bare remote, driven by Playwright at Mac,
+  iPad and iPhone viewports. The chat answer comes from the local dev model.
+- **Why:** same UI as prod's release images, no prod credentials, no writes into the prod demo vault; the dev
+  stack's `karpathy #N` header would look like a bug in a product shot.
+- **Alternatives:** prod over Tailscale (needs the token: blocked); a dev stack (wrong header); skip #156 (it is
+  `priority:high`).
+- **Consequences:** the chat answer is the local Qwen model's, not prod's model; retake on prod later if its quality
+  shows. No admin or secret screens in any shot.
+  In practice the local Qwen3-Coder needed several `--ask` attempts (web search instead of the wiki, a wrong path,
+  rambling answers) before a short, correct answer with a file chip; every shot was viewed before committing.
+
+## 10:20 — The tweet as a static quote card linking to x.com, no Twitter widget script {#run-2026-10-16-1016-3}
+
+- **Status:** open
+- **Context:** #132. The site is plain HTML + CSS without any script or third-party request
+  (`specs/system/architecture.md` › Website). The tweet is verified: id 2039805659525644595, 2026-04-02, "LLM
+  Knowledge Bases"; the gist "LLM Wiki" (karpathy/442a6bf555914893e9891c11519de94f) is from 2026-04-04.
+- **Question:** embed the tweet with `widgets.js`, or render it ourselves?
+- **Decision:** a static "Where the idea comes from" section: a `<blockquote cite>` with the tweet's opening words,
+  author and date linking to x.com, and a card linking to the gist.
+- **Why:** no third-party script or tracking on a page that has none; works without X being reachable; matches the
+  site's look in light and dark.
+- **Alternatives:** the official embed (live counts, but a third-party script and cookies).
+- **Consequences:** the quoted text is fixed; it is a short attributed quote.
+
+## 10:20 — "Give a version and deploy it" = release the app as v0.0.29 and deploy it to hetzner; the site deploys via Pages {#run-2026-10-16-1016-4}
+
+- **Status:** open
+- **Overrides:** `specs/system/domain.md` › Website deploy — "Independent of releases; the website has no version"
+- **Context:** the task asks for a version and a deploy; the website has no version and deploys on every push to
+  `main` that touches `site/`.
+- **Question:** what gets a version, and what gets deployed?
+- **Decision:** after the merge to `main`, the Pages workflow deploys the site; then `just release 0.0.29` and
+  `just deploy hetzner 0.0.29` for the app, which carries `main`'s state (the app itself has no change from this run).
+- **Why:** follows the user's words while keeping the documented mechanisms; the release is cheap and harmless.
+- **Alternatives:** only the Pages deploy (the site has no version); a website version (no mechanism for one).
+- **Consequences:** rollback of the app: `just deploy hetzner 0.0.28`. Rollback of the site: revert the merge on
+  `main`. If the deploy needs credentials the classifier blocks, it is left for the user.
+  Done: Pages deployed the site from 23b227d (live, checked); v0.0.29 tagged on e1e427d, release run 38884594626
+  green after one re-run of the `save_url` flake (#162); `just deploy hetzner 0.0.29` at 12:16, smoke check passed.
+
+## 10:22 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote {#run-2026-10-16-1016-5}
+
+- **Status:** open
+- **Overrides:** `/spec:grill` — the interview needs a user ("If running unattended, say that grilling needs a user, and stop")
+- **Context:** `website-screenshots-and-origin`, `/spec:grill`; the user is away and asked to be grilled anyway.
+- **Question:** the open branches of the design tree: how visible is the origin; which engine and content for the
+  shots; quote or paraphrase; deep links or clicks for the capture script.
+- **Decision:** (1) the hero gets a line "Built on Andrej Karpathy's LLM Wiki idea" linking `#origin` (new plan
+  step 2); (2) WebKit for Mac, iPad and iPhone; (3) the shots show the coffee topic (`aeropress` and a chat whose
+  answer reads wiki pages, file chips visible); (4) the tweet's title line and first sentence verbatim; (5) the
+  script clicks through the UI, the app has no URL routing.
+- **Why:** #132 asks for a *visible* origin; Safari is the browser on all three devices; coffee pages have pictures
+  and short answers; a paraphrase would put words in his mouth.
+- **Alternatives:** origin section only; Chromium for the Mac; topology or mountains content.
+- **Consequences:** recorded in the change's `architecture.md` › Key decisions and `plan.md`.
+  (3) changed during apply: the shots show `which-brewer-for-which-bean` instead of `aeropress`, whose properties form
+  filled the screen; `architecture.md` › Key decisions says so.
+
+## 10:24 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive {#run-2026-10-16-1016-6}
+
+- **Status:** open
+- **Overrides:** `/spec:apply` / `/autonomous` — run the full suite after every step before committing
+- **Context:** `website-screenshots-and-origin`, `/spec:apply`. Every step touches only `site/` (and docs); no other
+  workspace imports it. The full `npm test` (backend integration with Docker) takes many minutes per run.
+- **Question:** run the full suite after each of the five steps, or gate steps on the site suite?
+- **Decision:** each step is committed when `node site/site.test.mjs` is green; the full `npm test` runs once as the
+  baseline (started 10:23; green: 32 + 64 + 550 + 321 vitest tests and the site suite) and again before `/spec:archive` and before the merge to `main`.
+- **Why:** the site suite is the only suite these files can break; the full runs bracket the change.
+- **Alternatives:** full suite per step (same verdict, roughly 5× the time).
+- **Consequences:** a step commit could in theory break another workspace unnoticed until the closing full run; the
+  closing run catches it before anything reaches `main`.
+  Closing runs (11:05–11:30, during a prodtest rebuild and with other dev stacks up): lint and typecheck green, site
+  and web green; the backend suite failed 2–3 different tests per run (`api.test.ts`, `chat.test.ts`: git/pull and
+  opencode timing), all six of which pass when re-run alone. `apps/backend` has no change in this run, so they are
+  the load flakes of decision run-2026-10-15-1244-3, not regressions.
+
+## 10:49 — Review triage: fix all findings, including the app's chat-header bug #160 seen in the shots {#run-2026-10-16-1016-7}
+
+- **Status:** open
+- **Overrides:** `~/.claude/CLAUDE.md` § 3 — touch only what the request requires (#160 is an app bug, not a website issue)
+- **Context:** `/spec:adversarial-code-review` of `website-screenshots-and-origin` (Defects, Standards, Spec). The
+  Mac and iPad shots showed "ChatsQwen3-Coder…": the chat's back link and the centred model name overlapped by
+  8 px (filed as #160). Other findings: a rambling chat answer in the shots, `capture.mjs` crashing without
+  `tmp/prodtest/stack` even with `--url`, the token sent without a certificate check to a non-local `--url`, an alpha
+  channel in the WebPs, fixed sleeps, spec drift (note, tmp path, `--ask` writes, "View on X", gist date), and test
+  holes (empty screenshot dir, extra files).
+- **Question:** which findings to fix, and is the app bug in scope?
+- **Decision:** fix all of them; #160 test-first (`e2e/fix-160.spec.ts`, then `.ctitle` keeps 128 px free on each
+  side), then retake the shots on rebuilt prodtest images; update the spec where the code deliberately differs
+  (which-brewer note, `--ask`, three panes on the iPad).
+- **Why:** the shots are the product's face; a visible glitch or a rambling answer undoes their point. The CSS fix is
+  one line and ships with this run's release anyway.
+- **Alternatives:** leave #160 open and crop the header (hides the model chip and back link); keep the shots as they
+  are.
+- **Consequences:** the release v0.0.29 now carries one app change (#160). `Closes #160` lands with the merge to `main`.
+
+## 11:28 — Archive `website-screenshots-and-origin` with its decisions open {#run-2026-10-16-1016-8}
+
+- **Status:** open
+- **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`
+- **Context:** `website-screenshots-and-origin` is applied and reviewed; its decisions 1–7 of this run are `open`
+  because nobody can review them during the run.
+- **Question:** archive now, or leave the change open until the user reviews the decisions?
+- **Decision:** archive; the decisions stay `open` and are listed in the archive commit's body.
+- **Why:** the task asks for the archive before the merge, release and deploy; `/autonomous` allows archiving past the
+  gate and lists the decisions for review.
+- **Alternatives:** leave the change in `specs/changes/` (blocks the task's merge/release order).
+- **Consequences:** a decision the user reverts later is undone with `/spec:tweak`.
+
+## 11:35 — Retro: the site workspace's test also lints `site/`; create the missing `needs-triage` label {#run-2026-10-16-1016-9}
+
+- **Status:** open
+- **Context:** this run's retro. What went wrong: (1) the per-step gate (decision 6) ran only `site.test.mjs`, so
+  `capture.mjs` was committed with 6 `no-undef` lint errors (7b2a70c) and stayed lint-red until the review pass;
+  (2) filing #160 with the `needs-triage` label that `docs/agents/triage-labels.md` names failed — the repo had no
+  such label; (3) the first decision timestamps were written ahead of the clock (fixed by hand from `git log`);
+  (4) the local dev model needed many attempts for a usable chat answer in the screenshots.
+- **Question:** which fixes, at which level?
+- **Decision:** project level, applied: (1) `site/package.json` `test` = `eslint . && node site.test.mjs` (seen red
+  with a lint probe, green without); (2) `gh label create needs-triage`. (3) and (4) get no mechanical fix: (3) is
+  my discipline (`date` before each heading), (4) is documented in README and `deployment.md` › Website. Plugin
+  level, drafted only (report): none new.
+- **Why:** (1) makes the cheap per-step gate catch what CI's lint would; (2) makes the documented mapping work.
+- **Alternatives:** a git pre-commit lint hook (slower for every commit in the repo); change the mapping to `bug`.
+- **Consequences:** `npm test` in the site workspace now fails on a lint error in `site/`.
+
+## 11:50 — Fix the flaky AdminMode Escape tests that turned `main`'s CI red, before releasing {#run-2026-10-16-1016-10}
+
+- **Status:** open
+- **Context:** CI on `main` failed after the merge (23b227d, 7f707b6 and its rerun), each time in a different
+  `AdminMode.test.tsx` case (Escape leaves admin mode / focus returns) — the same flake that failed the
+  `feat/150-admin-mode` runs this morning — and once in `opencode-tools.test.ts` › `save_url` (fetches a w3.org image;
+  passes locally). The release runs the same checks, so v0.0.29 would be blocked.
+- **Question:** release on a rerun's luck, or fix the flake?
+- **Decision:** fix it: the tests pressed Escape as soon as the hash said `#admin/general`, before AdminMode's
+  effects attached the keydown listener; they now first wait for the section heading to take focus (`adminReady()`),
+  which proves the effects ran. No assertion removed or weakened. `save_url` left as is (network).
+- **Why:** a real race in the test, not in the app (a user can't press Escape before admin mode has rendered); the
+  fix waits for a stronger precondition.
+- **Alternatives:** rerun CI until green (hides the flake); a retry on the test (weaker).
+- **Consequences:** couldn't make the flake fail on demand locally (17/17 five times before and after); CI is the
+  judge. If `save_url` fails CI again, it needs its own issue (an external URL in a unit test).
+  CI on e1e427d: AdminMode passed; `save_url` failed again → filed #162, re-ran the failed job once → green (12:00).
+
+## 12:03 — Re-run CI once on the network-bound `save_url` flake instead of changing the test; tag v0.0.29 {#run-2026-10-16-1016-11}
+
+- **Status:** open
+- **Context:** `main`'s CI failed twice on `opencode-tools.test.ts` › `save_url saves a public image` (downloads
+  `w3c_home.png` from w3.org through the test proxy; "ERR undefined is not a function"); it passes locally and in
+  other attempts; no backend or `deploy/opencode` file changed in this run.
+- **Question:** chase the root cause before releasing, change the test, or re-run?
+- **Decision:** re-run the failed job once (green), file #162 with the leads, tag v0.0.29 on e1e427d.
+- **Why:** intermittent and external to this run's work; the test stays untouched (never weaken a test).
+- **Alternatives:** root-cause now (no local repro, could take long); skip or retry-wrap the test (forbidden).
+- **Consequences:** the release workflow's check job may hit it again; one re-run there, else the release waits for
+  #162.

@@ -160,7 +160,7 @@ export function createApp(d: AppDeps) {
     const src = d.githubToken?.source();
     const t = d.githubToken?.current();
     const secrets = (d.secrets ?? []).map((s) =>
-      s.name === 'github_token' && src && src !== 'none' && t ? { ...s, source: src === 'settings' ? ('app' as const) : ('deployment' as const), last4: t.slice(-4) } : s,
+      s.name === 'github_token' && src && src !== 'none' && t ? { ...s, set: true, source: src === 'settings' ? ('app' as const) : ('deployment' as const), last4: t.slice(-4) } : s,
     );
     res.json({ secrets });
   });

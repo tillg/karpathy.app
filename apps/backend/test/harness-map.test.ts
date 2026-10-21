@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { mapEvent, mapMessageInfo, mapMessages, mapModels, mapPart, withLimit, mapToolPart, usageRows, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
+import { mapEvent, mapMessageInfo, mapMessages, mapModels, mapPart, withLimit, mapToolPart, usageRows, usageSessions, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
 
 // Real opencode 1.18.25 event captures from the Phase 0 spike (vault root /vaults/a).
 const raw = readFileSync(join(import.meta.dirname, 'fixtures/opencode-events.jsonl'), 'utf8')
@@ -241,13 +241,31 @@ describe('usageRows', () => {
       { info: { id: 'u1', role: 'user', time: { created: 1 }, model: { providerID: 'p', modelID: 'm' } }, parts: [] },
       {
         info: {
-          id: 'a1', role: 'assistant', providerID: 'openrouter', modelID: 'qwen', time: { created: 1700000000000 }, cost: 0.25,
+          id: 'a1', role: 'assistant', providerID: 'openrouter', modelID: 'qwen', time: { created: 1700000000000, completed: 1700000005000 }, cost: 0.25,
           tokens: { input: 10, output: 20, reasoning: 3, cache: { read: 4, write: 5 } },
         },
         parts: [],
       },
       { info: { id: 'a2', role: 'assistant', providerID: 'openrouter', modelID: 'qwen', time: { created: 2 } }, parts: [] },
     ]);
-    expect(rows).toEqual([{ created: 1700000000000, model: 'openrouter/qwen', input: 10, output: 20, reasoning: 3, cacheRead: 4, cacheWrite: 5, cost: 0.25 }]);
+    expect(rows).toEqual([{ created: 1700000000000, model: 'openrouter/qwen', input: 10, output: 20, reasoning: 3, cacheRead: 4, cacheWrite: 5, cost: 0.25, completed: true }]);
+  });
+
+  it('usageRows: a message without time.completed (mid-turn) is completed: false', () => {
+    const rows = usageRows([
+      { info: { id: 'a', role: 'assistant', providerID: 'p', modelID: 'm', time: { created: 5 }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }, parts: [] },
+    ]);
+    expect(rows.map((r) => r.completed)).toEqual([false]);
+  });
+});
+
+describe('usageSessions', () => {
+  it('keeps every session of the directory, children included, as { id, updatedAt }', () => {
+    const list = [
+      { id: 'root', directory: '/v/a', parentID: undefined, title: 't', time: { created: 1, updated: 10 } },
+      { id: 'child', directory: '/v/a', parentID: 'root', title: 'c', time: { created: 2, updated: 20 } },
+      { id: 'other', directory: '/v/b', time: { created: 3, updated: 30 } },
+    ];
+    expect(usageSessions(list, '/v/a')).toEqual([{ id: 'root', updatedAt: 10 }, { id: 'child', updatedAt: 20 }]);
   });
 });

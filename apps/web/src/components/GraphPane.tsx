@@ -24,7 +24,7 @@ type Live = { g: import('3d-force-graph').ForceGraph3DInstance; nodes: Map<strin
  * first open and kept (only paused) while closed. Shows the `Wiki` folder unless "Show all"; a click opens the note.
  */
 export function GraphPane() {
-  const { activeId, note, openNote, graphOpen: open, setGraphOpen, phone } = useApp();
+  const { activeId, note, openNote, graphOpen: open, setGraphOpen, phone, admin } = useApp();
   const host = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState<{ vault: string; graph: GraphData } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,14 +101,15 @@ export function GraphPane() {
   useEffect(() => { if (open) live.current?.g.resumeAnimation(); else live.current?.g.pauseAnimation(); }, [open, drawn]);
 
   // Escape closes the graph, unless a dialog is open over it.
+  // Not while admin mode covers it (the graph stays mounted underneath).
   useEffect(() => {
-    if (!open) return;
+    if (!open || admin !== null) return;
     const k = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('[aria-modal="true"]')) setGraphOpen(false);
     };
     addEventListener('keydown', k);
     return () => removeEventListener('keydown', k);
-  }, [open, setGraphOpen]);
+  }, [open, admin, setGraphOpen]);
 
   const refresh = () => { if (activeId) cache.delete(activeId); setLoaded(null); };
   const wikiOnly = !!data && base !== data;

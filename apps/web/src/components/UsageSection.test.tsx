@@ -80,6 +80,18 @@ describe('Admin › Usage', () => {
     expect(svg.textContent).toContain('Oct 1');
   });
 
+  it('stacked bars include cache writes: the segments of a day add up to its tokens', async () => {
+    const r = report(7, true);
+    r.days[0] = { date: '2026-10-01', ...sums({ input: 100, output: 40, reasoning: 10, cacheRead: 30, cacheWrite: 20 }) };
+    fakeApi({ routes: { 'GET /api/usage': r } });
+    renderApp(<UsageSection />);
+    const svg = await screen.findByRole('img', { name: 'Tokens per day' });
+    fireEvent.pointerMove(svg.querySelector('g.stack rect.hit')!);
+    // 100 input + 50 cache (30 read + 20 write) + 50 output (40 + 10 reasoning) = the day's 200 tokens
+    expect(document.querySelector('.tip')!.textContent).toBe('Oct 1 · Input 100 · Cache 50 · Output 50');
+    expect(document.querySelector('.legend')!.textContent).toBe('InputCacheOutput');
+  });
+
   it('error state', async () => {
     fakeApi({ routes: { 'GET /api/usage': () => { throw new Error('x'); } } });
     renderApp(<UsageSection />);

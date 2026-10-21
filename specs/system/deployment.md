@@ -207,6 +207,10 @@ flowchart LR
 - **`shared/.env`** (0600) is the rendered `.env` plus this host's facts: `APP_VERSION`, `DEPLOYED_AT` (kept on a
   redeploy of the same version), `BIND_IP`, `HTTPS_PORT`, `APP_UID`, `APP_GID`. **`shared/opencode.env`** (0600) and
   **`shared/settings.json`** (0600, owned by `deploy`) are copied as rendered; a change to either recreates the stack.
+  `settings.json` also carries the `secrets` manifest (names, purpose, set or not, never values) that admin mode › Secrets
+  & keys shows (#150), so a secret added, changed or removed in the vault shows there only after the next render: every
+  deployment renders, and on a dev stack `just dev up` does. An older `settings.json` without it still loads (the table
+  is empty until the re-render).
   **`shared/ingest.json`** (0600, owned by `deploy`) likewise; its profiles also decide the ingest mounts. Only
   `hetzner.yaml` may hold profiles, and it holds none yet ([Ingest cutover](#ingest-cutover)).
 - **Checks:** `domain` (inventory) must equal the rendered `DOMAIN`. The smoke check reads `TLS_MODE` from the rendered `.env`.
@@ -236,7 +240,7 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
 | opencode server password | backend, opencode | `shared/secrets/opencode_password` (uid 1000, 0600); generated once on the target by role `app` (`force: false`), no vault entry; a change recreates the stack |
 | Ingest token, gog keyring password | backend + ingest; ingest | `shared/secrets/ingest_token`, `shared/secrets/gog_keyring_password` (uid 1000, 0600); generated once on the target by role `app` like the opencode password, no vault entry; a change recreates the stack |
 | Gmail OAuth client + refresh token | ingest | gog's file keyring in the `ingest-state` volume; put there by `just ingest-auth <target> <email>` from the Mac's Keychain, not by the playbook |
-| Instagram session | ingest | `ingest-state` volume; made in the app (Settings › Instagram), not by the playbook |
+| Instagram session | ingest | `ingest-state` volume; made in the app (Secrets & keys › Instagram), not by the playbook |
 | Ingest profile account and allowed senders (`hetzner`: secret references) | ingest | resolved into `shared/ingest.json` (0600); vault entries and their mapping in `roles/app/vars/main.yml` still to be added with the first profile |
 | `INGEST_EMAIL_DEPLOY_KEY` | CI, release workflow | GitHub repo secret (read-only deploy key on `tillg/ingest_email`); not on any host |
 | Tailscale auth key | `tailscale up` | not stored; single-use |
@@ -263,7 +267,7 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
   `token:default:<email>`, from `gog auth add <email>` once) into the target's `ingest` container (`gog auth credentials
   set`, `gog auth import --refresh-token-stdin`) and checks `gog auth list`. Nothing is printed or written to disk on the
   way. Checked against a dev stack with a throwaway account.
-- **Instagram:** Settings › Instagram in the app, by the user ([functional.md](functional.md#instagram-connection)).
+- **Instagram:** admin mode › Secrets & keys › Instagram in the app, by the user ([functional.md](functional.md#instagram-connection)).
 - **Profiles:** `ingest.profiles` in `deploy/settings/hetzner.yaml`, then a redeploy. Dev stacks, prodtest
   and the tests never get profiles; a real end-to-end mail test uses a separate test label (e.g. `MyLifeTest`), never a
   real one.
@@ -275,7 +279,7 @@ mail into the vaults' `Sources/` as before. The remaining steps, by the operator
 ```mermaid
 flowchart LR
   Z[Mac: run the old /ingest once<br/>per vault to drain Sources/] --> A
-  A[just ingest-auth hetzner email<br/>Settings › Instagram › Connect] --> B[Mac: launchctl bootout<br/>com.tillg.ingest-email.all,<br/>move the plist away]
+  A[just ingest-auth hetzner email<br/>Secrets & keys › Instagram › Connect] --> B[Mac: launchctl bootout<br/>com.tillg.ingest-email.all,<br/>move the plist away]
   B --> C[profiles in hetzner.yaml,<br/>their secrets in the vault,<br/>redeploy]
   C --> D[test mail → Input · 1<br/>on the phone ≤ 15 min, tap Ingest]
   D --> E[watch Instagram a week:<br/>failed_links reasons]
@@ -285,7 +289,7 @@ flowchart LR
    left stays in `Sources/` (nothing is migrated into `Input/`). Each vault needs its own `ingest` skill in
    `.agents/skills/ingest/` (reads `Input/`, uses `move_to_sources`) and a real `Schema/methodology.md` instead of the
    symlink into `llm_wiki` before it can ingest on the server.
-1. `just ingest-auth hetzner <email>`, then Settings › Instagram › Connect (the first real login from the server).
+1. `just ingest-auth hetzner <email>`, then Secrets & keys › Instagram › Connect (the first real login from the server).
 2. On the Mac: `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.tillg.ingest-email.all.plist` and move the
    plist away. Stopping it first avoids two pollers on one Gmail label.
 3. Add the profiles to `deploy/settings/hetzner.yaml` (account and allowed senders as secret references, their values in
@@ -334,6 +338,12 @@ flowchart LR
   `We are up again: $BODY`; the down URL stays empty.
 - **ntfy**: one random topic per target on ntfy.sh, no account; alerts carry system names and numbers,
   never note content. `just ntfy-topic <target>` copies it.
+- **In-app Server section** (admin mode › Server, #150): the app's own view of the machine, next to Beszel and not in place
+  of it. The backend samples CPU, memory, load, the disks of `/vaults` and `/config` and opencode's health every 30 s and
+  keeps 7 days in `metrics.jsonl` on the `config` volume, so the operator sees on the phone, without SSH or the tailnet,
+  whether the disk is filling up. It works the same on dev, prodtest and every target, needs no path from the compose
+  network into the tailnet and no Beszel hub credentials. It has no thresholds and sends nothing: **alerts stay with Beszel,
+  Gatus and healthchecks.io** (ntfy). The history is as long as the `config` volume lives; it isn't backed up separately.
 - RAM: about 20 MB for hub and agent. The Beszel agent has the Docker socket, which makes it
   root-equivalent on the host (accepted: official image, connects only to the hub).
 
@@ -366,11 +376,18 @@ flowchart LR
 ```
 
 - **Source:** `site/` (plain HTML + CSS, its own npm workspace `@karpathy/site`). `site/build.sh` assembles
-  `_site/` (gitignored) from the page files and `assets/icons/`. Preview: `just site` (http://localhost:8099).
+  `_site/` (gitignored) from the page files, `site/screenshots/` and `assets/icons/`. Preview: `just site`
+  (http://localhost:8099).
 - **Check:** `site/site.test.mjs` (node:test, part of `npm test`, so `ci.yml` covers it) builds `_site/` and
   checks the title, lang, viewport and repo link, that every local `href`/`src` resolves, that no path is
-  root-absolute, the self-hosting section with the hosting contact, and that the `:root` token blocks in
+  root-absolute, the self-hosting section with the hosting contact, the origin section (post and gist links,
+  dates) and the hero's link to it, the three screenshots (exactly `mac`, `ipad`, `iphone.webp`; `alt`, lazy,
+  `width`/`height` equal to the WebP's real size, ≤ 400 KB each), and that the `:root` token blocks in
   `site/style.css` equal the app's in `apps/web/src/styles.css` (light and dark).
+- **Screenshots:** `node site/capture.mjs [--ask "<question>"]` against this checkout's `just prodtest` with the
+  demo vault (a bare clone at `tmp/dev/remotes/tillg/karpathy_demo_wiki.git`, vault id `demo-wiki`): WebKit, one
+  context per device class, `cwebp -noalpha -q 82`. `--ask` writes a chat to the prodtest vault; the local model's
+  answers vary, so every shot is viewed before it is committed.
 - **Website deploy:** `.github/workflows/pages.yml` on pushes to `main` that touch the site, the icons or the app's
   stylesheet, and on manual dispatch. Release tags don't deploy it.
 - **Pages settings:** source "GitHub Actions" (`build_type=workflow`), custom domain `karpathy.app` set in the
@@ -389,6 +406,7 @@ flowchart LR
 | `compose.yml` as a release asset | Images and stack definition always come from the same release, even with a dirty checkout; no git or source on the host. |
 | Native arm64 runners, not QEMU | Free for public repos, fast. |
 | Monitoring: Beszel + Gatus + healthchecks.io, its own compose project | The lowest RAM covering every alert; an app deploy never restarts the monitoring. |
+| The in-app Server section samples on its own, alerts stay out of the app | Works on every target and in dev without a tailnet path or hub credentials; one place for alerting. |
 | Secrets in Ansible Vault, password in the Keychain | No extra tool per deploy; one password per target. |
 | ntfy.sh with a random topic | Free; a self-hosted ntfy would die with the server it reports on. |
 | DNS at GoDaddy | Same place as the operator's other domains; the key can't be limited to one zone. |

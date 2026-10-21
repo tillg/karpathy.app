@@ -39,7 +39,7 @@ vaults.beforeRemove = (id) => chat.deleteAllChats(id);
 void chat.init().catch((e) => console.warn('chat init:', (e as Error).message));
 const usage = new UsageService({
   vaults: () => vaults.list().map((v) => ({ id: v.id, name: v.name, dir: chat.dir(v.id) })),
-  sessions: (dir) => harness.listSessions(dir),
+  sessions: (dir) => harness.usageSessions(dir),
   usage: (dir, id) => harness.sessionUsage(dir, id),
 }, Date.now);
 const metrics = new MetricsSampler({ dir: env.configDir, vaultsDir: env.vaultsDir, configDir: env.configDir, opencodeUp: () => harness.health() });

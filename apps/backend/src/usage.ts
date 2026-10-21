@@ -1,4 +1,4 @@
-import type { UsageReport, UsageSums } from '@karpathy/shared';
+import type { UsageDays, UsageReport, UsageSums } from '@karpathy/shared';
 import type { UsageRow } from './harness/map.js';
 
 /** Where the usage comes from: the harness's chats per vault directory. */
@@ -32,12 +32,15 @@ export class UsageService {
 
   constructor(private source: UsageSource, private now: () => number) {}
 
-  async report(days: number): Promise<UsageReport> {
+  async report(days: UsageDays): Promise<UsageReport> {
     const today = new Date(this.now());
     const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (days - 1)).getTime();
     const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).getTime();
 
-    const perVault = await Promise.all(this.source.vaults().map(async (v) => ({ v, rows: await this.vaultRows(v.dir) })));
+    const perVault = await Promise.all(this.source.vaults().map(async (v) => ({ v, rows: await this.vaultRows(v.dir).catch((e) => {
+      console.warn(`usage: vault ${v.id} left out:`, (e as Error).message);
+      return [];
+    }) })));
 
     const byDay = new Map<string, UsageSums>();
     for (let i = 0; i < days; i++) byDay.set(dateOf(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (days - 1) + i)), zero());
@@ -76,18 +79,22 @@ export class UsageService {
     const sessions = await this.source.sessions(dir);
     const key = (id: string) => `${dir}\0${id}`;
     const todo = sessions.filter((s) => this.cache.get(key(s.id))?.updated !== s.updatedAt);
+    const fresh = new Map<string, UsageRow[]>();
     let next = 0;
     const worker = async () => {
       while (next < todo.length) {
         const s = todo[next++]!;
         try {
-          this.cache.set(key(s.id), { updated: s.updatedAt, rows: await this.source.usage(dir, s.id) });
+          const rows = await this.source.usage(dir, s.id);
+          // A turn still running: its message updates don't move the session's updated time, so read it again next time.
+          if (rows.at(-1)?.completed === false) fresh.set(key(s.id), rows);
+          else this.cache.set(key(s.id), { updated: s.updatedAt, rows });
         } catch { /* left out of this report; tried again on the next */ }
       }
     };
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
     const ids = new Set(sessions.map((s) => key(s.id)));
     for (const k of this.cache.keys()) if (k.startsWith(`${dir}\0`) && !ids.has(k)) this.cache.delete(k);
-    return sessions.map((s) => this.cache.get(key(s.id))?.rows ?? []);
+    return sessions.map((s) => fresh.get(key(s.id)) ?? this.cache.get(key(s.id))?.rows ?? []);
   }
 }

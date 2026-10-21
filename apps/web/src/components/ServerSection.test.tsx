@@ -71,6 +71,51 @@ describe('Admin › Server', () => {
     expect(n()).toBe(base + 3);
   });
 
+  it('skips polls while the page is hidden and refetches when it shows again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = fakeApi({ routes: { 'GET /api/metrics': report() } });
+    const n = () => api.calls.filter((c) => c.call === 'GET /api/metrics').length;
+    renderApp(<ServerSection />);
+    await screen.findByRole('img', { name: 'CPU' });
+    const base = n();
+    const hidden = (v: boolean) => Object.defineProperty(document, 'hidden', { configurable: true, get: () => v });
+    try {
+      hidden(true);
+      await act(() => vi.advanceTimersByTimeAsync(90_000));
+      expect(n()).toBe(base);
+      hidden(false);
+      await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+      await waitFor(() => expect(n()).toBe(base + 1));
+    } finally { delete (document as { hidden?: boolean }).hidden; }
+  });
+
+  it('polls and words its texts by the report\'s intervalS', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const api = fakeApi({ routes: { 'GET /api/metrics': { ...report(), intervalS: 10 } } });
+    const n = () => api.calls.filter((c) => c.call === 'GET /api/metrics').length;
+    renderApp(<ServerSection />);
+    await screen.findByRole('img', { name: 'CPU' });
+    expect(screen.getByText(/sampled every 10 s/)).toBeTruthy();
+    const base = n();
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(n()).toBe(base + 1);
+  });
+
+  it('the empty state names the report\'s interval', async () => {
+    fakeApi({ routes: { 'GET /api/metrics': { samples: [], latest: null, uptimeS: 0, intervalS: 15 } } });
+    renderApp(<ServerSection />);
+    expect(await screen.findByText(/the first sample comes within 15 s\./)).toBeTruthy();
+  });
+
+  it('"updated N s ago" ticks every second', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    fakeApi({ routes: { 'GET /api/metrics': report() } });
+    renderApp(<ServerSection />);
+    await screen.findByRole('img', { name: 'CPU' });
+    await act(() => vi.advanceTimersByTimeAsync(5_000));
+    expect(screen.getByText(/updated [3-9] s ago/)).toBeTruthy();
+  });
+
   it('opencode down shows a warning', async () => {
     fakeApi({ routes: { 'GET /api/metrics': report({ opencodeUp: false }) } });
     renderApp(<ServerSection />);

@@ -1,9 +1,7 @@
 import { appendFile, mkdir, readFile, rename, statfs, writeFile } from 'node:fs/promises';
 import { cpus, freemem, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
-import type { MetricsReport, MetricsSample } from '@karpathy/shared';
-
-export type MetricsRange = '1h' | '24h' | '7d';
+import type { MetricsRange, MetricsReport, MetricsSample } from '@karpathy/shared';
 
 const HOUR = 3_600_000;
 const KEEP_MS = 7 * 24 * HOUR;
@@ -83,11 +81,13 @@ export class MetricsSampler {
 
   /** Loads the stored history (dropping old and torn lines), then samples every interval. */
   async start(): Promise<void> {
+    this.prevCpu = this.readers.cpus();
     let raw = '';
     try {
       raw = await readFile(this.file, 'utf8');
     } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+      // Monitoring must not keep the backend from booting: an unreadable history starts empty.
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') console.warn('metrics: history unreadable, starting empty:', (e as Error).message);
     }
     const lines = raw.split('\n').filter(Boolean);
     this.samples = [];
@@ -102,6 +102,7 @@ export class MetricsSampler {
     this.samples = this.samples.filter((s) => s.at >= cutoff);
     // Rewrite when something was dropped, so the next append doesn't continue a torn line.
     if (this.samples.length !== lines.length || (raw && !raw.endsWith('\n'))) await this.compact();
+    await this.sample().catch((e) => console.warn('metrics: first sample failed:', (e as Error).message));
     this.stop();
     this.timer = setInterval(() => void this.sample().catch(() => undefined), this.intervalMs);
     this.timer.unref();
@@ -146,7 +147,7 @@ export class MetricsSampler {
     } else {
       await this.enqueue(async () => {
         await mkdir(this.opts.dir, { recursive: true });
-        await appendFile(this.file, `${JSON.stringify(s)}\n`);
+        await appendFile(this.file, `${JSON.stringify(s)}\n`, { mode: 0o600 });
       });
     }
   }
@@ -160,7 +161,7 @@ export class MetricsSampler {
       const width = span / MAX_POINTS;
       const buckets = new Map<number, MetricsSample[]>();
       for (const s of inRange) {
-        const i = Math.floor((s.at - (to - span)) / width);
+        const i = Math.min(MAX_POINTS - 1, Math.floor((s.at - (to - span)) / width));
         (buckets.get(i) ?? buckets.set(i, []).get(i)!).push(s);
       }
       const avg = (b: MetricsSample[], k: 'cpu' | 'memUsed' | 'load1') => b.reduce((a, s) => a + s[k], 0) / b.length;
@@ -187,7 +188,7 @@ export class MetricsSampler {
     return this.enqueue(async () => {
       await mkdir(this.opts.dir, { recursive: true });
       const tmp = `${this.file}.tmp`;
-      await writeFile(tmp, body);
+      await writeFile(tmp, body, { mode: 0o600 });
       await rename(tmp, this.file);
     });
   }

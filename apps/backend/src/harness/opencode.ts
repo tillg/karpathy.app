@@ -1,7 +1,7 @@
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2/client';
 import type { ChatMessage, ChatSummary, ModelInput } from '@karpathy/shared';
 import { lastEntries, ModelLimits, type LastEntryCache } from './context-cache.js';
-import { mapEvent, mapMessages, mapModels, usageRows, withLimit, writtenPaths, type HarnessEvent, type UsageRow } from './map.js';
+import { mapEvent, mapMessages, mapModels, usageRows, usageSessions, withLimit, writtenPaths, type HarnessEvent, type UsageRow } from './map.js';
 
 export type AgentName = 'vault' | 'vault-readonly' | 'commit-message';
 
@@ -52,6 +52,8 @@ export interface Harness {
   createSession(dir: string, title?: string): Promise<string>;
   sessionExists(dir: string, id: string): Promise<boolean>;
   messages(dir: string, id: string): Promise<ChatMessage[]>;
+  /** Every session of a directory, children included (the usage report counts their tokens too). */
+  usageSessions(dir: string): Promise<{ id: string; updatedAt: number }[]>;
   /** Token use and cost per assistant message of a session. */
   sessionUsage(dir: string, id: string): Promise<UsageRow[]>;
   deleteSession(dir: string, id: string): Promise<void>;
@@ -118,6 +120,11 @@ export class OpencodeHarness implements Harness {
       await this.modelLimits.know(msgs.map((m) => m.model));
       return msgs.map((m) => withLimit(m, this.modelLimits.limits));
     });
+  }
+
+  async usageSessions(dir: string) {
+    // No `roots` and no `limit`: sub-agent sessions count, and the server returns all when no limit is given.
+    return usageSessions(unwrap(await this.c.session.list({ directory: dir }), 'session.list'), dir);
   }
 
   async createSession(dir: string, title?: string) {

@@ -372,6 +372,13 @@ styled with the app's design tokens (copied from `apps/web/src/styles.css`; `npm
 drift) and the icons from `assets/icons/`. Preview it with `just site` (http://localhost:8099). Every push
 to `main` that touches the site deploys it to GitHub Pages ([`pages.yml`](.github/workflows/pages.yml)).
 
+The page also shows where the idea comes from (Karpathy's "LLM Knowledge Bases" post and his "LLM Wiki" gist)
+and screenshots of the app on a Mac, an iPad and an iPhone (`site/screenshots/*.webp`, light mode, ≤ 400 KB
+each). To retake them after a UI change: `just dev up && just prodtest`, add the demo vault (a bare clone of
+`karpathy_demo_wiki` at `tmp/dev/remotes/tillg/karpathy_demo_wiki.git`, repo `tillg/karpathy_demo_wiki`), then
+`node site/capture.mjs --ask "<question>"` (WebKit, needs `cwebp`). Without `--ask` the shots show the vault's
+newest chat; check every shot before committing — the local model's answers vary.
+
 ## Name
 
 `karpathy.app` — renamed from the working title `karpathy.ai` (#95). Domain: `karpathy.app` (#94).
