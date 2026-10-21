@@ -81,11 +81,12 @@ flowchart LR
 - **Note graph** (`GraphPane`, #130): a layer inside `#detail` (absolute, over the note), shown while the store's
   `graphOpen` is set (sidebar graph button; `openNote` clears it). The note underneath stays mounted and `inert`, so
   drafts, cursor and scroll survive. It fetches `GET /vaults/:id/graph` on the first open per vault and keeps the
-  result in a module-level `Map` for the session (Refresh drops it); the `3d-force-graph` instance is built once per
+  result in a module-level `Map` for the session (Refresh drops it; an open `.md` note missing from it fetches it again,
+once per note, so a note made since gets its local graph); the `3d-force-graph` instance is built once per
   data and only paused while hidden, so reopening is instant. three.js is imported dynamically so the main bundle
   stays without it; the chunk (~1.4 MB) stays under Workbox's 2 MiB precache limit. Offline, a first open shows the
-  fetch error. `lib/graph.ts` decides what is shown (`shownGraph`: the `Wiki` folder, any case, unless "Show all" or
-  the vault has none) and the colours (`typeColors`: the node's frontmatter `type`, read by the backend; `entity` =
+  fetch error. `lib/graph.ts` decides what is shown (`shownGraph`: the `Wiki` folder, any case, unless the bar's
+  Local | Wiki | All is on All or the vault has none) and the colours (`typeColors`: the node's frontmatter `type`, read by the backend; `entity` =
   `--tint`, untyped = `--label3`, other types `--graph-1…6` by name; `withoutTypes` drops the types unchecked in the
   legend, kept in localStorage `karpathy.graphHiddenTypes`). The same node objects feed both views, so
   toggling keeps the layout. A CSS-only "breathing graph" shows until the first engine tick. Node labels are DOM
@@ -93,7 +94,9 @@ flowchart LR
   **Local graph** (#92): the store's `graphScope` (`local` | `wiki` | `all`, session only) picks the view; the
   outline's "Local graph" sets `local` and opens the pane. `localGraph` (`lib/graph.ts`) takes the notes within the
   depth (1 or 2, localStorage `karpathy.graphDepth`) of the open note over the same `/graph` data, following links both
-  ways, and every link between them; `withoutTypes` keeps the centre. On the same `3d-force-graph` instance the local
+  ways, and every link between them; `localView` drops the hidden types first (`withoutTypes`, which keeps the
+  centre) and then takes the neighbourhood, so a hidden note bridges nothing in. Only the local view depends on the open
+  note: in Wiki / All a note switch only repaints. On the same `3d-force-graph` instance the local
   view switches to `numDimensions(2)` on its own node objects (so the vault's 3D layout is untouched; going back sets
   3 before handing the vault's nodes back), stronger charge and faster alpha decay, one-finger/left-button pan, and
   `nodeThreeObject` name sprites (canvas text, cached per note, disposed with the graph). The camera fits the notes
@@ -245,7 +248,7 @@ flowchart TB
 | `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure (its dirty check and stash leave `<root>/Input` out), commit, push, conflict sides and resolution; hardened `runGit`. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
 | `search.ts` | The vault search (#138): `SearchIndex` per vault root, text analysis (`fold`, `detectLanguage`, `wordTerms`), ranking and hit lines ([Vault search](#vault-search)). |
 | `files.ts`, `paths.ts` | Tree listing, versions (content hash), `filesMentioning` (ripgrep, for the move's link scan), the note graph (`graph`: notes + links via the shared `noteLinks`, for `GET /vaults/:id/graph`); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
-| `bases.ts` | Bases query tables (#91): `parseBase` (YAML via `yaml`, core schema; v1 subset, `BaseError` `base-invalid` / `base-unsupported` → 422), a Pratt parser and evaluator for filter expressions (unsupported names refused before any file is read), and the file index: per vault root, every file's size, times, frontmatter and tags, re-read only when size or mtime changed (stat per query, no watcher coupling). `queryBase` filters, sorts (empty last, path as tie-break), caps at `limit` / 500 rows and serializes cells (`BaseCell`: dates as `YYYY-MM-DD[ HH:mm]`, `file.name` / `basename` / `path` as links). `POST /vaults/:id/base` `{ source }`. |
+| `bases.ts` | Bases query tables (#91): `parseBase` (YAML via `yaml`, core schema; v1 subset, `BaseError` `base-invalid` / `base-unsupported` → 422), a Pratt parser and evaluator for filter expressions (unsupported names refused before any file is read), and the file index: per vault root, every file's size, times, frontmatter, tags and link references as written (`linkRefs`; not the full text), re-read only when size or mtime changed (stat per query, no watcher coupling); links are resolved per query with the shared basename index of `resolveWikilink` (one bucket per link, not a scan of every path). `forgetBaseIndex(root)` drops a root's index when the vault is removed or its root, branch or repo changes (and when a watcher starts). `queryBase` filters, sorts (empty last, path as tie-break), caps at `limit` / 500 rows and serializes cells (`BaseCell`: dates as `YYYY-MM-DD[ HH:mm]`, `file.name` / `basename` / `path` as links). `POST /vaults/:id/base` `{ source }`. |
 | `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`, and `fetch` and `refresh` through `tryShared`, which never queues; exclusive: every other git operation). `fetch` and `refresh` are quiet: they don't change `busy`. `holds(label)` tells whether a shared holder with that label exists. |
 | `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events; every raw event also goes undebounced to the search index (`onEvent`). |
 | `chat.ts` | Chats and turns: per-vault queue (one running turn; up to 10 prompts of a chat wait, each with an id, #155), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. Also the command list (`commands()`, name-clash rule, skill stamp and refresh) and command turns (`instructionsFor`) ([Commands](#commands)). |

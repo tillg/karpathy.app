@@ -124,6 +124,25 @@ describe('queryBase limits', () => {
     expect(await err('filters:\n  xor: []\n')).toMatchObject({ code: 'base-invalid' });
   });
 
+  it('deeply nested expressions are refused as invalid, not a crash', async () => {
+    for (const src of ['('.repeat(20000) + '1' + ')'.repeat(20000), '!'.repeat(50000) + '1', Array(50000).fill('1').join(' + ') + ' == 1', '['.repeat(20000)]) {
+      expect(await err(`filters: ${JSON.stringify(src)}\n`)).toMatchObject({ code: 'base-invalid', message: expect.stringMatching(/nested too deeply|Unexpected end/) });
+    }
+    expect(await err(`filters: ${JSON.stringify('('.repeat(300) + '1' + ')'.repeat(300))}\n`)).toMatchObject({ code: 'base-invalid', message: expect.stringMatching(/nested too deeply/) });
+    expect(await err(`filters: ${'{and: ['.repeat(300)}true${']}'.repeat(300)}\n`)).toMatchObject({ code: 'base-invalid', message: expect.stringMatching(/nested too deeply/) });
+    // Ordinary nesting still works.
+    expect(await paths(`filters: ${JSON.stringify('('.repeat(50) + 'stars > 10' + ')'.repeat(50))}\n`)).toEqual(['wiki/entities/micrograd.md']);
+  });
+
+  it('property lookups only see a note\'s own keys, never inherited object members', async () => {
+    expect(await paths('filters: constructor\n')).toEqual([]);
+    expect(await paths('filters: note.toString\n')).toEqual([]);
+    expect(await paths('filters: \'note["hasOwnProperty"]\'\n')).toEqual([]);
+    expect(await paths('filters: file.properties.constructor\n')).toEqual([]);
+    const r = await q('filters: file.inFolder("wiki/sources")\nviews:\n  - type: table\n    order: [__proto__, constructor]\n');
+    expect(r.rows.map((x) => x.cells)).toEqual([[null, null], [null, null]]);
+  });
+
   it('display-only keys it does not apply are named in a notice', async () => {
     const r = await q('views:\n  - type: table\n    groupBy:\n      property: confidence\n      direction: ASC\n  - type: table\n    name: Other\n');
     expect(r.notices.join(' ')).toMatch(/groupBy/);

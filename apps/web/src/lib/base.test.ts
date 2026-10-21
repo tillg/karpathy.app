@@ -86,6 +86,52 @@ describe('mountBase', () => {
     await flush();
     expect(spy).toHaveBeenCalledTimes(1);
   });
+
+  it('a change during a running query runs it again (not the stale request) and shows the newer result', async () => {
+    vi.useFakeTimers();
+    const resolvers: ((r: BaseResult) => void)[] = [];
+    const spy = vi.spyOn(api, 'base').mockImplementation(() => new Promise<BaseResult>((res) => resolvers.push(res)));
+    const host = document.createElement('div');
+    mountBase(host, 'q', ctx());
+    expect(spy).toHaveBeenCalledTimes(1);
+    // An AI edit lands while the first query is still running.
+    baseChanged('v1');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(spy).toHaveBeenCalledTimes(2);
+    resolvers[1]!({ ...result, rows: result.rows.slice(0, 1), total: 1 });
+    await vi.advanceTimersByTimeAsync(0);
+    // The older answer arrives last: it neither replaces the table nor the cache.
+    resolvers[0]!(result);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(host.querySelectorAll('tbody tr')).toHaveLength(1);
+    const again = document.createElement('div');
+    mountBase(again, 'q', ctx());
+    expect(again.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  it('a transient failure (5xx, network) is not cached: the next mount asks again', async () => {
+    const spy = vi.spyOn(api, 'base').mockRejectedValueOnce(new ApiError(502, 'Bad gateway')).mockResolvedValue(result);
+    const first = document.createElement('div');
+    mountBase(first, 'q', ctx())();
+    await flush();
+    const host = document.createElement('div');
+    mountBase(host, 'q', ctx());
+    await flush();
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(host.querySelectorAll('tbody tr')).toHaveLength(2);
+  });
+
+  it('a base error (invalid / unsupported) is kept like a result: a remount does not ask again', async () => {
+    const spy = vi.spyOn(api, 'base').mockRejectedValue(new ApiError(422, 'Expected `)`', 'base-invalid'));
+    mountBase(document.createElement('div'), 'q', ctx())();
+    await flush();
+    const host = document.createElement('div');
+    mountBase(host, 'q', ctx());
+    expect(host.querySelector('[data-testid="base-error"]')!.textContent).toMatch(/Invalid base/);
+    await flush();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('Read mode', () => {

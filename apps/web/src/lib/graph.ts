@@ -47,3 +47,9 @@ export function localGraph(data: GraphData, center: string, depth: number): Grap
   }
   return { nodes: data.nodes.filter((n) => seen.has(n.path)), links: data.links.filter((l) => seen.has(l.source) && seen.has(l.target)) };
 }
+
+/** The local graph as drawn: notes of the `hidden` types are left out first (the centre stays), then the
+ *  neighbourhood is taken, so a hidden note never links its own neighbours in as islands. */
+export function localView(data: GraphData, center: string, depth: number, hidden: ReadonlySet<string>): GraphData {
+  return localGraph(withoutTypes(data, hidden, center), center, depth);
+}

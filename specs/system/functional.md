@@ -440,20 +440,24 @@ snippets, the matched words marked; capped at 200 hits ("refine your search"); o
 
 The graph button (sidebar header) shows a 3D graph of the vault's notes in the note pane, in place of the note
 (#130): one dot per `.md` file, a line per link between two notes (wikilinks, embeds and relative Markdown links,
-resolved like in the editor; links in code don't count). By default only the notes in the `Wiki` folder are shown;
-"Show all" adds the rest (no toggle when the vault has no `Wiki` folder). A dot grows with its number of links; its
+resolved like in the editor; links in code don't count). The bar switches **Local | Wiki | All**: Wiki (the default)
+shows only the notes in the `Wiki` folder, All adds the rest (no Wiki choice when the vault has no `Wiki` folder),
+Local the open note's neighbourhood (below). A dot grows with its number of links; its
 colour is its frontmatter `type` (`entity` blue, one colour per other type, grey without a type); the legend below the graph
 has a checkbox per type to hide or show its notes, remembered in this browser. The open note is orange. Drag rotates, pinch or scroll zooms, hovering shows the note's name, a click opens
 the note. Close (✕ or Escape) returns to the note as it was; on the phone, Back returns to the tab the graph was opened
 from. While the graph loads, a breathing
 graph animation shows. The graph is read on its first open per vault and kept for the session, so reopening is
-instant; Refresh reads it again (no live updates). three.js loads on first open only.
+instant; Refresh reads it again (no live updates), and opening a note that isn't in it yet (made by the AI, a pull or
+another device since) reads it again once, so the note gets its local graph. In the Wiki and All views switching notes
+keeps the layout (only the orange dot moves). three.js loads on first open only.
 
 **Local graph** (#92): "Local graph" at the foot of the note's outline (panel or phone sheet) opens the graph on the
 open note's neighbourhood: the note (orange) and the notes within 1 or 2 links of it, following its links and its
 backlinks (Depth 1 | 2 below the graph, remembered in this browser), with every link between them. It lies flat, with
 each note's name under its dot; drag moves, pinch or scroll zooms, and the view fits the notes. Same colours and
-legend as the vault graph (a hidden type never hides the open note itself). The bar switches Local | Wiki | All; the
+legend as the vault graph (a hidden type never hides the open note itself; its notes are left out before the
+neighbourhood is taken, so they don't link their own neighbours in). The bar switches Local | Wiki | All; the
 choice is kept for the session, so the graph button reopens the local graph of whatever note is open then. Local is
 offered only while a note is open; links to notes that don't exist are left out (as in the vault graph).
 
@@ -468,7 +472,8 @@ syntax, so the same note shows the same table in Obsidian. The block's text is n
   footer the row count ("2 rows", "10 of 37 rows") and what was left out. A wide table scrolls sideways inside its box,
   never the page.
 - **Live:** the table runs again when vault files change (the AI, a pull, another device, a save), 300 ms after the
-  last change.
+  last change. A change while a query is running starts a new one; a late answer to the older query never replaces a
+  newer table. A failed run (server or network error) is shown but not kept: the next mount or change asks again.
 - **v1 syntax** (a subset of [Bases syntax](https://obsidian.md/help/bases/syntax)): `filters` (top level and in the
   view, joined with AND) as a text or `and` / `or` / `not` lists; expressions with `==` `!=` `>` `<` `>=` `<=` `&&`
   `||` `!` `+` `-` `*` `/` `%` and parentheses; frontmatter properties (`status`, `note.status`, `note["my prop"]`);
@@ -482,7 +487,8 @@ syntax, so the same note shows the same table in Obsidian. The block's text is n
 - **Not in v1:** `formulas` / `formula.*`, `this`, other view types (cards, list, map, …), regular expressions and
   other functions. Such a block shows "… not supported in v1" in its box; invalid YAML or an expression that can't be
   read shows "Invalid base: …". `groupBy` and `summaries` are left out with a note in the footer; further views too
-  (only the first is shown).
+  (only the first is shown). An expression or filter tree nested more than 256 levels deep is invalid too.
+  Only a note's own properties count: `constructor` or `__proto__` are plain (usually missing) properties.
 - At most 500 rows are shown. All vault files count (attachments too, as in Obsidian; dot folders don't); only
   Markdown notes have properties and tags.
 - **`.base` files** open like HTML pages: Read shows the table, Write the YAML (page mode). `![[x.base]]` embeds are not

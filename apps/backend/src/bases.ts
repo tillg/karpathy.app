@@ -4,7 +4,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { linkedFiles, resolveWikilink, type BaseCell, type BaseResult } from '@karpathy/shared';
+import { linkRefs, resolveLinkRefs, resolveWikilink, type BaseCell, type BaseResult, type LinkRef } from '@karpathy/shared';
 import { listTree } from './files.js';
 
 export class BaseError extends Error {
@@ -29,12 +29,20 @@ interface FileRec {
   props: Record<string, unknown>;
   /** Frontmatter and inline tags, without `#`. */
   tags: string[];
-  /** The note's text (Markdown only), for `file.links` / `file.hasLink`. */
-  text: string;
+  /** The note's links as written (Markdown only), for `file.links` / `file.hasLink`; resolved per query. */
+  refs: LinkRef[];
 }
 
 /** Per vault root: each file's record, re-read only when its size or mtime changed. */
 const indexes = new Map<string, Map<string, { key: string; rec: FileRec }>>();
+
+/** Drops the cached index of a vault root (vault removed, root changed). The next query rebuilds it. */
+export function forgetBaseIndex(root: string): void {
+  indexes.delete(root);
+}
+
+/** Vault roots with a cached index (for tests). */
+export const baseIndexRoots = (): string[] => [...indexes.keys()];
 
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
@@ -72,7 +80,7 @@ async function readRec(abs: string, path: string): Promise<{ key: string; rec: F
   let text = '';
   if (/\.md$/i.test(path)) text = await readFile(abs, 'utf8').catch(() => '');
   const { props, body } = frontmatterOf(text);
-  return { key, rec: { path, size: st.size, mtime: st.mtime, ctime: st.birthtimeMs > 0 ? st.birthtime : st.ctime, props, tags: text ? tagsOf(props, body) : [], text } };
+  return { key, rec: { path, size: st.size, mtime: st.mtime, ctime: st.birthtimeMs > 0 ? st.birthtime : st.ctime, props, tags: text ? tagsOf(props, body) : [], refs: text ? linkRefs(text) : [] } };
 }
 
 /** Every vault file (dot folders hidden, as in the file tree) with its frontmatter; unchanged files come from the cache. */
@@ -147,12 +155,17 @@ function lex(src: string): Tok[] {
   return out;
 }
 
+/** How deep an expression (or a filter tree) may nest; deeper is refused instead of overflowing the stack. */
+export const MAX_DEPTH = 256;
+const tooDeep = () => invalid(`Expression nested too deeply (more than ${MAX_DEPTH} levels)`);
+
 const PREC: Record<string, number> = { '||': 1, '&&': 2, '==': 3, '!=': 3, '>': 4, '<': 4, '>=': 4, '<=': 4, '+': 5, '-': 5, '*': 6, '/': 6, '%': 6 };
 
 /** Parses one Bases expression (Pratt parser). */
 export function parseExpr(src: string): Node {
   const toks = lex(src);
   let p = 0;
+  let depth = 0;
   const peek = () => toks[p];
   const isOp = (v: string) => peek()?.t === 'op' && peek()!.v === v;
   const expect = (v: string) => {
@@ -170,6 +183,14 @@ export function parseExpr(src: string): Node {
     }
   };
   const primary = (): Node => {
+    if (++depth > MAX_DEPTH) throw tooDeep();
+    try {
+      return primaryAt();
+    } finally {
+      depth--;
+    }
+  };
+  const primaryAt = (): Node => {
     const t = toks[p++];
     if (!t) throw invalid(`Unexpected end of \`${src}\``);
     if (t.t === 'num' || t.t === 'str') return { k: 'lit', v: t.v };
@@ -217,8 +238,10 @@ const FILE_FIELDS = new Set(['name', 'basename', 'path', 'folder', 'ext', 'size'
 const FILE_FNS = new Set(['inFolder', 'hasTag', 'hasProperty', 'hasLink']);
 const METHODS = new Set(['contains', 'containsAll', 'containsAny', 'startsWith', 'endsWith', 'isEmpty', 'lower', 'upper', 'trim', 'toString', 'isTruthy', 'date']);
 
-/** Refuses what v1 can't evaluate, before any file is looked at. */
-function check(n: Node): void {
+/** Refuses what v1 can't evaluate (or nests too deeply to evaluate), before any file is looked at. */
+function check(n: Node, depth = 0): void {
+  if (depth > MAX_DEPTH) throw tooDeep();
+  const sub = (x: Node) => check(x, depth + 1);
   switch (n.k) {
     case 'lit': return;
     case 'id':
@@ -227,20 +250,20 @@ function check(n: Node): void {
       return;
     case 'member':
       if (n.obj.k === 'id' && n.obj.name === 'file' && !FILE_FIELDS.has(n.name) && !FILE_FNS.has(n.name)) throw unsupported(`\`file.${n.name}\` is`);
-      return check(n.obj);
-    case 'index': check(n.obj); return check(n.idx);
-    case 'list': return n.items.forEach(check);
-    case 'unary': return check(n.a);
-    case 'bin': check(n.a); return check(n.b);
+      return sub(n.obj);
+    case 'index': sub(n.obj); return sub(n.idx);
+    case 'list': return n.items.forEach(sub);
+    case 'unary': return sub(n.a);
+    case 'bin': sub(n.a); return sub(n.b);
     case 'call': {
       const c = n.callee;
       if (c.k === 'id') { if (!GLOBALS.has(c.name)) throw unsupported(`The function \`${c.name}()\` is`); }
       else if (c.k === 'member') {
         const onFile = c.obj.k === 'id' && c.obj.name === 'file';
         if (onFile ? !FILE_FNS.has(c.name) : !METHODS.has(c.name)) throw unsupported(`\`${onFile ? 'file.' : '.'}${c.name}()\` is`);
-        check(c.obj);
+        sub(c.obj);
       } else throw invalid('Only functions can be called');
-      return n.args.forEach(check);
+      return n.args.forEach(sub);
     }
   }
 }
@@ -291,6 +314,9 @@ function shift(date: Date, dur: string, sign: 1 | -1): Date | null {
   else d.setTime(d.getTime() + n * { w: 604_800_000, d: 86_400_000, h: 3_600_000, m: 60_000, s: 1000 }[unit as 'w']!);
   return d;
 }
+
+/** A key's own value (null when missing): never an inherited member like `constructor` or `__proto__`. */
+const own = (o: object, key: string): unknown => (Object.hasOwn(o, key) ? (o as Record<string, unknown>)[key] ?? null : null);
 
 const truthy = (v: unknown): boolean => (Array.isArray(v) ? v.length > 0 : v instanceof Date ? true : !!v);
 
@@ -389,25 +415,25 @@ function evaluate(n: Node, ctx: Ctx): unknown {
     case 'id':
       if (n.name === 'file') return new FileVal(ctx.rec);
       if (n.name === 'note') return new NoteVal(ctx.rec.props);
-      return ctx.rec.props[n.name] ?? null;
+      return own(ctx.rec.props, n.name);
     case 'member': {
       const o = evaluate(n.obj, ctx);
       if (o instanceof FileVal) return fileField(o.rec, n.name, ctx);
-      if (o instanceof NoteVal) return o.props[n.name] ?? null;
+      if (o instanceof NoteVal) return own(o.props, n.name);
       if (n.name === 'length' && (typeof o === 'string' || Array.isArray(o))) return o.length;
       if (o instanceof Date) {
         const f = { year: o.getUTCFullYear(), month: o.getUTCMonth() + 1, day: o.getUTCDate(), hour: o.getUTCHours(), minute: o.getUTCMinutes() } as Record<string, number>;
         return f[n.name] ?? null;
       }
-      if (o && typeof o === 'object' && !Array.isArray(o)) return (o as Record<string, unknown>)[n.name] ?? null;
+      if (o && typeof o === 'object' && !Array.isArray(o)) return own(o, n.name);
       return null;
     }
     case 'index': {
       const o = evaluate(n.obj, ctx);
       const i = evaluate(n.idx, ctx);
-      if (o instanceof NoteVal) return o.props[text(i)] ?? null;
+      if (o instanceof NoteVal) return own(o.props, text(i));
       if (Array.isArray(o) && typeof i === 'number') return o[i] ?? null;
-      if (o && typeof o === 'object' && !(o instanceof Date)) return (o as Record<string, unknown>)[text(i)] ?? null;
+      if (o && typeof o === 'object' && !(o instanceof Date)) return own(o, text(i));
       return null;
     }
     case 'call': {
@@ -472,7 +498,8 @@ function evaluate(n: Node, ctx: Ctx): unknown {
 
 type Filter = { and: Filter[] } | { or: Filter[] } | { not: Filter[] } | { expr: Node };
 
-function compileFilter(f: unknown): Filter {
+function compileFilter(f: unknown, depth = 0): Filter {
+  if (depth > MAX_DEPTH) throw invalid(`Filters nested too deeply (more than ${MAX_DEPTH} levels)`);
   if (typeof f === 'string') return { expr: parseExpr(f) };
   if (typeof f === 'boolean') return { expr: { k: 'lit', v: f } };
   if (f && typeof f === 'object' && !Array.isArray(f)) {
@@ -481,7 +508,7 @@ function compileFilter(f: unknown): Filter {
     if (keys.length === 1 && (key === 'and' || key === 'or' || key === 'not')) {
       const list = (f as Record<string, unknown>)[key];
       if (!Array.isArray(list)) throw invalid(`\`${key}\` needs a list of filters`);
-      return { [key]: list.map(compileFilter) } as Filter;
+      return { [key]: list.map((x) => compileFilter(x, depth + 1)) } as Filter;
     }
   }
   throw invalid(`A filter is a text or one of and / or / not, not ${JSON.stringify(f)}`);
@@ -538,12 +565,13 @@ export function parseBase(source: string): Parsed {
   if (type !== 'table') throw unsupported(`The view type \`${String(type)}\` is (only \`table\` is)`);
   if (views.length > 1) notices.push(`only the first view is shown (this base has ${views.length})`);
   for (const k of ['groupBy', 'summaries']) if (view[k] != null) notices.push(`${k} is not supported in v1 and is left out`);
-  const filters = [top.filters, view.filters].filter((f) => f != null).map(compileFilter);
+  const filters = [top.filters, view.filters].filter((f) => f != null).map((f) => compileFilter(f));
   const props = asObject(top.properties, '`properties`');
   const label = (id: string) => {
     const plain = id.startsWith('note.') ? id.slice(5) : id;
     for (const k of [id, plain, `note.${plain}`]) {
-      const name = (props[k] as { displayName?: unknown } | undefined)?.displayName;
+      const spec = own(props, k);
+      const name = spec && typeof spec === 'object' ? own(spec, 'displayName') : null;
       if (typeof name === 'string' || typeof name === 'number') return String(name);
     }
     return id.startsWith('file.') ? `file ${id.slice(5)}` : plain;
@@ -601,7 +629,7 @@ export async function queryBase(root: string, source: string, opts: { now?: Date
   const rows: { rec: FileRec; ctx: Ctx }[] = [];
   for (const rec of recs) {
     let links: string[] | null = null;
-    const ctx: Ctx = { rec, paths, now, links: () => (links ??= rec.text ? linkedFiles(rec.text, rec.path, paths) : []) };
+    const ctx: Ctx = { rec, paths, now, links: () => (links ??= rec.refs.length ? resolveLinkRefs(rec.refs, rec.path, paths) : []) };
     if (base.filters.every((f) => test(f, ctx))) rows.push({ rec, ctx });
   }
   const keyed = rows.map((r) => ({ ...r, keys: base.sort.map((s) => evaluate(s.node, r.ctx)) }));

@@ -103,21 +103,36 @@ export function relinkFile(text: string, page: string, from: string, to: string,
   return out;
 }
 
+/** A link as written in a note: a wikilink / embed target, or a Markdown link's href. Not yet resolved. */
+export type LinkRef = { wiki: string } | { md: string };
+
+/** The links in `text` (wikilinks, embeds and Markdown links), in order of appearance, without those in code. */
+export function linkRefs(text: string): LinkRef[] {
+  const code = codeRanges(text);
+  const inCode = (i: number) => code.some(([s, e]) => i >= s && i < e);
+  const found: [number, LinkRef][] = [
+    ...[...text.matchAll(WIKILINK_RE)].map((m) => [m.index, { wiki: parseWikilink(m[1]!).target }] as [number, LinkRef]),
+    ...[...text.matchAll(MD_LINK_RE)].map((m) => [m.index, { md: m[2]! }] as [number, LinkRef]),
+  ];
+  return found.filter(([i]) => !inCode(i)).sort((a, b) => a[0] - b[0]).map(([, r]) => r);
+}
+
+/** `refs` of the page at `page` resolved against `paths`: deduplicated, in order, without self links and misses. */
+export function resolveLinkRefs(refs: readonly LinkRef[], page: string, paths: readonly string[]): string[] {
+  const out = new Set<string>();
+  for (const r of refs) {
+    const p = 'wiki' in r ? resolveWikilink(r.wiki, paths, page) : resolveRelativeLink(r.md, page, paths);
+    if (p && p !== page) out.add(p);
+  }
+  return [...out];
+}
+
 /**
  * Files the page at `page` links to (wikilinks, embeds and relative Markdown links), resolved against `paths`,
  * deduplicated, in order of appearance. Self links and code are skipped.
  */
 export function linkedFiles(text: string, page: string, paths: readonly string[]): string[] {
-  const code = codeRanges(text);
-  const inCode = (i: number) => code.some(([s, e]) => i >= s && i < e);
-  const found: [number, string | null][] = [
-    ...[...text.matchAll(WIKILINK_RE)].map((m) => [m.index, resolveWikilink(parseWikilink(m[1]!).target, paths, page)] as [number, string | null]),
-    ...[...text.matchAll(MD_LINK_RE)].map((m) => [m.index, resolveRelativeLink(m[2]!, page, paths)] as [number, string | null]),
-  ];
-  const out = new Set<string>();
-  for (const [i, p] of found.sort((a, b) => a[0] - b[0]))
-    if (p && p !== page && !inCode(i)) out.add(p);
-  return [...out];
+  return resolveLinkRefs(linkRefs(text), page, paths);
 }
 
 /**
