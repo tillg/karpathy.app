@@ -57,3 +57,39 @@ test('@iphone 92 the local graph opens from the outline sheet and goes back to t
   await expect(page.getByTestId('graph-pane')).toBeHidden();
   await expect(page.locator('.note-title')).toHaveText('P0');
 });
+
+// A note without links is a graph of one dot: the camera must not sit on top of it (a zero-size fit), and the
+// caption counts in the singular.
+test('92 the local graph of a note without links shows its one dot @iphone', async ({ page, api, vault }) => {
+  await api.write(vault.id, 'wiki/Alone.md', '# Alone\n\nNo links here.\n');
+  await api.write(vault.id, 'wiki/Hub.md', '# Hub\n\n[[Home]] [[Ideas]]\n');
+  await openApp(page, vault.id);
+  // First another note's graph, then the lonely one's (the graph's camera and layout carry over).
+  await openNote(page, 'wiki/Hub.md');
+  await page.getByTestId('outline-button').click();
+  await page.getByTestId('local-graph').click();
+  await expect(page.getByTestId('graph')).toHaveAttribute('data-nodes', '3');
+  await page.waitForTimeout(2000);
+  await page.getByTestId('graph-close').click();
+  await openNote(page, 'wiki/Alone.md');
+  await page.getByTestId('outline-button').click();
+  await page.getByTestId('local-graph').click();
+  const graph = page.getByTestId('graph');
+  await expect(graph).toHaveAttribute('data-nodes', '1');
+  await expect(page.getByTestId('graph-pane')).toContainText('1 note within 1 link of Alone · 0 links');
+  // Past the camera fits (600, 1500, 3000 ms and the engine stop): the dot is still drawn.
+  await page.waitForTimeout(4000);
+  const shot = (await graph.locator('canvas').screenshot()).toString('base64');
+  const drawn = await page.evaluate(async (b64) => {
+    const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
+    const c = new OffscreenCanvas(img.width, img.height);
+    const ctx = c.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, img.width, img.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i]! - d[0]!) + Math.abs(d[i + 1]! - d[1]!) + Math.abs(d[i + 2]! - d[2]!) > 60) n++;
+    return n;
+  }, shot);
+  await page.screenshot({ path: test.info().outputPath('92-alone.png') });
+  expect(drawn).toBeGreaterThan(200);
+});
