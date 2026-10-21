@@ -17,6 +17,7 @@ import { parseWikilink, resolveWikilink } from '../lib/wikilink';
 import { useApp } from '../store';
 import { AttachButton } from './AttachButton';
 import { Editor, type EditorHandle, type FrontmatterText } from './Editor';
+import { EmailView } from './EmailView';
 import { GitPill } from './GitPill';
 import { HtmlView } from './HtmlView';
 import { GraphPane } from './GraphPane';
@@ -396,6 +397,8 @@ export function NotePane({ inert }: { inert?: boolean }) {
         )}
         {note && (kind === 'media' || kind === 'binary') ? (
           <MediaView key={note.path} path={note.path} />
+        ) : note && kind === 'email' ? (
+          <EmailView key={`${note.path}\0${note.loadNonce}`} vault={s.activeId!} path={note.path} text={note.loaded} binary={!!note.binary} />
         ) : note ? (
           <div className="doc">
             <h2 className="note-title">{title}</h2>

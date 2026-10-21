@@ -1,0 +1,12 @@
+From: alan@example.org
+To: ada@example.org
+Subject: Plain text only
+Date: Tue, 20 Oct 2026 09:30:00 +0200
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Line one
+Line two
+
+After a blank line.

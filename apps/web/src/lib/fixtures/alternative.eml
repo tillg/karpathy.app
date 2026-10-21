@@ -1,0 +1,29 @@
+From: Ada Lovelace <ada@example.org>
+To: Charles Babbage <charles@example.org>, team@example.org
+Cc: Mary Somerville <mary@example.org>
+Subject: Notes on the Analytical Engine
+Date: Tue, 20 Oct 2026 09:30:00 +0200
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="===============4511669174058055054=="
+
+--===============4511669174058055054==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Dear Charles,
+
+the notes are attached in the HTML part.
+Kind regards,
+Ada
+
+--===============4511669174058055054==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><body><h1>Notes</h1><p>Dear Charles, the <b>notes</b> are here.</p><p><=
+a href=3D"https://example.com/engine">Engine</a></p><script>parent.postMessag=
+e("ran","*")</script></body></html>
+
+--===============4511669174058055054==--

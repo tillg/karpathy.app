@@ -32,7 +32,7 @@ function resolve(ref: string, from: string, paths: readonly string[]): string | 
   return paths.includes(p) ? p : null;
 }
 
-function dataUrl(type: string, bytes: ArrayBuffer): string {
+export function dataUrl(type: string, bytes: ArrayBuffer): string {
   const b = new Uint8Array(bytes);
   let s = '';
   for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));

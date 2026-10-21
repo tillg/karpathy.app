@@ -179,7 +179,10 @@ vault can bring its own rules in `.karpathy/schema.json` (`{ "appliesTo": ["Wiki
 `.md`/`.markdown` files are notes; any other text file (`.py`, `.ts`, `.sh`, `.json`, `Dockerfile`, …) opens with
 syntax colours in one view (plain text, line breaks as written, when the language is unknown), and `.svg` shows as
 an image. **HTML pages** (`.html`) keep Write (the source) and Read (the page in a sandboxed frame: its own styles
-and vault images, no scripts or forms, no remote resources), with their own sticky mode that starts at Read. A **↩
+and vault images, no scripts or forms, no remote resources), with their own sticky mode that starts at Read.
+**Emails** (`.eml`, e.g. an ingested `Input/…/original.eml`) show as a mail, read-only: the subject, From / To /
+Cc / Reply-To / Date, the HTML body in the same sandboxed frame (inline images in place, remote ones as links) or
+the text body, and the attachments as downloads; Latin-1 and other non-UTF-8 mails too. A **↩
 back arrow** in the note header returns to the previous file of the vault (browser Back as a button, also in the
 installed PWA). The **chat list** shows each chat's last message time and sorts by it, with a bar for how full the
 model's context is; the composer shows the same as `3,560 / 16,384`, in the device's number format (orange from 70 %, red from 90 %; the window
