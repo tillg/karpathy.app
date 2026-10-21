@@ -313,10 +313,29 @@ export interface ChatDetail {
   title: string;
   messages: ChatMessage[];
   turn: TurnState;
-  /** The prompt text while its turn is still queued (not yet sent to the harness). */
-  queuedText?: string;
+  /** The chat's prompts waiting for their turn, oldest first (not yet sent to the harness, #155). */
+  queued: QueuedPrompt[];
   titleSuggestion?: string;
 }
+
+/** A prompt waiting in the vault's turn queue (#155): sent while a turn ran, or before its own turn started. */
+export interface QueuedPrompt {
+  id: string;
+  text: string;
+  /** Vault paths of the files sent with it. */
+  attachments?: string[];
+}
+
+/** A queued prompt taken back (DELETE, or Stop): its text and its files as composer chips, so ✕ can still delete them. */
+export interface ReturnedPrompt {
+  id: string;
+  text: string;
+  /** The files that still exist; one gone meanwhile is left out. */
+  attachments: { path: string; version: string; mime: string; size: number }[];
+}
+
+/** How many prompts one chat may have waiting (#155). */
+export const MAX_QUEUED = 10;
 
 export type TurnState = 'idle' | 'queued' | 'running';
 
@@ -327,7 +346,9 @@ export type ChatEvent =
   | { type: 'message'; message: Omit<ChatMessage, 'parts'> }
   | { type: 'part'; messageId: string; part: ChatPart }
   | { type: 'text-delta'; messageId: string; partId: string; delta: string }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  /** The chat's queued prompts changed (#155); `started`: the prompt that just left the queue to run. */
+  | { type: 'queue'; queued: QueuedPrompt[]; started?: string };
 
 /** Token and cost sums (`GET /usage`). */
 export interface UsageSums {
