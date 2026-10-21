@@ -10,6 +10,7 @@ import {
   type ConflictChoice,
   type FileContent,
   type FileEntry,
+  type BaseResult,
   type GraphData,
   type SearchHit,
   type UploadResult,
@@ -23,6 +24,7 @@ import { INPUT_DIR, isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@ka
 import { BrowserCalls } from './browser-calls.js';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
+import { queryBase } from './bases.js';
 import { filesMentioning, graph, listTree, search, versionOf, versionOfFile } from './files.js';
 import { tidyAttachments, type TidyResult } from './tidy-attachments.js';
 import { Git, GitError, type GitIdentity } from './git.js';
@@ -674,6 +676,11 @@ export class Vaults {
     if (!q.trim()) return { hits: [], truncated: false };
     if (/[\r\n]/.test(q)) throw new HttpError(400, 'search text must be a single line', 'bad-query');
     return search(this.vaultRootDir(id), q);
+  }
+
+  async base(id: string, source: string): Promise<BaseResult> {
+    this.requireReady(id);
+    return queryBase(this.vaultRootDir(id), source);
   }
 
   async graph(id: string): Promise<GraphData> {

@@ -172,6 +172,21 @@ export interface GraphData {
   links: { source: string; target: string }[];
 }
 
+/** A table cell of a base (#91): a value, a link to a vault file, or a list of cells. Dates come as `YYYY-MM-DD[ HH:mm]`. */
+export type BaseCell = string | number | boolean | null | { link: string; text: string } | BaseCell[];
+
+/** The table a fenced ```base block (Obsidian Bases syntax, v1 subset) evaluates to (`POST /vaults/:id/base`). */
+export interface BaseResult {
+  /** The view's `name`, if it has one. */
+  view: string | null;
+  columns: { id: string; label: string }[];
+  rows: { path: string; cells: BaseCell[] }[];
+  /** Matching files before `limit` and the row cap. */
+  total: number;
+  /** What was left out (e.g. `groupBy`, further views), for a note under the table. */
+  notices: string[];
+}
+
 export type ChangeKind = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked';
 
 export interface Change {

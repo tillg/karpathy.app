@@ -7,6 +7,7 @@ import { aiUnavailable, type ChatService } from './chat.js';
 import { fallbackMessage, type CommitMessages } from './commit-message.js';
 import type { ConfigStore } from './config-store.js';
 import type { GitHubToken } from './github-token.js';
+import { BaseError } from './bases.js';
 import { normalizeRel, PathError } from './paths.js';
 import { callIngest, type IngestEndpoint } from './ingest.js';
 import type { MetricsSampler } from './metrics.js';
@@ -74,6 +75,7 @@ const patchSettings = z.object({
   webAccess: z.boolean({ error: 'Web access: must be true or false' }).optional(),
 });
 const chatTitleBody = z.object({ title: z.string().trim().min(1, { error: 'Title: enter a title' }).max(500, { error: 'Title: at most 500 characters' }) });
+const baseBody = z.object({ source: z.string().max(100_000) });
 const putFile = z.object({ content: z.string(), version: z.string().nullable(), force: z.boolean().optional() });
 const commitBody = z.object({ message: z.string().min(1).max(10_000), paths: z.array(z.string()).optional() });
 const resolveBody = z.object({ path: z.string().min(1), choice: z.enum(['mine', 'theirs', 'both']) });
@@ -329,6 +331,11 @@ export function createApp(d: AppDeps) {
     res.json(await d.vaults.search(req.params.id!, typeof req.query.q === 'string' ? req.query.q : ''));
   });
 
+  // A fenced ```base block evaluated over the vault (#91); read-only, so a POST only because the source is long.
+  api.post('/vaults/:id/base', async (req, res) => {
+    res.json(await d.vaults.base(req.params.id!, baseBody.parse(req.body).source));
+  });
+
   api.get('/vaults/:id/graph', async (req, res) => {
     res.json(await d.vaults.graph(req.params.id!));
   });
@@ -439,6 +446,7 @@ export function createApp(d: AppDeps) {
   });
   api.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message, code: err.code, ...err.extra });
+    if (err instanceof BaseError) return void res.status(422).json({ error: err.message, code: err.code });
     if (err instanceof PathError) return void res.status(400).json({ error: err.message, code: 'bad-path' });
     if (err instanceof z.ZodError) return void res.status(400).json({ error: err.issues.map((i) => i.message).join('; '), code: 'invalid' });
     if ((err as { type?: string }).type === 'entity.too.large') return void res.status(413).json({ error: 'The file is larger than 50 MB.', code: 'too-large' });
