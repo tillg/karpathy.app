@@ -89,6 +89,19 @@ describe('queued messages while the AI works (#155)', () => {
     await screen.findByTestId('queued-edit');
   });
 
+  it('messages sent in quick succession all go out, in order (none is dropped while the first is on its way)', async () => {
+    let n = 0;
+    const api = await openChat({ [`GET ${CHATS}/c1`]: running(), [`POST ${CHATS}/c1/prompt`]: () => ({ queued: true, id: `q${++n}` }) });
+    const box = await screen.findByTestId('chat-composer');
+    await screen.findByTestId('chat-stop');
+    fireEvent.change(box, { target: { value: 'one' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    fireEvent.change(box, { target: { value: 'two' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await waitFor(() => expect(api.calls.filter((c) => c.call === `POST ${CHATS}/c1/prompt`).map((c) => (c.body as { text: string }).text)).toEqual(['one', 'two']));
+    await waitFor(() => expect(screen.getAllByTestId('queued-prompt').map((e) => e.getAttribute('data-id'))).toEqual(['q1', 'q2']));
+  });
+
   it('Edit takes a queued message back into the composer', async () => {
     const api = await openChat({
       [`GET ${CHATS}/c1`]: running({ queued: [{ id: 'q1', text: 'fix the typo' }] }),

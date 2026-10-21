@@ -7,7 +7,7 @@ import { chipCommands, filterCommands, paletteQuery, recentCommands, recordComma
 import { readSelectionText, selectionCopier } from '../lib/copy-select';
 import { mountEmbed } from '../lib/embed';
 import { mediaKind } from '../lib/media';
-import { adoptStarted, applyChatEvent, attachWarning, changedPaths, isAcceptKey, lastContext, newOpens, nextSuggestion, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, withReturned, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
+import { adoptStarted, applyChatEvent, attachWarning, changedPaths, isAcceptKey, lastContext, newOpens, nextSuggestion, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, withReturned, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
 import { readNdjson } from '../lib/ndjson';
 import { chatTime } from '../lib/time';
 import { useApp } from '../store';
@@ -456,16 +456,16 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
         return;
       }
     }
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  /** One prompt goes to the server at a time; a busy chat's prompt waits behind its turn (#155). */
-  const sendingRef = useRef(false);
-  const send = async () => {
+  /** Prompts go to the server one after the other, in the order sent; a busy chat's prompt waits behind its turn (#155). */
+  const sendChain = useRef<Promise<void>>(Promise.resolve());
+  const localIds = useRef(0);
+  const send = () => {
     const t = text.trim();
     const sending = draftRef.current;
-    if ((!t && !sending.chips.length) || uploading || sendingRef.current) return;
-    sendingRef.current = true;
+    if ((!t && !sending.chips.length) || uploading) return;
     setText('');
     // The box shrinks back to one row (a long prompt had grown it), so the next ghost text sits in a one-line box.
     if (composer.current) composer.current.style.height = '';
@@ -473,33 +473,41 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
     const cmd = sentCommand(t, commands);
     if (cmd) recordCommand(vaultId, cmd);
     const attachments = sending.chips.map((c) => c.path);
-    // Shown as a queued bubble at once; the server's id replaces the local one.
-    const local = `local-${Date.now()}`;
-    const optimistic: QueuedPrompt = { id: local, text: t, ...(attachments.length ? { attachments } : {}) };
-    setChat((c) => c && { ...c, queued: [...c.queued, optimistic] });
-    try {
-      const { id } = await api.prompt(vaultId, chatId, t, attachments, openPage());
-      setChat((c) => c && {
-        ...c,
-        queued: c.queued.some((q) => q.id === id) ? c.queued.filter((q) => q.id !== local) : c.queued.map((q) => (q.id === local ? { ...q, id } : q)),
-        turn: c.turn === 'idle' ? 'queued' : c.turn,
-      });
-      if (!busy) void attach();
-    } catch (e) {
-      setChat((c) => c && { ...c, queued: c.queued.filter((q) => q.id !== local) });
-      setText((now) => withReturned(now, draftRef.current, [{ id: '', text: t, attachments: [] }]).text);
-      setDraft({ chips: [...sending.chips, ...draftRef.current.chips], folder: draftRef.current.folder ?? sending.folder });
-      toast(errorText(e));
-    } finally {
-      sendingRef.current = false;
-    }
+    const page = openPage();
+    // An idle chat's prompt shows as the pending bubble until the server has its message (as before #155); a busy
+    // chat's as a queued bubble. Either is shown at once; the server's id replaces the local one.
+    const asPending = !busy && !pending;
+    const local = `local-${++localIds.current}`;
+    if (asPending) setPending({ id: local, text: t, attachments, userCount: userCount(chat), sent: false, ran: false });
+    else setChat((c) => c && { ...c, queued: [...c.queued, { id: local, text: t, ...(attachments.length ? { attachments } : {}) }] });
+    sendChain.current = sendChain.current.then(async () => {
+      try {
+        const { id } = await api.prompt(vaultId, chatId, t, attachments, page);
+        if (asPending) setPending((p) => p && p.id === local ? { ...p, id, sent: true } : p);
+        setChat((c) => c && {
+          ...c,
+          queued: c.queued.some((q) => q.id === id) ? c.queued.filter((q) => q.id !== local) : c.queued.map((q) => (q.id === local ? { ...q, id } : q)),
+          turn: c.turn === 'idle' ? 'queued' : c.turn,
+        });
+        if (asPending) void attach();
+      } catch (e) {
+        if (asPending) setPending((p) => (p?.id === local ? null : p));
+        setChat((c) => c && { ...c, queued: c.queued.filter((q) => q.id !== local) });
+        setText((now) => withReturned(now, draftRef.current, [{ id: '', text: t, attachments: [] }]).text);
+        setDraft({ chips: [...sending.chips, ...draftRef.current.chips], folder: draftRef.current.folder ?? sending.folder });
+        toast(errorText(e));
+      }
+    });
   };
   /** Stop: ends the running turn; the chat's queued prompts come back into the composer (#155). */
   const stop = async () => {
+    // The pending bubble's text goes back by itself when its turn goes idle without having run (settlePending): only
+    // its files come from here, in whichever order the idle event and this answer arrive.
+    const pendingId = pending?.id;
     try {
       const r = await api.abort(vaultId, chatId);
       setChat((c) => c && { ...c, queued: [] });
-      takeBack(r?.restored ?? []);
+      takeBack((r?.restored ?? []).map((b) => (b.id === pendingId ? { ...b, text: '' } : b)));
     } catch (e) { toast(errorText(e)); }
   };
 
@@ -538,16 +546,15 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
             </div>
           )}
           {chat?.turn === 'running' && <div className="turn-state"><span className="spin" />Working…</div>}
-          {chat?.queued.map((q) => (
+          {chat?.queued.filter((q) => q.id !== pending?.id).map((q) => (
             <div key={q.id} className="u pending queued" data-testid="queued-prompt" data-id={q.id}>
               {!!q.attachments?.length && <div className="u-files">{q.attachments.map((f) => <FileEmbed key={f} path={f} present />)}</div>}
               <span data-testid="chat-pending">{q.text}</span>
               <div className="q-acts">
                 <span className="q-tag">Queued</span>
-                {!q.id.startsWith('local-') && <>
-                  <button className="ib sm" aria-label="Edit queued message" title="Edit: back into the message box" data-testid="queued-edit" onClick={() => void editQueued(q)}><Icon n="pencil" size={15} /></button>
-                  <button className="ib sm" aria-label="Remove queued message" title="Remove" data-testid="queued-remove" onClick={() => void removeQueued(q)}><Icon n="xmark" size={15} /></button>
-                </>}
+                {/* Not before the server has it (its id). */}
+                <button className="ib sm" aria-label="Edit queued message" title="Edit: back into the message box" data-testid="queued-edit" disabled={q.id.startsWith('local-')} onClick={() => void editQueued(q)}><Icon n="pencil" size={15} /></button>
+                <button className="ib sm" aria-label="Remove queued message" title="Remove" data-testid="queued-remove" disabled={q.id.startsWith('local-')} onClick={() => void removeQueued(q)}><Icon n="xmark" size={15} /></button>
               </div>
             </div>
           ))}
@@ -585,7 +592,7 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
           {/* While the AI works, the composer stays usable (#155): Send queues the next message, Stop is always there. */}
           {busy && <button className="send stop" data-testid="chat-stop" aria-label="Stop" onClick={() => void stop()}><Icon n="stop_fill" size={16} /></button>}
           {(!busy || hasDraft) && <button className="send" data-testid="chat-send" aria-label={busy ? 'Queue message' : 'Send'} title={busy ? 'Sends when the AI is done' : undefined}
-            disabled={!hasDraft || uploading > 0 || !online} onClick={() => void send()}><Icon n="arrow_up" size={20} /></button>}
+            disabled={!hasDraft || uploading > 0 || !online} onClick={() => send()}><Icon n="arrow_up" size={20} /></button>}
         </div>
       </div>
     </>
