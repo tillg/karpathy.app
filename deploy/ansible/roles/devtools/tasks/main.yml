@@ -2,7 +2,7 @@
 # (Docker comes from role docker).
 - name: Command-line tools
   ansible.builtin.apt:
-    name: [git, ripgrep, jq, netcat-openbsd, ansible-core]   # ansible: `just check` renders a role template
+    name: [git, ripgrep, jq, netcat-openbsd, ansible-core, btop]   # ansible: `just check` renders a role template
     state: present
     update_cache: true
     cache_valid_time: 3600
