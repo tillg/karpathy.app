@@ -49,6 +49,11 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Note** | A text file named `*.md` / `*.markdown` (any case). Only notes get live preview, the properties form, the outline, wikilinks, embeds and the note graph. *Avoid:* Markdown note (just "note"). | `fileKind(…) === 'note'` |
 | **HTML page** | A text file named `*.html` / `*.htm`. Two modes: Write (the source, highlighted) and Read (the page rendered in a sandboxed frame: no scripts, forms or remote resources; vault images and stylesheets inlined). | `fileKind(…) === 'html'`; web `HtmlView` |
 | **Code file** | Any other text file, incl. `.txt` and `.mdx`. Shown in the editor with the language picked from its name, or as plain text. One view, no modes; its title keeps the extension. | `fileKind(…) === 'code'` |
+| **Email** | A vault file named `*.eml` (any case): one mail in MIME format. An email whether its bytes are UTF-8 or not. Shown read-only in one view (subject, header block, body, attachments); the app never edits it, and a local draft of one is dropped. *Avoid:* mail file, message. | `fileKind(…) === 'email'`; web `EmailView`, `lib/email.ts` |
+| **Header block** | The top of an opened email: From, To, Cc, Reply-To (each only if present, as `Name <address>`) and the Date. The **subject** is the email's title. | `.email-head` |
+| **Body** (email) | What a mail says: its HTML part, rendered inert like an HTML page in Read mode, or, without one, its text part with its line breaks. | `bodyHtml` → `preparePage` |
+| **Inline image** | An image part (at most 10 MB) the HTML body names by `src="cid:…"`. Shown in place, not listed as an attachment. | `ParsedEmail.inline` |
+| **Attachment** (email) | Every other part of an email, incl. a forwarded mail, an image named only from CSS and one too big to inline. A card with name and size; a tap downloads it. Not a vault file. *Avoid:* attached file (a vault file attached to a note). | `ParsedEmail.attachments` |
 | **Language** | The syntax that colors a code file or an HTML page's source, found by file name (extension or a full name like `Dockerfile`). None found → plain text. | `languageFor(path)` (`@codemirror/language-data`) |
 | **Media file** | A vault file whose extension is in the media table: an image, video or audio file. Shown, never edited; may be created by an upload or by the AI's media download. The media table decides before the text check, so an `.svg` is a media file although its bytes are text. *Avoid:* attachment, asset, resource. | `mediaKind(path)` → `image` · `video` · `audio` · `null` |
 | **Media kind** | `image`, `video` or `audio`, from the extension alone (case-insensitive), never from content sniffing. Decides the HTML element and the Content-Type the backend sends. | `MEDIA` (`packages/shared/src/media.ts`) |
@@ -121,7 +126,7 @@ same GitHub remote. The motivation is in the [README](../../README.md#problem).
 | **Main column / side column** | On the wide layout (≥ 1024 px, chat open): the main column is the flexible one in the middle, the side column the fixed 380 px one on the right. | CSS `#app.wide` |
 | **Main pane** | Which of note and chat is in the main column: **note in main** (default) or **chat in main**; the other is in the side column. A per-browser preference, not part of a vault or a chat. *Avoid:* focus (taken by keyboard focus), mode, layout. | web `chatMain`; localStorage `karpathy.chatMain` |
 | **Swap button** | The round ⇄ button on the divider between main and side column, at the top; toggles the main pane. Icon only; its label says what a click does ("Move chat to main column" / "Move note to main column"). | `data-testid="main-swap"` |
-| **Write mode / Read mode** | Notes and HTML pages have both. Write mode: the editable source (a note's raw Markdown with live preview, a page's highlighted HTML). Read mode: the rendered, non-editable view (a note through Markdown, a page in a sandboxed frame). Code, media and binary files have no mode. *Avoid:* edit mode, source mode, preview. | web `NotePane` |
+| **Write mode / Read mode** | Notes and HTML pages have both. Write mode: the editable source (a note's raw Markdown with live preview, a page's highlighted HTML). Read mode: the rendered, non-editable view (a note through Markdown, a page in a sandboxed frame). Code, media and binary files and emails have no mode. *Avoid:* edit mode, source mode, preview. | web `NotePane` |
 | **Tree sort** | How the file tree orders each folder: criterion `name` or `changed` (**Last changed**) and direction `asc`/`desc`. Picking a criterion sets its natural direction (A → Z, newest first). *Avoid:* order by, view. | web `TreeSort`; localStorage `karpathy.treeSort` |
 | **Tree filter** | Whose changes the tree shows: `any`, `ai`, `human`. A file matches when it has a date for that author; folders show when a match is inside. The filter also chooses which date **Last changed** means (last modified / by AI / by human). *Avoid:* view, scope. | web `TreeFilter`; localStorage `karpathy.treeFilter` |
 | **Folder rank** | Under Last changed: the newest Last-changed date of any matching file inside the folder, at any depth; a folder without one goes last. | web `buildTree` |
@@ -378,12 +383,14 @@ Modeled on Obsidian's accepted formats, limited to what browsers can play:
 
 ### File kinds
 
-Kind by name, not content: the media table first (`.svg` → media), then the backend's text check, then the name.
+Kind by name, not content: the media table first (`.svg` → media), then `.eml` (→ email, before the text check, so a
+mail that isn't UTF-8 is still an email), then the backend's text check, then the name.
 
 | Name | Kind |
 |---|---|
 | `a.md`, `A.MD`, `a.markdown` | note |
 | `a.html`, `a.htm` | HTML page |
+| `a.eml`, `A.EML` (UTF-8 or not) | email |
 | `a.mdx`, `a.txt`, `a.py`, `Dockerfile`, `a.unknown` | code file (`.txt`, `.unknown`: plain text) |
 | `a.svg`, `a.png` | media file |
 | `a.pdf`, `a.zip`, text that isn't UTF-8 | binary file |
@@ -410,7 +417,15 @@ classDiagram
     }
     class MediaFile
     class BinaryFile
+    class Email {
+      subject
+      headerBlock
+      body?
+      inlineImages
+      attachments
+    }
     VaultFile <|-- TextFile : text, not in media table
+    VaultFile <|-- Email : .eml (UTF-8 or not)
     VaultFile <|-- MediaFile : media table (incl. .svg)
     VaultFile <|-- BinaryFile : other bytes
     TextFile <|-- Note : .md / .markdown

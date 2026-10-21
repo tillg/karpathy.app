@@ -315,7 +315,18 @@ origin; nothing else is restricted by it).
 - The result is shown in an `<iframe srcdoc>` with `sandbox` **without** `allow-scripts` and `allow-same-origin`: no
   code runs and the frame has an opaque origin, so even a sanitizer miss can't read the token, storage or DOM. It
   inherits the app's CSP. Only user-activated top navigation (vault links to app routes) and popups (external links,
-  `noopener noreferrer`) are allowed.
+  `noopener noreferrer`) are allowed. Image-map `<area>` links are rewritten like `<a>` and a `#` link loses its
+  `target` (#166), so no link a page or mail brings can move the app's window.
+
+**Emails** (`.eml`, #166) are untrusted mail, parsed in the browser by postal-mime:
+
+- Subject, headers and the text body reach the app DOM only as React text nodes.
+- The HTML body takes the HTML-page path above (`preparePage`, same sandbox and CSP) with no vault access (relative
+  references resolve to nothing); inline images enter only as `data:` URLs of `image/*` parts of the mail. Remote
+  images never load, so opening a mail doesn't tell the sender.
+- Attachments are made into `blob:` URLs only on a tap and always as `application/octet-stream`, then downloaded:
+  an HTML or SVG attachment can't open as a document on the app's origin.
+- A mail over 50 MB asks before parsing; garbage bytes show an error, not a partial render.
 
 **Properties and the schema file** come from the vault too: property values and heading texts render as React text
 (links through the same resolver as wikilinks), never as HTML. `.karpathy/schema.json` is checked by hand (known

@@ -1,0 +1,64 @@
+From: Grace Hopper <grace@example.org>
+To: ada@example.org
+Reply-To: noreply@example.org
+Subject: Report with a picture
+Date: Tue, 20 Oct 2026 09:30:00 +0200
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============7982228502681103687=="
+
+--===============7982228502681103687==
+Content-Type: multipart/alternative;
+ boundary="===============7330814546187573675=="
+
+--===============7330814546187573675==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+See the picture and the report.
+
+--===============7330814546187573675==
+MIME-Version: 1.0
+Content-Type: multipart/related;
+ boundary="===============7444975655816209811=="
+
+--===============7444975655816209811==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+<html><body><p>Inline: <img src=3D"cid:dot@example.org" alt=3D"dot"></p><p>Re=
+mote: <img src=3D"https://example.com/track.png" alt=3D"tracker"></p></body><=
+/html>
+
+--===============7444975655816209811==
+Content-Type: image/png
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="dot.png"
+Content-ID: <dot@example.org>
+MIME-Version: 1.0
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgAAACAAFUok9dAAAA
+AElFTkSuQmCC
+
+--===============7444975655816209811==--
+
+--===============7330814546187573675==--
+
+--===============7982228502681103687==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="report.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4K
+ZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4K
+ZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAg
+MCAyMDAgMjAwXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAw
+IFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCAzOCA+PgpzdHJlYW0KQlQgL0Yx
+IDI0IFRmIDIwIDEwMCBUZCAoRml4dHVyZSkgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2Jq
+Cjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+Pgpl
+bmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE1IDAwMDAwIG4gCjAw
+MDAwMDAwNjQgMDAwMDAgbiAKMDAwMDAwMDEyMSAwMDAwMCBuIAowMDAwMDAwMjQ3IDAwMDAwIG4g
+CjAwMDAwMDAzMzUgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0
+YXJ0eHJlZgo0MDUKJSVFT0YK
+
+--===============7982228502681103687==--

@@ -49,6 +49,7 @@ export function fakeApi(opts: { files?: FileEntry[]; status?: Partial<VaultStatu
     if (!(key in routes)) return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
     const a = routes[key];
     const out = typeof a === 'function' ? (a as (b: unknown) => unknown)(body) : a;
+    if (out instanceof Response) return out;
     return out === undefined ? new Response(null, { status: 204 }) : new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
   });
   return api;

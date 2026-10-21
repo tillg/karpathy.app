@@ -18,6 +18,11 @@ export interface PageCtx {
 
 const REMOTE = /^([a-z][a-z0-9+.-]*:|\/\/)/i;
 
+/** The rendered page's frame: nothing in it runs, and it can't reach the app's token, storage or DOM. */
+export const SANDBOX = 'allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation';
+/** Images bigger than this stay out of a rendered page (their alt text shows). */
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
 /** A relative reference → the vault path it names; null when it leaves the vault root or names no file. */
 function resolve(ref: string, from: string, paths: readonly string[]): string | null {
   let target: string;
@@ -32,7 +37,7 @@ function resolve(ref: string, from: string, paths: readonly string[]): string | 
   return paths.includes(p) ? p : null;
 }
 
-function dataUrl(type: string, bytes: ArrayBuffer): string {
+export function dataUrl(type: string, bytes: ArrayBuffer): string {
   const b = new Uint8Array(bytes);
   let s = '';
   for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
@@ -80,9 +85,10 @@ export async function preparePage(html: string, ctx: PageCtx): Promise<string> {
     else img.replaceWith(doc.createTextNode(alt));
   }
 
-  for (const a of [...doc.querySelectorAll('a[href]')]) {
+  // Image-map areas are links too: none may move the app by itself (a `#` link with target=_top would change its route).
+  for (const a of [...doc.querySelectorAll('a[href], area[href]')]) {
     const href = a.getAttribute('href')!;
-    if (href.startsWith('#')) continue;
+    if (href.startsWith('#')) { a.removeAttribute('target'); continue; }
     if (REMOTE.test(href)) {
       a.setAttribute('target', '_blank');
       a.setAttribute('rel', 'noopener noreferrer');

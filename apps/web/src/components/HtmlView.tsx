@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
-import { preparePage } from '../lib/html-page';
-
-/** Vault images bigger than this stay out of a rendered page (their alt text shows). */
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+import { MAX_IMAGE_BYTES, preparePage, SANDBOX } from '../lib/html-page';
 
 /**
  * An HTML page's Read mode (#126): the page, made inert by `preparePage`, in a sandboxed frame. No
@@ -31,6 +28,6 @@ export function HtmlView({ vault, path, text, paths }: { vault: string; path: st
   if (doc === '') return <div className="html-view">The page can't be shown.</div>;
   return (
     <iframe className="html-view" data-testid="html-view" title={path.split('/').pop()} srcDoc={doc}
-      sandbox="allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" />
+      sandbox={SANDBOX} />
   );
 }

@@ -13,7 +13,7 @@ export interface EmbedCtx {
 
 const name = (path: string) => path.split('/').pop()!;
 const mb = (n: number) => `${Math.max(1, Math.round(n / (1024 * 1024)))} MB`;
-const human = (n: number) => (n >= 1024 * 1024 ? mb(n) : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
+export const human = (n: number) => (n >= 1024 * 1024 ? mb(n) : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`);
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
