@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { SecretFinding } from '@karpathy/shared';
 import { ApiError, api, errorText } from '../lib/api';
 import { useApp } from '../store';
 import { Modal } from './Dialogs';
@@ -12,6 +13,8 @@ export function CommitDialog() {
   const [error, setError] = useState<string | null>(null);
   /** The changed files the proposal (and the user's review) is about (#33). */
   const [paths, setPaths] = useState<string[] | undefined>(undefined);
+  /** Possible secrets the last attempt found (#141); "Commit anyway" sends back exactly these. */
+  const [secrets, setSecrets] = useState<SecretFinding[] | null>(null);
   const field = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -43,10 +46,11 @@ export function CommitDialog() {
   }, [phase]);
 
   const close = () => setCommitOpen(false);
-  const commit = async () => {
+  const commit = async (allowSecrets?: string[]) => {
     if (!activeId) return;
     setPhase('committing');
     setError(null);
+    setSecrets(null);
     try {
       // Never commit without the typed text (mvp §2.4): a failed save (e.g. stale) stops here.
       if (!(await flush())) {
@@ -54,13 +58,14 @@ export function CommitDialog() {
         setPhase('ready');
         return;
       }
-      const r = await api.commit(activeId, message, paths);
+      const r = await api.commit(activeId, message, paths, allowSecrets);
       if (!r.commit) toast('Nothing to commit');
       else toast(r.pushed ? 'Committed and pushed to GitHub' : `Committed; push failed: ${r.pushError ?? 'unknown error'}`);
       setStatus(await api.status(activeId));
       close();
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'changes-moved') {
+      if (e instanceof ApiError && e.code === 'secrets') setSecrets((e.body.findings as SecretFinding[] | undefined) ?? []);
+      else if (e instanceof ApiError && e.code === 'changes-moved') {
         const now = (e.body.paths as string[] | undefined) ?? [];
         const added = now.filter((p) => !paths?.includes(p));
         setPaths(now);
@@ -79,8 +84,23 @@ export function CommitDialog() {
         {(phase === 'saving' || phase === 'proposing') && <span className="spin ta-spin" />}
       </div>
       {error && <div className="form-error" role="alert">{error}</div>}
+      {secrets && (
+        <div className="form-error" role="alert" data-testid="commit-secrets">
+          <p>Possible secret{secrets.length === 1 ? '' : 's'} in the changes, so nothing was committed:</p>
+          <ul>
+            {secrets.map((f) => (
+              <li key={f.fingerprint}><code>{f.file}</code> line {f.line}: {f.rule} (<code>{f.masked}</code>)</li>
+            ))}
+          </ul>
+          <p>Remove {secrets.length === 1 ? 'it' : 'them'} (edit or discard the file), or commit anyway if {secrets.length === 1 ? 'it is' : 'they are'} not secret. GitHub keeps everything you push.</p>
+        </div>
+      )}
       <div className="acts">
         <button className="btn g" onClick={close}>Cancel</button>
+        {secrets && secrets.length > 0 && (
+          <button className="btn g danger" data-testid="commit-anyway" disabled={phase !== 'ready' || !message.trim()}
+            onClick={() => void commit(secrets.map((f) => f.fingerprint))}>Commit anyway</button>
+        )}
         <button className="btn" data-testid="commit-submit" disabled={phase !== 'ready' || !message.trim()} onClick={() => void commit()}>
           {phase === 'committing' ? (status?.busy === 'turn' ? 'Waiting for AI turn…' : 'Committing…') : 'Commit & Push'}
         </button>

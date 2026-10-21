@@ -67,6 +67,8 @@ mark { background: rgba(245,158,11,.35); color: var(--label); border-radius: 3px
 .banner { margin: 8px 16px; padding: 10px 14px; border-radius: 12px; background: var(--tint-soft); font-size: 14px; line-height: 1.4; }
 .banner.warn { background: var(--warn); }
 .form-error { margin: 8px 0; padding: 8px 12px; border-radius: 10px; background: var(--del); color: var(--red-ink); font-size: 13.5px; white-space: pre-wrap; word-break: break-word; }
+.form-error p, .form-error ul { margin: 4px 0; }
+.form-error ul { padding-left: 18px; white-space: normal; }
 
 /* segmented control */
 .seg { display: inline-flex; background: var(--fill); border-radius: 9px; padding: 2px; gap: 2px; flex: none; }
