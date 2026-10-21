@@ -1,7 +1,7 @@
 ---
 title: "Domain: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-16
+edited: 2026-10-21
 ---
 
 # Domain: karpathy.app
@@ -231,8 +231,8 @@ alone (project `karpathy-app`), not numbered stacks.
 | **Orphan stack** | A project `karpathy-app-N` whose owning checkout was deleted. Any checkout's `just dev up N` may take it over. | `stack_state` |
 | **Remembered stack** | The number in `<checkout>/tmp/dev/stack`, written by `just dev up` and deleted by `just dev down`. Every later `dev`, `e2e` and `prodtest` command in that checkout uses it. A checkout holds at most one stack. | `stack_resolve`, `stack_remember` |
 | **Paired prodtest** | The prod images as project `karpathy-app-N-prodtest` on 80N5, taking N from the checkout's dev stack (remembered in `tmp/prodtest/stack` while it runs, so it outlives `just dev down`). | `just prodtest` |
-| **Native omlx** | The dev LLM server on the Mac itself (omlx, an MLX-based OpenAI-compatible server; Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models/<model id>`), shared by all stacks and their prodtests. An outside service, like a cloud provider. | `brew services start omlx` |
-| **Model relay** | The per-stack Caddy (service `model-relay`, dev and prodtest) that opencode reaches as `model-relay.internal:8000`; it passes only the OpenAI-compatible `/v1` API to the native model server (omlx) and answers 403 to everything else. Where it finds the server is the gateway's `relay_upstream` (`MODEL_UPSTREAM`): `host.docker.internal:8000` (omlx). | `deploy/proxy/Caddyfile.model-relay` |
+| **Test model** | The model the tests run on: always OpenRouter, everywhere (backend `@llm` locally and weekly in CI, e2e, prodtest): the production models, inherited by `deploy/settings/test.yaml`; `LLM_TEST_MODEL` / `LLM_VISION_MODEL` pick other OpenRouter models. No key (`OPENROUTER_API_KEY` or `deploy/secrets/openrouter_api_key`) → the `@llm` tests stop with a message before any container starts. | `testModels()`, `pickTestModels()` |
+| **Dead model** | A declared model the provider doesn't have: every turn on it fails at once with a non-retryable error, so the default tier exercises the whole turn lifecycle without an LLM. It sits on a test-only provider `dead` pointing at opencode's own port (401): offline, no key, not a model source. | `DEAD_MODEL`, `DEAD_MODEL_2` |
 | **Stack label** | `karpathy #N`, the header brand (vault switcher) on dev stack N, so a browser tab shows which stack it is. Everywhere else the brand is `karpathy.app`. | `lib/brand.ts` › `brandName` |
 
 ### Settings
@@ -245,11 +245,11 @@ Terms for configuring the app per environment ([architecture.md](architecture.md
 | **Environment** | A named way the stack runs: `dev` (dev stack N), `prodtest`, `test` (CI and the backend's integration tests) and `hetzner` (production). It exists exactly when `deploy/settings/<env>.yaml` exists. Every target is an environment; not every environment is a target. | `environments()` |
 | **Central settings file** | `deploy/settings/settings.yaml`, committed: every setting with the value all environments share. Must validate on its own as complete settings. | `settingsSchema` |
 | **Environment file** | `deploy/settings/<env>.yaml`, committed: the same shape, but only what that environment overrides (all keys optional, unknown keys still fail). | `partialSettingsSchema` |
-| **Local overlay** | Optional, gitignored `deploy/settings/dev.local.yaml` or `prodtest.local.yaml`: one developer's own choices on top (e.g. "use OpenRouter"). Never read for `test` or a target (a `local.local.yaml` or `hetzner.local.yaml` is an error) and ignored by the tests (`--no-local`). Replaces the hand-edited `deploy/.env`. | `loadSettings(env, { overlay })` |
+| **Local overlay** | Optional, gitignored `deploy/settings/dev.local.yaml` or `prodtest.local.yaml`: one developer's own choices on top (e.g. another model). Never read for `test` or a target (a `local.local.yaml` or `hetzner.local.yaml` is an error) and ignored by the tests (`--no-local`). Replaces the hand-edited `deploy/.env`. | `loadSettings(env, { overlay })` |
 | **Effective settings** | The central file deep-merged with the environment file and (dev, prodtest) the local overlay: maps merge key by key; scalars, lists and secret references replace. Validated as complete again, plus cross-field rules. `just settings show <env>` prints them. | `loadSettings()` |
 | **Secret reference** | A setting value `{ secret: <name> }`, optionally `optional: true`: *which* secret a component needs, never its value. The name (`[a-z][a-z0-9_]*`) is a file name in the secret store. Any string setting may be one (production's git author is). | `secretRef`, `secretRefs()` |
 | **Secret store** | A directory with one file per secret name, read when rendering: `deploy/secrets/` (dev), `tmp/prodtest/secrets/` (prodtest), and on a deployment a private temp dir on the Ansible controller filled from the target's vault. A missing or empty file fails unless the reference is optional. | `resolveSecrets()` |
-| **Gateway** | A named way to reach LLMs, the key is opencode's provider id: a kind (`openrouter`, `anthropic`, `openai`: built into opencode, any model id is valid; `openai-compatible`: only its listed models), optional base URL, API key (a secret reference), the model relay's upstream and per-model options (e.g. OpenRouter's zero-data-retention routing). `ai.gateway` picks one per environment. | `gateways`, `BUILT_IN_KINDS` |
+| **Gateway** | A named way to reach LLMs, the key is opencode's provider id: a kind (`openrouter`, `anthropic`, `openai`: built into opencode, any model id is valid; `openai-compatible`: only its listed models), optional base URL, API key (a secret reference) and per-model options (e.g. OpenRouter's zero-data-retention routing). `ai.gateway` picks one per environment; `openrouter` is the only one configured. | `gateways`, `BUILT_IN_KINDS` |
 | **Default model** | `ai.model` of the effective settings, `<gateway>/<model id>`. What the backend and opencode use unless an admin overrode it.  | `settings.json` `ai.model`, `ConfigStore.defaultModel` |
 | **Model override** | The model an admin typed in admin mode › AI (free text, no picker), stored in `config.json` only while it differs from the default model; choosing the default again removes it, so the next default change reaches the installation. | `modelOverride`, `SettingsView.modelOverridden` |
 | **Rendered files** | What the renderer writes from the effective settings for components that can't read YAML: the compose `.env`, `opencode.env` (API key, web caps, model, provider config), the backend's `settings.json` and the ingest service's `ingest.json`. Generated, never edited, never committed. | `just settings render`, `tmp/settings/<env>/` |
@@ -452,7 +452,7 @@ more.
 | **Public web** | Serves fetched pages; untrusted. |
 | **Obsidian / other git clients** | Change the same GitHub repo from other devices; their changes arrive on the next pull and can cause a conflict. |
 | **GitHub** | Hosts the vault repos; the backend clones, fetches and pushes with the GitHub token, and asks `GET /user` to test it. |
-| **LLM provider** (the environment's gateway: OpenRouter in production; the native omlx on the Mac in dev and prodtest) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
+| **LLM provider** (the environment's gateway: OpenRouter everywhere, in production, dev, prodtest and tests) | Runs the model behind opencode. Sees the prompts, the note content the AI reads, and every image or PDF the user attaches or the AI reads. |
 
 ## Processes
 

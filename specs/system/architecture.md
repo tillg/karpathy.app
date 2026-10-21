@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-16
+edited: 2026-10-21
 ---
 
 # Architecture: karpathy.app
@@ -58,7 +58,7 @@ flowchart LR
 |---|---|
 | Web | React 19, Vite 8, TypeScript, CodeMirror 6 (`lang-markdown`, own live-preview decorations), `marked` 18 + DOMPurify, vite-plugin-pwa (Workbox), framework7-icons. No router library (hash routes), no state library (one context hook). |
 | Backend | Node 22, Express, TypeScript run with `tsx` (no build step), zod validation, chokidar, `@opencode-ai/sdk` v2, `git` and `ripgrep` binaries. |
-| Agent harness | `opencode serve` 1.18.25 (pinned image `ghcr.io/anomalyco/opencode`), provider-agnostic; gateway and default model per environment from `deploy/settings/` (OpenRouter `z-ai/glm-5.3` in production, the native omlx `Qwen3-Coder-30B-A3B-Instruct-4bit` in dev and prodtest; the backend's `@llm` tests use omlx when it answers, else the production OpenRouter models). |
+| Agent harness | `opencode serve` 1.18.25 (pinned image `ghcr.io/anomalyco/opencode`), provider-agnostic; gateway and default model per environment from `deploy/settings/` (OpenRouter `z-ai/glm-5.3` in production, dev, prodtest and every test: no local model server). |
 | Proxy | Caddy 2.10 built with a `caddy-dns/<provider>` module (GoDaddy) for DNS-01. |
 | Shared | `packages/shared`: TypeScript types for the API (no runtime schemas). |
 | Settings | `packages/settings`: zod schema, loader, secret resolution and renderer for `deploy/settings/` (YAML), run with `tsx` as `just settings …` ([Settings](#settings)). |
@@ -253,7 +253,7 @@ a worktree and stays confined to the session directory (the vault root).
 **Model and provider** come from the environment's settings, through the rendered `opencode.env` (`env_file`):
 `OPENCODE_MODEL` (the default model), the gateway's API key under its provider's variable (`OPENROUTER_API_KEY`, …)
 and `OPENCODE_CONFIG_CONTENT`, the gateway's provider config as JSON (for OpenRouter the model's zero-data-retention
-routing, for omlx the `openai-compatible` provider with base URL and model limits). opencode merges its configs in
+routing; an `openai-compatible` gateway would carry its base URL and model limits). opencode merges its configs in
 this order, later wins:
 
 ```mermaid
@@ -311,7 +311,7 @@ nothing and needs no Web access (the server makes no request). Baked like `open_
 `vault-readonly` (`commit-message` keeps `"*": "deny"`). The web app turns the completed call into an Open chip ([Link
 offers](#link-offers)).
 
-**Custom tool `look_at_image`** (`deploy/opencode/tools/look_at_image.ts`, logic in `deploy/opencode/lib/look-at-image.ts`, #146): `{ path, question? }`. `resolveImage` reuses `resolveNote` (inside the vault, no dot segments), allows png, jpg, jpeg, gif, webp up to 10 MB; `buildRequest` makes an OpenAI chat request (question plus the image as data URL, `stream: false`, `VISION_REQUEST_OPTIONS` merged in); `describeImage` POSTs it to `VISION_BASE_URL/chat/completions` through the egress proxy (Bun's `fetch` `proxy`; the dev model relay is `NO_PROXY`), 120 s timeout, `Bearer VISION_API_KEY` when set, and returns the first choice's text cut at 8000 characters. Errors (`image recognition is not configured`, HTTP status with a short body, never the key) reach the model as tool errors. Allowed for `vault` and `vault-readonly`, not in `WRITE_TOOLS`; an attached file reaches a text-only model as a file part named by its vault path, which the tool description points at.
+**Custom tool `look_at_image`** (`deploy/opencode/tools/look_at_image.ts`, logic in `deploy/opencode/lib/look-at-image.ts`, #146): `{ path, question? }`. `resolveImage` reuses `resolveNote` (inside the vault, no dot segments), allows png, jpg, jpeg, gif, webp up to 10 MB; `buildRequest` makes an OpenAI chat request (question plus the image as data URL, `stream: false`, `VISION_REQUEST_OPTIONS` merged in); `describeImage` POSTs it to `VISION_BASE_URL/chat/completions` through the egress proxy (Bun's `fetch` `proxy`), 120 s timeout, `Bearer VISION_API_KEY` when set, and returns the first choice's text cut at 8000 characters. Errors (`image recognition is not configured`, HTTP status with a short body, never the key) reach the model as tool errors. Allowed for `vault` and `vault-readonly`, not in `WRITE_TOOLS`; an attached file reaches a text-only model as a file part named by its vault path, which the tool description points at.
 
 **Custom tool `suggest_next`** (`deploy/opencode/tools/suggest_next.ts`, check in `deploy/opencode/lib/suggestion.ts`, import-free):
 args `{ prompt }`; collapses whitespace, refuses an empty prompt and one over 160 characters (an error the model can
@@ -460,8 +460,7 @@ Squid 6 in an own Alpine image (base pinned by digest; the fourth release image)
 `egress`. Used by opencode and by the ingest service. `squid.conf` has one `dst` ACL of internal ranges (loopback, RFC 1918, link-local, CGNAT/tailnet, ULA,
 multicast, …) that is denied, then allows everything else; Squid checks after DNS resolution on every request, so
 each redirect hop is re-checked. opencode gets `HTTP_PROXY`/`HTTPS_PROXY=http://egress:3128` and
-`NO_PROXY=localhost,127.0.0.1,0.0.0.0` (its plugin client calls its own server directly; dev adds the model relay,
-the backend tests the Mac's `host.docker.internal`). Gotcha: `::ffff:0:0/96` or `0.0.0.0/8` in the ACL make Squid read `0.0.0.0/0`, so they stay out.
+`NO_PROXY=localhost,127.0.0.1,0.0.0.0` (its plugin client calls its own server directly; no override in dev or the backend tests). Gotcha: `::ffff:0:0/96` or `0.0.0.0/8` in the ACL make Squid read `0.0.0.0/0`, so they stay out.
 
 ### Proxy (`deploy/proxy`)
 
@@ -1656,8 +1655,7 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 | System | Used for | Status |
 |---|---|---|
 | GitHub | Vault repos; fine-grained token as an HTTP extra header, never in `.git/config`; `api.github.com/user` for the token test | in use |
-| LLM providers (OpenRouter in production, any via opencode) | Model behind opencode, chosen as the environment's gateway in `deploy/settings/`; keys only in the rendered `opencode.env` | OpenRouter `z-ai/glm-5.3` on zero-data-retention hosts in production |
-| omlx | Dev and prodtest (native on the Mac: MLX server, Homebrew service on `127.0.0.1:8000`, models in `~/.omlx/models`; `Qwen3-Coder-30B-A3B-Instruct-4bit`, vision `Qwen3-VL-4B-Instruct-4bit`) | in use |
+| LLM providers (OpenRouter in production, any via opencode) | Model behind opencode, chosen as the environment's gateway in `deploy/settings/`; keys only in the rendered `opencode.env` | OpenRouter `z-ai/glm-5.3` on zero-data-retention hosts in production, dev, prodtest and every test (key in `deploy/secrets/openrouter_api_key`; CI secret `OPENROUTER_API_KEY`) |
 | Exa | Web search backend (opencode `websearch`, MCP at `mcp.exa.ai`); optional `EXA_API_KEY`, else the anonymous, rate-limited endpoint | in use |
 | Gmail (via `gog`) | The ingest profiles' labels: read, relabel; OAuth client and refresh token copied from the Mac by `just ingest-auth` | built; no profile enabled in production yet |
 | Instagram (via instascraper / instagrapi) | Posts and Reels behind Instagram links in mails; password login from admin mode › Secrets & keys › Instagram | built; the real login not yet tried from the server |
@@ -1683,8 +1681,8 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
   opencode password); provider keys, `EXA_API_KEY` and the web caps come from `opencode.env`.
 - **Dev** (`compose.dev.yml`, `just dev up [N]`): numbered dev stacks side by side, one per checkout; stack N on
   https://localhost:80N0 with Caddy's internal CA, Vite with HMR (`web` service), bind-mounted sources, local bare
-  repos as remotes (`dev.yaml`: `git.remote_base: file:///remotes/`), the native omlx on the Mac as the model
-  unless the developer's `dev.local.yaml` picks another gateway. The `ingest` service mounts the whole `vaults` volume,
+  repos as remotes (`dev.yaml`: `git.remote_base: file:///remotes/`), the production OpenRouter
+  models (key from `deploy/secrets/openrouter_api_key`). The `ingest` service mounts the whole `vaults` volume,
   idles (no profiles in `dev.yaml`) and has the fake Instagram login; `just dev up` first runs
   `deploy/ingest/fetch-source.sh` for its build context. Details: [Dev stacks](#dev-stacks).
 - **Local prod test** (`compose.prodtest.yml`, `just prodtest`): the prod images as project
@@ -1722,8 +1720,6 @@ flowchart TD
     R -->|"--env-file"| P
     D -->|"-p karpathy-app-N<br/>STACK · PROXY_PORT · BACKEND_PORT"| C["compose.yml + compose.dev.yml<br/>proxy :80N0 · backend 127.0.0.1:80N1"]
     J -->|"-p karpathy-app-N-prodtest<br/>PRODTEST_PORT"| P["compose.yml + compose.prodtest.yml<br/>proxy :80N5"]
-    C -->|"model relay (/v1 only)<br/>→ MODEL_UPSTREAM"| OL[("native omlx<br/>127.0.0.1:8000")]
-    P -->|"model relay (/v1 only)"| OL
     E["e2e/stack.ts"] -->|"read"| F
     E --> H["e2e/helpers.ts · global-setup.ts<br/>playwright.config.ts"]
 ```
@@ -1744,7 +1740,7 @@ flowchart TD
 - **`deploy/dev.sh up [N] | down | logs | ps | token | stacks`** runs
   `docker compose -p karpathy-app-N -f compose.yml -f compose.dev.yml` (`-p` overrides `name: karpathy-app`, so prod
   is untouched). `up` refuses a stack another checkout owns or whose ports a stranger holds (naming the owner and
-  the first free stack), a second stack while this checkout holds one, and a model server that does not answer (`stack_model_ready`, for a gateway with a relay upstream); it may take
+  the first free stack), a second stack while this checkout holds one; it may take
   over an orphan, refuses a leftover hand-edited `deploy/.env` or `deploy/opencode.env` (`settings_legacy_check`:
   names their keys, never values, and where each goes now), creates the dev secrets, renders this checkout's
   `deploy/settings/` for `dev` into `tmp/settings/dev/` (`settings_render`; a missing secret or invalid setting stops
@@ -1757,22 +1753,10 @@ flowchart TD
 - **Images per stack.** The dev services reset `image:`, so compose names them `karpathy-app-N-<service>` and
   parallel builds never overwrite each other's images. Prodtest still uses `ghcr…:dev` tags, shared across
   checkouts (known risk).
-- **Native omlx.** The dev model runs on the Mac, not in a container: omlx (`brew install omlx`, MLX-based,
-  OpenAI-compatible) as the Homebrew service `omlx` (`brew services start omlx`, or `omlx start`) on `127.0.0.1:8000`,
-  Apple GPU, models in `~/.omlx/models/<dir name = model id>` (`hf download mlx-community/… --local-dir …`). Its
-  API-key check is off (`auth.skip_api_key_verification: true` in `~/.omlx/settings.json`) because it listens on
-  loopback only; `memory.memory_guard_tier: aggressive` lets the 16.8 GB coder model load. One omlx serves every stack
-  and every prodtest. `dev.sh` checks it before compose (`stack_model_ready` in `deploy/stack.sh`): whatever
-  `MODEL_UPSTREAM` points at (`host.docker.internal` mapped to `127.0.0.1`) must answer any HTTP status on
-  `/v1/models`; a gateway without a relay upstream (hosted) skips the check. Containers reach the Mac's loopback as
-  `host.docker.internal`.
-- **Model relay.** Each stack keeps a small Caddy (service `model-relay` in dev and prodtest, both
-  `deploy/proxy/Caddyfile.model-relay`) on the `internal` network (alias `model-relay.internal`, listening on `:8000`)
-  and `egress`. opencode's provider config (the `omlx` gateway's `base_url`, `http://model-relay.internal:8000/v1`, in
-  `OPENCODE_CONFIG_CONTENT`) and `NO_PROXY` use that name. The upstream is `{$MODEL_UPSTREAM}`, the gateway's
-  `relay_upstream` in the rendered `.env`: `host.docker.internal:8000` (the `omlx` gateway) for dev and prodtest.
-  The relay passes only `/v1/*` and answers 403 to the rest, so omlx's management API stays out
-  of a prompt-injected AI's reach.
+- **Model.** No model server runs on the Mac or in a stack: dev and prodtest inherit production's OpenRouter models
+  (`dev.yaml` / `prodtest.yaml` have no `ai` block). opencode reaches OpenRouter through the egress proxy like
+  production; the key is `deploy/secrets/openrouter_api_key` (dev; `just prodtest` copies `deploy/secrets/*_api_key`).
+  `dev.sh up` needs no model check or pull; a missing key stops it at `settings_render`.
 - **Stack label.** The dev `web` service sets `VITE_STACK=N`; `brandName()` (`apps/web/src/lib/brand.ts`) makes the
   vault switcher's brand `karpathy #N`. The prod PWA is built without it and keeps `karpathy.app`, as do the token
   screen, the chat author line and `<title>`.
@@ -1820,8 +1804,8 @@ flowchart TB
 
 | Key | Holds | Overridden by |
 |---|---|---|
-| `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | `dev`, `prodtest`: `omlx`, `omlx/Qwen3-Coder-30B-A3B-Instruct-4bit`; `test`: the production values (`test.yaml` is empty) |
-| `ai.vision_model` | The vision model of `look_at_image` (required; `<gateway>/<model>` on any configured gateway, named by its own prefix — so switching only `ai.gateway` in an overlay keeps it valid; the gateway's kind must speak the OpenAI chat API, and the model relay's `MODEL_UPSTREAM` falls back to the vision gateway's): `openrouter/mistralai/mistral-medium-3-5` (Mistral Small 2603 was rate-limited upstream for the shared OpenRouter key, HTTP 429), with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY` and `VISION_REQUEST_OPTIONS` (the model's `options`, merged into the request) into `opencode.env`. | `dev`, `prodtest`: `omlx/Qwen3-VL-4B-Instruct-4bit`; `test`: the production value |
+| `ai.gateway`, `ai.model` | The gateway (a key of `gateways`) and the default model (`openrouter/z-ai/glm-5.3`) | — (`dev.yaml`, `prodtest.yaml` and `test.yaml` have no `ai` block: the production values) |
+| `ai.vision_model` | The vision model of `look_at_image` (required; `<gateway>/<model>` on any configured gateway, named by its own prefix — so switching only `ai.gateway` in an overlay keeps it valid; the gateway's kind must speak the OpenAI chat API): `openrouter/mistralai/mistral-medium-3-5` (Mistral Small 2603 was rate-limited upstream for the shared OpenRouter key, HTTP 429), with the same ZDR routing as the chat model under `gateways.openrouter.models`. `renderOpencodeEnv` writes `VISION_BASE_URL`, `VISION_MODEL`, `VISION_API_KEY` and `VISION_REQUEST_OPTIONS` (the model's `options`, merged into the request) into `opencode.env`. | — |
 | `ai.web` | `access` (default of the Web access switch), `fetch_cap`, `search_cap` (20 each), `exa_api_key` (optional secret) | — |
 | `auth` | `bearer_token`, `opencode_password` (secret references) | — |
 | `git` | `remote_base` (`https://github.com/`), `author` (`name`, `email`), `github_token` (optional secret) | `dev`, `prodtest`: `file:///remotes/`; author per environment; `hetzner`: author as secrets `git_author_name` / `git_author_email` |
@@ -1830,7 +1814,7 @@ flowchart TB
 | `commit_reminder_threshold` | Default of the commit reminder (4) | — |
 | `files.visible_dot_dirs` | Dot-folders the file tree shows (`[.agents]`; names start with `.`, never `.git`) | — |
 | `ingest` | `defaults` (ingest-email options: `max_per_poll` 20, `resolve_max_urls_per_mail` 5, `run_interval_s` 900) and `profiles` (`{}`: the loop idles). A profile: `vault` (backend vault id), optional `root`, `label`, `account` and `allowed_senders` (each may be a secret reference, so no personal data lands in the public repo), optional `settings` (ingest-email options) | only `hetzner` may set profiles (none yet; a test asserts `dev`, `prodtest` and `test` have none) |
-| `gateways.<id>` | `kind`, `name`, `base_url`, `relay_upstream`, `api_key`, `models` (opencode's per-model config, passed through): `openrouter` (built-in kind; `z-ai/glm-5.3` with its zero-data-retention provider routing) and `omlx` (`openai-compatible`, "omlx (dev)", base URL `http://model-relay.internal:8000/v1`, `relay_upstream: host.docker.internal:8000`, `Qwen3-Coder-30B-A3B-Instruct-4bit` and `Qwen3-VL-4B-Instruct-4bit` with `limit: { context: 16384, output: 4096 }`) | — |
+| `gateways.<id>` | `kind`, `name`, `base_url`, `api_key`, `models` (opencode's per-model config, passed through): `openrouter` is the only gateway (built-in kind; `z-ai/glm-5.3` with its zero-data-retention provider routing); the `openai-compatible` kind (with `base_url`) stays in the schema, the harness being provider-agnostic | — |
 
 **Load and validate** (`packages/settings`, plain TypeScript run with `tsx`, deps `yaml` and `zod`):
 
@@ -1846,7 +1830,7 @@ flowchart TB
 
 | File | Read by | Contents |
 |---|---|---|
-| `.env` (0600) | compose interpolation | `DOMAIN`, `TLS_MODE`, `DNS_PROVIDER`, `TZ`, `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (resolved), `GIT_REMOTE_BASE`, `DEFAULT_MODEL` (= `ai.model`), `MODEL_UPSTREAM` (only for a gateway with `relay_upstream`), `SETTINGS_DIR` (dev, prodtest: the rendered dir relative to `deploy/`). A superset of the old Ansible `env.j2`, so an older release's `compose.yml` still finds every name (rollback); a target appends its host facts. |
+| `.env` (0600) | compose interpolation | `DOMAIN`, `TLS_MODE`, `DNS_PROVIDER`, `TZ`, `GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL` (resolved), `GIT_REMOTE_BASE`, `DEFAULT_MODEL` (= `ai.model`), `SETTINGS_DIR` (dev, prodtest: the rendered dir relative to `deploy/`). A superset of the old Ansible `env.j2`, so an older release's `compose.yml` still finds every name (rollback); a target appends its host facts. |
 | `opencode.env` (0600) | opencode (`env_file`) | The gateway's key under its provider's variable (`OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`; none for `openai-compatible`), `EXA_API_KEY` if set, `WEB_FETCH_CAP`, `WEB_SEARCH_CAP`, `OPENCODE_MODEL`, `OPENCODE_CONFIG_CONTENT` (`{ provider: { <gateway>: … } }`, merged after a vault's own config, see [opencode](#opencode-deployopencode)). Values compose's env-file parser reads back verbatim (`$` escaped). |
 | `settings.json` | backend (`SETTINGS_FILE`) | Only what the backend needs: `auth`, `git` (remote base, resolved author, token), `ai.model`, `ai.web_access`, `commit_reminder_threshold`, `files`, and `secrets` (#150: the secret manifest, names, purpose, optional and set as of the render, never a value; see [Admin mode](#admin-mode)). The compose secrets (`bearer_token`, `opencode_password`, `github_token`, `dns_api_token`) become `{ file: "/run/secrets/<name>" }`; any other reference is resolved inline. |
 | `ingest.json` (0600) | ingest service (`/etc/ingest/config.json`) | `{ defaults, profiles }`; per profile `vault`, `root`, `label`, `account` and `allowed_senders` with their secrets resolved, and the profile's `settings` merged in. `run.sh` turns it into ingest-email's own config ([Ingest service](#ingest-service-deployingest)). |
@@ -1856,8 +1840,7 @@ flowchart TB
 takes `env_file: ${SETTINGS_DIR:-.}/opencode.env` (optional, so `compose config` works without a render), ingest mounts
 `${SETTINGS_DIR:-.}/ingest.json` read-only at `/etc/ingest/config.json` (also `create_host_path: false`). On a target
 `SETTINGS_DIR` is unset and `shared/` is the project dir. No model or gateway literal is left in any compose file;
-`compose.dev.yml` / `compose.prodtest.yml` keep only stack plumbing (ports, builds, source mounts, the model relay
-with `MODEL_UPSTREAM`, `NO_PROXY` for `model-relay.internal`). A dev stack renders the settings of the checkout it is
+`compose.dev.yml` / `compose.prodtest.yml` keep only stack plumbing (ports, builds, source mounts). A dev stack renders the settings of the checkout it is
 started in (main clone or worktree), with that checkout's overlay and secrets, so a branch that changes a setting runs
 with it and parallel stacks never read each other's.
 
@@ -1881,12 +1864,15 @@ settings' values as defaults; there is no model literal in the code (`DEFAULT_SE
 model against opencode's model list. The threshold and Web access keep "stored wins": the settings give their value
 until one is saved in the app.
 
-**Test environment.** `deploy/settings/test.yaml` is empty: the `@llm` tests' fallback models are the production ones
-(OpenRouter). `apps/backend/test/opencode-container.ts` (`pickTestModels`) takes `LLM_MODEL` / `LLM_VISION_MODEL` from
-`LLM_TEST_MODEL` / `LLM_VISION_MODEL` if set, else from `loadSettings('dev')` (omlx) when omlx answers on
-`127.0.0.1:8000` (an omlx without one of them is an error, no fallback), else from `loadSettings('test')` when an
-OpenRouter key is there (`OPENROUTER_API_KEY`, else `deploy/secrets/openrouter_api_key`); otherwise the `@llm` tests
-fail saying what to start or add. CI has no `@llm` tier. Tests of the committed files use `overlay: false` / `--no-local`, so a developer's overlay never
+**Test environment.** `deploy/settings/test.yaml` is empty: the tests' models are the production ones (OpenRouter).
+`apps/backend/test/opencode-container.ts` (`pickTestModels(env, { openrouterKey })`, pure) works in this order: no
+OpenRouter key (`OPENROUTER_API_KEY`, else `deploy/secrets/openrouter_api_key`) → the `@llm` tests throw
+"no OpenRouter key: put it into deploy/secrets/openrouter_api_key (or OPENROUTER_API_KEY)" before any container
+starts; else `LLM_TEST_MODEL` / `LLM_VISION_MODEL` if set (other OpenRouter models); else the models of
+`loadSettings('test')`. The container gets the built-in `openrouter` provider with the ZDR routing of `settings.yaml`
+(`renderOpencodeProviders`), the key passed by name (`-e OPENROUTER_API_KEY`, never on a command line) and traffic
+through the egress proxy. The weekly CI job runs `npm run test:llm` with the secret `OPENROUTER_API_KEY`; the default
+tier needs no key, network or model. Tests of the committed files use `overlay: false` / `--no-local`, so a developer's overlay never
 changes a result.
 
 **Ansible** renders a target's settings on the controller with the same CLI (`render-settings.sh`) and copies the
@@ -1940,18 +1926,17 @@ The ones that shape the whole system:
   check must be re-run. Backend and opencode run as the same uid so files the AI writes stay committable.
 - **Commit message proposals go through opencode** (agent `commit-message`, a throwaway session that is deleted
   afterwards), not a second LLM client, because only opencode holds provider keys.
-- **Runtime = docker compose in dev and prod**, nothing native in dev except the dev model server (omlx). Rancher Desktop bind
+- **Runtime = docker compose in dev and prod**, nothing native in dev. Rancher Desktop bind
   mounts deliver no inotify events, so the dev `web` and `backend` containers poll for source changes.
 - **Numbered dev stacks, one scheme** (80N0, no stack 0 on 8443): two port schemes is what the hand-written
   `tmp/compose.*.yml` overrides showed going wrong (a missing `HMR_CLIENT_PORT`, shared image tags, commands
   hitting the wrong stack). The remembered stack per checkout beats `STACK=N` on every command, which is how agents
   end up on the wrong stack; a bare `up` takes the first free stack rather than always stack 1. Ownership comes from
   Docker plus the other worktrees' claims, not a separate registry that could go stale.
-- **One native model server for all dev stacks (omlx), a relay per stack:** a model container per stack duplicates memory and
-  models, and a container is CPU-only in the Rancher VM, while MLX uses the Mac's GPU. The relay is a Caddy with a `/v1` allowlist,
-  not raw socat: socat exposed the admin API, and a model server on the Mac that can pull from an "insecure"
-  registry (the earlier server's pull API) could have made the Mac request LAN or loopback addresses the egress proxy forbids. Cost: a host
-  dependency (`brew install omlx`).
+- **Every model on OpenRouter, no local model server**: a local model was weak (three `@llm` tests
+  failed on it), CPU-only in the Rancher VM or a host dependency on the Mac's GPU, and it needed a relay per stack
+  to keep its admin API away from a prompt-injected AI. One mental model: tests run what ships; cost is a key and
+  per-token spend (the budget is fine). Offline lifecycle tests use `DEAD_MODEL` instead of a model.
 - **One settings directory, rendered for each component** (#133): before it, the model alone sat in nine places
   (compose defaults and overrides, `group_vars`, `env.j2`, the dev opencode config fixture, the config store) and a persisted Admin
   choice silently pinned it. A central file plus sparse environment files shows what makes an environment different;
@@ -2109,14 +2094,13 @@ The ones that shape the whole system:
   pasted URL, one constructed URL refused.
 - **`@llm` rules:** prompts name the tool explicitly; assertions check tool events and the file system, never answer
   text; a turn without any tool call fails as *inconclusive*, not as passed; at most one retry.
-- **Model in dev and tests:** dev and prodtest run omlx `Qwen3-Coder-30B-A3B-Instruct-4bit` (vision `Qwen3-VL-4B-Instruct-4bit`);
-  the `@llm` tests run on those when omlx answers, else on the production OpenRouter models (see Test environment). The omlx
-  gateway's model config has a context limit of 16384 (`limit: { context: 16384, output: 4096 }`); without it opencode's
-  prompt would be truncated silently and the model would ignore `AGENTS.md` and misuse tools. The vision model is declared with
-  `modalities.input: [text, image]`. The dev stacks' models are the files in omlx's `~/.omlx/models`; the test container
-  reaches omlx directly at `http://host.docker.internal:8000/v1` (in `NO_PROXY`); a missing model fails the test
-  fast as *inconclusive: no tool call*. The test container declares image input on `DEAD_MODEL_2`, so `modelInput` is tested without
-  a model run.
+- **Model in dev and tests:** dev, prodtest, e2e and the `@llm` tests all run the production OpenRouter models (see
+  Test environment). `DEAD_MODEL = 'dead/kai-no-such-model'` (`DEAD_MODEL_2` likewise, with image input declared, so
+  `modelInput` is tested without a model run) sits on a test-only `openai-compatible` provider `dead` in the test
+  container's config (never in `deploy/settings`) whose base URL is opencode's own port,
+  `http://127.0.0.1:4096/no-such-provider/v1`: opencode's server answers 401, which the AI SDK treats as
+  non-retryable, so a turn fails within about a second, offline, with no key. The vault-can't-override and
+  websearch-offered tests use the `dead` provider; fixtures and unit tests use `openrouter/…` ids.
 - **Command and move tests:** default tier: `command.test.ts` (parse, expand; a `` !`id -u` `` stays literal),
   `agents-standard.test.ts` (scan, move, convert, clashes, inlined imports, the staged link), `api.test.ts` (the move on open and pull, the commit carrying a real symlink, the
   `agents-move` event), `harness-map.test.ts`, `chat.test.ts` (command turns, skill refresh), `known-url.test.ts` (`guardWebCall`),
@@ -2158,13 +2142,14 @@ directory with its items), `ingest-routes.test.ts`
 - **Dev stack tests** (in `just check`): `deploy/stack.test.sh` (ports, owner from `compose ls` JSON, states,
   resolution order, claims, refusals) and `e2e/stack.unit.ts` (the e2e target resolution).
 - **Settings tests:** `packages/settings` units: merge, schema and cross-field errors with file and YAML path, secret
-  resolution, each renderer (golden strings: the dev (`dev-omlx.json`) and OpenRouter opencode config blocks, a `.env` whose keys ⊇ the
-  old `env.j2`'s, `MODEL_UPSTREAM`, `settings.json` parsed by the backend's schema), the CLI, and the committed
+  resolution, each renderer (golden strings: the OpenRouter opencode config block (the central fixture in `test/helpers.ts` also has a neutral
+  `openai-compatible` gateway), a `.env` whose keys ⊇ the old `env.j2`'s, `settings.json` parsed by the backend's schema), the CLI, and the committed
   files (five environments, today's effective values, environment files hold only differences, model literals only
   in `deploy/settings/`). `just settings check` in `just check` and CI. `stack.test.sh`: compose config with a render
   has no model literal and mounts the rendered files, `settings_render` and `settings_legacy_check` (and that `dev.sh`
   and `just prodtest` call them), `render-settings.sh`, every secret a target uses has a source in role `app`, and
-  `compose.target.yml` has no model relay. Backend: `settings.test.ts`
+  `compose.target.yml` has no model relay. A guard test in `repo-settings.test.ts` forbids the name of the removed
+  local model server (pattern built from pieces) in tracked files outside `specs/research/**` and `DECISIONS.md`. Backend: `settings.test.ts`
   (`loadBackendSettings`), `config-store.test.ts` (override only while ≠ default, legacy model), `api.test.ts`
   (`defaultModel`, `modelOverridden`, `PATCH model: null`); e2e `admin.spec.ts` (the Default line, override, Use
   default, persisted after a reload).

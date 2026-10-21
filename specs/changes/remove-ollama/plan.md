@@ -4,7 +4,7 @@ title: "Plan: remove Ollama"
 status: applying
 order: 4
 created: 2026-10-15
-edited: 2026-10-16
+edited: 2026-10-21
 ---
 
 # Plan: remove Ollama
@@ -95,7 +95,10 @@ flowchart LR
 
 ## Close (end to end)
 
-- [ ] End to end on a quiet Mac
+- [x] End to end on a quiet Mac (2026-10-21, after merging `main`: `just check` green apart from one load timeout
+  in `chat.test.ts`, green alone; `test:llm` on OpenRouter in CI run 39574469211; `just dev up` (no relay) and
+  `just e2e --grep-invert @llm` 513/514, the one load flake green on `--last-failed`; no local OpenRouter key, so
+  local `@llm` e2e and `just prodtest` stay for the user — DECISIONS.md run-2026-10-21-1058-2)
   - Depends on: 6, 8, 10, 14
   - Test first: none — the suites above are the tests.
   - Verify: `just check` → green apart from the known `api.test.ts` load flake (separate issue; each failure re-run alone green); `npm run test:llm` → green on OpenRouter; `just dev up` and the full `just e2e` → green on OpenRouter; `just prodtest` up and a chat turn works
