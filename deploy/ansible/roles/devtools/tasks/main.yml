@@ -2,10 +2,31 @@
 # (Docker comes from role docker).
 - name: Command-line tools
   ansible.builtin.apt:
-    name: [git, just, ripgrep, jq, netcat-openbsd]
+    name: [git, ripgrep, jq, netcat-openbsd]
     state: present
     update_cache: true
     cache_valid_time: 3600
+
+# Upstream's release, not Ubuntu's just (1.21 can't parse the repo's justfile).
+- name: No Ubuntu just
+  ansible.builtin.apt:
+    name: just
+    state: absent
+
+- name: Installed just
+  ansible.builtin.command: /usr/local/bin/just --version
+  register: devtools_just
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Just {{ devtools_just_version }}
+  ansible.builtin.unarchive:
+    src: "{{ devtools_just_url }}"
+    remote_src: true
+    dest: /usr/local/bin
+    include: [just]
+  when: devtools_just.stdout != 'just ' ~ devtools_just_version
 
 - name: NodeSource apt repo (Node 22)
   ansible.builtin.deb822_repository:

@@ -59,6 +59,9 @@ as_user 'docker info >/dev/null' >/dev/null && ok "login user can use Docker" ||
 for tool in just rg jq gh claude; do
   as_user "$tool --version" >/dev/null && ok "$tool answers --version" || bad "$tool answers --version" "$(as_user "$tool --version" | tail -1)"
 done
+# Ubuntu's own just (1.21) can't parse the repo's justfile.
+docker cp "$here/../../justfile" "$ctr:/tmp/justfile" >/dev/null
+out=$(as_user 'just --justfile /tmp/justfile --summary') && ok "just parses the repo's justfile" || bad "just parses the repo's justfile" "$out"
 as_user 'command -v nc' >/dev/null && ok "nc is installed" || bad "nc is installed" "missing"
 pw=$(node -p "require('$here/../../package-lock.json').packages['node_modules/@playwright/test'].version")
 eq "devtools' Playwright version is the repo's" "$(sed -n 's/^devtools_playwright_version: *//p' "$here/roles/devtools/defaults/main.yml" 2>/dev/null)" "$pw"
