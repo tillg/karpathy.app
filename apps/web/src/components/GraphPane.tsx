@@ -1,7 +1,7 @@
 import type { GraphData } from '@karpathy/shared';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, errorText } from '../lib/api';
-import { shownGraph, typeColors, typeLabel, withoutTypes } from '../lib/graph';
+import { localGraph, shownGraph, typeColors, typeLabel, withoutTypes } from '../lib/graph';
 import { useApp } from '../store';
 import { Icon } from './Icon';
 
@@ -12,37 +12,75 @@ const COLORS = { entity: '--tint', none: '--label3', palette: ['--graph-1', '--g
 /** The types switched off in the legend: a per-browser preference (storage can throw: then not remembered). */
 const HIDDEN_KEY = 'karpathy.graphHiddenTypes';
 const loadHidden = () => { try { return new Set<string>(JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '[]')); } catch { return new Set<string>(); } };
+/** The local graph's depth (#92): 1 or 2 links from the open note, a per-browser preference like the types. */
+const DEPTH_KEY = 'karpathy.graphDepth';
+const loadDepth = () => { try { return localStorage.getItem(DEPTH_KEY) === '2' ? 2 : 1; } catch { return 1; } };
+
+/** Room around the local graph's notes when the camera fits them, for their names (px). */
+const FIT_PAD = 72;
 
 /** Each vault's graph, read on its first open in this session; Refresh reads it again. */
 const cache = new Map<string, GraphData>();
 
 type Node = { id: string; type?: string };
-type Live = { g: import('3d-force-graph').ForceGraph3DInstance; nodes: Map<string, Node>; css: CSSStyleDeclaration };
+type Three = typeof import('three');
+type Live = { g: import('3d-force-graph').ForceGraph3DInstance; nodes: Map<string, Node>; css: CSSStyleDeclaration; three: Three; degree: Map<string, number>; labels: Map<string, import('three').Sprite>; named: boolean; localNodes: Map<string, Node> };
+
+/** A note's name as a sprite under its dot, for the local graph (#92), where a phone has no hover to show it. Drawn
+ *  on a canvas as text, never parsed as markup. */
+function nameSprite(three: Three, text: string, color: string, radius: number) {
+  const name = text.length > 28 ? `${text.slice(0, 27)}…` : text;
+  const px = 48, font = `500 ${px}px -apple-system, system-ui, sans-serif`;
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d')!;
+  ctx.font = font;
+  c.width = Math.ceil(ctx.measureText(name).width) + 8;
+  c.height = Math.ceil(px * 1.3);
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(name, 4, c.height / 2);
+  const map = new three.CanvasTexture(c);
+  map.colorSpace = three.SRGBColorSpace;
+  const sprite = new three.Sprite(new three.SpriteMaterial({ map, depthWrite: false, transparent: true }));
+  const h = 7.5;
+  sprite.scale.set((h * c.width) / c.height, h, 1);
+  sprite.position.y = -(radius + h * 0.7);
+  return sprite;
+}
 
 /**
  * 3D graph of the vault's notes and their links (#130), shown in the note pane over the open note. Built on its
- * first open and kept (only paused) while closed. Shows the `Wiki` folder unless "Show all"; a click opens the note.
+ * first open and kept (only paused) while closed. Shows the open note's local graph (#92, depth 1 or 2), the `Wiki`
+ * folder or all notes; a click opens the note.
  */
 export function GraphPane() {
-  const { activeId, note, openNote, graphOpen: open, setGraphOpen, phone, admin } = useApp();
+  const { activeId, note, openNote, graphOpen: open, setGraphOpen, graphScope: scope, setGraphScope, phone, admin } = useApp();
   const host = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState<{ vault: string; graph: GraphData } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [all, setAll] = useState(false);
+  const [depth, setDepth] = useState(loadDepth);
+  useEffect(() => { try { localStorage.setItem(DEPTH_KEY, String(depth)); } catch { /* not remembered */ } }, [depth]);
   const [drawn, setDrawn] = useState(false);
   const [hidden, setHidden] = useState(loadHidden);
   useEffect(() => { try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden])); } catch { /* not remembered */ } }, [hidden]);
   const toggleType = (t: string) => setHidden((h) => { const n = new Set(h); if (!n.delete(t)) n.add(t); return n; });
   const data = loaded && loaded.vault === activeId ? loaded.graph : null;
-  // `base`: Wiki or all; `view`: without the types switched off in the legend.
-  const base = useMemo(() => data && shownGraph(data, all), [data, all]);
-  const view = useMemo(() => base && withoutTypes(base, hidden), [base, hidden]);
-  const colors = useMemo(() => data && typeColors(data, COLORS), [data]);
   const current = note?.path;
+  // The local graph needs an open note that is in the graph; without one the scope falls back to the Wiki view.
+  const center = data && current && data.nodes.some((n) => n.path === current) ? current : undefined;
+  const local = scope === 'local' && !!center;
+  // `base`: the open note's neighbourhood, Wiki or all; `view`: without the types switched off in the legend.
+  const base = useMemo(() => data && (local ? localGraph(data, center!, depth) : shownGraph(data, scope === 'all')), [data, local, center, depth, scope]);
+  const view = useMemo(() => base && withoutTypes(base, hidden, local ? center : undefined), [base, hidden, local, center]);
+  const colors = useMemo(() => data && typeColors(data, COLORS), [data]);
   const live = useRef<Live | null>(null);
+  /** Set when the local graph changes or is left: the camera fits the notes once the layout settles. */
+  const fit = useRef(false);
+  const fitSoon = useRef<ReturnType<typeof setTimeout>[]>([]);
   // The effects below read the latest of these without rebuilding the graph.
-  const latest = useRef({ view, colors, current, openNote });
-  useLayoutEffect(() => { latest.current = { view, colors, current, openNote }; });
+  const latest = useRef({ view, colors, current, openNote, local });
+  useLayoutEffect(() => { latest.current = { view, colors, current, openNote, local }; });
 
   useEffect(() => {
     if (!open || !activeId || data) return;
@@ -59,7 +97,7 @@ export function GraphPane() {
     if (!data || !el) return;
     let gone = false;
     const ro = new ResizeObserver(() => live.current?.g.width(el.clientWidth).height(el.clientHeight));
-    void import('3d-force-graph').then(({ default: ForceGraph3D }) => {
+    void Promise.all([import('3d-force-graph'), import('three')]).then(([{ default: ForceGraph3D }, three]) => {
       if (gone) return;
       const css = getComputedStyle(el);
       const degree = new Map<string, number>();
@@ -75,20 +113,67 @@ export function GraphPane() {
         .linkColor(() => css.getPropertyValue('--label3').trim())
         .linkOpacity(0.35)
         .onEngineTick(() => setDrawn(true))
+        .onEngineStop(() => { if (fit.current) { fit.current = false; g.zoomToFit(400, latest.current.local ? FIT_PAD : 20); } })
         .onNodeClick((n) => void latest.current.openNote(String(n.id)));
-      // The same node objects for every view keep the layout when "Show all" is toggled.
-      live.current = { g, css, nodes: new Map(data.nodes.map((n) => [n.path, { id: n.path, type: n.type }])) };
+      // The same node objects for every view keep the layout when the scope changes.
+      live.current = { g, css, three, degree, labels: new Map(), named: false, localNodes: new Map(), nodes: new Map(data.nodes.map((n) => [n.path, { id: n.path, type: n.type }])) };
       show();
       paint();
       ro.observe(el);
     });
-    return () => { gone = true; ro.disconnect(); live.current?.g._destructor(); live.current = null; el.replaceChildren(); setDrawn(false); };
+    return () => {
+      gone = true;
+      ro.disconnect();
+      fitSoon.current.forEach(clearTimeout);
+      for (const s of live.current?.labels.values() ?? []) { s.material.map?.dispose(); s.material.dispose(); }
+      live.current?.g._destructor();
+      live.current = null;
+      el.replaceChildren();
+      setDrawn(false);
+    };
   }, [data]);
 
-  /** Hands the shown notes and links to the graph. */
+  /** Hands the shown notes and links to the graph; the local graph names its notes and fits the camera to them. */
   const show = () => {
-    const l = live.current, v = latest.current.view;
-    if (l && v) l.g.graphData({ nodes: v.nodes.map((n) => l.nodes.get(n.path)!), links: v.links.map((x) => ({ ...x })) });
+    const l = live.current, { view: v, local: loc } = latest.current;
+    if (!l || !v) return;
+    const label = (n: object) => {
+      const id = String((n as Node).id);
+      let s = l.labels.get(id);
+      if (!s) l.labels.set(id, (s = nameSprite(l.three, title(id), l.css.getPropertyValue('--label').trim(), 4 * Math.cbrt(1 + (l.degree.get(id) ?? 0)))));
+      return s;
+    };
+    const mode = l.named !== loc;
+    // The local graph lies flat (2D), on its own node objects, so the vault's 3D layout survives the visit.
+    if (mode && !loc) l.g.numDimensions(3);
+    // A new accessor rebuilds every dot: only when the names come or go.
+    if (mode) l.g.nodeThreeObjectExtend(true).nodeThreeObject(loc ? label : () => null as unknown as import('three').Object3D);
+    l.named = loc;
+    const nodes = loc ? l.localNodes : l.nodes;
+    const node = (n: GraphData['nodes'][number]) => {
+      let o = nodes.get(n.path);
+      if (!o) nodes.set(n.path, (o = { id: n.path, type: n.type }));
+      return o;
+    };
+    l.g.graphData({ nodes: v.nodes.map(node), links: v.links.map((x) => ({ ...x })) });
+    if (mode) {
+      // Flat: one finger (left button) moves instead of rotating, and the camera faces the plane.
+      const c = l.g.controls() as { mouseButtons: { LEFT: number }; touches: { ONE: number } };
+      c.mouseButtons.LEFT = loc ? l.three.MOUSE.PAN : l.three.MOUSE.ROTATE;
+      c.touches.ONE = loc ? l.three.TOUCH.PAN : l.three.TOUCH.ROTATE;
+      // The few notes settle in about 2 s instead of 5.
+      l.g.d3AlphaDecay(loc ? 0.05 : 0.0228);
+      if (loc) l.g.numDimensions(2).cameraPosition({ x: 0, y: 0, z: 300 }, { x: 0, y: 0, z: 0 });
+      // More room between the notes for their names (numDimensions resets the charge: -30 flat, -60 in 3D).
+      if (loc) (l.g.d3Force('charge') as unknown as { strength(s: number): void } | undefined)?.strength(-120);
+      (l.g.d3Force('link') as unknown as { distance(d: number): void } | undefined)?.distance(loc ? 40 : 30);
+    }
+    fit.current = loc || mode;
+    fitSoon.current.forEach(clearTimeout);
+    // The local graph: once early, when the layout has roughly settled, and again when it stops (onEngineStop).
+    // Back from it: the camera finds the vault's layout again, now and when it stops.
+    if (loc) fitSoon.current = [600, 1500, 3000].map((ms) => setTimeout(() => { if (latest.current.local) live.current?.g.zoomToFit(400, FIT_PAD); }, ms));
+    else if (mode) fitSoon.current = [300, 1500].map((ms) => setTimeout(() => live.current?.g.zoomToFit(400, 20), ms));
   };
   /** Colours the notes: the open one orange, the others by type. */
   const paint = () => {
@@ -112,7 +197,10 @@ export function GraphPane() {
   }, [open, admin, setGraphOpen]);
 
   const refresh = () => { if (activeId) cache.delete(activeId); setLoaded(null); };
-  const wikiOnly = !!data && base !== data;
+  const hasWiki = !!data && shownGraph(data, false) !== data;
+  const wikiOnly = !local && scope !== 'all' && hasWiki;
+  const scopes = ([['local', 'Local', !!center], ['wiki', 'Wiki', hasWiki], ['all', 'All', true]] as const).filter(([, , on]) => on);
+  const shown = local ? 'local' : scope === 'all' || !hasWiki ? 'all' : 'wiki';
   const shownTypes = useMemo(() => new Set(base?.nodes.map((n) => typeLabel(n.type))), [base]);
 
   return (
@@ -123,10 +211,11 @@ export function GraphPane() {
         </button>
         <span className="bar-title">Graph</span>
         <span className="sp" />
-        {data && (wikiOnly || all) && (
+        {data && scopes.length > 1 && (
           <div className="seg" role="group" aria-label="Notes shown">
-            <button className={all ? '' : 'on'} aria-pressed={!all} data-testid="graph-wiki" onClick={() => setAll(false)}>Wiki</button>
-            <button className={all ? 'on' : ''} aria-pressed={all} data-testid="graph-all" onClick={() => setAll(true)}>Show all</button>
+            {scopes.map(([s, label]) => (
+              <button key={s} className={shown === s ? 'on' : ''} aria-pressed={shown === s} data-testid={`graph-${s}`} onClick={() => setGraphScope(s)}>{label}</button>
+            ))}
           </div>
         )}
         <button className="ib" title="Refresh graph" aria-label="Refresh graph" data-testid="graph-refresh" disabled={!data} onClick={refresh}><Icon n="arrow_clockwise" /></button>
@@ -143,6 +232,20 @@ export function GraphPane() {
             )}
           </div>
           <div className="graph-hint">
+            {local && (
+              <div className="graph-depth">
+                <span id="graph-depth-label">Depth</span>
+                <div className="seg" role="group" aria-labelledby="graph-depth-label">
+                  {[1, 2].map((d) => <button key={d} className={depth === d ? 'on' : ''} aria-pressed={depth === d} data-testid={`graph-depth-${d}`} onClick={() => setDepth(d)}>{d}</button>)}
+                </div>
+              </div>
+            )}
+            {local && view && (
+              // The canvas can't be reached by keyboard or screen reader: the same notes as buttons.
+              <ul className="sr-only" aria-label="Notes in the graph">
+                {view.nodes.map((n) => <li key={n.path}><button data-testid="graph-note" onClick={() => void openNote(n.path)}>{title(n.path)}</button></li>)}
+              </ul>
+            )}
             {view && colors && (
               <ul className="graph-legend" data-testid="graph-legend">
                 {[['entity', COLORS.entity], ...colors.legend, [typeLabel(undefined), COLORS.none]].filter(([t]) => shownTypes.has(t!)).map(([t, v]) => (
@@ -155,7 +258,9 @@ export function GraphPane() {
                 ))}
               </ul>
             )}
-            <p>{view ? `${view.nodes.length} notes${wikiOnly ? ' in Wiki' : ''} · ${view.links.length} links · drag to rotate, pinch or scroll to zoom, tap a note to open it` : 'Loading…'}</p>
+            <p>{view
+              ? `${view.nodes.length} notes${local ? ` within ${depth} ${depth === 1 ? 'link' : 'links'} of ${title(center!)}` : wikiOnly ? ' in Wiki' : ''} · ${view.links.length} links · ${local ? 'drag to move' : 'drag to rotate'}, pinch or scroll to zoom, tap a note to open it`
+              : 'Loading…'}</p>
           </div>
         </>
       )}

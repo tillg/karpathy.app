@@ -65,6 +65,8 @@ const PAGE_MODE_KEY = 'karpathy.pageMode';
 const PROPS_VIEW_KEY = 'karpathy.propsView';
 /** How Write mode shows the frontmatter: the properties form open or collapsed, or the raw YAML lines. */
 export type PropsView = 'open' | 'closed' | 'yaml';
+/** What the graph shows (#92): the open note's local graph, the `Wiki` folder or all notes. */
+export type GraphScope = 'local' | 'wiki' | 'all';
 const AUTOSAVE_MS = 1500;
 const RETRY_MS = 10_000;
 const drafts = () => localStorage;
@@ -550,6 +552,8 @@ function useAppState() {
   const [commitOpen, setCommitOpen] = useState(false);
   /** The graph is shown in the note pane, over the open note (which stays as it was); opening a note closes it. */
   const [graphOpen, setGraphOpenState] = useState(false);
+  /** What the graph shows: the open note's local graph (#92), the `Wiki` folder or all notes. Kept for the session. */
+  const [graphScope, setGraphScope] = useState<GraphScope>('wiki');
   const [chatId, setChatId] = useState<string | null>(null);
   /** Ingest button: a new chat that sends `/ingest` (the vault's ingest skill), shown at once. */
   const ingestNow = useCallback(async () => {
@@ -940,7 +944,7 @@ function useAppState() {
     followLink, exists, readOnly, conflict, canGoBack, goBack,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain, ingestNow,
     schema: schema?.vault === activeId ? schema.schema : DEFAULT_SCHEMA,
-    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, admin, adminVault, clearAdminVault, openAdmin, setAdminSection, adminUp, closeAdmin, commitOpen, setCommitOpen, graphOpen, setGraphOpen, chatId, setChatId,
+    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, admin, adminVault, clearAdminVault, openAdmin, setAdminSection, adminUp, closeAdmin, commitOpen, setCommitOpen, graphOpen, setGraphOpen, graphScope, setGraphScope, chatId, setChatId,
   };
 }
 

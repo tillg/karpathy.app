@@ -377,7 +377,7 @@ export function NotePane({ inert }: { inert?: boolean }) {
           onClick={() => s.setChatOpen(!s.chatOpen)}><Icon n="sparkles" /></button>}
       </header>
       {outlineOpen && note && isNote && !s.graphOpen && <OutlinePanel variant={phone ? 'sheet' : 'panel'} items={outline} info={info!} current={current} closeOutside={!phone && !wide}
-        onJump={jumpTo} onClose={() => setOutlineOpen(false)} />}
+        onJump={jumpTo} onClose={() => setOutlineOpen(false)} onGraph={() => { setOutlineOpen(false); s.setGraphScope('local'); s.setGraphOpen(true); }} />}
       <div className="scroll" ref={s.scrollRef} inert={s.graphOpen}>
         {!online && <div className="banner warn" data-testid="offline-banner">Offline — showing cached notes, read-only.</div>}
         {note?.deleted && (
