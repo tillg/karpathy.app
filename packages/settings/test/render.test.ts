@@ -39,6 +39,7 @@ describe('renderOpencodeEnv', () => {
       VISION_MODEL: 'mistralai/mistral-medium-3-5',
       VISION_API_KEY: 'sk-or-#1 "x"',
       VISION_REQUEST_OPTIONS: JSON.stringify({ provider: { order: ['mistral/zdr', 'mistral'], only: ['mistral/zdr', 'mistral'], zdr: true, data_collection: 'deny' } }),
+      VISION_MODEL_OPTIONS: hetzner.VISION_MODEL_OPTIONS,
     });
     // The providers, merged after a vault's own opencode.json.
     expect(JSON.parse(OPENCODE_CONFIG_CONTENT!)).toEqual(renderOpencodeProviders(loadSettings('hetzner', { overlay: false })));
@@ -61,8 +62,16 @@ describe('renderOpencodeEnv', () => {
     expect(x.VISION_MODEL).toBe('qwen3-vl:2b');
     expect(x.VISION_API_KEY).toBeUndefined();
     expect(x.VISION_REQUEST_OPTIONS).toBeUndefined();
+    expect(x.VISION_MODEL_OPTIONS).toBeUndefined();
     // The relay still finds the Mac's Ollama for the vision model.
     expect(env(renderComposeEnv(loadSettings('x', { dir }), SECRETS)).OLLAMA_UPSTREAM).toBe('host.docker.internal:11434');
+  });
+
+  it("lists the options of every model of the vision gateway, so an Admin override keeps its routing", () => {
+    const hetzner = env(renderOpencodeEnv(loadSettings('hetzner', { overlay: false }), SECRETS));
+    const map = JSON.parse(hetzner.VISION_MODEL_OPTIONS!);
+    expect(Object.keys(map).sort()).toEqual(['mistralai/mistral-medium-3-5', 'z-ai/glm-5.3']);
+    expect(map['mistralai/mistral-medium-3-5']).toEqual(JSON.parse(hetzner.VISION_REQUEST_OPTIONS!));
   });
 
   it('names the key variable after the gateway kind', () => {
@@ -119,13 +128,28 @@ describe('renderBackendSettings', () => {
       author: { name: 'Jane Doe', email: 'jane@example.com' },
       github_token: { file: '/run/secrets/github_token' },
     });
-    expect(s.ai).toEqual({ model: 'openrouter/z-ai/glm-5.3', web_access: true });
+    expect(s.ai).toEqual({
+      model: 'openrouter/z-ai/glm-5.3',
+      title_model: 'openrouter/z-ai/glm-5.3',
+      vision_model: 'mistralai/mistral-medium-3-5',
+      vision_gateway: 'openrouter',
+      web_access: true,
+    });
     expect(s.commit_reminder_threshold).toBe(4);
     expect(s.files).toEqual({ visible_dot_dirs: ['.agents'] });
     for (const e of ['dev', 'prodtest', 'test', 'hetzner'])
       expect(() => backendSettingsSchema.parse(JSON.parse(renderBackendSettings(loadSettings(e, { overlay: false }), SECRETS))), e).not.toThrow();
     for (const name of ['bearer_token', 'opencode_password', 'github_token', 'dns_api_token', 'openrouter_api_key'])
       expect(json).not.toContain(SECRETS[name as keyof typeof SECRETS]);
+  });
+});
+
+describe('renderBackendSettings title model', () => {
+  it('title_model defaults to ai.model; a set one is passed on', () => {
+    const dir = tempDir({ 'settings.yaml': CENTRAL, 'x.yaml': 'ai: { title_model: ollama/vision }\n' });
+    expect(JSON.parse(renderBackendSettings(loadSettings('x', { dir }), SECRETS)).ai.title_model).toBe('ollama/vision');
+    const dev = JSON.parse(renderBackendSettings(loadSettings('dev', { overlay: false }), SECRETS)).ai;
+    expect(dev).toMatchObject({ title_model: dev.model, vision_model: 'Qwen3-VL-4B-Instruct-4bit', vision_gateway: 'omlx' });
   });
 });
 

@@ -7,6 +7,8 @@
 ai:
   gateway: openrouter            # a key of `gateways`
   model: openrouter/z-ai/glm-5.3 # the default model; Admin may override it per installation
+  # Writes the chat titles (#148); a model of ai.gateway. Unset = ai.model. Admin may override it.
+  # title_model: openrouter/z-ai/glm-5.3
   # Looks at images for the chat model (tool look_at_image, #146). Same gateway; must speak the OpenAI chat API.
   vision_model: openrouter/mistralai/mistral-medium-3-5
   web:

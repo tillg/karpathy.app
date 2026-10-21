@@ -60,6 +60,8 @@ export function renderOpencodeEnv(s: Settings, secrets: Secrets): string {
   const vgw = s.gateways[vgwId]!;
   const visionModel = s.ai.vision_model.slice(vgwId.length + 1);
   const visionOptions = vgw.models?.[visionModel]?.options;
+  // Every model's options, so an Admin override of the vision model (/vaults/.vision.json) keeps its routing too.
+  const allOptions = Object.fromEntries(Object.entries(vgw.models ?? {}).flatMap(([id, m]) => (m.options ? [[id, m.options]] : [])));
   return lines([
     ...(keyVar && gw.api_key ? [[keyVar, secrets[gw.api_key.secret]] as [string, string | undefined]] : []),
     ['EXA_API_KEY', s.ai.web.exa_api_key ? secrets[s.ai.web.exa_api_key.secret] : undefined],
@@ -70,6 +72,7 @@ export function renderOpencodeEnv(s: Settings, secrets: Secrets): string {
     ['VISION_MODEL', visionModel],
     ['VISION_API_KEY', vgw.api_key ? secrets[vgw.api_key.secret] : undefined],
     ['VISION_REQUEST_OPTIONS', visionOptions ? JSON.stringify(visionOptions) : undefined],
+    ['VISION_MODEL_OPTIONS', Object.keys(allOptions).length ? JSON.stringify(allOptions) : undefined],
     ['OPENCODE_CONFIG_CONTENT', JSON.stringify(renderOpencodeProviders(s))],
   ]);
 }
@@ -134,7 +137,14 @@ export function renderBackendSettings(s: Settings, secrets: Secrets): string {
       author: { name: text(s.git.author.name, secrets), email: text(s.git.author.email, secrets) },
       github_token: ref(s.git.github_token),
     },
-    ai: { model: s.ai.model, web_access: s.ai.web.access },
+    ai: {
+      model: s.ai.model,
+      title_model: s.ai.title_model ?? s.ai.model,
+      // The vision model without its gateway prefix, as the tool sends it; an Admin override must be on the same gateway.
+      vision_model: s.ai.vision_model.slice(visionGatewayId(s).length + 1),
+      vision_gateway: visionGatewayId(s),
+      web_access: s.ai.web.access,
+    },
     commit_reminder_threshold: s.commit_reminder_threshold,
     files: s.files,
     secrets: secretManifest(s, secrets),

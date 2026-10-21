@@ -25,6 +25,13 @@ describe('schema', () => {
     expect(() => loadSettings('dev', { dir })).toThrow(/settings\.yaml: ai\.vision_model/);
   });
 
+  it('title_model is optional and must be a model of ai.gateway', () => {
+    expect(load('dev', { 'dev.yaml': '{}\n' })).not.toThrow();
+    expect(load('dev', { 'dev.yaml': 'ai: { title_model: ollama/vision }\n' })).not.toThrow();
+    expect(load('dev', { 'dev.yaml': 'ai: { title_model: ollama/nope }\n' })).toThrow(/ai\.title_model: .*ollama\/small/);
+    expect(load('dev', { 'dev.yaml': 'ai: { title_model: openrouter/z-ai/glm-5.3 }\n' })).toThrow(/ai\.title_model: .*gateway ollama/);
+  });
+
   it('cross-field rules', () => {
     expect(load('dev', { 'dev.yaml': 'ai: { gateway: nope }\n' })).toThrow(/ai\.gateway: no gateway "nope"/);
     expect(load('dev', { 'dev.yaml': 'ai: { model: ollama/llama9 }\n' })).toThrow(/ai\.model: .*ollama\/small, ollama\/vision/);
