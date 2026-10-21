@@ -3,7 +3,7 @@ import type { ChatMessage, ChatSummary, ModelInput } from '@karpathy/shared';
 import { lastEntries, ModelLimits, type LastEntryCache } from './context-cache.js';
 import { mapEvent, mapMessages, mapModels, usageRows, usageSessions, withLimit, writtenPaths, type HarnessEvent, type UsageRow } from './map.js';
 
-export type AgentName = 'vault' | 'vault-readonly' | 'commit-message';
+export type AgentName = 'vault' | 'vault-readonly' | 'commit-message' | 'chat-title';
 
 export interface PromptInput {
   text: string;

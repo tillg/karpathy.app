@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { uploadMime, type PromptClient, type ToolCall, type OpenPage, type ChatDetail, type Command, type ChatEvent, type ChatSummary, type TurnState } from '@karpathy/shared';
+import { ChatTitles } from './chat-title.js';
 import type { ConfigStore } from './config-store.js';
 import { readFrontmatter } from './agents-standard.js';
 import { commandInstructions, expandCommand, parseCommand, withoutBaseDir } from './harness/command.js';
@@ -66,6 +67,8 @@ export class ChatService {
   private v = new Map<string, VaultChats>();
   /** Per vault: the skill stamp opencode's skill list was last refreshed for. */
   private stamps = new Map<string, string>();
+  /** AI-written titles and drift suggestions (#148). */
+  readonly titles: ChatTitles;
 
   constructor(
     private readonly vaults: Vaults,
@@ -73,7 +76,9 @@ export class ChatService {
     private readonly harness: Harness,
     /** The vaults dir as the harness sees it (`/vaults` in compose). */
     private readonly harnessVaultsDir: string,
-  ) {}
+  ) {
+    this.titles = new ChatTitles(vaults, store, harness, (id) => this.dir(id), (id, e) => vaults.publish(id, e));
+  }
 
   /** Opens one event subscription per ready vault; adopts turns still running in opencode. */
   async init(): Promise<void> {
@@ -102,6 +107,7 @@ export class ChatService {
       }
     this.vaultRemoved(vaultId);
     await this.store.update((c) => { delete c.queued[vaultId]; });
+    await this.titles.forget(vaultId);
   }
 
   close() {
@@ -214,7 +220,10 @@ export class ChatService {
 
   async list(vaultId: string): Promise<ChatSummary[]> {
     await this.chats(vaultId);
-    return (await this.harness.listSessions(this.dir(vaultId))).map((s) => ({ ...s, turn: this.turnState(vaultId, s.id) }));
+    return (await this.harness.listSessions(this.dir(vaultId))).map((s) => {
+      const titleSuggestion = this.titles.suggestion(vaultId, s.id);
+      return { ...s, turn: this.turnState(vaultId, s.id), ...(titleSuggestion ? { titleSuggestion } : {}) };
+    });
   }
 
   async create(vaultId: string): Promise<{ chatId: string }> {
@@ -227,13 +236,27 @@ export class ChatService {
     const dir = this.dir(vaultId);
     const [messages, sessions] = await Promise.all([this.harness.messages(dir, chatId), this.harness.listSessions(dir)]);
     const queuedText = this.v.get(vaultId)?.queue.find((t) => t.chatId === chatId)?.text;
+    const titleSuggestion = this.titles.suggestion(vaultId, chatId);
     return {
       id: chatId,
       title: sessions.find((s) => s.id === chatId)?.title ?? '',
       messages,
       turn: this.turnState(vaultId, chatId),
       ...(queuedText !== undefined ? { queuedText } : {}),
+      ...(titleSuggestion ? { titleSuggestion } : {}),
     };
+  }
+
+  /** The user's title for the chat (accepting a suggestion, #148). */
+  async rename(vaultId: string, chatId: string, title: string): Promise<void> {
+    await this.requireChat(vaultId, chatId);
+    await this.titles.rename(vaultId, chatId, title);
+  }
+
+  /** Keeps the title: drops the chat's title suggestion. */
+  async keepTitle(vaultId: string, chatId: string): Promise<void> {
+    await this.requireChat(vaultId, chatId);
+    await this.titles.dismiss(vaultId, chatId);
   }
 
   async remove(vaultId: string, chatId: string): Promise<void> {
@@ -242,6 +265,7 @@ export class ChatService {
     await this.harness.deleteSession(this.dir(vaultId), chatId);
     await removeOpenPage(this.vaults.vaultsPath(), chatId);
     await this.vaults.browserCalls.removeChat(vaultId, chatId);
+    await this.titles.forget(vaultId, chatId);
   }
 
   async prompt(vaultId: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage, client: PromptClient = {}): Promise<void> {
@@ -512,6 +536,8 @@ export class ChatService {
       this.emit(vaultId, chatId, { type: 'error', message: 'The AI service restarted during this turn, so the answer may be incomplete. Send the prompt again.' });
     this.finish(vaultId, chatId);
     void this.kick(vaultId);
+    // After the 2nd turn a title, every 10th a drift check (#148); never holds up the next turn.
+    void this.titles.afterTurn(vaultId, chatId);
   }
 
   private finish(vaultId: string, chatId: string) {

@@ -1,7 +1,7 @@
 ---
 feature: ai-chat-titles
 title: "Architecture: AI-generated chat titles"
-status: proposed
+status: applying
 order: 3
 created: 2026-10-21
 edited: 2026-10-21

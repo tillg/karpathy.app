@@ -1,7 +1,7 @@
 ---
 feature: ai-chat-titles
 title: "Domain: AI-generated chat titles"
-status: proposed
+status: applying
 order: 2
 created: 2026-10-21
 edited: 2026-10-21

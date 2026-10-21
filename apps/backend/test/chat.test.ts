@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { ChatEvent } from '@karpathy/shared';
+import type { ChatEvent, VaultEvent } from '@karpathy/shared';
 import { ChatService } from '../src/chat.js';
 import { OpencodeCommitMessages } from '../src/commit-message.js';
 import { basicAuth, OpencodeHarness } from '../src/harness/opencode.js';
@@ -39,6 +39,7 @@ async function setup(files: Record<string, string> = {}) {
   const api = {
     get: (p: string) => request(app).get(`/api${p}`).set(auth),
     post: (p: string, body?: object) => request(app).post(`/api${p}`).set(auth).send(body),
+    patch: (p: string, body?: object) => request(app).patch(`/api${p}`).set(auth).send(body),
     delete: (p: string) => request(app).delete(`/api${p}`).set(auth),
   };
   const raw = createOpencodeClient({ baseUrl: oc.url, headers: basicAuth(oc.password) });
@@ -230,6 +231,49 @@ describe('chat API against a real opencode container', () => {
     const d = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body;
     expect(d.queuedText).toBeUndefined();
     expect(d.title).toBe('Summarize the notes about gardening please');
+  });
+
+  it("a turn's end runs the title job (#148)", async () => {
+    const t = await setup();
+    const ran: string[] = [];
+    t.chat.titles.afterTurn = async (_v, chatId) => { ran.push(chatId); };
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'hello' });
+    await waitIdle(t.chat, t.id, chatId);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(ran).toEqual([chatId]);
+  });
+
+  it('title suggestion: shown in list and detail, PATCH renames and clears it, DELETE only clears it, all as vault events (#148)', async () => {
+    const t = await setup();
+    const events: VaultEvent[] = [];
+    t.vaults.subscribe(t.id, (e) => events.push(e));
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    await t.store.update((c) => { c.titleSuggestions = { [t.id]: { [chatId]: 'Kitchen budget' } }; });
+    expect((await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body.titleSuggestion).toBe('Kitchen budget');
+    expect((await t.api.get(`/vaults/${t.id}/chats`)).body.find((c: { id: string }) => c.id === chatId).titleSuggestion).toBe('Kitchen budget');
+    expect((await t.api.patch(`/vaults/${t.id}/chats/${chatId}`, { title: ' Kitchen budget ' })).status).toBe(204);
+    const d = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body;
+    expect(d).toMatchObject({ title: 'Kitchen budget' });
+    expect(d.titleSuggestion).toBeUndefined();
+    await t.store.update((c) => { c.titleSuggestions = { [t.id]: { [chatId]: 'Other' } }; });
+    expect((await t.api.delete(`/vaults/${t.id}/chats/${chatId}/title-suggestion`)).status).toBe(204);
+    expect((await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body).toMatchObject({ title: 'Kitchen budget' });
+    expect(t.store.get().titleSuggestions).toEqual({});
+    expect(events.filter((e) => e.type === 'chat-title')).toEqual([
+      { type: 'chat-title', chatId, title: 'Kitchen budget' },
+      { type: 'chat-title', chatId, title: 'Kitchen budget' },
+    ]);
+    for (const title of ['', '   ', 'x'.repeat(501)]) expect((await t.api.patch(`/vaults/${t.id}/chats/${chatId}`, { title })).status, title).toBe(400);
+    expect((await t.api.patch(`/vaults/${t.id}/chats/nope`, { title: 'x' })).status).toBe(404);
+  });
+
+  it("deleting a chat drops its title suggestion (#148)", async () => {
+    const t = await setup();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    await t.store.update((c) => { c.titleSuggestions = { [t.id]: { [chatId]: 'Kitchen budget', other: 'x' } }; });
+    expect((await t.api.delete(`/vaults/${t.id}/chats/${chatId}`)).status).toBe(204);
+    expect(t.store.get().titleSuggestions).toEqual({ [t.id]: { other: 'x' } });
   });
 
   it.each([

@@ -189,6 +189,7 @@ edited: 2026-10-21
   - [11:10 — Titles from a tool-less `chat-title` agent in a throwaway opencode session, like commit messages](#run-2026-10-21-1056-4)
   - [11:10 — Title after the 2nd turn; drift check after turn 10, 20, 30, … as a suggestion the user accepts or dismisses](#run-2026-10-21-1056-5)
   - [11:10 — The vision override reaches the tool as a file on the vaults volume, model id only, on the deployed vision gateway](#run-2026-10-21-1056-6)
+  - [11:38 — Per-step gate on the feature branch is the workspace's suite; the full `npm test` gates the merge into `main`](#run-2026-10-21-1056-7)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2819,3 +2820,17 @@ edited: 2026-10-21
 - **Alternatives:** restart opencode with a new env (slow, cuts running turns); a backend endpoint the tool calls (new auth path).
 - **Consequences:** a vision model on another gateway still needs a deploy-settings change. The model id isn't checked
   against the gateway on save (the gateway may not be opencode's); a wrong id shows as the tool's error.
+
+## 11:38 — Per-step gate on the feature branch is the workspace's suite; the full `npm test` gates the merge into `main` {#run-2026-10-21-1056-7}
+
+- **Status:** open
+- **Overrides:** `/autonomous` — commit only with the full suite green
+- **Context:** the full `npm test` takes ~10 min (backend 554 s against real opencode containers); the baseline at the
+  run's start was green (967 tests). Several steps are built in parallel by agents in the same worktree.
+- **Question:** run the full suite before every step commit, or batch?
+- **Decision:** commit steps on `feat/148-chat-titles` with the touched workspaces' suites and typechecks green; run the
+  full `npm test` (and `npm run test:llm` for the new LLM test) before the merge into `main`, and fix anything it finds there.
+- **Why:** ~10 runs × 10 min would dominate the run; the branch isn't the default branch, so a red intermediate commit
+  harms nobody.
+- **Alternatives:** full suite per commit (slow); squash everything into one commit at the end (loses the step history).
+- **Consequences:** an intermediate commit on the branch may be red in another workspace; the merge commit is the one that counts.
