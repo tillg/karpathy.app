@@ -151,6 +151,17 @@ describe('SearchIndex', () => {
     expect(v.index.size).toBe(1);
   });
 
+  it('a path marked stale is re-read alone; a hidden one is ignored', async () => {
+    const v = await vault({ 'a.md': 'alpha\n' });
+    expect(await v.paths('alpha')).toEqual(['a.md']);
+    await writeFile(join(v.root, 'b.md'), 'alpha\n');
+    await mkdir(join(v.root, '.trash'));
+    await writeFile(join(v.root, '.trash/c.md'), 'alpha\n');
+    v.index.markStale('b.md');
+    v.index.markStale('.trash/c.md');
+    expect(await v.paths('alpha')).toEqual(['a.md', 'b.md']);
+  });
+
   it('caps at 200 hits and says so', async () => {
     const files: Record<string, string> = {};
     for (let i = 0; i < 80; i++) files[`n${i}.md`] = 'needle\nneedle\nneedle\n';

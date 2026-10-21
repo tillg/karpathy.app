@@ -27,7 +27,7 @@ const MAX_TOKEN = 40;
 /** Text shorter than this is too little for language detection: its words get the stems of every language. */
 const MIN_DETECT = 40;
 /** How much of a note the detector reads. */
-const DETECT_SAMPLE = 2000;
+const DETECT_SAMPLE = 600;
 /** Field weights: a word in the file name counts most, then headings, then frontmatter. */
 const BOOST = { title: 3, headings: 2, meta: 1.5, path: 1, body: 1 };
 const FIELDS = Object.keys(BOOST) as (keyof typeof BOOST)[];
@@ -89,11 +89,21 @@ export function detectLanguage(text: string, frontmatter = ''): Lang | null {
   return FRANC_CODES[franc(sample, { only: Object.keys(FRANC_CODES) })] ?? null;
 }
 
+/** Stemming is the bulk of indexing: words repeat, so their terms are remembered (bounded). */
+const termCache = new Map<string, string[]>();
+const TERM_CACHE_MAX = 200_000;
+
 /** Index terms of one word: its folded stem in `lang`; without a language, the stems of all of them. */
 export function wordTerms(word: string, lang: Lang | null): string[] {
-  const w = word.toLowerCase();
-  if (lang) return [fold(STEM[lang](w))];
-  return [...new Set(LANGS.map((l) => fold(STEM[l](w))))];
+  const key = `${lang ?? ''}:${word}`;
+  let terms = termCache.get(key);
+  if (!terms) {
+    const w = word.toLowerCase();
+    terms = lang ? [fold(STEM[lang](w))] : [...new Set(LANGS.map((l) => fold(STEM[l](w))))];
+    if (termCache.size >= TERM_CACHE_MAX) termCache.clear();
+    termCache.set(key, terms);
+  }
+  return terms;
 }
 
 /** What a query word may match: the folded word itself and its folded stem in every language. */
@@ -199,9 +209,9 @@ export class SearchIndex {
     searchOptions: { boost: BOOST, tokenize: (s) => [s], processTerm: (t) => t },
   });
   private docs = new Map<string, DocMeta>();
-  /** Unknown changes: the next search compares every file's size and mtime. Initially the index is empty. */
-  private stale = true;
-  /** Paths reported changed: re-read even if size and mtime look the same. */
+  /** Unknown changes: the next search lists the files and compares every size and mtime. Initially the index is empty. */
+  private full = true;
+  /** Paths reported changed: the next search re-reads just these. */
   private forced = new Set<string>();
   private running: Promise<void> | null = null;
   private built = false;
@@ -211,10 +221,13 @@ export class SearchIndex {
     private readonly log: (msg: string) => void = () => {},
   ) {}
 
-  /** Something changed (a path, or anything): the next search catches up first. */
+  /**
+   * A file changed (the watcher, a save): the next search re-reads it. Without a path anything may have changed
+   * (a folder moved, a pull): the next search re-lists the vault and re-reads what differs.
+   */
   markStale(path?: string) {
-    this.stale = true;
     if (path) this.forced.add(path);
+    else this.full = true;
   }
 
   get size() {
@@ -226,8 +239,13 @@ export class SearchIndex {
     return this.docs.get(path)?.lang;
   }
 
+  /** Builds or catches up now (in the background when a vault opens), so the first search doesn't wait. */
+  async warm(): Promise<void> {
+    await this.ensureFresh();
+  }
+
   private async ensureFresh() {
-    for (let i = 0; this.stale && i < 3; i++) {
+    for (let i = 0; (this.full || this.forced.size) && i < 3; i++) {
       this.running ??= this.pass().finally(() => (this.running = null));
       await this.running;
     }
@@ -235,23 +253,28 @@ export class SearchIndex {
 
   private async pass() {
     const t0 = Date.now();
-    this.stale = false;
+    const full = this.full;
     const forced = this.forced;
+    this.full = false;
     this.forced = new Set();
-    let files: string[];
+    let indexed = 0;
     try {
-      files = await listFiles(this.root);
+      if (!full) {
+        // Hidden paths are never searched (ripgrep's listing leaves them out too).
+        for (const p of forced) if (!p.split('/').some((seg) => seg.startsWith('.')) && (await this.update(p, true))) indexed++;
+      } else {
+        const files = await listFiles(this.root);
+        const listed = new Set(files);
+        for (const p of [...this.docs.keys()]) if (!listed.has(p)) this.drop(p);
+        for (let i = 0; i < files.length; i += 64) {
+          await Promise.all(files.slice(i, i + 64).map(async (p) => (await this.update(p, forced.has(p))) && indexed++));
+          await tick();
+        }
+      }
     } catch (e) {
-      this.stale = true;
+      this.full ||= full;
       for (const p of forced) this.forced.add(p);
       throw e;
-    }
-    const listed = new Set(files);
-    for (const p of [...this.docs.keys()]) if (!listed.has(p)) this.drop(p);
-    let indexed = 0;
-    for (let i = 0; i < files.length; i += 64) {
-      await Promise.all(files.slice(i, i + 64).map(async (p) => (await this.update(p, forced.has(p))) && indexed++));
-      await tick();
     }
     if (!this.built) {
       this.built = true;

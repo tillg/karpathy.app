@@ -904,6 +904,14 @@ describe('files', () => {
     expect((await q('handtücher')).map((h: { path: string }) => h.path)).toEqual(['Bad.md', 'Haushalt.md']);
   });
 
+  it('#138 a file written outside the app (the AI, a pull) is found once the watcher reports it', async () => {
+    const t = await vaultApp();
+    const q = async (s: string) => ((await t.api.get(`/vaults/${t.id}/search?q=${encodeURIComponent(s)}`)).body.hits as { path: string }[]).map((h) => h.path);
+    expect(await q('gletscher')).toEqual([]);
+    await writeFile(join(t.vaults.vaultRootDir(t.id), 'Gletscher.md'), 'Die Gletscher schmelzen\n');
+    await expect.poll(() => q('gletscher'), { timeout: 5000 }).toEqual(['Gletscher.md']);
+  });
+
   it('new file whose path differs only in case from an existing one → 409 exists-case (#6)', async () => {
     const t = await vaultApp();
     const r = await t.api.put(`/vaults/${t.id}/file?path=OTHER.md`, { content: 'x', version: null });
