@@ -218,6 +218,7 @@ edited: 2026-10-21
   - [20:45 — #92: local graph as a Local scope of the existing graph pane, flat 2D, opened from the outline](#run-2026-10-21-1919-12)
   - [20:45 — #91: Bases evaluated in the backend; strict v1 subset, table view only, 500 rows](#run-2026-10-21-1919-13)
   - [20:45 — #91: in Write mode the table replaces the block while the cursor is outside it](#run-2026-10-21-1919-14)
+  - [21:20 — Release v0.0.34 from karpathy-dev; the prod deploy runs on the Mac](#run-2026-10-21-1919-15)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3124,6 +3125,7 @@ edited: 2026-10-21
 - **Why:** guessing a topic would post to a stranger's topic; alert topics are off limits.
 - **Alternatives:** post to an alert topic (forbidden); skip notifications.
 - **Consequences:** put the dev topic into `tmp/.ntfy_dev_topic` on karpathy-dev (`just ntfy-topic dev` on the Mac).
+  21:00: the user supplied the topic; it is in `tmp/.ntfy_dev_topic` (gitignored) and progress goes to ntfy from now on.
 
 ## 19:19 — One agent per issue, each in its own worktree and dev stack; merge into `main` and push `main` {#run-2026-10-21-1919-3}
 
@@ -3280,3 +3282,15 @@ edited: 2026-10-21
 - **Why:** matches Obsidian's live preview; keeps the note short on a phone.
 - **Alternatives:** table under the visible source.
 - **Consequences:** a cursor already on the block shows its source, not the table.
+
+## 21:20 — Release v0.0.34 from karpathy-dev; the prod deploy runs on the Mac {#run-2026-10-21-1919-15}
+
+- **Status:** open
+- **Context:** the user asked mid-run to deploy to prod when done. `just deploy hetzner` needs the Ansible vault password,
+  which lives only in the Mac's Keychain (`karpathy-ansible-hetzner`); karpathy-dev has none.
+- **Question:** how to get the five features to prod from this host?
+- **Decision:** once review fixes and e2e are green on `main`, `just release 0.0.34` here (tag → release workflow builds
+  the images); the user runs `just deploy hetzner 0.0.34` on the Mac; the demo vault is pushed after that.
+- **Why:** asking for the vault password would put every prod secret into the transcript and onto the dev host.
+- **Alternatives:** the user pastes `ANSIBLE_VAULT_PASSWORD`; copying the password into a file on karpathy-dev.
+- **Consequences:** rollback `just deploy hetzner 0.0.33`. Retro candidate: a documented way to deploy from karpathy-dev.
