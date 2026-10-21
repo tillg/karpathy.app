@@ -413,11 +413,21 @@ flowchart LR
 
 ### Search
 
-Full-text, case-insensitive, fixed-string search over the vault root (ripgrep), plus file-name matches; results
-grouped per note with up to 4 line snippets; capped at 200 hits ("refine your search"); opens the note at the hit, in the current mode.
-Several words find notes that contain all of them (in the text or the path) and show the lines of any of them; a
-`"quoted phrase"` matches as written (#107). Notes whose file name contains every word come first, the rest in path
-order (#99).
+Ranked full-text search over the vault (#138), plus file-name matches; results grouped per note with up to 4 line
+snippets, the matched words marked; capped at 200 hits ("refine your search"); opens the note at the hit, in the current mode.
+
+- **Forgiving matching:** case and accents don't matter (`cafe` finds "Café", `strasse` finds "Straße"), and words
+  match in their other forms: `handtuch` finds "Handtücher", `Handtuecher` finds "Handtücher", `towel` finds "towels",
+  `cheval` finds "chevaux". Each note's language (German, English, French, Spanish or Italian) is detected when it is
+  indexed, or taken from a `lang:` in its frontmatter; very short notes match in all of them.
+- The last word also matches as the beginning of a word (`handt` finds "Handtuch"), so results come while typing.
+  A word that matches nothing is looked up with typo tolerance (`glaicer` finds "glacier").
+- Several words find notes that contain all of them (in the text or the path) and show the lines of any of them; a
+  `"quoted phrase"` matches as written (case and accents aside), within one line (#107).
+- **Order:** notes whose file name matches every word come first (#99); then the best matches: a word in the file
+  name counts most, then in a heading, then in the frontmatter; notes where the words are frequent and rare elsewhere
+  in the vault rank higher (BM25); ties in path order.
+- Changes by the user, the AI or a pull are searchable at once.
 
 ### Graph
 
