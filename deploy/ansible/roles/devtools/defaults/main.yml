@@ -1,0 +1,13 @@
+# The Playwright the repo's e2e suite uses (package-lock.json); its Chromium build depends on it. dev.test.sh checks.
+devtools_playwright_version: 1.63.0
+# just from upstream (Ubuntu's is too old for the justfile); dev.test.sh checks it parses the repo's justfile.
+devtools_just_version: 1.58.0
+devtools_just_url: >-
+  https://github.com/casey/just/releases/download/{{ devtools_just_version }}/just-{{ devtools_just_version
+  }}-{{ ansible_facts.architecture }}-unknown-linux-musl.tar.gz
+# Provider keys for ~/.config/karpathy/secrets/ (name → value; empty ones are skipped) and the GitHub token, from the
+# dev vault (inventories/dev/group_vars/all/main.yml).
+devtools_host_secrets: {}
+devtools_github_token: ""
+# The login user's git identity (name, email) for commits on the dev host; empty fields are not set.
+devtools_git_user: {}

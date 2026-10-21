@@ -129,10 +129,38 @@ runs without role `app`); role `app` asserts it equals the rendered `DOMAIN` and
 |---|---|
 | `hetzner` | OpenRouter `z-ai/glm-5.3`, routed to zero-data-retention hosts (the central default). |
 
-Not targets, and not deployed by the playbook: the **dev stacks** on the Mac (stack N, project `karpathy-app-N`,
+Not targets, and not deployed by the playbook: the **dev stacks** on a dev host (stack N, project `karpathy-app-N`,
 on https://localhost:80N0, started with `just dev up [N]`) and their **paired prodtest** (the prod images built
 locally as `karpathy-app-N-prodtest` on https://localhost:80N5, `just prodtest`). They are the environments `dev`
-and `prodtest`; both use production's OpenRouter models (key in `deploy/secrets/openrouter_api_key`). Details: [architecture.md](architecture.md#dev-stacks).
+and `prodtest`; both use production's OpenRouter models (key in `deploy/secrets/openrouter_api_key`, else the host
+secrets). Details: [architecture.md](architecture.md#dev-stacks).
+
+## The dev server {#dev-server}
+
+The remote dev host `karpathy-dev` is a second dev host next to the Mac, not a target: Ansible gives it tools and
+keys, never a release. Connecting and daily use: `docs/dev-server.md`; booking: `deploy/README.md` › Dev server.
+
+| What | Value |
+|---|---|
+| Host | Hetzner CAX41 (ARM, 16 vCPU, 32 GB), Ubuntu 24.04, backups on, booked by hand in the console; always on |
+| Reached as | the developer's login user over Tailscale (hostname `karpathy-dev`); no public ports after bootstrap |
+| Set up by | `just devhost [--check] [--bootstrap <ip>]` → `deploy/devhost.sh` → `deploy/ansible/dev.yml` against inventory `dev` (the first run as root on the public IP) |
+| Roles | `base` (dev switch), `tailscale` (hostname variable), `docker`, `devtools`; not `app`, `monitoring`, `vaults_fs` |
+| Secrets | `dev` vault (password in Keychain `karpathy-ansible-dev`): OpenRouter and Exa keys → host secrets `~/.config/karpathy/secrets/`; a fine-grained GitHub token (`karpathy.app`, `karpathy_demo_wiki`, `ingest_email`) → the login user's git credential; Tailscale auth key |
+| Monitoring | none; automatic updates come from `base` |
+
+- **`base` on a dev host:** the login user (`ansible_user`) gets uid/gid 1000 with sudo and the docker group, so
+  bind-mounted sources fit the containers' `APP_UID`; no `deploy` user exists. Hardening, automatic updates and
+  timezone are shared with prod, and prod's users are unchanged.
+- **`devtools`:** pinned Node 22, upstream `just` (Ubuntu's is too old for the justfile), ripgrep, jq, netcat, `gh`,
+  Ansible (`just check` renders a role template), the Claude Code CLI and Playwright Chromium with its system deps;
+  writes the host secrets (mode 600), the git credential and the git identity (`devtools_git_user`), and puts
+  `~/.local/bin` on the PATH of non-login shells.
+- **Connecting:** a `~/.ssh/config` entry `karpathy-dev` with `LocalForward` 8010…8090 and `ServerAliveInterval`;
+  terminal (tmux / herdr) or VS Code Remote-SSH. Its stacks open on the Mac at `https://localhost:80N0`; a Mac stack
+  on the same port blocks that forward, so use one dev host at a time. Claude Code logs in once with the
+  subscription; no personal `~/.claude` config is copied. `just resume` (`claude --continue`) continues the last
+  session after a reconnect.
 
 ## The playbook
 
@@ -413,6 +441,9 @@ flowchart LR
 | Website on GitHub Pages, deployed by Actions (no `gh-pages` branch) | Free, no server, source next to the code; generated files stay out of git history. |
 | A read-only deploy key for the private ingest-email, not a personal token | Least privilege: one repo, read only; the developer's token can write every repo. Making the repo public was the other option. |
 | Ingest profiles only on `hetzner`, enabled by the operator after the Mac agent is stopped | Two pollers on one Gmail label would fetch twice; any other stack with a real label would take mails before production. |
+| A separate dev server (Hetzner CAX41, always on, Tailscale only), not GitHub Codespaces or dev stacks on prod | No per-core-hour billing, set up like prod; agents with a shell, Docker and a GitHub token stay away from prod's data. ARM like the Mac, so dev images run unchanged; `prodtest` there tests arm64, CI covers amd64. |
+| The dev server is an Ansible target `dev` with its own `just devhost`, not `just deploy dev` | `deploy` keeps meaning "release the app to a target"; same roles as prod, no prod-only steps. |
+| Dev stacks there are opened through an SSH `LocalForward`, not a public dev site | Caddy's dev site and Vite's HMR stay `localhost`-only and unchanged; iPad/phone-only development is out of scope. |
 | Website as plain HTML + CSS, no generator | One page; revisit when there are more than ~3 pages or shared markup gets copied. |
 | App tokens copied into `site/style.css`, kept equal by a test | Looks like the app without touching the app's build; drift fails CI. |
 | Custom domain set only after the first deploy was checked on `tillg.github.io` | A set custom domain redirects the github.io URL to a domain that still pointed elsewhere. |

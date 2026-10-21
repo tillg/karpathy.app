@@ -113,11 +113,16 @@ header `karpathy #N`).
 - The Playwright MCP browser refuses a stack's Caddy CA (`ERR_CERT_AUTHORITY_INVALID`): look at the UI through a
   Playwright script with `ignoreHTTPSErrors: true` (token in `localStorage['karpathy.token']`, as `e2e/helpers.ts`
   `openApp` does) or through `just e2e` screenshots, and read the shot of the changed spot.
-- A new worktree has no `deploy/secrets/` (gitignored): copy the main clone's. Without `openrouter_api_key` there,
-  `just dev up` stops; a dummy key still runs `just e2e --grep-invert @llm` (no model turns).
+- A new worktree has no `deploy/secrets/` (gitignored): `just dev up` copies missing `*_api_key` files from the host
+  secrets `~/.config/karpathy/secrets/` (filled by Ansible on `karpathy-dev`, by hand on the Mac). Without
+  `openrouter_api_key` in either place, `just dev up` stops; a dummy key still runs `just e2e --grep-invert @llm`.
 - A full `just e2e` on a busy Mac fails dozens of tests that pass alone: re-run with `just e2e --last-failed`, and check
   any `@llm` spec that still fails against the commit before your change (own worktree and stack) before blaming it —
   the local dev model fails some of them on its own.
+
+The remote dev host `karpathy-dev` (Hetzner, Tailscale only; `docs/dev-server.md`) is another dev host with
+its own stacks 1–9 and the same rules. It is Linux: no Keychain, no Rancher, no Lima; the dev topic for ntfy is in
+`tmp/.ntfy_dev_topic` there.
 
 ## Progress messages (ntfy)
 

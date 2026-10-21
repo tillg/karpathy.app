@@ -95,7 +95,7 @@ checkout() { local d; d=$(mktemp -d); git -C "$d" init -q; echo "$d"; }
   source "$here/stack.sh"
   c=$(checkout); cd "$c" || exit 1
   unset STACK
-  git commit -q --allow-empty -m init && git worktree add -q --detach "$c/.worktrees/w" 2>/dev/null
+  git -c user.name=test -c user.email=test@example.invalid commit -q --allow-empty -m init && git worktree add -q --detach "$c/.worktrees/w" 2>/dev/null
   w=$(cd "$c/.worktrees/w" && pwd -P)
   n=$(stack_first_free)
   mkdir -p "$w/tmp/dev" && echo "$n" > "$w/tmp/dev/stack"
@@ -177,6 +177,32 @@ if grep -nE 'qwen|claude-sonnet|glm-5' "$here"/compose*.yml; then bad "no model 
 grep -q 'settings_render dev' "$here/dev.sh" && grep -q 'settings_legacy_check' "$here/dev.sh" \
   && ok "dev.sh up renders and checks for legacy files" || bad "dev.sh up renders and checks for legacy files" "missing"
 grep -q 'settings_render prodtest' "$here/../justfile" && ok "just prodtest renders" || bad "just prodtest renders" "missing"
+
+# Host secrets (~/.config/karpathy/secrets/): a key the checkout's deploy/secrets/ lacks comes from there, so a new
+# worktree works without copying keys.
+mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }   # GNU first: GNU `stat -f` means file-system status
+(
+  fails=0
+  source "$here/stack.sh"
+  HOME=$(mktemp -d); store=$(mktemp -d)
+  mkdir -p "$HOME/.config/karpathy/secrets"
+  printf 'or-host' > "$HOME/.config/karpathy/secrets/openrouter_api_key"
+  printf 'exa-host' > "$HOME/.config/karpathy/secrets/exa_api_key"
+  printf 'exa-own' > "$store/exa_api_key"
+  secrets_from_host "$store"
+  eq "a missing openrouter_api_key comes from the host secrets" "$(cat "$store/openrouter_api_key" 2>/dev/null)" or-host
+  eq "the checkout's own key is kept" "$(cat "$store/exa_api_key")" exa-own
+  eq "the copy is mode 600" "$(mode "$store/openrouter_api_key" 2>/dev/null)" 600
+  rm "$HOME/.config/karpathy/secrets/openrouter_api_key" "$store/openrouter_api_key"
+  err=$(secrets_from_host "$store" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] && [[ "$err" == *deploy/secrets/openrouter_api_key* && "$err" == *.config/karpathy/secrets/openrouter_api_key* ]] \
+    && ok "no key anywhere: the error names deploy/secrets and ~/.config/karpathy/secrets" \
+    || bad "no key anywhere: the error names deploy/secrets and ~/.config/karpathy/secrets" "rc=$rc: $err"
+  rm -rf "$HOME" "$store"
+  exit "$fails"
+) || fails=$((fails + 1))
+grep -q 'secrets_from_host secrets' "$here/dev.sh" && ok "dev.sh up fills missing keys from the host secrets" \
+  || bad "dev.sh up fills missing keys from the host secrets" "missing"
 
 # Ansible (role app) renders a target's settings on the controller: render-settings.sh takes the target's secrets
 # as JSON on stdin (name → value), never as arguments, and removes them again.

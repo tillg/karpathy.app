@@ -1,7 +1,7 @@
 # Numbered dev stacks: stack N (1-9) is compose project karpathy-app-N on the port block 80N0-80N9.
 # Sourced by deploy/dev.sh and the justfile; tests in deploy/stack.test.sh.
 
-command -v jq >/dev/null || { echo "deploy/stack.sh needs jq: brew install jq" >&2; return 1; }
+command -v jq >/dev/null || { echo "deploy/stack.sh needs jq: $(command -v brew >/dev/null && echo brew || echo sudo apt-get) install jq" >&2; return 1; }
 
 # Exports the stack's number, compose project and ports; fails for N outside 1-9.
 stack_ports() {
@@ -76,6 +76,21 @@ stack_disk_ok() {
   local free; free=$(( $(df -Pk "$1" | awk 'NR==2 {print $4}') / 1048576 ))
   [ "$free" -ge "$2" ] && return 0
   echo "only $free GiB free on the disk of $1 (need $2): free some space first" >&2; return 1
+}
+
+# Host secrets: the provider keys a dev host keeps once for all its checkouts (Ansible fills them on the remote dev
+# host). Copies each ~/.config/karpathy/secrets/*_api_key that STORE lacks into STORE (mode 600); STORE's own wins.
+# Fails when the OpenRouter key, which every dev model needs, is in neither place.
+secrets_from_host() {
+  local f
+  for f in "$HOME"/.config/karpathy/secrets/*_api_key; do
+    [ -s "$f" ] && [ ! -s "$1/${f##*/}" ] || continue
+    (umask 077; cp "$f" "$1/${f##*/}")
+  done
+  [ -s "$1/openrouter_api_key" ] && return 0
+  echo "no OpenRouter key: put it into deploy/secrets/openrouter_api_key (this checkout)" \
+    "or ~/.config/karpathy/secrets/openrouter_api_key (every checkout on this host)" >&2
+  return 1
 }
 
 stack_remember() { mkdir -p "$(stack_root)/tmp/dev" && echo "$1" > "$(stack_root)/tmp/dev/stack"; }

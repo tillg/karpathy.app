@@ -72,7 +72,31 @@ def ask(key, prompt, hidden=True, optional=False, found=None, into=None):
         print("  required")
 
 
+def save():
+    # Plaintext only in a private temp file, encrypted straight back over the vault.
+    fd, plain = tempfile.mkstemp(suffix=".yml")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(f"# {target} target secrets. Edit with: just secrets {target}\n")
+            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=True, allow_unicode=True)
+        vault("encrypt", plain, "--encrypt-vault-id", target, "--output", vault_file)
+    finally:
+        os.remove(plain)
+    print(f"\nWritten (encrypted): {os.path.relpath(vault_file, os.getcwd())}")
+
+
 print(f"Secrets for target '{target}' (input is hidden where it's a secret).\n")
+# The remote dev host (dev.yml): host secrets for its checkouts, the git token, the tailnet key.
+if target == "dev":
+    ask("vault_openrouter_api_key", "OpenRouter API key (the dev stacks' models)",
+        found=(from_file("secrets/openrouter_api_key"), "deploy/secrets/openrouter_api_key"))
+    ask("vault_exa_api_key", "Exa API key for web search (optional, Enter skips)", optional=True,
+        found=(from_file("secrets/exa_api_key"), "deploy/secrets/exa_api_key"))
+    ask("vault_github_token", "GitHub fine-grained token (karpathy.app, karpathy_demo_wiki, ingest_email: Contents read/write)")
+    ask("vault_tailscale_authkey", "Tailscale auth key (tag:server, pre-approved, single-use)")
+    save()
+    sys.exit(0)
+
 ask("vault_dns_api_token", "GoDaddy production API key and secret, as <key>:<secret>",
     found=(from_file("secrets/dns_api_token"), "deploy/secrets/dns_api_token"))
 ask("vault_github_token", "GitHub fine-grained token (vault repos: Contents read/write)",
@@ -116,14 +140,5 @@ if unset("vault_beszel_hub_key") or unset("vault_beszel_hub_pubkey"):
         data["vault_beszel_hub_key"] = open(f"{d}/k").read()
         data["vault_beszel_hub_pubkey"] = open(f"{d}/k.pub").read().strip()
 
-# Plaintext only in a private temp file, encrypted straight back over the vault.
-fd, plain = tempfile.mkstemp(suffix=".yml")
-try:
-    with os.fdopen(fd, "w") as f:
-        f.write(f"# {target} target secrets. Edit with: just secrets {target}\n")
-        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=True, allow_unicode=True)
-    vault("encrypt", plain, "--encrypt-vault-id", target, "--output", vault_file)
-finally:
-    os.remove(plain)
-print(f"\nWritten (encrypted): {os.path.relpath(vault_file, os.getcwd())}")
+save()
 print(f"ntfy topic for {target} alerts (subscribe to it in the ntfy app): {data['vault_ntfy_topic']}")

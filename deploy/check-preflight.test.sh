@@ -17,5 +17,9 @@ check "load above 3 per core is refused (94 on 16 cores: the 16 timeouts of 2026
 check "load at 3 per core passes" preflight 48 16 1
 msg=$(preflight 94.6 16 1 2>&1)
 check "the refusal says how to run anyway" grep -q CHECK_IGNORE_LOAD <<<"$msg"
+msg=$(preflight 1.0 16 0 Darwin 2>&1)
+check "on macOS the hint names Rancher Desktop" grep -q Rancher <<<"$msg"
+msg=$(preflight 1.0 16 0 Linux 2>&1)
+check "on Linux the hint doesn't name Rancher" refuses grep -q Rancher <<<"$msg"
 
 [ "$fails" -eq 0 ] && echo "check-preflight.test.sh: ok" || { echo "check-preflight.test.sh: $fails failed"; exit 1; }
