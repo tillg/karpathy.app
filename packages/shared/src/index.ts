@@ -188,6 +188,23 @@ export interface Diff {
 
 export type ConflictChoice = 'mine' | 'theirs' | 'both';
 
+/**
+ * A possible secret in the changes a commit would record (#141). Never carries the secret: `masked` shows at most its
+ * first four characters.
+ */
+export interface SecretFinding {
+  /** Vault-relative path (repo-relative when outside the vault root). */
+  file: string;
+  line: number;
+  /** The gitleaks rule, e.g. `github-pat`, `generic-api-key`. */
+  rule: string;
+  description: string;
+  /** At most the first four characters, then `…`. */
+  masked: string;
+  /** Opaque id of this finding; "commit anyway" sends back the ones the user saw. */
+  fingerprint: string;
+}
+
 export interface CommitResult {
   /** Commit hash, or null when nothing was committed. */
   commit: string | null;

@@ -19,6 +19,7 @@ import {
   type VaultState,
   type VaultStatus,
 } from '@karpathy/shared';
+import type { SecretFinding } from '@karpathy/shared';
 import { INPUT_DIR, isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
 import { BrowserCalls } from './browser-calls.js';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
@@ -30,6 +31,7 @@ import { VaultLock } from './lock.js';
 import { normalizeRel, resolveInVault } from './paths.js';
 import { preflight } from './preflight.js';
 import { Repo, type FileHistory } from './repo.js';
+import { SecretScanner } from './secret-scan.js';
 import { VaultWatcher } from './watcher.js';
 
 /** A repo check that takes longer than this has hung (a stalled remote); the add is refused. */
@@ -65,6 +67,8 @@ export interface VaultsEnv {
   fetchIntervalMs?: number;
   /** Dot-folders the file tree shows (settings `files.visible_dot_dirs`); all others stay hidden. */
   visibleDotDirs?: readonly string[];
+  /** Scans what a commit records for secrets (#141); default: the pinned gitleaks on PATH. */
+  secretScanner?: SecretScanner;
 }
 
 interface Runtime {
@@ -107,11 +111,13 @@ export class Vaults {
   beforeRemove?: (id: string) => Promise<void>;
   /** Pending browser calls (#151), announced on the vault event stream. */
   readonly browserCalls: BrowserCalls;
+  private readonly secretScanner: SecretScanner;
 
   constructor(
     private readonly store: ConfigStore,
     private readonly env: VaultsEnv,
   ) {
+    this.secretScanner = env.secretScanner ?? new SecretScanner();
     this.browserCalls = new BrowserCalls(this.vaultsPath(), (id, e) => this.emit(id, e));
   }
 
@@ -826,8 +832,12 @@ export class Vaults {
     }
   }
 
-  /** `paths`: the changed files the user reviewed; if others arrived while waiting → 409 (#33). */
-  async commit(id: string, message: string, paths?: string[]): Promise<CommitResult> {
+  /**
+   * `paths`: the changed files the user reviewed; if others arrived while waiting → 409 (#33).
+   * `allowSecrets`: fingerprints of secret findings the user saw and chose to commit anyway (#141); any other
+   * finding in the staged changes → 422 `secrets`, nothing committed.
+   */
+  async commit(id: string, message: string, paths?: string[], allowSecrets: readonly string[] = []): Promise<CommitResult> {
     this.requireReady(id);
     const r = this.runtime(id);
     if (!message.trim()) throw new HttpError(400, 'commit message is required');
@@ -841,13 +851,37 @@ export class Vaults {
         throw new HttpError(409, 'The changes differ from what you reviewed (e.g. the AI changed more files while the commit waited). Review them and commit again.', 'changes-moved', { paths: [...changed] });
       const touched = this.store.get().aiTouched[id] ?? [];
       const withAi = touched.some((p) => changed.has(p));
-      const commit = await repo.commit(message, withAi);
+      let commit: string | null = null;
+      if (await repo.stageAll()) {
+        await this.checkSecrets(id, repo, allowSecrets);
+        commit = await repo.commitStaged(message, withAi);
+      }
       if (commit) await this.store.update((c) => { delete c.aiTouched[id]; });
       const unpushed = await repo.unpushedCount();
       const push = unpushed > 0 ? await repo.push() : { pushed: false };
       this.emitStatusSoon(id);
       return { commit, pushed: push.pushed, ...(push.error ? { pushError: push.error } : {}) };
     });
+  }
+
+  /** Refuses the commit while the staged changes hold a possible secret the user hasn't acknowledged (#141). */
+  private async checkSecrets(id: string, repo: Repo, allowSecrets: readonly string[]) {
+    let findings: SecretFinding[];
+    try {
+      findings = await this.secretScanner.scanStaged(repo.dir);
+    } catch (e) {
+      // Fail closed: without a scan, nothing is pushed.
+      console.warn(`secret scan of ${id} failed:`, (e as Error).message);
+      throw new HttpError(503, "The secret scan couldn't run, so nothing was committed. Try again; if it keeps failing, check the backend log.", 'secret-scan-failed');
+    }
+    const allowed = new Set(allowSecrets);
+    const open = findings.filter((f) => !allowed.has(f.fingerprint)).map((f) => ({ ...f, file: repo.toVaultPath(f.file) ?? f.file }));
+    if (findings.length > open.length)
+      console.warn(`commit of ${id}: committing ${findings.length - open.length} acknowledged secret finding(s): ${findings.filter((f) => allowed.has(f.fingerprint)).map((f) => `${f.file}:${f.line} (${f.rule})`).join(', ')}`);
+    if (open.length === 0) return;
+    const shown = open.slice(0, 5).map((f) => `${f.file} line ${f.line} (${f.rule}: ${f.masked})`);
+    const more = open.length > shown.length ? ` and ${open.length - shown.length} more` : '';
+    throw new HttpError(422, `Possible secret${open.length === 1 ? '' : 's'} in the changes: ${shown.join('; ')}${more}. Nothing was committed. Remove ${open.length === 1 ? 'it' : 'them'}, or commit anyway if ${open.length === 1 ? 'it is' : 'they are'} not secret.`, 'secrets', { findings: open });
   }
 
   async push(id: string): Promise<CommitResult> {

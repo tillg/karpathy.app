@@ -354,9 +354,17 @@ export class Repo {
 
   /** Commits all uncommitted changes of the vault root. Returns the hash, or null if clean. */
   async commit(message: string, withAiTrailer: boolean): Promise<string | null> {
+    return (await this.stageAll()) ? this.commitStaged(message, withAiTrailer) : null;
+  }
+
+  /** Stages all uncommitted changes of the vault root (what a commit records); false when there are none. */
+  async stageAll(): Promise<boolean> {
     await this.git.run(['add', '-A', ...this.pathspec]);
-    const staged = (await this.git.run(['diff', '--cached', '--quiet'], { allowFail: true })).code !== 0;
-    if (!staged) return null;
+    return (await this.git.run(['diff', '--cached', '--quiet'], { allowFail: true })).code !== 0;
+  }
+
+  /** Commits what `stageAll` staged. Returns the hash. */
+  async commitStaged(message: string, withAiTrailer: boolean): Promise<string> {
     const msg = withAiTrailer ? `${message.trim()}\n\n${AI_TRAILER}\n` : message;
     await this.git.run(['commit', '-q', '-F', '-'], { input: msg });
     return (await this.git.out(['rev-parse', 'HEAD'])).trim();
