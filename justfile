@@ -31,6 +31,7 @@ check:
     bash deploy/stack.test.sh
     bash deploy/ansible/dev.test.sh
     bash deploy/check-preflight.test.sh
+    bash deploy/code.test.sh
     bash deploy/ingest/run.test.sh
     bash deploy/ingest/compose.test.sh
     bash deploy/ingest/server.test.sh
@@ -108,6 +109,10 @@ deploy-check target *args:
 # Set up the remote dev host karpathy-dev (deploy/README.md, "Dev server"): `just devhost [--check] [--bootstrap <public-ip>]`
 devhost *args:
     deploy/devhost.sh {{args}}
+
+# On the Mac: a VS Code window on the remote dev host (docs/dev-server.md, "VS Code"): `just code [worktree]`
+code worktree="":
+    bash deploy/code.sh {{worktree}}
 
 # Copy a target's access token to the clipboard; `--qr` also prints a login QR code for a phone/iPad
 token target *flag:

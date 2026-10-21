@@ -1,7 +1,7 @@
 ---
 feature: remote-editing
 title: "Proposal: edit code on the dev server from the Mac's VS Code"
-status: proposed
+status: applying
 order: 1
 created: 2026-10-21
 edited: 2026-10-21
@@ -37,15 +37,17 @@ things go wrong out of the box:
 
 ## What changes
 
-- **Workspace settings in the repo** (`.vscode/settings.json`): VS Code ignores the stack ports 8000–8099 for
-  auto-forwarding, so the SSH entry's `LocalForward` stays the one path to a stack. It also excludes `.worktrees/`,
+- **Workspace settings in the repo** (`.vscode/settings.json`): VS Code ignores the nine forwarded stack ports
+  8010…8090 for auto-forwarding, so the SSH entry's `LocalForward` stays the one path to a stack. Other ports (prodtest's
+  80N5, the `just site` preview on 8099) VS Code still auto-forwards, so they now reach the Mac too. It also excludes `.worktrees/`,
   `tmp/` and the build outputs from file watching and search. Committed, so every checkout and worktree gets them.
-- **Recommended extensions** (`.vscode/extensions.json`): ESLint, Playwright Test, Claude Code, Ansible, `just`
-  syntax. VS Code offers to install them on the remote side when the folder opens.
+- **Recommended extensions** (`.vscode/extensions.json`): ESLint, Playwright Test, Vitest, Claude Code, Ansible,
+  `just` syntax. VS Code offers to install them on the remote side when the folder opens.
 - **Higher inotify limits on the dev server**: role `devtools` sets `fs.inotify.max_user_instances` and
   `max_user_watches` through `/etc/sysctl.d/`, and applies them.
 - **`just code [worktree]` on the Mac**: opens a new VS Code window on `karpathy-dev` for the main clone, or for
-  `.worktrees/<worktree>`, through `code --remote ssh-remote+karpathy-dev <path>`. On the server, `code <file>` in
+  `.worktrees/<worktree>`, through `code --remote ssh-remote+karpathy-dev <path>`. Typed on the server itself it refuses and points to
+  `code .worktrees/x`. On the server, `code <file>` in
   a VS Code terminal opens the file in that window (built into Remote-SSH).
 - **Docs**: a "VS Code" section in `docs/dev-server.md` covering the one-time Mac setup (VS Code, the Remote-SSH
   extension, the `code` CLI), the first connect, worktree windows, port forwards and what survives a dropped
@@ -80,12 +82,15 @@ flowchart LR
 - Debug launch configs (`.vscode/launch.json`) for the backend or Vite: a follow-up if needed. The stack runs in
   Docker, so attaching a debugger is a change of its own.
 - A VS Code dev container: the dev server *is* the environment, so a container on top adds nothing.
+- A tmux terminal profile that would let VS Code terminals survive a long disconnect: long runs stay in herdr or tmux.
+  A possible follow-up.
 
 ## Expected outcome
 
 On the Mac, `just code` opens a VS Code window connected to `karpathy-dev` on `~/karpathy.app`. The recommended
 extensions are offered, and ESLint marks lint errors inline. With `just dev up` running in that window's terminal,
 https://localhost:80N0 in the Mac's browser loads the app on the same port (no second, VS Code-chosen port appears in
-the Ports view), and editing a `.tsx` file live-reloads it. `just code <worktree>` opens a second window on a
+the Ports view), and editing a `.tsx` file live-reloads it. `just prodtest` in the same terminal opens at https://localhost:80N5 on
+the Mac through VS Code's own forward. `just code <worktree>` opens a second window on a
 worktree at the same time, and neither window reports that it can't watch for file changes. `claude` (CLI or the
 Claude Code extension) runs inside the window as it does in herdr.

@@ -82,4 +82,15 @@ eq "git credential for github.com returns the token" \
 eq "git user.name" "$(as_user 'git config --global user.name')" "Dev Test"
 eq "git user.email" "$(as_user 'git config --global user.email')" "dev@example.invalid"
 
+# devtools: inotify limits for several VS Code windows plus Vite, tsc and ESLint (docs/dev-server.md, "VS Code").
+# The container shares the kernel, so applying them also raises the test machine's limits (only ever up).
+conf=/etc/sysctl.d/60-karpathy-devtools.conf
+out=$(run cat "$conf")
+[[ "$out" == *"fs.inotify.max_user_instances = 1024"* && "$out" == *"fs.inotify.max_user_watches = 1048576"* ]] \
+  && ok "inotify: sysctl.d file" || bad "inotify: sysctl.d file" "$out"
+v=$(run sysctl -n fs.inotify.max_user_instances)
+[ "$v" -ge 1024 ] 2>/dev/null && ok "inotify: max_user_instances ≥ 1024" || bad "inotify: max_user_instances ≥ 1024" "$v"
+v=$(run sysctl -n fs.inotify.max_user_watches)
+[ "$v" -ge 1048576 ] 2>/dev/null && ok "inotify: max_user_watches ≥ 1048576" || bad "inotify: max_user_watches ≥ 1048576" "$v"
+
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

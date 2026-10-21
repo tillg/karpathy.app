@@ -144,3 +144,15 @@
     mode: "0600"
   when: devtools_github_token | length > 0
   no_log: true
+
+# File watchers: a VS Code window per checkout, plus Vite, tsc --watch and ESLint in each (docs/dev-server.md, "VS Code").
+- name: Inotify limits
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/60-karpathy-devtools.conf
+    content: |
+      fs.inotify.max_user_instances = {{ devtools_inotify_max_user_instances }}
+      fs.inotify.max_user_watches = {{ devtools_inotify_max_user_watches }}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply sysctl
