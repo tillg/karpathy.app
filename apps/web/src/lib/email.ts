@@ -37,7 +37,7 @@ function bytesOf(content: ArrayBuffer | Uint8Array | string): ArrayBuffer {
 }
 
 /** Throws when the bytes hold no mail (no subject, no From, no body): postal-mime itself accepts anything. */
-export async function parseEmail(raw: ArrayBuffer): Promise<ParsedEmail> {
+export async function parseEmail(raw: ArrayBuffer | Uint8Array): Promise<ParsedEmail> {
   const m = await PostalMime.parse(raw, { attachmentEncoding: 'arraybuffer' });
   if (!m.subject && !m.from && !m.html && !m.text) throw new Error('not an email');
   // A part is inline only when the body really names it: mail clients mark inline images as attachments and the

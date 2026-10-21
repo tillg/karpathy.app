@@ -63,8 +63,19 @@ test('a Latin-1 mail shows decoded, not as a binary file', async ({ page, vault 
   await openApp(page, vault.id);
   await openMail(page, 'latin1.eml', 'Grüße aus Köln');
   await expect(page.getByTestId('email-head')).toContainText('Jürgen Müller <juergen@example.org>');
-  await expect(page.getByTestId('email-text')).toHaveText('Grüße aus Köln.\nDas Wetter ist schön.\n', { useInnerText: false });
+  // toHaveText(string) would ignore a lost line break.
+  await expect.poll(() => page.getByTestId('email-text').evaluate((e) => e.textContent)).toBe('Grüße aus Köln.\nDas Wetter ist schön.\n');
   await expect(page.getByTestId('binary-file')).toHaveCount(0);
+});
+
+test('a search hit in a mail opens the mail', async ({ page, vault }) => {
+  seed(vault);
+  await openApp(page, vault.id);
+  await page.getByTestId('section-search').click();
+  await page.getByTestId('search-input').fill('Analytical Engine');
+  await page.locator('[data-testid="search-result"][data-path="Mail/alternative.eml"]').click();
+  await expect(page.locator('.note-title')).toHaveText('Notes on the Analytical Engine');
+  await expect(page.frameLocator('[data-testid="email-body"]').locator('h1')).toHaveText('Notes');
 });
 
 test('the next note after a mail opens as before', async ({ page, vault }) => {

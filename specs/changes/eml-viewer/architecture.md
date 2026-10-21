@@ -79,7 +79,8 @@ chunk: the main bundle and the PWA precache limits stay as they are.
 - **Header block:** a definition list (`dl.email-head`, `data-testid="email-head"`), React text nodes only (no
   HTML from the mail reaches the app DOM). Date with `toLocaleString()` of the browser.
 - **HTML body:** `src`/`background` values `cid:<id>` are replaced by `data:` URLs from `inline` first (same
-  10 MB per image cap as HTML pages; over it the image is dropped, its alt text stays), then the string goes
+  10 MB per image cap as HTML pages; over it the image is dropped, its alt text stays; a `background` attribute
+  with a `data:` URL is then removed by DOMPurify, so such a background just doesn't show), then the string goes
   through the **unchanged** `preparePage` with the email's own path. `preparePage` matches `cid:` as a remote
   scheme, so the substitution must come first; it keeps `data:` images, turns remote images into links, gives
   remote links `target=_blank` and strips scripts, forms, frames, `meta`, `base`. The result shows in the same

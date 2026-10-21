@@ -35,12 +35,12 @@ export function EmailView({ vault, path, text, binary }: { vault: string; path: 
   useEffect(() => {
     let live = true;
     void (async () => {
-      let bytes: ArrayBuffer;
+      let bytes: ArrayBuffer | Uint8Array;
       if (binary) {
         const size = force ? null : await fileSize(vault, path);
         if (size !== null && size > MAX_PREVIEW_BYTES) { if (live) setState({ s: 'large', size }); return; }
         bytes = await (await api.raw(vault, path)).arrayBuffer();
-      } else bytes = new TextEncoder().encode(text).buffer as ArrayBuffer;
+      } else bytes = new TextEncoder().encode(text);
       // The parser stays out of the main bundle.
       const { parseEmail } = await import('../lib/email');
       const mail = await parseEmail(bytes);
