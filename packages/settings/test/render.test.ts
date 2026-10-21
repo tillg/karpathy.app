@@ -7,6 +7,8 @@ import { CENTRAL, tempDir } from './helpers.js';
 
 const fixture = (name: string) => readFileSync(new URL(`fixtures/${name}`, import.meta.url), 'utf8');
 const env = (text: string) => parseEnv(text) as Record<string, string>;
+/** The openai-compatible gateway kind (provider-agnostic; no such gateway in deploy/settings/ today). */
+const compat = () => loadSettings('dev', { dir: tempDir({ 'settings.yaml': CENTRAL, 'dev.yaml': '{}\n' }) });
 
 const SECRETS = {
   bearer_token: 'bearer-SECRET',
@@ -20,8 +22,10 @@ const SECRETS = {
 
 describe('renderOpencodeProviders', () => {
   it("reproduces today's provider configs", () => {
-    expect(renderOpencodeProviders(loadSettings('test', { overlay: false }))).toEqual({ provider: JSON.parse(fixture('dev-ollama.json')).provider });
-    expect(renderOpencodeProviders(loadSettings('dev', { overlay: false }))).toEqual({ provider: JSON.parse(fixture('dev-omlx.json')).provider });
+    // The fallback test model is the production one (OpenRouter, ZDR routing).
+    expect(renderOpencodeProviders(loadSettings('test', { overlay: false }))).toEqual(JSON.parse(fixture('opencode-openrouter.json')));
+    expect(renderOpencodeProviders(loadSettings('dev', { overlay: false }))).toEqual(JSON.parse(fixture('opencode-openrouter.json')));
+    expect(renderOpencodeProviders(compat())).toEqual({ provider: { compat: { npm: '@ai-sdk/openai-compatible', options: { baseURL: 'http://llm.example/v1' }, models: { small: { tool_call: true }, vision: { tool_call: true } } } } });
     expect(renderOpencodeProviders(loadSettings('hetzner', { overlay: false }))).toEqual(JSON.parse(fixture('opencode-openrouter.json')));
   });
 });
@@ -44,27 +48,25 @@ describe('renderOpencodeEnv', () => {
     // The providers, merged after a vault's own opencode.json.
     expect(JSON.parse(OPENCODE_CONFIG_CONTENT!)).toEqual(renderOpencodeProviders(loadSettings('hetzner', { overlay: false })));
     expect(env(renderOpencodeEnv(loadSettings('hetzner', { overlay: false }), { ...SECRETS, exa_api_key: 'exa' })).EXA_API_KEY).toBe('exa');
-    const dev = env(renderOpencodeEnv(loadSettings('dev', { overlay: false }), {}));
-    expect(Object.keys(dev).sort()).toEqual(['OPENCODE_CONFIG_CONTENT', 'OPENCODE_MODEL', 'VISION_BASE_URL', 'VISION_MODEL', 'WEB_FETCH_CAP', 'WEB_SEARCH_CAP']);
-    // The relay on the stack's network, no key, no request options.
-    expect(dev.VISION_BASE_URL).toBe('http://ollama.internal:11434/v1');
-    expect(dev.VISION_MODEL).toBe('Qwen3-VL-4B-Instruct-4bit');
+    const c = env(renderOpencodeEnv(compat(), {}));
+    expect(Object.keys(c).sort()).toEqual(['OPENCODE_CONFIG_CONTENT', 'OPENCODE_MODEL', 'VISION_BASE_URL', 'VISION_MODEL', 'WEB_FETCH_CAP', 'WEB_SEARCH_CAP']);
+    // An openai-compatible gateway: its base URL, no key, no request options.
+    expect(c.VISION_BASE_URL).toBe('http://llm.example/v1');
+    expect(c.VISION_MODEL).toBe('vision');
   });
 
   it("the vision endpoint comes from the vision model's own gateway", () => {
     const dir = tempDir({
       'settings.yaml': readFileSync(new URL('../../../deploy/settings/settings.yaml', import.meta.url), 'utf8'),
-      'x.yaml': 'ai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3, vision_model: ollama/qwen3-vl:2b }\n',
+      'x.yaml': 'gateways: { compat: { kind: openai-compatible, base_url: "http://llm.example/v1", models: { vl: {} } } }\nai: { gateway: openrouter, model: openrouter/z-ai/glm-5.3, vision_model: compat/vl }\n',
     });
     const x = env(renderOpencodeEnv(loadSettings('x', { dir }), SECRETS));
     expect(x.OPENROUTER_API_KEY).toBe('sk-or-#1 "x"');
-    expect(x.VISION_BASE_URL).toBe('http://ollama.internal:11434/v1');
-    expect(x.VISION_MODEL).toBe('qwen3-vl:2b');
+    expect(x.VISION_BASE_URL).toBe('http://llm.example/v1');
+    expect(x.VISION_MODEL).toBe('vl');
     expect(x.VISION_API_KEY).toBeUndefined();
     expect(x.VISION_REQUEST_OPTIONS).toBeUndefined();
     expect(x.VISION_MODEL_OPTIONS).toBeUndefined();
-    // The relay still finds the Mac's Ollama for the vision model.
-    expect(env(renderComposeEnv(loadSettings('x', { dir }), SECRETS)).OLLAMA_UPSTREAM).toBe('host.docker.internal:11434');
   });
 
   it("lists the options of every model of the vision gateway, so an Admin override keeps its routing", () => {
@@ -103,18 +105,17 @@ describe('renderComposeEnv', () => {
       GIT_AUTHOR_EMAIL: 'jane@example.com',
       GIT_REMOTE_BASE: 'https://github.com/',
     });
-    expect(hetzner.OLLAMA_UPSTREAM).toBeUndefined();
     expect(hetzner.SETTINGS_DIR).toBeUndefined();
-    const dev = env(renderComposeEnv(loadSettings('dev', { overlay: false }), {}, { settingsDir: '../tmp/settings/dev' }));
-    expect(dev).toMatchObject({ OLLAMA_UPSTREAM: 'host.docker.internal:8000', SETTINGS_DIR: '../tmp/settings/dev', GIT_AUTHOR_NAME: 'Dev User' });
+    const dev = env(renderComposeEnv(loadSettings('dev', { overlay: false }), SECRETS, { settingsDir: '../tmp/settings/dev' }));
+    expect(dev).toMatchObject({ DEFAULT_MODEL: 'openrouter/z-ai/glm-5.3', SETTINGS_DIR: '../tmp/settings/dev', GIT_AUTHOR_NAME: 'Dev User' });
   });
 });
 
-describe('OLLAMA_UPSTREAM', () => {
-  it('where the relay finds the model server, only for a gateway on the Mac', () => {
-    expect(env(renderComposeEnv(loadSettings('test', { overlay: false }), {})).OLLAMA_UPSTREAM).toBe('host.docker.internal:11434');
-    expect(env(renderComposeEnv(loadSettings('dev', { overlay: false }), {})).OLLAMA_UPSTREAM).toBe('host.docker.internal:8000');
-    expect(env(renderComposeEnv(loadSettings('hetzner', { overlay: false }), SECRETS)).OLLAMA_UPSTREAM).toBeUndefined();
+describe('no model upstream', () => {
+  it('the compose .env names no relay to a model server: every model is on OpenRouter', () => {
+    for (const e of ['dev', 'prodtest', 'test', 'hetzner'])
+      expect(Object.keys(env(renderComposeEnv(loadSettings(e, { overlay: false }), SECRETS))).filter((k) => /UPSTREAM/.test(k)), e).toEqual([]);
+    expect(Object.keys(env(renderComposeEnv(compat(), {}))).filter((k) => /UPSTREAM/.test(k))).toEqual([]);
   });
 });
 
@@ -145,11 +146,11 @@ describe('renderBackendSettings', () => {
 
 describe('renderBackendSettings title model', () => {
   it('title_model is passed on only when set (unset = follow the chat model, also an Admin override of it)', () => {
-    const dir = tempDir({ 'settings.yaml': CENTRAL, 'x.yaml': 'ai: { title_model: ollama/vision }\n' });
-    expect(JSON.parse(renderBackendSettings(loadSettings('x', { dir }), SECRETS)).ai.title_model).toBe('ollama/vision');
+    const dir = tempDir({ 'settings.yaml': CENTRAL, 'x.yaml': 'ai: { title_model: compat/vision }\n' });
+    expect(JSON.parse(renderBackendSettings(loadSettings('x', { dir }), SECRETS)).ai.title_model).toBe('compat/vision');
     const dev = JSON.parse(renderBackendSettings(loadSettings('dev', { overlay: false }), SECRETS)).ai;
     expect(dev.title_model).toBeUndefined();
-    expect(dev).toMatchObject({ vision_model: 'Qwen3-VL-4B-Instruct-4bit', vision_gateway: 'omlx' });
+    expect(dev).toMatchObject({ vision_model: 'mistralai/mistral-medium-3-5', vision_gateway: 'openrouter' });
   });
 });
 

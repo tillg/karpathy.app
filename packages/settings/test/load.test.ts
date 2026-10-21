@@ -10,11 +10,11 @@ describe('loadSettings', () => {
   it('maps merge, scalars and lists replace', () => {
     const dir = tempDir({
       'settings.yaml': CENTRAL,
-      'dev.yaml': 'ai: { model: ollama/vision, web: { search_cap: 5 } }\nfiles: { visible_dot_dirs: [.obsidian] }\n',
+      'dev.yaml': 'ai: { model: compat/vision, web: { search_cap: 5 } }\nfiles: { visible_dot_dirs: [.obsidian] }\n',
     });
     const s = loadSettings('dev', { dir });
-    expect(s.ai.model).toBe('ollama/vision');
-    expect(s.ai.gateway).toBe('ollama');
+    expect(s.ai.model).toBe('compat/vision');
+    expect(s.ai.gateway).toBe('compat');
     expect(s.ai.web).toEqual({ access: true, fetch_cap: 20, search_cap: 5, exa_api_key: { secret: 'exa_api_key', optional: true } });
     expect(s.files.visible_dot_dirs).toEqual(['.obsidian']);
     expect(environments(dir)).toEqual(['dev']);
@@ -34,8 +34,8 @@ describe('loadSettings', () => {
       'prodtest.yaml': 'timezone: Europe/Berlin\n',
     });
     expect(loadSettings('dev', { dir }).ai.model).toBe('openrouter/z-ai/glm-5.3');
-    expect(loadSettings('prodtest', { dir }).ai.model).toBe('ollama/small');
-    expect(loadSettings('hetzner', { dir }).ai.model).toBe('ollama/small');
+    expect(loadSettings('prodtest', { dir }).ai.model).toBe('compat/small');
+    expect(loadSettings('hetzner', { dir }).ai.model).toBe('compat/small');
     expect(environments(dir)).toEqual(['dev', 'hetzner', 'prodtest']);
     const bad = tempDir({ 'settings.yaml': CENTRAL, 'hetzner.yaml': '{}\n', 'hetzner.local.yaml': 'timezone: X\n' });
     expect(() => loadSettings('hetzner', { dir: bad })).toThrow(/local overlays apply to dev and prodtest only/);

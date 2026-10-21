@@ -7,8 +7,8 @@
 #
 # Differences from prod: https://localhost:80N5 with Caddy's internal CA (TLS_MODE=internal selects
 # the tls-internal snippet in the prod Caddyfile instead of DNS-01), local bare repos from
-# tmp/dev/remotes instead of GitHub, throwaway secrets, and the native omlx on the Mac as the
-# model (deploy/settings/prodtest.yaml, reached through the /v1-only relay proxy/Caddyfile.ollama-relay).
+# tmp/dev/remotes instead of GitHub, and throwaway secrets. The model is production's, on OpenRouter (the key from
+# deploy/secrets/).
 services:
   proxy:
     ports: !override ["${PRODTEST_PORT:?start prodtest with just prodtest}:443"]
@@ -17,24 +17,10 @@ services:
     volumes:
       - ../tmp/dev/remotes:/remotes
 
-  opencode:
-    environment:
-      NO_PROXY: localhost,127.0.0.1,0.0.0.0,ollama.internal
-
   # The whole vaults volume (deploy/settings/prodtest.yaml has no ingest profiles: the loop idles).
   ingest:
     volumes:
       - vaults:/vaults
-
-  # ollama.internal:11434 (on this project's internal network) → the native Ollama on the Mac, /v1 API only.
-  ollama-bridge:
-    image: caddy:2.10-alpine
-    environment:
-      OLLAMA_UPSTREAM: ${OLLAMA_UPSTREAM:-host.docker.internal:11434}
-    volumes: ["./proxy/Caddyfile.ollama-relay:/etc/caddy/Caddyfile:ro"]
-    networks:
-      internal: { aliases: [ollama.internal] }
-      egress: {}
 
 secrets:
   bearer_token: { file: ../tmp/prodtest/secrets/bearer_token }

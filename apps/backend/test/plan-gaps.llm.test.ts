@@ -9,7 +9,10 @@ import { ChatService } from '../src/chat.js';
 import { OpencodeHarness } from '../src/harness/opencode.js';
 import { makeApp, TOKEN } from './app-helpers.js';
 import { makeRemote } from './helpers.js';
-import { LLM_MODEL, startOpencode, testDir } from './opencode-container.js';
+import { startOpencode, testDir, testModels } from './opencode-container.js';
+
+const models = testModels();
+const LLM_MODEL = models.model;
 
 // @llm tier: plan P4 rows "Chat API … stream contains text parts + tool parts in order" and
 // "One opencode event subscription per vault … disconnect mid-turn / reconnect". Same rules as
@@ -20,7 +23,7 @@ const base = testDir('llm-gaps');
 const vaultsDir = join(base, 'vaults');
 
 beforeAll(async () => {
-  oc = await startOpencode(vaultsDir);
+  oc = await startOpencode(vaultsDir, {}, models);
 }, 120_000);
 afterAll(() => oc?.stop());
 

@@ -85,7 +85,7 @@ services:
     env_file: [{ path: "${SETTINGS_DIR:-.}/opencode.env", required: false }]
     environment:
       # All outbound HTTP (LLM provider, Exa, webfetch) goes through the egress proxy; loopback stays direct
-      # (the plugin client talks to 0.0.0.0:4096). Dev and prodtest add the Ollama host to NO_PROXY.
+      # (the plugin client talks to 0.0.0.0:4096).
       HTTP_PROXY: http://egress:3128
       HTTPS_PROXY: http://egress:3128
       NO_PROXY: localhost,127.0.0.1,0.0.0.0

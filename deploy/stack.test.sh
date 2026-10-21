@@ -14,7 +14,6 @@ eq() { [ "$2" = "$3" ] && ok "$1" || bad "$1" "expected '$3', got '$2'"; }
   stack_ports 3
   eq "stack 3 → proxy 8030" "$PROXY_PORT" 8030
   eq "stack 3 → backend 8031" "$BACKEND_PORT" 8031
-  eq "stack 3 exports no OLLAMA_PORT (Ollama is native, outside the stacks)" "${OLLAMA_PORT:-}" ""
   eq "stack 3 → prodtest 8035" "$PRODTEST_PORT" 8035
   eq "stack 3 → project karpathy-app-3" "$STACK_PROJECT" karpathy-app-3
   eq "stack 3 → STACK=3" "$STACK" 3
@@ -109,24 +108,6 @@ checkout() { local d; d=$(mktemp -d); git -C "$d" init -q; echo "$d"; }
 (
   fails=0
   source "$here/stack.sh"
-  d=$(mktemp -d)
-  printf 'DEFAULT_MODEL=openrouter/x\n' > "$d/hosted.env"
-  stack_model_ready "$d/hosted.env" && ok "stack_model_ready: a hosted gateway needs no model server" || bad "stack_model_ready: a hosted gateway needs no model server" "false"
-  printf 'OLLAMA_UPSTREAM=host.docker.internal:1\n' > "$d/dead.env"
-  stack_model_ready "$d/dead.env" 2>/dev/null && bad "stack_model_ready is false when nothing answers at the relay's upstream" "true" \
-    || ok "stack_model_ready is false when nothing answers at the relay's upstream"
-  # Any HTTP answer counts: a model server that wants a key (omlx) answers 401 without one.
-  port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')
-  python3 -m http.server "$port" --bind 127.0.0.1 --directory "$d" >/dev/null 2>&1 & srv=$!
-  for _ in 1 2 3 4 5 6 7 8 9 10; do nc -z 127.0.0.1 "$port" 2>/dev/null && break; sleep 0.2; done
-  printf 'OLLAMA_UPSTREAM=host.docker.internal:%s\n' "$port" > "$d/up.env"
-  stack_model_ready "$d/up.env" && ok "stack_model_ready: the Mac's side of host.docker.internal answers" || bad "stack_model_ready: the Mac's side of host.docker.internal answers" "false"
-  kill "$srv"; rm -rf "$d"
-  exit "$fails"
-) || fails=$((fails + 1))
-(
-  fails=0
-  source "$here/stack.sh"
   d=$(mktemp -d); cd "$d" || exit 1
   err=$(stack_root 2>&1); rc=$?
   [ "$rc" -ne 0 ] && [[ "$err" == *"not in a git checkout"* ]] && ok "stack_root outside a git checkout fails with a hint" \
@@ -160,8 +141,9 @@ checkout() { local d; d=$(mktemp -d); git -C "$d" init -q; echo "$d"; }
     # container gets $y).
     eq "$env: opencode.env key survives verbatim" "$(get 'c.services.opencode.environment.OPENROUTER_API_KEY===`sk-or-#1 "x" $$y`')" true
     eq "$env: model from the settings" "$(get 'c.services.opencode.environment.OPENCODE_MODEL')" openrouter/z-ai/glm-5.3
-    relay=$([ "$env" = dev ] && echo ollama || echo ollama-bridge)
-    eq "$env: the relay's upstream from the settings (omlx)" "$(get "c.services[\"$relay\"].environment.OLLAMA_UPSTREAM")" host.docker.internal:8000
+    # Every model is on OpenRouter: no relay to a model server on the Mac, opencode's NO_PROXY as in production.
+    eq "$env: no model relay service" "$(get 'Object.keys(c.services).filter((n)=>/relay/.test(n)).join(",") || "none"')" none
+    eq "$env: opencode's NO_PROXY is loopback only" "$(get 'c.services.opencode.environment.NO_PROXY')" localhost,127.0.0.1,0.0.0.0
   done
   rm -rf "$dir" "$out" "$store"
   exit "$fails"
@@ -186,7 +168,7 @@ if grep -nE 'qwen|claude-sonnet|glm-5' "$here"/compose*.yml; then bad "no model 
   store=$(mktemp -d); out=$(mktemp -d)
   settings_render dev "$store" "$out/dev" --no-local >/dev/null 2>&1; rc=$?
   eq "render without the required secrets fails" "$rc" 1
-  printf 't' > "$store/bearer_token"; printf 'p' > "$store/opencode_password"
+  printf 't' > "$store/bearer_token"; printf 'p' > "$store/opencode_password"; printf 'k' > "$store/openrouter_api_key"
   settings_render dev "$store" "$out/dev" --no-local >/dev/null 2>&1 && [ -s "$out/dev/settings.json" ] \
     && ok "render writes the settings" || bad "render writes the settings" "no settings.json"
   rm -rf "$store" "$out"
@@ -240,8 +222,6 @@ done
   cfg=$(cd "$here" && docker compose -f compose.yml -f "$out/hetzner.yml" config --format json 2>&1) \
     || bad "hetzner: compose.target.yml merges" "$cfg"
   if [ "${cfg:0:1}" = "{" ]; then
-    has=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(0,"utf8")).services["ollama-relay"] ? "relay" : "none")' <<<"$cfg")
-    eq "hetzner: no relay" "$has" none
     eq "hetzner: ingest mounts Input/ rw and Sources/ ro per vault (root included)" \
       "$(node -e 'const s=JSON.parse(require("fs").readFileSync(0,"utf8")).services.ingest; console.log(s.volumes.filter((v)=>v.target.startsWith("/vaults/")).map((v)=>v.target+(v.read_only?":ro":"")).join(" "))' <<<"$cfg")" \
       "/vaults/mylife/Input /vaults/mylife/Sources:ro /vaults/frechen/wiki/Input /vaults/frechen/wiki/Sources:ro"

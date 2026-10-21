@@ -4,16 +4,20 @@ import { ChatService } from '../src/chat.js';
 import { OpencodeHarness } from '../src/harness/opencode.js';
 import { makeApp } from './app-helpers.js';
 import { makeRemote } from './helpers.js';
-import { LLM_MODEL, startOpencode, testDir } from './opencode-container.js';
+import { startOpencode, testDir, testModels } from './opencode-container.js';
 
 // @llm tier (#148): the chat-title agent of the opencode image, with the real test model as the title model.
+
+// Always OpenRouter (production models); without a key this throws with what to do (pickTestModels).
+const models = testModels();
+const LLM_MODEL = models.model;
 
 let oc: Awaited<ReturnType<typeof startOpencode>>;
 const base = testDir('llm-title');
 const vaultsDir = join(base, 'vaults');
 
 beforeAll(async () => {
-  oc = await startOpencode(vaultsDir);
+  oc = await startOpencode(vaultsDir, {}, models);
 }, 120_000);
 afterAll(() => oc?.stop());
 

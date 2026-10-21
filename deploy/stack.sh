@@ -70,15 +70,6 @@ stack_first_free() {
   echo "no free dev stack (1-9): see just dev stacks" >&2; return 1
 }
 
-# True if the model server on the Mac that the relay forwards to (OLLAMA_UPSTREAM in the rendered .env ENV_FILE)
-# answers at all, or if the gateway needs none (a hosted one). Any HTTP status counts: omlx answers 401 without a key.
-stack_model_ready() {
-  local up; up=$(sed -n 's/^OLLAMA_UPSTREAM=//p' "$1")
-  [ -z "$up" ] && return 0
-  curl -s -o /dev/null -m 3 "http://${up/host.docker.internal/127.0.0.1}/v1/models" \
-    || { echo "no model server answers at ${up/host.docker.internal/127.0.0.1} (the relay's upstream, deploy/settings/)" >&2; return 1; }
-}
-
 # True if the disk holding PATH has at least MIN GiB free; says how much is free otherwise. Image builds and e2e runs of
 # parallel stacks once filled the Mac's disk, and the Docker VM broke with it.
 stack_disk_ok() {

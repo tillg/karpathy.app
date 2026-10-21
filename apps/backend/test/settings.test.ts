@@ -12,7 +12,7 @@ async function rendered(edit: (s: Record<string, unknown>) => void = () => {}) {
   const s: Record<string, unknown> = {
     auth: { bearer_token: { file: join(dir, 'bearer_token') }, opencode_password: { file: join(dir, 'opencode_password') } },
     git: { remote_base: 'file:///remotes/', author: { name: 'Dev User', email: 'dev@example.com' }, github_token: { file: join(dir, 'github_token') } },
-    ai: { model: 'ollama/qwen2.5:3b', web_access: true },
+    ai: { model: 'openrouter/qwen2.5:3b', web_access: true },
     commit_reminder_threshold: 4,
     files: { visible_dot_dirs: ['.agents'] },
   };
@@ -29,7 +29,7 @@ describe('loadBackendSettings', () => {
       githubToken: undefined,
       remoteBase: 'file:///remotes/',
       identity: { name: 'Dev User', email: 'dev@example.com' },
-      defaultModel: 'ollama/qwen2.5:3b',
+      defaultModel: 'openrouter/qwen2.5:3b',
       defaultTitleModel: '',
       defaultVisionModel: '',
       visionGateway: '',
@@ -41,8 +41,8 @@ describe('loadBackendSettings', () => {
   });
 
   it('reads title_model, vision_model and vision_gateway; an older settings.json falls back', async () => {
-    const f = await rendered((s) => (s.ai = { model: 'ollama/a', title_model: 'ollama/t', vision_model: 'qwen3-vl:2b', vision_gateway: 'ollama', web_access: true }));
-    expect(loadBackendSettings(f)).toMatchObject({ defaultModel: 'ollama/a', defaultTitleModel: 'ollama/t', defaultVisionModel: 'ollama/qwen3-vl:2b', visionGateway: 'ollama' });
+    const f = await rendered((s) => (s.ai = { model: 'gw/a', title_model: 'gw/t', vision_model: 'vl-2b', vision_gateway: 'gw', web_access: true }));
+    expect(loadBackendSettings(f)).toMatchObject({ defaultModel: 'gw/a', defaultTitleModel: 'gw/t', defaultVisionModel: 'gw/vl-2b', visionGateway: 'gw' });
     expect(loadBackendSettings(await rendered())).toMatchObject({ defaultTitleModel: '', defaultVisionModel: '', visionGateway: '' });
   });
 

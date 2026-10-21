@@ -1,7 +1,7 @@
 import { expect, openApp, test } from './helpers';
 
 // #106: a tool chip too long for the column ends with an ellipsis (on its text), full path as tooltip.
-// Real model turn (dev: local Ollama) — the chip only exists once the model called a tool.
+// Real model turn (dev: OpenRouter) — the chip only exists once the model called a tool.
 const TURN = 8 * 60_000;
 test.describe.configure({ timeout: 20 * 60_000 });
 const NAME = 'Wiki-synthesis-similaun-vs-cevedale-late-april-trip-comparison-of-equipment-and-routes.md';

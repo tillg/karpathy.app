@@ -12,7 +12,7 @@ import { makeApp, TOKEN } from './app-helpers.js';
 import { makeRemote, sh } from './helpers.js';
 import { DEAD_MODEL, DEAD_MODEL_2, startOpencode, testDir } from './opencode-container.js';
 
-// Default tier: a real opencode container, but the model doesn't exist in Ollama, so every
+// Default tier: a real opencode container, but the model is on the dead provider (DEAD_MODEL), so every
 // turn fails fast. That exercises the whole turn lifecycle deterministically without an LLM.
 
 let oc: Awaited<ReturnType<typeof startOpencode>>;
@@ -215,7 +215,7 @@ describe('chat API against a real opencode container', () => {
     expect((await request(app).get('/api/settings').set(auth)).body.modelInput).toEqual({ image: true, pdf: false });
     await request(app).patch('/api/settings').set(auth).send({ model: DEAD_MODEL });
     expect((await request(app).get('/api/settings').set(auth)).body.modelInput).toEqual({ image: false, pdf: false });
-    await t.store.update((c) => { c.settings.model = 'ollama/not-listed'; });
+    await t.store.update((c) => { c.settings.model = 'openrouter/not-listed'; });
     expect((await request(app).get('/api/settings').set(auth)).body.modelInput).toBeNull();
   });
 

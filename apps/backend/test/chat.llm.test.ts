@@ -9,9 +9,13 @@ import { OpencodeCommitMessages } from '../src/commit-message.js';
 import { OpencodeHarness } from '../src/harness/opencode.js';
 import { makeApp, TOKEN } from './app-helpers.js';
 import { makeRemote, sh } from './helpers.js';
-import { LLM_MODEL, LLM_VISION_MODEL, startOpencode, testDir } from './opencode-container.js';
+import { startOpencode, testDir, testModels } from './opencode-container.js';
 
-// @llm tier: a real model (default: local Ollama qwen2.5:3b). Rules (plan): prompts name the
+// Always OpenRouter (production models); without a key this throws with what to do (pickTestModels).
+const models = testModels();
+const { model: LLM_MODEL, vision: LLM_VISION_MODEL } = models;
+
+// @llm tier: a real model (testModels(): OpenRouter). Rules (plan): prompts name the
 // tool; assertions check tool events and the file system, never answer text; no tool call at
 // all = inconclusive; at most one retry.
 
@@ -20,7 +24,7 @@ const base = testDir('llm');
 const vaultsDir = join(base, 'vaults');
 
 beforeAll(async () => {
-  oc = await startOpencode(vaultsDir);
+  oc = await startOpencode(vaultsDir, {}, models);
 }, 120_000);
 afterAll(() => oc?.stop());
 

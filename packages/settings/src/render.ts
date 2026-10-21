@@ -83,7 +83,6 @@ export function renderOpencodeEnv(s: Settings, secrets: Secrets): string {
  * directory relative to the compose project dir, for dev and prodtest.
  */
 export function renderComposeEnv(s: Settings, secrets: Secrets, { settingsDir }: { settingsDir?: string } = {}): string {
-  const gw = s.gateways[s.ai.gateway]!;
   return lines([
     ['DOMAIN', s.proxy.domain],
     ['TLS_MODE', s.proxy.tls],
@@ -93,7 +92,6 @@ export function renderComposeEnv(s: Settings, secrets: Secrets, { settingsDir }:
     ['GIT_AUTHOR_EMAIL', text(s.git.author.email, secrets)],
     ['GIT_REMOTE_BASE', s.git.remote_base],
     ['DEFAULT_MODEL', s.ai.model],
-    ['OLLAMA_UPSTREAM', gw.relay_upstream ?? s.gateways[visionGatewayId(s)]?.relay_upstream],
     ['SETTINGS_DIR', settingsDir],
   ]);
 }

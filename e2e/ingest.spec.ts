@@ -64,7 +64,7 @@ test('no Ingest button without an ingest skill; the badge says how to add one', 
 });
 
 test('@llm Ingest moves the item to Sources/: badge gone, the moved file in Changes', async ({ page, api, vault }, info) => {
-  // The model's work doesn't depend on the browser engine; one turn at a time keeps the shared dev Ollama responsive.
+  // The model's work doesn't depend on the browser engine; one turn at a time keeps the model calls few.
   test.skip(info.project.name !== 'desktop', 'model behaviour: one browser is enough');
   test.setTimeout(300_000);
   await addSkill(api, vault);

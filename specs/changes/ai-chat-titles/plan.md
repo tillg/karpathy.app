@@ -31,7 +31,7 @@ flowchart LR
 
 - [x] `ai.title_model` in the settings package: optional, on `ai.gateway`; rendered into the backend's settings.json with `vision_model` and `vision_gateway`; `VISION_MODEL_OPTIONS` in opencode.env
   - Depends on: none
-  - Test first: `packages/settings/test/schema.test.ts` › "title_model is optional and must be on ai.gateway" (`ollama/qwen` on an openrouter gateway → error naming `ai.title_model`); `render.test.ts` › "backend settings carry title_model (default ai.model), vision_model and vision_gateway" and "opencode.env lists the vision gateway's model options". Fail today: no such key or field.
+  - Test first: `packages/settings/test/schema.test.ts` › "title_model is optional and must be on ai.gateway" (a model of another gateway → error naming `ai.title_model`); `render.test.ts` › "backend settings carry title_model (default ai.model), vision_model and vision_gateway" and "opencode.env lists the vision gateway's model options". Fail today: no such key or field.
   - Verify: `npm test -w packages/settings` → all green
 - [x] `look_at_image` uses the override file's model and that model's options
   - Depends on: none

@@ -74,9 +74,8 @@ works from iPad/phone, not just the Mac terminal.
   same remote. No second sync system.
 - **Runtime = docker compose, in dev and prod.** Services: reverse proxy (auto-TLS), backend,
   opencode, egress proxy (opencode's only way to the internet: public destinations only). They share the vault clones via a compose volume. Only the proxy publishes ports. In dev,
-  bind-mount the sources for hot reload rather than running anything natively; the one exception is the dev
-  model, a native omlx (MLX server, Homebrew service) on the Mac shared by all dev stacks. The Docker CLI
-  talks to Rancher Desktop.
+  bind-mount the sources for hot reload rather than running anything natively. Every model, dev and tests included,
+  is on OpenRouter (no local model server). The Docker CLI talks to Rancher Desktop.
 - **Settings = `deploy/settings/`** (`settings.yaml` + one override file per environment, #133). Every
   setting a component reads comes from there (rendered into `.env`, `opencode.env`, the opencode provider
   config and the backend's `settings.json`); add new settings there, not as env vars or literals.
@@ -114,6 +113,8 @@ header `karpathy #N`).
 - The Playwright MCP browser refuses a stack's Caddy CA (`ERR_CERT_AUTHORITY_INVALID`): look at the UI through a
   Playwright script with `ignoreHTTPSErrors: true` (token in `localStorage['karpathy.token']`, as `e2e/helpers.ts`
   `openApp` does) or through `just e2e` screenshots, and read the shot of the changed spot.
+- A new worktree has no `deploy/secrets/` (gitignored): copy the main clone's. Without `openrouter_api_key` there,
+  `just dev up` stops; a dummy key still runs `just e2e --grep-invert @llm` (no model turns).
 - A full `just e2e` on a busy Mac fails dozens of tests that pass alone: re-run with `just e2e --last-failed`, and check
   any `@llm` spec that still fails against the commit before your change (own worktree and stack) before blaming it —
   the local dev model fails some of them on its own.

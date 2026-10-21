@@ -22,7 +22,7 @@ A web app (PWA) that unites two things in one place:
 1. **Obsidian core:** list, read, edit, search `.md` files (wikilinks,
    frontmatter).
 2. **AI dialog:** chat UI in the app; an external LLM (any provider — Claude,
-   OpenAI, OpenRouter, local via Ollama, …) is called; the **agentic loop runs in the
+   OpenAI, OpenRouter, …) is called; the **agentic loop runs in the
    backend on an existing harness** ([opencode](https://github.com/anomalyco/opencode))
    and gets tools to search and edit exactly these `.md` files.
 
@@ -203,20 +203,15 @@ UI layout prototypes from the MVP design (layout 07 was built) —
 
 ## Running it
 
-Everything runs in docker compose (on this Mac: Rancher Desktop), except the dev model: one native
-[omlx](https://github.com/jundot/omlx) (MLX, OpenAI-compatible) on the Mac, shared by all dev stacks. Set it up once with
-`brew install omlx` and `brew services start omlx` (a Homebrew service on 127.0.0.1:8000), then download the models
-into `~/.omlx/models/` with omlx's own Python, e.g. `HF_HUB_DISABLE_XET=1 "$(brew --prefix omlx)/libexec/bin/python3" -c 'from huggingface_hub import snapshot_download as d; d("mlx-community/Qwen3-VL-4B-Instruct-4bit", local_dir="'"$HOME"'/.omlx/models/Qwen3-VL-4B-Instruct-4bit")'`
-(same for `Qwen3-Coder-30B-A3B-Instruct-4bit`). omlx listens on loopback only, so its API-key check is off
-(`auth.skip_api_key_verification: true` in `~/.omlx/settings.json`); `memory.memory_guard_tier: aggressive` lets the
-16.8 GB coder model load.
+Everything runs in docker compose (on this Mac: Rancher Desktop). Every model, in dev, prodtest, the tests and
+production, is production's on OpenRouter: put the OpenRouter key into `deploy/secrets/openrouter_api_key` once.
 
-**Dev** (hot reload, the model from `deploy/settings/dev.yaml`: the native omlx). Several dev stacks run side by side,
+**Dev** (hot reload, production's OpenRouter models). Several dev stacks run side by side,
 one per checkout (main clone or worktree): stack N (1–9) is on https://localhost:80N0, and its header
 reads `karpathy #N`.
 
 ```sh
-just dev                # stack of this checkout, else the first free one: builds, starts, pulls the model once, prints URL + token
+just dev                # stack of this checkout, else the first free one: builds, starts, prints URL + token
 just dev up 2           # pick stack 2 (refused if another checkout owns it)
 just dev stacks         # which stacks are free, and which checkout owns the others
 just dev logs           # also: ps, token
@@ -224,7 +219,7 @@ just dev down
 ```
 
 Stack N owns the ports 80N0–80N9: 80N0 the app, 80N1 the backend (http, loopback), 80N5 the
-paired prodtest. Each stack's `ollama` service (the name is historical) is only a relay to the native omlx. The number is remembered in `tmp/dev/stack`; `just e2e` and
+paired prodtest. The number is remembered in `tmp/dev/stack`; `just e2e` and
 `just prodtest` use it.
 
 `just` lists all commands (`brew install just`); they wrap `deploy/dev.sh` and npm. Deploying
@@ -284,8 +279,8 @@ configured by hand: releases go there with `just deploy hetzner`, see [Deploying
 ```sh
 npm test               # unit + integration: real git against local bare repos, real opencode container (Docker)
 npm run test:github    # @github: clone/push against the throwaway repo tillg/karpathy-app-test-vault
-npm run test:llm       # @llm: real model turns (default: the local Ollama models of deploy/settings/test.yaml)
-                       # the /research tests need a capable model: LLM_TEST_MODEL=openrouter/<model> with OPENROUTER_API_KEY set (costs money)
+npm run test:llm       # @llm: real model turns on OpenRouter (production's models; the key from deploy/secrets/; costs money)
+                       # LLM_TEST_MODEL=openrouter/<model> runs them on another model; CI runs them nightly
 npm run test:e2e       # Playwright against this checkout's dev stack
 npm run typecheck
 ```
