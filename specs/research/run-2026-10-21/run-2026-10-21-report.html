@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autonomous run 2026-10-21: five features, review fixes, release</title>
+<meta name="description" content="Run report: chat type-ahead, secret scan, smart search, local graph, Bases tables; 20 review fixes; release v0.0.34; Instagram relay proposal.">
+<meta name="generator" content="md2html 0.6.0">
+<style>
+@layer base, theme;
+@layer base {
+:root {
+  --bg: #fbfbfa; --fg: #1d1d1f; --muted: #5f6368; --line: #e3e3e0; --card: #ffffff;
+  --accent: #1f5bd6; --go: #1e7b3a; --go-bg: #e6f4ea; --partial: #8a5a00; --partial-bg: #fdf1d6;
+  --no: #b3261e; --no-bg: #fce8e6; --code: #f2f2ef; --figure-bg: #ffffff;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16171a; --fg: #e8e8ea; --muted: #a0a3a8; --line: #2c2e33; --card: #1e2024;
+    --accent: #8ab4ff; --go: #7fd49a; --go-bg: #173524; --partial: #f0c36a; --partial-bg: #3a2e12;
+    --no: #ff9b91; --no-bg: #3d1a17; --code: #26282d; --figure-bg: #ffffff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16171a; --fg: #e8e8ea; --muted: #a0a3a8; --line: #2c2e33; --card: #1e2024;
+  --accent: #8ab4ff; --go: #7fd49a; --go-bg: #173524; --partial: #f0c36a; --partial-bg: #3a2e12;
+  --no: #ff9b91; --no-bg: #3d1a17; --code: #26282d; --figure-bg: #ffffff; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; overflow-wrap: break-word; }
+main { max-width: 980px; margin: 0 auto; padding: 32px 16px 80px; }
+.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.appicon { flex: none; width: 48px; height: 48px; border-radius: 11px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; }
+h2 { font-size: 1.4rem; margin: 48px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 28px 0 8px; }
+p, li { max-width: 72ch; }
+a { color: var(--accent); }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: .88em; }
+pre { background: var(--code); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 12px 0; overflow-x: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; border-radius: 0; font-size: .85rem; }
+blockquote { margin: 12px 0; padding: 0 0 0 16px; border-left: 3px solid var(--line); color: var(--muted); }
+img { max-width: 100%; height: auto; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+hr + h2 { border-top: 0; padding-top: 0; margin-top: 0; }
+.sub { color: var(--muted); margin: 0 0 24px; }
+.sub img { height: 1.2em; width: auto; vertical-align: middle; }
+.tldr { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; }
+.tldr p:first-child { margin-top: 0; }
+.tldr > :last-child { margin-bottom: 0; }
+nav.toc { columns: 2; column-gap: 32px; font-size: .95rem; margin-top: 20px; }
+nav.toc a { display: block; padding: 2px 0; }
+@media (max-width: 640px) { nav.toc { columns: 1; } }
+.tbl { overflow-x: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; background: var(--code); }
+tr:last-child td { border-bottom: 0; }
+th[align="center"], td[align="center"] { text-align: center; }
+th[align="right"], td[align="right"] { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.v { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+td .v { white-space: nowrap; }
+.go { color: var(--go); background: var(--go-bg); }
+.partial { color: var(--partial); background: var(--partial-bg); }
+.no { color: var(--no); background: var(--no-bg); }
+figure { margin: 16px 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+figure img { display: block; max-width: 100%; height: auto; margin: 0 auto; background: var(--figure-bg); border-radius: 6px; }
+figcaption { color: var(--muted); font-size: .85rem; margin-top: 8px; text-align: center; }
+figcaption a.mmd-src { white-space: nowrap; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; min-width: 0; }
+.card h4 { margin: 0 0 6px; font-size: 1rem; }
+.card p { margin: 6px 0; font-size: .93rem; }
+.contains-task-list { list-style: none; padding-left: 20px; }
+.footnotes { margin-top: 48px; padding-top: 12px; border-top: 1px solid var(--line); font-size: .9rem; color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+.reports-nav { display: flex; align-items: center; gap: 4px;
+  padding: 8px 16px; overflow-x: auto; white-space: nowrap; scrollbar-width: none;
+  background: var(--card); border-bottom: 1px solid var(--line);
+  font: 500 14px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+.reports-nav::-webkit-scrollbar { display: none; }
+.reports-nav .brand { display: flex; align-items: center; gap: 8px; margin-right: 8px; color: var(--muted); }
+.reports-nav .brand img { width: 20px; height: 20px; border-radius: 5px; }
+.reports-nav a.item { padding: 6px 12px; border-radius: 999px; color: var(--fg); text-decoration: none; }
+.reports-nav a.item:hover { background: rgba(127,127,127,.12); }
+.reports-nav a.item[aria-current="page"] { background: var(--accent); color: var(--bg); }
+
+.report-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 16px; padding: 0; font-size: .88rem; }
+.report-meta div { display: flex; align-items: baseline; gap: 6px; }
+.report-meta dt { color: var(--muted); }
+.report-meta dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.report-status { display: inline-block; padding: 1px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+.report-status.research { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.report-status.ongoing { color: var(--partial); background: var(--partial-bg); }
+.report-status.implemented { color: var(--go); background: var(--go-bg); }
+}
+@layer theme {
+/* karpathy.app theme for md2html reports. Layered after md2html's base.css.
+ * base.css already is the karpathy.app house style (Apple-like, light + dark), so this file
+ * only holds deliberate deviations from it.
+ */
+
+/* Diagrams are drawn for a white background: keep the whole figure frame white in dark mode too,
+ * as in the hand-written reports. */
+figure { background: var(--figure-bg); }
+figcaption { color: #5f6368; }
+
+/* ```text blocks are ASCII wireframes (feature report): box-drawing lines must touch, so use a
+ * real monospace font and a tight line height on the <pre> itself (the line box comes from it). */
+pre:has(> code.language-text) { font: 12.5px/1.22 "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace; }
+pre > code.language-text { font: inherit; }
+}
+</style>
+</head>
+<body>
+<nav class="reports-nav" aria-label="Reports"><span class="brand"><img src="../../../assets/icons/icon-192.png" alt="">karpathy.app</span><a class="item" href="../features/feature-report.html">Features</a><a class="item" href="../browser-only/browser-only-report.html">Browser-only</a><a class="item" href="../../changes/v1/v1-plan.html">V1 plan</a><a class="item" href="../prod-env/prod-env-report.html">Prod environment</a><a class="item" href="run-2026-10-21-report.html" aria-current="page">Run 2026-10-21</a></nav>
+<main>
+<header class="top"><h1>Autonomous run 2026-10-21: five features, review fixes, release</h1><img class="appicon" src="../../../assets/icons/icon-192.png" alt="karpathy.app" width="48" height="48"></header>
+<dl class="report-meta"><div><dt>Created</dt><dd>2026-10-21</dd></div><div><dt>Last edited</dt><dd>2026-10-21</dd></div><div><dt>Status</dt><dd><span class="report-status implemented">Implemented</span></dd></div></dl>
+<p class="sub">What the /autonomous run of 2026-10-21 (19:19–23:45, on karpathy-dev) built for issues #155, #141, #138, #92 and #91, what the review found and fixed, the #168 proposal, and the feature decisions to review. Process decisions are in <a href="../../../DECISIONS.md">DECISIONS.md</a>.</p>
+<div class="tldr">
+<p><strong>All five issues are built, reviewed, fixed and on <code>main</code>; v0.0.34 is released. Prod gets it with <code>just deploy hetzner 0.0.34</code> on your Mac.</strong></p>
+<ol>
+<li><strong>Type ahead while the AI works (#155):</strong> messages sent to a busy chat wait as "Queued" bubbles on the server and go out by themselves; Edit, ✕ and Stop hand them back.</li>
+<li><strong>Secret scan before Commit &#x26; Push (#141, #167):</strong> gitleaks checks every committed file's content and the message; a finding blocks the commit, "Commit anyway" overrides exactly what was shown. The AI's commit-message proposal no longer sees secrets.</li>
+<li><strong>Smart search (#138):</strong> a ranked BM25 index with accent folding, stemming per note language and typo tolerance; <code>handtuch</code> finds "Handtücher".</li>
+<li><strong>Local graph (#92):</strong> Local | Wiki | All in the graph pane; the open note's neighbourhood at depth 1 or 2, flat, with names.</li>
+<li><strong>Bases tables (#91):</strong> a <code>```base</code> block renders a live, read-only table in Obsidian Bases syntax, in Read and Write mode.</li>
+</ol>
+<p>An adversarial review then found <strong>20 defects</strong> (3 high); all were fixed test-first before the release. #168 got a change proposal, not code.</p>
+<p><strong>Your part:</strong> deploy (<code>just deploy hetzner 0.0.34</code>), renew the dev host's GitHub token, run <code>just devhost</code>, push the demo vault, answer the #168 questions, and review the decisions in §3.</p>
+</div>
+<nav class="toc" aria-label="Contents">
+<a href="#built">1. What was built</a>
+<a href="#quality">2. Review and testing</a>
+<a href="#decisions">3. Feature decisions to review</a>
+<a href="#todo">4. What you need to do</a>
+<a href="#sources">5. Sources</a>
+</nav>
+<h2 id="built">1. What was built</h2>
+<div class="cards">
+<div class="card"><h4>#155 Type ahead while the AI works</h4>
+<p>The composer never locks. A prompt sent to a busy chat joins a server-side queue (up to 10 per chat, in order, kept across reloads and devices) and shows as a dashed <strong>Queued</strong> bubble with Edit and ✕. When the reply ends, the next one starts by itself. <strong>Stop</strong> ends the reply and puts every queued message back into the box, oldest first, so nothing runs you didn't want.</p>
+</div>
+<div class="card"><h4>#141 Secret scan before Commit &#x26; Push</h4>
+<p>gitleaks 8.30.1 (pinned, checksum-verified) scans the stored content of every changed file, binary files included, plus the commit message. A finding blocks the commit and names file, line and rule, showing at most four characters. <strong>Commit anyway</strong> covers exactly the findings shown; <code>.gitleaksignore</code> (read from the last commit) handles lasting false positives. Unpushed commits the app didn't scan are scanned before a push. This repo's <code>just check</code> and CI scan its history too.</p>
+</div>
+<div class="card"><h4>#138 Smart search</h4>
+<p>An in-memory index per vault (MiniSearch, BM25) replaces ripgrep. Case and accents fold (German <code>ue</code> = <code>ü</code>), words are stemmed in the note's language (de, en, fr, es, it; detected locally or from <code>lang:</code>), file names and headings rank higher, the last word matches as a prefix, and a word with a typo still finds its note. Matched words are highlighted even when spelled differently.</p>
+</div>
+<div class="card"><h4>#92 Local graph</h4>
+<p><strong>Local graph</strong> at the foot of the outline opens the graph pane on the open note's neighbourhood: its links and backlinks at depth 1 or 2, every link between them, flat and with names, same colours and legend as the vault graph. The pane switches <strong>Local | Wiki | All</strong>.</p>
+</div>
+<div class="card"><h4>#91 Bases tables</h4>
+<p>A fenced <code>```base</code> block (Obsidian Bases syntax) shows a live, read-only table of matching notes, in Read mode and in Write mode's live preview. Filters on folders, tags, frontmatter and dates; table view with columns, sort, limit and names. Tables refresh when notes change; rows open notes; <code>.base</code> files open as tables. Unsupported syntax says "not supported in v1".</p>
+</div>
+<div class="card"><h4>#168 Instagram (proposal)</h4>
+<p>A browser can't fetch instagram.com. The proposal <code>specs/changes/instagram-mac-relay/</code> routes only Instagram's traffic from the ingest service through a small proxy on your Mac, so Instagram sees your home IP. Five open questions are in the issue.</p>
+</div>
+</div>
+<h2 id="quality">2. Review and testing</h2>
+<p>Every feature was built test-first by its own agent in its own worktree, with unit tests, e2e specs and updated <code>specs/system/</code> pages. After the merge:</p>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>just check</code> on the final <code>main</code> (lint, typecheck, secret scan, every unit suite, deploy tests)</td>
+<td>green: 36 + 66 + 670 + 383 tests</td>
+</tr>
+<tr>
+<td>E2E of the new features plus regressions (Chromium desktop and iPhone)</td>
+<td>39 passed; the <code>@llm</code> chat-title test failed in the batch and passed twice alone (known: its tests share one vault)</td>
+</tr>
+<tr>
+<td>Exploratory test with many German, English and French notes, light and dark, phone width</td>
+<td>all five features worked; one local-graph bug found and fixed (a single note showed an empty canvas)</td>
+</tr>
+<tr>
+<td>Adversarial review of the whole run</td>
+<td>20 findings, all fixed test-first and merged</td>
+</tr>
+<tr>
+<td>Release v0.0.34</td>
+<td><code>check</code> hit the known intermittent #162 (<code>save_url</code>); re-run</td>
+</tr>
+</tbody>
+</table></div>
+<p>The review findings that mattered most:</p>
+<ul>
+<li><strong>Chat queue:</strong> a failed pull could drop another queued prompt; a message sent just before Stop could still run; a message queued as a reply ended could hang at "Waiting…".</li>
+<li><strong>Secret scan:</strong> binary files, <code>-diff</code> files and a same-commit <code>.gitleaksignore</code> entry bypassed it; some gitleaks errors read as a clean scan.</li>
+<li><strong>Search:</strong> a long query froze the server for seconds; a symlink could expose files outside the vault; file names and extensions weren't found.</li>
+<li><strong>Bases and graph:</strong> deep nesting crashed with a 500; tables could stay stale; link queries took 36 s on 5,000 notes (now 0.45 s); a new note had no local graph.</li>
+</ul>
+<h2 id="decisions">3. Feature decisions to review</h2>
+<p>The decisions about functionality, with their ids in <a href="../../../DECISIONS.md">DECISIONS.md</a>. All are <code>open</code>.</p>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Decision</th>
+<th>Main alternative</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>#155</td>
+<td>Queue on the server, behind the running turn; the AI sees a queued message after its current reply (-8)</td>
+<td>Inject into the running opencode turn, as Claude Code does</td>
+</tr>
+<tr>
+<td>#155</td>
+<td>Stop and Edit hand queued messages back into the composer; at most 10 per chat (-9)</td>
+<td>Keep the queue after Stop</td>
+</tr>
+<tr>
+<td>#141</td>
+<td>gitleaks over stored file contents; fail closed; files over 50 MB need "Commit anyway" (-6, -17)</td>
+<td>Scan only the text diff</td>
+</tr>
+<tr>
+<td>#141</td>
+<td>"Commit anyway" for the exact findings shown, plus <code>.gitleaksignore</code> from HEAD; inline allows and vault configs ignored (-7, -17)</td>
+<td>Hard block without override</td>
+</tr>
+<tr>
+<td>#138</td>
+<td>MiniSearch BM25 in memory, Snowball stems per note language, franc-min detection, no LLM (-10)</td>
+<td>SQLite FTS5, an on-disk index</td>
+</tr>
+<tr>
+<td>#138</td>
+<td>Score order changes three old search tests (-11)</td>
+<td>Keep path order</td>
+</tr>
+<tr>
+<td>#138</td>
+<td>Words match from their start; <code>tuch</code> doesn't find "Handtuch" (-18)</td>
+<td>Substring fallback</td>
+</tr>
+<tr>
+<td>#92</td>
+<td>Local scope of the existing graph pane, flat 2D, opened from the outline (-12)</td>
+<td>A second graph renderer; a note-bar button</td>
+</tr>
+<tr>
+<td>#91</td>
+<td>Backend evaluates a strict v1 subset of Bases; table view only; 500 rows (-13)</td>
+<td>Lenient parsing; client-side evaluation</td>
+</tr>
+<tr>
+<td>#91</td>
+<td>In Write mode the table replaces the block until the cursor goes in (-14)</td>
+<td>Table under the visible YAML</td>
+</tr>
+<tr>
+<td>#168</td>
+<td>Mac relay for Instagram traffic; no fallback to the server IP (-20)</td>
+<td>Scraper on the Mac; residential proxy</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="todo">4. What you need to do</h2>
+<ol>
+<li><strong>Deploy:</strong> on the Mac, <code>just deploy hetzner 0.0.34</code> (rollback: <code>just deploy hetzner 0.0.33</code>). karpathy-dev can't: the Ansible vault password is only in your Keychain.</li>
+<li><strong>Renew the dev host's GitHub token:</strong> at 22:24 git dropped it from <code>~/.git-credentials</code> on karpathy-dev, most likely because GitHub rejected it. <code>just secrets dev</code>, then <code>just devhost</code>; that also installs WebKit, qrencode and ffmpeg (this run's retro fix).</li>
+<li><strong>Push the demo vault</strong> after the deploy: <code>~/git/karpathy_demo_wiki</code> on karpathy-dev has five unpushed run-book commits and a new page <code>Wiki/topics/dashboards.md</code>.</li>
+<li><strong>Answer the #168 questions</strong>, then <code>/spec:apply instagram-mac-relay</code>.</li>
+<li><strong>Review the decisions</strong> in §3 (and the process ones in DECISIONS.md).</li>
+</ol>
+<p>Still open: #162 (intermittent <code>save_url</code> test on CI); the chat-title e2e test shares one vault with its neighbours; WebKit e2e hasn't run on karpathy-dev yet; Bases speed has no automated guard; gitleaks' rules skip images and archives.</p>
+<h2 id="sources">5. Sources</h2>
+<ul>
+<li>GitHub issues <a href="https://github.com/tillg/karpathy.app/issues/155">#155</a>, <a href="https://github.com/tillg/karpathy.app/issues/141">#141</a>, <a href="https://github.com/tillg/karpathy.app/issues/138">#138</a>, <a href="https://github.com/tillg/karpathy.app/issues/92">#92</a>, <a href="https://github.com/tillg/karpathy.app/issues/91">#91</a>, <a href="https://github.com/tillg/karpathy.app/issues/167">#167</a>, <a href="https://github.com/tillg/karpathy.app/issues/168">#168</a>.</li>
+<li><a href="../../../DECISIONS.md">DECISIONS.md</a>, run 2026-10-21 19:19.</li>
+<li><code>specs/system/</code> (functional, architecture, domain, security) as updated on <code>main</code>.</li>
+<li>Commits <code>8696615..8c301c7</code> on <code>main</code>; tag <code>v0.0.34</code>.</li>
+</ul>
+</main>
+</body>
+</html>

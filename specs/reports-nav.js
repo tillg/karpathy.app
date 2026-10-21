@@ -7,6 +7,7 @@ const REPORTS = [
   ['research/browser-only/browser-only-report.html', 'Browser-only'],
   ['changes/v1/v1-plan.html', 'V1 plan'],
   ['research/prod-env/prod-env-report.html', 'Prod environment'],
+  ['research/run-2026-10-21/run-2026-10-21-report.html', 'Run 2026-10-21'],
 ];
 
 const base = document.currentScript.src;

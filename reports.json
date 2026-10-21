@@ -2,7 +2,8 @@
   "sources": [
     "specs/research/browser-only/browser-only-report.md",
     "specs/changes/v1/v1-plan.md",
-    "specs/research/prod-env/prod-env-report.md"
+    "specs/research/prod-env/prod-env-report.md",
+    "specs/research/run-2026-10-21/run-2026-10-21-report.md"
   ],
   "reports": [
     {
@@ -20,6 +21,10 @@
     {
       "path": "specs/research/prod-env/prod-env-report.md",
       "label": "Prod environment"
+    },
+    {
+      "path": "specs/research/run-2026-10-21/run-2026-10-21-report.md",
+      "label": "Run 2026-10-21"
     }
   ],
   "brand": {
