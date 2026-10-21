@@ -298,6 +298,28 @@ The commit reminder threshold and Web access also take their first value from th
 has override semantics. The GitHub token is similar: the secret reference names the deployment's token, a token set
 in the app wins.
 
+### Prompts
+
+Text that *the app* writes for a model, as opposed to the **prompt body** the user sends
+([ADR 0006](../../docs/adr/0006-prompts-as-markdown-files.md), [architecture.md](architecture.md#prompt-files-prompts)).
+
+| Term | Meaning | In code |
+|---|---|---|
+| **Model instruction** | Text the app writes to tell a model what to do. That is an agent's system prompt, the hidden parts of a turn (local-time line, command-turn wrapper), the request of a one-shot task (commit message) and the default question to the vision model. *Avoid:* "prompt" on its own, which is the prompt body. | the `.md` files in `prompts/` |
+| **Tool description** | What the model reads about a tool: its description and the description of each argument. It is part of the tool's definition, together with its signature, so it stays in the tool's code. It is not a prompt file. | `description:` / `.describe(…)` in `deploy/opencode/tools/<id>.ts` |
+| **Tool output** | Text a tool returns to the model as the result of a call (results, errors, refusals, the md-lint report). It is data about the call, not an instruction, and stays in the tool's code. | `deploy/opencode/lib/*.ts` |
+| **Prompt file** | One model instruction as one Markdown file in `prompts/`. The body is the exact text the model receives. Optional YAML frontmatter lists only its prompt variables. The name is the agent id (`agents/commit-message.md`), otherwise the topic in kebab-case; the folder says who uses it. | `prompts/**/*.md` |
+| **Prompt variable** | A `{{name}}` placeholder in a prompt file, filled in on every use: the time, the command name, the diff. Declared under `variables:`; a missing, undeclared or unused one is refused. Values only, no logic. | `prompt(name).render({…})` |
+
+```mermaid
+flowchart TD
+  T[text the app sends to a model] --> D{part of a tool's<br/>definition?}
+  D -- yes --> TD[Tool description] --> TC["stays in tools/&lt;id&gt;.ts"]
+  D -- no --> Q{tells the model<br/>what to do?}
+  Q -- yes --> MI[Model instruction] --> PF[(prompt file in prompts/)]
+  Q -- "no: a call's result" --> TO[Tool output] --> C[stays in the tool's code]
+```
+
 ## Concepts and entities
 
 ```mermaid
@@ -1065,6 +1087,10 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
   never over an existing name, and always as uncommitted changes the user reviews.
 - **A command is instructions, not code.** The app sends a skill's text to the AI as written; it never uses
   opencode's command endpoint ([ADR 0004](../../docs/adr/0004-commands-as-prompts-not-command-endpoint.md)).
+- **Model instructions live in prompt files.** Code loads them and never spells one out as a string. Tool
+  descriptions stay next to the tool's signature, and tool output and app skills stay where they are. Prompts change
+  only through git and a deploy, never at runtime or from a vault
+  ([ADR 0006](../../docs/adr/0006-prompts-as-markdown-files.md)).
 - **A chip or the palette only fills the composer;** sending is the user's tap. A `/word` that is no command of the
   vault is plain text.
 - **Research plans before the main run, by instruction.** The plan turn scouts at most 3 searches and 2 fetches,

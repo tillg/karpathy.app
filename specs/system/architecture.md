@@ -232,16 +232,62 @@ flowchart TB
 | `metrics.ts` | `MetricsSampler` (#150): samples CPU, memory, load, the vaults and config disks and opencode's health every 30 s, keeps 7 days in memory and in `<CONFIG_DIR>/metrics.jsonl`, `report(range)` averages into ≤ 240 points. Host readers and the clock are injectable. See [Admin mode](#admin-mode). |
 | `harness/context-cache.ts` | Pure (#140): `lastEntries(sessions, cache, fetchLast)` gives each listed chat its `lastEntryAt` (newest message, any role) and `context` (last assistant message), fetching `session.messages(limit 4)` only for sessions whose `time.updated` moved (concurrency 4, a failed fetch retried next list), and sorts by `lastEntryAt ?? updatedAt`, newest first; `ModelLimits` caches each model's `limit.context` from `models()` and reloads on an unknown model. |
 | `browser-calls.ts` | `BrowserCalls` (on `Vaults`, #151): the pending browser calls of every vault, the answer files and the deadline ([Browser tools and local time](#browser-tools-and-local-time)). `chat.ts` opens a call when a mapped browser tool part is `running` and closes it when the part leaves `running`, and `closeVault`s at the turn's end. |
-| `harness/local-time.ts` | Pure (#151): `localTimeLine(now, timeZone?, locale?)`, the hidden line with the user's local time that `promptParts` adds to every prompt. |
-| `harness/command.ts` | Pure: `parseCommand`, `expandCommand`, `withoutBaseDir`, `commandInstructions`. |
-| `commit-message.ts` | Proposes commit messages with a throwaway, tool-less session; marked as a running proposal so a skill refresh doesn't cut it off. |
+| `harness/local-time.ts` | Pure (#151): `localTimeLine(now, timeZone?, locale?)`, the hidden line with the user's local time that `promptParts` adds to every prompt; its wording is `prompts/local-time.md`. |
+| `harness/command.ts` | Pure: `parseCommand`, `expandCommand`, `withoutBaseDir`, `commandInstructions` (renders `prompts/command-turn.md`). |
+| `commit-message.ts` | Proposes commit messages with a throwaway, tool-less session; marked as a running proposal so a skill refresh doesn't cut it off. `commitRequest(files, stat, diff)` renders the user message from `prompts/commit-message-request.md` (diff cut at 32 KB). |
 | `config-store.ts` | Atomic, serialized writes to `/config/config.json`; also holds the GitHub token set in the app. Knows the deployment's default model (`defaultModel`) and stores the model only as `modelOverride` while it differs from it ([Settings](#settings)). |
+
+### Prompt files (`prompts/`)
+
+Every model instruction outside a tool's definition is one Markdown file here (#149,
+[ADR 0006](../../docs/adr/0006-prompts-as-markdown-files.md)). Tool descriptions stay in
+`deploy/opencode/tools/<id>.ts`, next to the signature.
+
+| File | Used by | Variables |
+|---|---|---|
+| `local-time.md` | backend `harness/local-time.ts`: the hidden line of every turn | `time`, `zone`, `offset`, `locale` |
+| `command-turn.md` | backend `harness/command.ts`: the hidden part of a command turn | `name`, `instructions` |
+| `commit-message-request.md` | backend `commit-message.ts`: the user message of the commit-message turn | `files`, `stat`, `diff` |
+| `look-at-image-question.md` | opencode `lib/look-at-image.ts`: the default question to the vision model | none |
+| `agents/commit-message.md` | `opencode.json` agent `commit-message`, via `{file:/opt/prompts/agents/commit-message.md}` | none; no frontmatter |
+
+- **Format:** the body is sent verbatim, with only leading and trailing newlines trimmed. It is not rendered
+  as Markdown and not rewrapped. The frontmatter is a closed schema: `variables` only. Variables carry values
+  with their own small formatting (`', locale de-DE'`, `[diff truncated]`), never logic.
+- **Loader `prompts/load.ts`:** `prompt(name)` → `{ text, render(vars) }`.
+  - It reads at module load (`readFileSync` relative to its own `import.meta.url`, so it must stay in
+    `prompts/`). The backend doesn't start, and the opencode image's bake step fails, if a file is missing
+    or invalid.
+  - It refuses undeclared, unused, missing or extra variables. `render` replaces in one pass, so values
+    aren't expanded again.
+  - YAML comes from `Bun.YAML` in opencode and from the `yaml` package in Node, the only dependency.
+- **Packaging:** one relative path from every consumer (`../../../prompts/load.ts`).
+  - backend image: `COPY prompts prompts` → `/app/prompts`;
+  - backend dev: bind mount `../prompts:/app/prompts:ro`, and nodemon watches it (`--ext ts,md`);
+  - opencode image: `!prompts/` in `Dockerfile.dockerignore`, then `COPY prompts/ /opt/prompts/`, read-only
+    like `/opt/opencode-config`. It has no dev bind mount, so an opencode-side prompt edit needs an image
+    rebuild.
+- **Why `{file:}` for agent prompts:** the agent stays in the managed config, the layer a vault can't
+  override.
+  - opencode Markdown agents would leave that layer.
+  - A `system` value from the backend would be *added* to opencode's default prompt, not replace it.
+  - opencode trims the file's trailing newline.
+
+```mermaid
+flowchart LR
+  P[(prompts/*.md)] --> L[prompts/load.ts]
+  L --> B[backend: local time, command turn, commit request] --> OC[opencode session]
+  L --> V[opencode lib/look-at-image.ts] --> VM[vision model]
+  P -- "{file:/opt/prompts/agents/…}" --> J[managed opencode.json] --> OC
+  T[tools/*.ts: description + args next to the signature] --> OC
+```
 
 ### opencode (`deploy/opencode`)
 
 The pinned stock image (`deploy/opencode/Dockerfile`) plus a **managed config** at `/etc/opencode/opencode.json` (merged last, so a vault can't override it; it holds policy only, no provider):
 agents `vault` (edits allowed except `.git` and harness config), `vault-readonly` (default; used during conflicts) and
-`commit-message` (no tools); `bash`, `webfetch`, `websearch`, `save_url`, `move_to_sources`, `task`, `question` and `external_directory` denied
+`commit-message` (no tools; its prompt is `{file:/opt/prompts/agents/commit-message.md}`, see
+[Prompt files](#prompt-files-prompts)); `bash`, `webfetch`, `websearch`, `save_url`, `move_to_sources`, `task`, `question` and `external_directory` denied
 (`save_url` and `move_to_sources` are allowed for `vault` only; `websearch`, `webfetch` and `save_url` are switched on per turn by the backend, see [Web access](#web-access); `move_to_sources` is not in that map, the agent alone decides);
 reading `*.env` denied; snapshots, sharing and auto-update off. The image sets `OPENCODE_ENABLE_EXA=true` and
 `OPENCODE_WEBSEARCH_PROVIDER=exa`; its entrypoint exports the `opencode_password` secret as
@@ -1926,6 +1972,11 @@ The ones that shape the whole system:
   check must be re-run. Backend and opencode run as the same uid so files the AI writes stay committable.
 - **Commit message proposals go through opencode** (agent `commit-message`, a throwaway session that is deleted
   afterwards), not a second LLM client, because only opencode holds provider keys.
+- **Model instructions are prompt files** ([ADR 0006](../../docs/adr/0006-prompts-as-markdown-files.md)): one `.md`
+  per instruction in `prompts/`, loaded by `prompts/load.ts`, and agent prompts through `{file:}`. Tool
+  descriptions stay next to the tool's signature. Tool output and app skills stay where they are. Rejected:
+  inline strings, a `prompts/` per runtime, generated code, a template library, model parameters in
+  frontmatter, and runtime or vault overrides.
 - **Runtime = docker compose in dev and prod**, nothing native in dev. Rancher Desktop bind
   mounts deliver no inotify events, so the dev `web` and `backend` containers poll for source changes.
 - **Numbered dev stacks, one scheme** (80N0, no stack 0 on 8443): two port schemes is what the hand-written
@@ -2048,6 +2099,19 @@ The ones that shape the whole system:
 
 ## Testing
 
+- **Prompt file tests** (#149):
+  - `prompt-load.test.ts`: the loader on fixture files (trimming, unknown keys, variable checks, single-pass
+    render, missing file).
+  - `prompts-guard.test.ts` enforces ADR 0006:
+    - no `prompts/tools/`, and no tool calls `prompt()`;
+    - agent prompts are `{file:}` references to files without frontmatter;
+    - no unused prompt file;
+    - every file loads;
+    - no string literal over 120 characters passed to the prompt API in `apps/backend/src`.
+  - `prompt-texts.test.ts`: the running opencode image serves the agent prompt file (catches a missing
+    `COPY` or a wrong `{file:}` path).
+  - `commit-message.test.ts`: `commitRequest`, including the cut diff.
+  - Editing a prompt file or a tool description puts `npm run test:llm` in its Verify (CLAUDE.md).
 - **Text files, back arrow, chat context tests** (#126, #139, #140): units `lang.test.ts` (the kind table, languages,
   plain fallback), `Editor.test.tsx` (code kind: no wikilinks, highlighting), `html-page.test.ts` (sanitizing, CSS and
   image inlining, remote → link, link rewriting, `../` outside the vault), `HtmlView.test.tsx`, `store.test.tsx`

@@ -1,3 +1,7 @@
+import { prompt } from '../../../../prompts/load.js';
+
+const LOCAL_TIME = prompt('local-time');
+
 /** The backend's own zone: the `timezone` setting, which reaches the container as `TZ`. */
 const ownZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -44,9 +48,5 @@ export function localTimeLine(now: Date, timeZone?: string, locale?: string): st
   );
   const offset = parts.timeZoneName === 'GMT' ? 'UTC+00:00' : parts.timeZoneName!.replace('GMT', 'UTC');
   const time = `${parts.weekday} ${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
-  return (
-    `User's local time: ${time}, ${zone} (${offset})${tag ? `, locale ${tag}` : ''}. ` +
-    "(Context from the app, not part of the user's message: use it for 'today', 'now' and dates in note names " +
-    'instead of the server date; do not mention it unless asked.)'
-  );
+  return LOCAL_TIME.render({ time, zone, offset, locale: tag ? `, locale ${tag}` : '' });
 }

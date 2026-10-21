@@ -1,5 +1,9 @@
+import { prompt } from '../../../../prompts/load.js';
+
 // Command turns: `/name args` where `name` is a skill. The skill's text goes to the model as plain text,
 // never through opencode's command endpoint, which runs `!`cmd`` snippets and resolves `@file` (F4).
+
+const COMMAND_TURN = prompt('command-turn');
 
 /** `/name` at the very start, then whitespace or the end; everything after the name is `args`. */
 export function parseCommand(text: string): { name: string; args: string } | null {
@@ -34,5 +38,5 @@ export function withoutBaseDir(template: string): string {
 /** The hidden part of a command turn: what the model is told, plus the expanded skill text. */
 export function commandInstructions(name: string, expanded: string): string {
   // opencode's template ends with the skill's base directory; the vault's notes are not there (found with a small model).
-  return `The user started the command \`/${name}\`. Its arguments are the text after the name in their message. Paths to notes (such as Wiki/…) are relative to the vault root, your working directory; only the skill's own files are under its base directory. Follow these instructions for this turn:\n\n${expanded}`;
+  return COMMAND_TURN.render({ name, instructions: expanded });
 }

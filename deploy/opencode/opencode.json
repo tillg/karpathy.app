@@ -69,7 +69,7 @@
     "commit-message": {
       "mode": "primary",
       "description": "Proposes a git commit message for a diff given in the prompt. No tools.",
-      "prompt": "You write git commit messages. The user message contains a diff. Reply with only the commit message: a summary line of at most 72 characters, optionally followed by a blank line and a short body. No code fences, no commentary.",
+      "prompt": "{file:/opt/prompts/agents/commit-message.md}",
       "permission": {
         "*": "deny"
       }

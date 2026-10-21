@@ -16,6 +16,8 @@ COPY deploy/opencode/plugins/ /opt/opencode-config/opencode/plugins/
 COPY deploy/opencode/lib/ /opt/opencode-config/opencode/lib/
 # App skills (research): listed in every vault. A vault skill of the same name wins (the backend decides that).
 COPY deploy/opencode/skills/ /opt/opencode-config/opencode/skills/
+# Model instructions (prompts/*.md, ADR 0006): tools load them via ../../../prompts/load.ts, which lands here.
+COPY prompts/ /opt/prompts/
 COPY --chmod=755 deploy/opencode/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN set -e; export XDG_CONFIG_HOME=/opt/opencode-config HOME=/tmp/bake XDG_DATA_HOME=/tmp/bake/data OPENCODE_MODEL=none/none; \
     mkdir -p /tmp/bake; (opencode serve --hostname 127.0.0.1 --port 4097 >/tmp/bake/serve.log 2>&1 &); ok=; \
@@ -26,7 +28,7 @@ RUN set -e; export XDG_CONFIG_HOME=/opt/opencode-config HOME=/tmp/bake XDG_DATA_
     pkill opencode || true; \
     if [ -z "$ok" ]; then echo 'open_note/current_page/open_url/save_url/move_to_sources/suggest_next/look_at_image/user_location tools or known-url/md-lint plugins never loaded; opencode log:' >&2; cat /tmp/bake/serve.log >&2; exit 1; fi; \
     test -d /opt/opencode-config/opencode/node_modules/@opencode-ai/plugin; \
-    rm -rf /tmp/bake; chmod -R a-w,a+rX /opt/opencode-config
+    rm -rf /tmp/bake; chmod -R a-w,a+rX /opt/opencode-config /opt/prompts
 # Web search: opencode's websearch tool, pinned to Exa (the search backend; EXA_API_KEY is optional, from
 # opencode.env). Denied in the managed config; a turn gets it only through the per-turn tools map.
 ENV OPENCODE_ENABLE_EXA=true OPENCODE_WEBSEARCH_PROVIDER=exa

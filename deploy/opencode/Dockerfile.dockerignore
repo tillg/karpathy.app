@@ -1,3 +1,4 @@
 # Build context of the opencode image: only its own files (the repo root is several GB).
 *
 !deploy/opencode/
+!prompts/
