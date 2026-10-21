@@ -15,7 +15,7 @@ export const statusOf = (s: Partial<VaultStatus> = {}): VaultStatus => ({
   state: 'ready', changedCount: 0, inputChangedCount: 0, unpushedCount: 0, incomingCount: 0, incomingPaths: [], busy: 'none', conflictPaths: [], ...s,
 });
 
-type Answer = unknown | ((body: unknown) => unknown);
+type Answer = unknown | ((body: unknown) => unknown | Promise<unknown>);
 export interface FakeApi {
   /** Every request the app made, in order: `METHOD /api/path`, with its JSON body. */
   calls: { call: string; body: unknown }[];
@@ -45,10 +45,12 @@ export function fakeApi(opts: { files?: FileEntry[]; status?: Partial<VaultStatu
     api.calls.push({ call: key, body });
     // Event streams stay open, silent until a test emits.
     if (path.endsWith('/events')) return new Response(new ReadableStream({ start: (c) => void streams.push(c) }));
-    if (path.endsWith('/stream')) return new Response(new ReadableStream());
+    // A chat stream stays open and silent, unless a test answers it (a route may return its own Response).
+    if (path.endsWith('/stream') && !(key in routes)) return new Response(new ReadableStream());
     if (!(key in routes)) return new Response(JSON.stringify({ error: 'not found' }), { status: 404 });
     const a = routes[key];
-    const out = typeof a === 'function' ? (a as (b: unknown) => unknown)(body) : a;
+    // A route may answer later: a function returning a promise.
+    const out = await (typeof a === 'function' ? (a as (b: unknown) => unknown)(body) : a);
     if (out instanceof Response) return out;
     return out === undefined ? new Response(null, { status: 204 }) : new Response(JSON.stringify(out), { headers: { 'content-type': 'application/json' } });
   });

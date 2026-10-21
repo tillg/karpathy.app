@@ -134,4 +134,87 @@ describe('queued messages while the AI works (#155)', () => {
     await waitFor(() => expect((screen.getByTestId('chat-composer') as HTMLTextAreaElement).value).toBe('one\n\ntwo'));
     expect(screen.queryByTestId('queued-prompt')).toBeNull();
   });
+
+  /** A chat stream the test feeds and ends; each request opens a new one. */
+  const streams = () => {
+    const open: ReadableStreamDefaultController<Uint8Array>[] = [];
+    const route = () => new Response(new ReadableStream({ start: (c) => void open.push(c) }));
+    const send = (e: object) => open.at(-1)!.enqueue(new TextEncoder().encode(`${JSON.stringify(e)}\n`));
+    return { open, route, send, end: () => open.at(-1)!.close() };
+  };
+  /** A route that answers when the test says so. */
+  const later = <T,>(value: T) => {
+    let go!: () => void;
+    const answered = new Promise<T>((r) => { go = () => r(value); });
+    return { route: () => answered, go };
+  };
+  const STREAM = `GET ${CHATS}/c1/stream`;
+
+  it('a message queued as the reply ends is followed: the chat reattaches after its POST, and the reload keeps the unsent bubble', async () => {
+    let d = running();
+    const s = streams();
+    const post = later({ id: 'q1' });
+    const api = await openChat({ [`GET ${CHATS}/c1`]: () => d, [STREAM]: s.route, [`POST ${CHATS}/c1/prompt`]: post.route });
+    const box = await screen.findByTestId('chat-composer');
+    await waitFor(() => expect(s.open).toHaveLength(1));
+    fireEvent.change(box, { target: { value: 'and then this' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await screen.findByTestId('queued-prompt');
+    // The reply ends before the server has the message: the stream ends, the reload finds the chat idle.
+    d = detail({ messages: running().messages, queued: [] });
+    const gets = () => api.calls.filter((c) => c.call === `GET ${CHATS}/c1`).length;
+    const before = gets();
+    act(() => { s.send({ type: 'turn', state: 'idle' }); s.end(); });
+    await waitFor(() => expect(gets()).toBeGreaterThan(before));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByTestId('queued-prompt').textContent).toContain('and then this');
+    // The server queued it and started it at once: the chat follows the new turn.
+    d = running({ queued: [] });
+    act(() => post.go());
+    await waitFor(() => expect(s.open).toHaveLength(2));
+  });
+
+  it('Stop waits for a message still on its way, so it comes back instead of running after the Stop', async () => {
+    const post = later({ id: 'q1' });
+    const api = await openChat({
+      [`GET ${CHATS}/c1`]: running(),
+      [`POST ${CHATS}/c1/prompt`]: post.route,
+      [`POST ${CHATS}/c1/abort`]: { restored: [{ id: 'q1', text: 'one more', attachments: [] }] },
+    });
+    const box = await screen.findByTestId('chat-composer');
+    await screen.findByTestId('chat-stop');
+    fireEvent.change(box, { target: { value: 'one more' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    fireEvent.click(screen.getByTestId('chat-stop'));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(api.calls.some((c) => c.call === `POST ${CHATS}/c1/abort`)).toBe(false);
+    act(() => post.go());
+    await waitFor(() => expect(api.calls.some((c) => c.call === `POST ${CHATS}/c1/abort`)).toBe(true));
+    await waitFor(() => expect((screen.getByTestId('chat-composer') as HTMLTextAreaElement).value).toBe('one more'));
+  });
+
+  it('Stop puts the waiting first message and the queued ones back oldest first, whichever answer comes first', async () => {
+    let d = detail();
+    const s = streams();
+    let n = 0;
+    const abort = later({ restored: [{ id: 'a', text: 'A', attachments: [] }, { id: 'b', text: 'B', attachments: [] }, { id: 'c', text: 'C', attachments: [] }] });
+    await openChat({ [`GET ${CHATS}/c1`]: () => d, [STREAM]: s.route, [`POST ${CHATS}/c1/prompt`]: () => ({ id: ['a', 'b', 'c'][n++] }), [`POST ${CHATS}/c1/abort`]: abort.route });
+    const box = await screen.findByTestId('chat-composer');
+    // A waits for the sync (sent while the chat was idle: the pending bubble), B and C queue behind it.
+    d = detail({ turn: 'queued', queued: [{ id: 'a', text: 'A' }] });
+    for (const text of ['A', 'B', 'C']) {
+      fireEvent.change(box, { target: { value: text } });
+      fireEvent.keyDown(box, { key: 'Enter' });
+      if (text === 'A') await waitFor(() => expect(s.open).toHaveLength(1));
+    }
+    await waitFor(() => expect(screen.getAllByTestId('queued-prompt').map((e) => e.getAttribute('data-id'))).toEqual(['b', 'c']));
+    fireEvent.click(screen.getByTestId('chat-stop'));
+    // The idle event arrives before the answer of the Stop.
+    d = detail();
+    await waitFor(() => expect(s.open).toHaveLength(1));
+    act(() => { s.send({ type: 'queue', queued: [] }); s.send({ type: 'turn', state: 'idle' }); s.end(); });
+    await new Promise((r) => setTimeout(r, 50));
+    act(() => abort.go());
+    await waitFor(() => expect((screen.getByTestId('chat-composer') as HTMLTextAreaElement).value).toBe('A\n\nB\n\nC'));
+  });
 });

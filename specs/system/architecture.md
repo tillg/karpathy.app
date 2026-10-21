@@ -529,8 +529,12 @@ sequenceDiagram
   yet is marked aborted, never sent, and returned too) return `ReturnedPrompt`s: text plus the files that still
   exist as composer chips (`version` from `versionOfFile`, `mime`, `size`). The web (`ChatPane`) chains its prompt
   POSTs so quick sends keep their order, shows a busy chat's prompt as a queued bubble at once (local id until the
-  answer), an idle chat's as the pending bubble; `adoptStarted` turns a `started` entry into the pending bubble and
-  hands back one that never ran; `withReturned` merges returned prompts into the composer. A failed pull before a turn removes that turn by
+  answer), an idle chat's as the pending bubble. After every accepted POST it follows the chat unless a chat stream is being
+  read (the turn may have started after the last reload found the chat idle); a reload keeps the bubbles whose POST
+  has not answered. Stop first waits for the POSTs on their way, so none lands on the stopped chat, and puts the
+  texts back oldest first whether the idle event or Stop's answer comes first. `adoptStarted` turns a `started` entry
+  into the pending bubble (a pending bubble still waiting for its POST's answer with the same text and files is that
+  entry) and hands back one that never ran; `withReturned` merges returned prompts into the composer. A failed pull before a turn removes that turn by
   identity: one taken back while it waited for the lock leaves the queue's next prompt alone. A prompt is never sent into
   a busy opencode session (as Claude Code's mid-turn messages are): the per-vault lock, the pull before each turn and
   the idle-based turn end all rely on one prompt per turn, so the queue stays in the backend.
