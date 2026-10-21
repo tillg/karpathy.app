@@ -89,7 +89,7 @@ export function CommitDialog() {
           <p>Possible secret{secrets.length === 1 ? '' : 's'} in the changes, so nothing was committed:</p>
           <ul>
             {secrets.map((f) => (
-              <li key={f.fingerprint}><code>{f.file}</code> line {f.line}: {f.rule} (<code>{f.masked}</code>)</li>
+              <li key={f.fingerprint}><code>{f.file}</code>{f.line > 0 && ` line ${f.line}`}: {f.rule}{f.masked && <> (<code>{f.masked}</code>)</>}</li>
             ))}
           </ul>
           <p>Remove {secrets.length === 1 ? 'it' : 'them'} (edit or discard the file), or commit anyway if {secrets.length === 1 ? 'it is' : 'they are'} not secret. GitHub keeps everything you push.</p>
