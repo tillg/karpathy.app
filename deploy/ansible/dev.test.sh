@@ -70,6 +70,11 @@ as_user 'command -v nc' >/dev/null && ok "nc is installed" || bad "nc is install
 pw=$(node -p "require('$here/../../package-lock.json').packages['node_modules/@playwright/test'].version")
 eq "devtools' Playwright version is the repo's" "$(sed -n 's/^devtools_playwright_version: *//p' "$here/roles/devtools/defaults/main.yml" 2>/dev/null)" "$pw"
 as_user 'ls -d ~/.cache/ms-playwright/chromium-*/' >/dev/null && ok "Playwright's Chromium is installed" || bad "Playwright's Chromium is installed" "missing"
+# The ipad/iphone projects run WebKit; e2e/token-scan.spec.ts makes its QR code with qrencode and ffmpeg.
+as_user 'ls -d ~/.cache/ms-playwright/webkit-*/' >/dev/null && ok "Playwright's WebKit is installed" || bad "Playwright's WebKit is installed" "missing"
+for tool in qrencode ffmpeg; do
+  as_user "command -v $tool" >/dev/null && ok "$tool is installed" || bad "$tool is installed" "missing"
+done
 
 # devtools: the host secrets every checkout falls back to (deploy/stack.sh secrets_from_host) and the git token.
 for k in openrouter_api_key:or-test exa_api_key:exa-test; do

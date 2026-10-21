@@ -2,7 +2,8 @@
 # (Docker comes from role docker).
 - name: Command-line tools
   ansible.builtin.apt:
-    name: [git, ripgrep, jq, netcat-openbsd, ansible-core, btop]   # ansible: `just check` renders a role template
+    # ansible: `just check` renders a role template; qrencode and ffmpeg: e2e/token-scan.spec.ts's QR code video
+    name: [git, ripgrep, jq, netcat-openbsd, ansible-core, btop, qrencode, ffmpeg]
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -73,14 +74,15 @@
   become: true
   become_user: "{{ admin_user }}"
 
-# Browser and system libraries for `just e2e`; --with-deps installs the libraries through sudo.
-- name: Playwright Chromium {{ devtools_playwright_version }}
+# Browsers and system libraries for `just e2e` (WebKit for the ipad/iphone projects); --with-deps installs the
+# libraries through sudo.
+- name: Playwright Chromium and WebKit {{ devtools_playwright_version }}
   ansible.builtin.shell: >-
-    npx -y playwright@{{ devtools_playwright_version }} install --with-deps chromium
-    && touch ~/.cache/ms-playwright/.karpathy-{{ devtools_playwright_version }}
+    npx -y playwright@{{ devtools_playwright_version }} install --with-deps chromium webkit
+    && touch ~/.cache/ms-playwright/.karpathy-{{ devtools_playwright_version }}-webkit
   args:
     executable: /bin/bash
-    creates: /home/{{ admin_user }}/.cache/ms-playwright/.karpathy-{{ devtools_playwright_version }}
+    creates: /home/{{ admin_user }}/.cache/ms-playwright/.karpathy-{{ devtools_playwright_version }}-webkit
   become: true
   become_user: "{{ admin_user }}"
 
