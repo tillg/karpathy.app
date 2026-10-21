@@ -57,7 +57,7 @@ as_user 'docker info >/dev/null' >/dev/null && ok "login user can use Docker" ||
 
 # devtools: what `just check`, `just dev up`, `just e2e` and `claude` need, on the login shell's PATH.
 [[ "$(as_user 'node --version')" == v22.* ]] && ok "node is v22" || bad "node is v22" "$(as_user 'node --version')"
-for tool in just rg jq gh claude ansible; do
+for tool in just rg jq gh claude ansible btop; do
   as_user "$tool --version" >/dev/null && ok "$tool answers --version" || bad "$tool answers --version" "$(as_user "$tool --version" | tail -1)"
 done
 # herdr's and tmux's panes are interactive non-login shells: they read ~/.bashrc, not ~/.profile.
