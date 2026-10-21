@@ -442,6 +442,14 @@ from. While the graph loads, a breathing
 graph animation shows. The graph is read on its first open per vault and kept for the session, so reopening is
 instant; Refresh reads it again (no live updates). three.js loads on first open only.
 
+**Local graph** (#92): "Local graph" at the foot of the note's outline (panel or phone sheet) opens the graph on the
+open note's neighbourhood: the note (orange) and the notes within 1 or 2 links of it, following its links and its
+backlinks (Depth 1 | 2 below the graph, remembered in this browser), with every link between them. It lies flat, with
+each note's name under its dot; drag moves, pinch or scroll zooms, and the view fits the notes. Same colours and
+legend as the vault graph (a hidden type never hides the open note itself). The bar switches Local | Wiki | All; the
+choice is kept for the session, so the graph button reopens the local graph of whatever note is open then. Local is
+offered only while a note is open; links to notes that don't exist are left out (as in the vault graph).
+
 ### Bases (query tables)
 
 A fenced ` ```base ` block in a note shows a **live, read-only table** of the vault's files (#91), in Obsidian Bases

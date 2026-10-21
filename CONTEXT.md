@@ -103,6 +103,10 @@ _Avoid_: Graph view (Obsidian's plugin), knowledge graph
 A fenced ```base block (or a `.base` file) in Obsidian Bases syntax that the app shows as a live, read-only table of the vault files it matches. The text itself is never changed.
 _Avoid_: Dataview, query, dashboard (a note that holds bases)
 
+**Local graph**:
+The part of the note graph around the open note: the notes within 1 or 2 links of it, following its links and its backlinks, and the links between them.
+_Avoid_: Neighbourhood graph
+
 **Chat attachment**:
 A vault file sent with a prompt, so the model receives its content (image or PDF), not only its path. It is uploaded first, into a new `Sources/upload-…/` folder per message.
 _Avoid_: Attachment for a file in general

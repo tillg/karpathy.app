@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { OutlineItem } from '../lib/outline';
+import { Icon } from './Icon';
 
 /** Words, characters and reading time of the body, or of the selection. */
 export interface NoteInfo { words: number; chars: number; minutes: number; selection: boolean }
@@ -11,7 +12,7 @@ const n = (x: number) => x.toLocaleString();
  * otherwise. Escape closes it; the sheet also on a scrim or grabber tap, the panel on a tap outside when
  * `closeOutside` (tablet).
  */
-export function OutlinePanel({ variant, items, info, current, closeOutside, onJump, onClose }: {
+export function OutlinePanel({ variant, items, info, current, closeOutside, onJump, onClose, onGraph }: {
   variant: 'sheet' | 'panel';
   items: OutlineItem[];
   info: NoteInfo;
@@ -20,6 +21,8 @@ export function OutlinePanel({ variant, items, info, current, closeOutside, onJu
   closeOutside: boolean;
   onJump(line: number): void;
   onClose(): void;
+  /** Shows the note's local graph (#92). */
+  onGraph(): void;
 }) {
   const min = Math.min(...items.map((i) => i.level));
   const box = useRef<HTMLDivElement>(null);
@@ -75,6 +78,7 @@ export function OutlinePanel({ variant, items, info, current, closeOutside, onJu
       <div ref={box} className={`outline ${variant}`} role="dialog" aria-modal={variant === 'sheet'} aria-label="Outline" data-testid="outline">
         {variant === 'sheet' && <button className="grabber" aria-label="Close outline" onClick={onClose}><span /></button>}
         {listed}
+        <button className="outline-graph" data-testid="local-graph" onClick={onGraph}><Icon n="circle_grid_hex" />Local graph</button>
         <p className="note-info" data-testid="note-info">
           {info.selection
             ? `Selection: ${n(info.words)} words · ${n(info.chars)} characters`
