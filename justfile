@@ -40,6 +40,10 @@ check:
 settings *args:
     @node_modules/.bin/tsx packages/settings/src/cli.ts {{args}}
 
+# Move pictures next to the notes that show them (own note folder): `just tidy-attachments <vault dir> [--apply]` (dry run without --apply)
+tidy-attachments dir *flags:
+    @node_modules/.bin/tsx apps/backend/src/tidy-attachments-cli.ts {{dir}} {{flags}}
+
 # Unit + integration tests (needs Docker); extra args go to the test runner
 test *args:
     npm test -- {{args}}

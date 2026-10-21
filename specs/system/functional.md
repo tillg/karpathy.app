@@ -379,6 +379,11 @@ flowchart LR
   says "Moved to … · updated links in N pages". Path-form links to the page and relative links inside it are
   rewritten; Changes shows the move as the old path deleted and the new one added. Refused while an AI turn runs
   ("The AI is working. Attach again when it's done.") or when the target already exists.
+- **Pictures follow the AI's pages:** when an AI turn ends, every picture a page it wrote shows moves into that page's
+  own folder, a flat page moving into `Wiki/foo/foo.md` first (the same move and link rewrite as above); the moves are
+  AI changes in Changes. A picture already in (or below) the folder of a page showing it, and pictures in `Sources/`
+  (a source keeps its media), stay. A picture several pages show goes to the one whose name it starts with most.
+  `just tidy-attachments <vault dir> [--apply]` does the same for a whole vault clone (dry run without `--apply`).
 - **Media view:** opening an image, video or audio file from the tree (or a tapped image) shows it in the note pane;
   a PDF or other binary file shows its file card. No mode toggle, no find-in-note; Delete stays.
 - **Search hit and `[[note#heading]]` in Read mode** scroll to the rendered block that holds the line and highlight it
@@ -805,7 +810,7 @@ both; a later change can restrict admin mode, taking nothing away from users. Th
   required folder exists only under another name (not just another case) gets a new, empty one.
 - The token test shows an expiry only for tokens GitHub reports one for, and scopes only for classic tokens (the app
   doesn't display scopes today). A tested token is not saved.
-- **No rename or move** of notes or folders (except the move into its own folder on a page's first upload), no
+- **No rename or move** of notes or folders (except the move into its own folder on a page's first upload or after an AI turn showing pictures), no
   explicit folder creation, no automatic pull (only the count updates on its own), no per-chat model,
   no free chat rename (a title suggestion is the only way to a new title), no global keyboard shortcuts.
 - **Chat titles:** the drift check is a word-overlap heuristic: a synonym ("car" vs "vehicle") counts as drift and
@@ -849,8 +854,8 @@ both; a later change can restrict admin mode, taking nothing away from users. Th
 - **Web access:** a URL the AI builds itself (e.g. adds a query) can't be fetched: the user pastes it. A link deep in a
   long, truncated page isn't known either. Without `EXA_API_KEY`, search uses Exa's rate-limited anonymous endpoint.
   Changing the web caps (settings `ai.web.fetch_cap` / `search_cap`) needs a redeploy (or `just dev up` in dev).
-- **Media download:** the AI saves a file next to the note; it can't move a flat note into its own folder (the rule that
-  uploads apply to a page with attachments), can't copy a chat attachment into the vault, and can't save SVG. Uploads by the
+- **Media download:** the AI saves a file next to the note; a flat note moves into its own folder only when the turn
+  ends (see *Pictures follow the AI's pages*), so the AI sees the old paths for the rest of the turn. It can't copy a chat attachment into the vault, and can't save SVG. Uploads by the
   user still allow only JPEG, PNG, GIF, WebP and PDF, while the AI may also save other image types, video and audio.
 - **Commands and the move:**
   - Only skills are commands: no variables like `{activeNote}`, no argument hints, no command files (opencode reads them only

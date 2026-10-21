@@ -152,7 +152,9 @@ into the page's **own folder** (`Wiki/foo/foo.md`; a flat `Wiki/foo.md` is moved
 to it are rewritten) and embeds it as `![[name]]`. Photos are scaled to 2048 px and lose their GPS metadata;
 50 MB cap, a warning above 10 MB. The **+** in the chat composer uploads up to 5 files into a new
 `Sources/upload-…/` folder and sends them to the AI with the prompt (a model without image/PDF input only gets
-the path; the chip says so). Uploads are uncommitted changes like any edit. The **Write/Read mode is sticky**:
+the path; the chip says so). Uploads are uncommitted changes like any edit. Pictures the **AI** adds follow the same rule: when a turn ends, each picture a page it wrote
+shows moves into that page's own folder (pictures in `Sources/` stay with their source);
+`just tidy-attachments <vault dir> [--apply]` repairs a whole clone the same way (dry run without `--apply`). The **Write/Read mode is sticky**:
 it stays as you chose it for every note you open and survives a reload (Write is the default). **Sort and
 filter the file tree**: the ⇅ button in the Notes header sorts by name or by last change (either direction;
 folders rise with recent changes inside them), the funnel shows only notes changed by the AI or by a human

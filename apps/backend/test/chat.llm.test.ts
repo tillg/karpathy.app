@@ -362,6 +362,19 @@ describe('@llm AI reads and writes', () => {
     expect(entry).not.toHaveProperty('human');
   });
 
+  it('a page the AI writes with a picture flat next to other pages moves into its own folder, the picture too', async () => {
+    const t = await setup({ 'Wiki/kuchen-foto.jpg': 'jpg' });
+    await withRetry(async () => {
+      const { tools } = await turn(t, 'Use the write tool to create the file Wiki/kuchen.md with exactly this content: "![[Wiki/kuchen-foto.jpg]]". Do nothing else.');
+      if (tools.length === 0) throw new Inconclusive('model made no tool call');
+      if (!tools.some((x) => x.writes && x.status === 'completed')) throw new Inconclusive(`no completed write: ${JSON.stringify(tools)}`);
+    });
+    const root = t.vaults.vaultRootDir(t.id);
+    // The move runs right after the turn's idle.
+    await expect.poll(() => readFile(join(root, 'Wiki/kuchen/kuchen.md'), 'utf8').catch(() => null), { timeout: 10_000 }).toContain('![[Wiki/kuchen/kuchen-foto.jpg]]');
+    expect(await readFile(join(root, 'Wiki/kuchen/kuchen-foto.jpg'), 'utf8')).toBe('jpg');
+  });
+
   it('in Conflict the edit is denied (read-only agent), file unchanged', async () => {
     const t = await setup();
     await writeFile(join(t.vaults.vaultRootDir(t.id), 'Home.md'), 'mine\n');

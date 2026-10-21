@@ -78,10 +78,36 @@ export function rewriteLinks(text: string, page: string, from: string, to: strin
 }
 
 /**
- * Notes the page at `page` links to (wikilinks, embeds and relative Markdown links), resolved against
- * `paths`, deduplicated, in order of appearance. Only `.md` targets count; self links and code are skipped.
+ * Rewrites the links in `text` (the page at `page`) to a file moving from `from` to `to`, any folder. `paths` = the
+ * vault's files before the move. Path-form wikilinks and Markdown links that resolve to `from` point to `to`;
+ * bare wikilinks still resolve by name and stay as they are. Code blocks and code spans are left alone.
  */
-export function noteLinks(text: string, page: string, paths: readonly string[]): string[] {
+export function relinkFile(text: string, page: string, from: string, to: string, paths: readonly string[]): string {
+  let code = codeRanges(text);
+  const inCode = (i: number) => code.some(([s, e]) => i >= s && i < e);
+  let out = text.replace(WIKILINK_RE, (all, inner: string, offset: number) => {
+    const cut = inner.search(/#|\\?\|/);
+    const t = (cut < 0 ? inner : inner.slice(0, cut)).trim();
+    if (inCode(offset) || !t.includes('/') || resolveWikilink(t, paths, page) !== from) return all;
+    return `[[${/\.md$/i.test(t) || !/\.md$/i.test(to) ? to : to.replace(/\.md$/i, '')}${cut < 0 ? '' : inner.slice(cut)}]]`;
+  });
+  code = codeRanges(out);
+  out = out.replace(MD_LINK_RE, (all, head: string, href: string, tail: string, offset: number) => {
+    if (inCode(offset) || resolveRelativeLink(href, page, paths) !== from) return all;
+    const suffix = /[?#].*$/.exec(href)?.[0] ?? '';
+    const bare = href.slice(0, href.length - suffix.length);
+    const encoded = /%(?!20)[0-9a-f]{2}/i.test(bare);
+    const next = href.startsWith('/') ? `/${encoded ? encodeURI(to) : to.replaceAll(' ', '%20')}` : relativeHref(dirOf(page), to, encoded);
+    return `${head}${/\.md$/i.test(bare) || !/\.md$/i.test(to) ? next : next.replace(/\.md$/i, '')}${suffix}${tail}`;
+  });
+  return out;
+}
+
+/**
+ * Files the page at `page` links to (wikilinks, embeds and relative Markdown links), resolved against `paths`,
+ * deduplicated, in order of appearance. Self links and code are skipped.
+ */
+export function linkedFiles(text: string, page: string, paths: readonly string[]): string[] {
   const code = codeRanges(text);
   const inCode = (i: number) => code.some(([s, e]) => i >= s && i < e);
   const found: [number, string | null][] = [
@@ -90,6 +116,14 @@ export function noteLinks(text: string, page: string, paths: readonly string[]):
   ];
   const out = new Set<string>();
   for (const [i, p] of found.sort((a, b) => a[0] - b[0]))
-    if (p && p !== page && /\.md$/i.test(p) && !inCode(i)) out.add(p);
+    if (p && p !== page && !inCode(i)) out.add(p);
   return [...out];
+}
+
+/**
+ * Notes the page at `page` links to (wikilinks, embeds and relative Markdown links), resolved against
+ * `paths`, deduplicated, in order of appearance. Only `.md` targets count; self links and code are skipped.
+ */
+export function noteLinks(text: string, page: string, paths: readonly string[]): string[] {
+  return linkedFiles(text, page, paths).filter((p) => /\.md$/i.test(p));
 }
