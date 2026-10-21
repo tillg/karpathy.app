@@ -154,13 +154,38 @@ keys, never a release. Connecting and daily use: `docs/dev-server.md`; booking: 
   timezone are shared with prod, and prod's users are unchanged.
 - **`devtools`:** pinned Node 22, upstream `just` (Ubuntu's is too old for the justfile), ripgrep, jq, netcat, `gh`,
   Ansible (`just check` renders a role template), the Claude Code CLI and Playwright Chromium with its system deps;
-  writes the host secrets (mode 600), the git credential and the git identity (`devtools_git_user`), and puts
-  `~/.local/bin` on the PATH of non-login shells.
+  writes the host secrets (mode 600), the git credential and the git identity (`devtools_git_user`), puts
+  `~/.local/bin` on the PATH of non-login shells, and raises the inotify limits
+  (`/etc/sysctl.d/60-karpathy-devtools.conf`: 1024 instances, 1 048 576 watches, applied by a `sysctl --system`
+  handler) for several VS Code windows plus Vite, `tsc` and ESLint.
 - **Connecting:** a `~/.ssh/config` entry `karpathy-dev` with `LocalForward` 8010…8090 and `ServerAliveInterval`;
   terminal (tmux / herdr) or VS Code Remote-SSH. Its stacks open on the Mac at `https://localhost:80N0`; a Mac stack
   on the same port blocks that forward, so use one dev host at a time. Claude Code logs in once with the
   subscription; no personal `~/.claude` config is copied. `just resume` (`claude --continue`) continues the last
   session after a reconnect.
+- **Editing in VS Code:** `just code [worktree]` on the Mac (`deploy/code.sh`, tested by `deploy/code.test.sh` in
+  `just check`) runs `code --remote ssh-remote+$KARPATHY_DEVHOST <checkout>[/.worktrees/<worktree>]` (defaults
+  `karpathy-dev`, `/home/$USER/karpathy.app`). It refuses a worktree name that is a path, a missing `code` CLI, and
+  running on the dev host itself (`hostname -s` = `$KARPATHY_DEVHOST`). The committed `.vscode/settings.json` makes
+  VS Code ignore the nine forwarded stack ports for auto-forwarding (each listed, not a range, so 80N5 and 8099 still
+  auto-forward) and keeps `.worktrees/`, `tmp/`, `node_modules/` and the build outputs out of watching and search;
+  `.vscode/extensions.json` recommends ESLint, Playwright Test, Vitest, Claude Code, Ansible and `just` syntax. Long
+  runs stay in herdr or tmux: a VS Code terminal outlives only a short drop.
+
+```mermaid
+flowchart LR
+  subgraph Mac
+    JC["just code [worktree]"] --> VS["VS Code window<br/>(UI only)"]
+    B["Browser"]
+  end
+  subgraph DH["karpathy-dev"]
+    VSS["VS Code Server<br/>extensions · terminals · git"] --> WT["checkout / .worktrees/&lt;name&gt;<br/>(.vscode/ read here)"]
+    S["dev stack N :80N0<br/>prodtest :80N5"]
+  end
+  VS -- "ssh karpathy-dev (Tailscale)" --> VSS
+  B -- "LocalForward 80N0 (SSH entry)" --> S
+  B -. "80N5, 8099: VS Code's own forward" .-> S
+```
 
 ## The playbook
 
@@ -444,6 +469,11 @@ flowchart LR
 | A separate dev server (Hetzner CAX41, always on, Tailscale only), not GitHub Codespaces or dev stacks on prod | No per-core-hour billing, set up like prod; agents with a shell, Docker and a GitHub token stay away from prod's data. ARM like the Mac, so dev images run unchanged; `prodtest` there tests arm64, CI covers amd64. |
 | The dev server is an Ansible target `dev` with its own `just devhost`, not `just deploy dev` | `deploy` keeps meaning "release the app to a target"; same roles as prod, no prod-only steps. |
 | Dev stacks there are opened through an SSH `LocalForward`, not a public dev site | Caddy's dev site and Vite's HMR stay `localhost`-only and unchanged; iPad/phone-only development is out of scope. |
+| Editing there with VS Code Remote-SSH over the existing SSH entry, not `code tunnel`, code-server or a mounted file system | Reuses the Tailscale-only SSH and its keys: nothing new listens, no second login. Language servers, ESLint and git run next to the files and `node_modules`. |
+| VS Code ignores exactly the nine forwarded stack ports (8010…8090, one entry each), not the range 8000–8099 | A stack must open at the same number (Caddy answers on `localhost`, Vite's HMR dials `HMR_CLIENT_PORT` = 80N0), and VS Code would move a taken port. A range would also swallow 80N5 and 8099, which only VS Code's own forward brings to the Mac. |
+| Workspace settings committed in `.vscode/`, project rules only | Every checkout and worktree gets them with `git worktree add`, on the Mac too; personal taste stays in user settings. |
+| inotify limits raised by `devtools` (1024 / 1 048 576), the applied values checked by `dev.test.sh` | Ubuntu's 128 instances run out with a few windows; a watch costs at most ~1 KB, and only if used. The privileged test container also raises the test machine's limits (only ever up): accepted. |
+| VS Code Server installed by VS Code, not by Ansible | It is pinned to the Mac client's commit; an Ansible-installed one would be wrong after every client update. |
 | Website as plain HTML + CSS, no generator | One page; revisit when there are more than ~3 pages or shared markup gets copied. |
 | App tokens copied into `site/style.css`, kept equal by a test | Looks like the app without touching the app's build; drift fails CI. |
 | Custom domain set only after the first deploy was checked on `tillg.github.io` | A set custom domain redirects the github.io URL to a domain that still pointed elsewhere. |

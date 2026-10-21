@@ -1,7 +1,7 @@
 ---
 feature: remote-editing
 title: "Plan: edit code on the dev server from the Mac's VS Code"
-status: applying
+status: applied
 order: 4
 created: 2026-10-21
 edited: 2026-10-21
@@ -39,7 +39,7 @@ edited: 2026-10-21
 
 ## Smoke test
 
-- [ ] Smoke test from the Mac against `karpathy-dev`
+- [x] Smoke test from the Mac against `karpathy-dev`
   - Depends on: 1, 2, 3, 4
   - Test first: none, needs the Mac and the server
   - Verify: on the Mac: `just devhost` applies the sysctl (`ssh karpathy-dev sysctl -n fs.inotify.max_user_instances` → 1024); `just code` opens a window on `~/karpathy.app` and offers the six extensions; ESLint marks a deliberate lint error inline; `just dev up` in its terminal → the Ports view shows no auto-forwarded 80N0, and https://localhost:80N0 on the Mac loads with live reload after a `.tsx` edit; `just prodtest` in the same terminal → the Ports view shows 80N5 forwarded to the Mac's 80N5, and https://localhost:80N5 loads; the Testing view lists the Vitest tests; `just code <worktree>` opens a second window at the same time, with no "unable to watch" warning in either; `claude` runs in the terminal and the Claude Code extension answers in the panel; `git commit` from the Source Control view uses the server's identity

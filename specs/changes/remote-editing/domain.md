@@ -1,7 +1,7 @@
 ---
 feature: remote-editing
 title: "Domain: edit code on the dev server from the Mac's VS Code"
-status: applying
+status: applied
 order: 2
 created: 2026-10-21
 edited: 2026-10-21
