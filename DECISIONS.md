@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-16
+edited: 2026-10-21
 ---
 
 **Contents**
@@ -182,6 +182,13 @@ edited: 2026-10-16
   - [11:35 — Retro: the site workspace's test also lints `site/`; create the missing `needs-triage` label](#run-2026-10-16-1016-9)
   - [11:50 — Fix the flaky AdminMode Escape tests that turned `main`'s CI red, before releasing](#run-2026-10-16-1016-10)
   - [12:03 — Re-run CI once on the network-bound `save_url` flake instead of changing the test; tag v0.0.29](#run-2026-10-16-1016-11)
+- [2026-10-21 10:56 — AI-generated chat titles (#148), title and vision model in the settings](#run-2026-10-21-1056)
+  - [11:10 — Work in worktree `.worktrees/148-chat-titles` on branch `feat/148-chat-titles`, merge into `main` at the end](#run-2026-10-21-1056-1)
+  - [11:10 — "Settings" = deploy settings (`ai.title_model`) plus the Admin AI section (title and vision model with Use default)](#run-2026-10-21-1056-2)
+  - [11:10 — `ai.title_model` is optional and falls back to `ai.model`; it must be on `ai.gateway`](#run-2026-10-21-1056-3)
+  - [11:10 — Titles from a tool-less `chat-title` agent in a throwaway opencode session, like commit messages](#run-2026-10-21-1056-4)
+  - [11:10 — Title after the 2nd turn; drift check after turn 10, 20, 30, … as a suggestion the user accepts or dismisses](#run-2026-10-21-1056-5)
+  - [11:10 — The vision override reaches the tool as a file on the vaults volume, model id only, on the deployed vision gateway](#run-2026-10-21-1056-6)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2715,3 +2722,100 @@ edited: 2026-10-16
 - **Alternatives:** root-cause now (no local repro, could take long); skip or retry-wrap the test (forbidden).
 - **Consequences:** the release workflow's check job may hit it again; one re-run there, else the release waits for
   #162.
+
+# 2026-10-21 10:56 — AI-generated chat titles (#148), title and vision model in the settings {#run-2026-10-21-1056}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > Build gh issue # 148
+  > - The mnodel that is to be used for this task should be an extra one, to be configured in the settings
+  > - We start with the same model as the one we use for main chat
+  > - Also the model that deals with vision should be settable in the settings
+
+## 11:10 — Work in worktree `.worktrees/148-chat-titles` on branch `feat/148-chat-titles`, merge into `main` at the end {#run-2026-10-21-1056-1}
+
+- **Status:** open
+- **Overrides:** `~/.claude/CLAUDE.md` — never create or switch branches without explicit permission
+- **Context:** the main clone is on a clean `main` and owns dev stack 1; another worktree (`remove-ollama`) exists. Past
+  features (#150 admin mode) went through a `feat/<n>-…` branch merged into `main`.
+- **Question:** work on `main` in the main clone, or in an own worktree and branch?
+- **Decision:** own worktree and branch, pushed as I go; merge into `main` and push once reviewed and green.
+- **Why:** keeps the user's checkout and its stack untouched while I run my own dev stack and tests.
+- **Alternatives:** commit straight to `main` (simpler, but mixes half-done steps into the default branch).
+- **Consequences:** the final merge pushes to `main` (logged when it happens). Clean up with
+  `git worktree remove .worktrees/148-chat-titles` after review.
+
+## 11:10 — "Settings" = deploy settings (`ai.title_model`) plus the Admin AI section (title and vision model with Use default) {#run-2026-10-21-1056-2}
+
+- **Status:** open
+- **Context:** the task says the title model and the vision model should be "configured / settable in the settings".
+  `ai.vision_model` already exists in `deploy/settings/` but is "not selectable in the app" (`domain.md`), so the ask can
+  only mean the app's settings (Admin mode › AI) for it; the chat model already works both ways (deploy default + Admin
+  override with "Default: …" and **Use default**).
+- **Question:** which "settings": `deploy/settings/`, the Admin AI section, or both?
+- **Decision:** both, with the chat model's pattern for each: deployment default in `deploy/settings/`, Admin override
+  stored only while it differs, "Default: …" line and **Use default** button.
+- **Why:** one pattern for all three models; the deployment sets the starting point, the user can change it from the iPad.
+- **Alternatives:** deploy settings only (needs a redeploy to change, nothing new for vision); Admin only (no default per environment).
+- **Consequences:** `SettingsView` grows `titleModel`/`visionModel` and their defaults; backend `settings.json` carries
+  `ai.title_model` and `ai.vision_model`.
+
+## 11:10 — `ai.title_model` is optional and falls back to `ai.model`; it must be on `ai.gateway` {#run-2026-10-21-1056-3}
+
+- **Status:** open
+- **Context:** "We start with the same model as the one we use for main chat". The title job runs through opencode,
+  which only has `ai.gateway`'s provider configured (`renderOpencodeProviders`).
+- **Question:** a required key set in every environment file, or optional with a fallback?
+- **Decision:** optional; absent = `ai.model` (in every environment, so dev/test/prodtest use their own chat model).
+  `settings.yaml` documents it with a comment. A set value must be `<ai.gateway>/<model>` (cross-field check).
+- **Why:** "start with the same model" literally; a developer's overlay that switches `ai.gateway` keeps working.
+- **Alternatives:** a required key copied into all four files (explicit, but a gateway switch in an overlay then also
+  needs the title model).
+- **Consequences:** the Admin title-model field shows the deployment default = the chat model's default until the key is set.
+  An Admin chat-model override does not change the title model.
+
+## 11:10 — Titles from a tool-less `chat-title` agent in a throwaway opencode session, like commit messages {#run-2026-10-21-1056-4}
+
+- **Status:** open
+- **Context:** the backend has no gateway keys and makes no direct LLM calls; the commit-message proposal already runs a
+  one-shot prompt as a throwaway opencode session with a tool-less agent (`commit-message.ts`).
+- **Question:** how does the backend ask the title model?
+- **Decision:** the same way: agent `chat-title` (`permission "*": deny`) in `opencode.json`, session in the vault's
+  directory under `vaults.proposing()` (a skill refresh waits), deleted afterwards; 30 s timeout; any failure keeps the
+  current title silently. The prompt gets the user messages and the AI's text replies, each cut, at most 12 000 chars in all.
+- **Why:** keeps the harness boundary (no keys in the backend); proven pattern; usage counts to the vault.
+- **Alternatives:** a direct gateway call from the backend (needs keys in the backend — against the security model);
+  opencode's own `small_model` auto-title (only titles once, from the first message).
+- **Consequences:** the throwaway session may show in a chat list fetched in those seconds (as with commit messages).
+  opencode's own first-message auto-title is left as is.
+
+## 11:10 — Title after the 2nd turn; drift check after turn 10, 20, 30, … as a suggestion the user accepts or dismisses {#run-2026-10-21-1056-5}
+
+- **Status:** open
+- **Context:** issue #148: preliminary title as now; "after 2 turns" a title that matches; "every 10 turns" look for drift
+  and *suggest* an update. No rename exists in the app today.
+- **Question:** what counts as a turn, and how is the suggestion shown and answered?
+- **Decision:** a turn = one user message of the chat. When a turn ends and the chat has exactly 2 user messages, the
+  title is replaced; at 10, 20, 30, … the model answers `KEEP` or a new title, and a new title becomes a **suggestion**
+  stored in the config store per chat and shown as a bar above the composer ("Rename this chat to “…”?" **Rename** /
+  **Keep**). Accept = `PATCH /vaults/:id/chats/:chatId {title}`, keep = `DELETE …/title-suggestion`. The list and the
+  open chat learn about it through a new vault event `chat-title`. No free manual rename.
+- **Why:** follows the issue; the suggestion survives a reload and shows on every device.
+- **Alternatives:** count assistant replies (same in practice); rename UI in the list (not asked).
+- **Consequences:** chats older than this feature get their first drift check at their next multiple of 10.
+
+## 11:10 — The vision override reaches the tool as a file on the vaults volume, model id only, on the deployed vision gateway {#run-2026-10-21-1056-6}
+
+- **Status:** open
+- **Context:** `look_at_image` reads `VISION_*` from opencode's env, fixed at container start; the backend has no
+  gateway keys or base URLs. The current page (#143) already goes from the backend to a tool as a file on the vaults volume.
+- **Question:** how does an Admin vision-model override reach the tool, and what may it name?
+- **Decision:** the backend writes `/vaults/.vision.json` (`{"model": "<id>"}`) on save and at startup, removes it when
+  the default applies; the tool reads it per call. The override must be `<vision gateway>/<model>` (the deployed gateway:
+  same base URL and key). Request options per model: the render puts all of the vision gateway's model options into
+  `VISION_MODEL_OPTIONS` (a JSON map); a model without an entry gets none.
+- **Why:** no restart, no keys in the backend; the map keeps the ZDR routing of each listed model.
+- **Alternatives:** restart opencode with a new env (slow, cuts running turns); a backend endpoint the tool calls (new auth path).
+- **Consequences:** a vision model on another gateway still needs a deploy-settings change. The model id isn't checked
+  against the gateway on save (the gateway may not be opencode's); a wrong id shows as the tool's error.
