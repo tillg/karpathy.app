@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatEvent, ChatMessage, ToolCall } from '@karpathy/shared';
-import { adoptStarted, applyChatEvent, withReturned, changedPaths, lastContext, newOpens, nextSuggestion, noteToOpen, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, type ChatView, type PendingPrompt } from './chat';
+import { adoptStarted, applyChatEvent, withReturned, changedPaths, lastContext, newOpens, nextSuggestion, noteToOpen, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, visibleQueued, type ChatView, type PendingPrompt } from './chat';
 
 const empty: ChatView = { id: 'c1', title: 'T', messages: [], turn: 'idle', queued: [] };
 
@@ -170,6 +170,22 @@ describe('queued prompts (#155)', () => {
     expect(adoptStarted(null, empty)).toBeNull();
     const mine: PendingPrompt = { id: 'q1', text: 'first', userCount: 0, sent: true, ran: false };
     expect(adoptStarted(mine, { ...empty, started: q1 })).toBeNull();
+  });
+
+  it('a pending bubble whose POST has not answered yet is the started prompt with the same text: it takes its id, nothing goes back', () => {
+    const unsent: PendingPrompt = { id: 'local-1', text: 'second', attachments: ['Sources/upload-x/a.png'], userCount: 0, sent: false, ran: false };
+    expect(adoptStarted(unsent, { ...empty, turn: 'queued', started: q2 })).toEqual({ pending: { ...unsent, id: 'q2', sent: true }, restore: null });
+    // Another text: not this one.
+    expect(adoptStarted({ ...unsent, text: 'other' }, { ...empty, turn: 'queued', started: q2 })?.restore).toEqual({ ...unsent, text: 'other' });
+  });
+
+  it('queued bubbles leave out the pending one, also before its POST has answered', () => {
+    const unsent: PendingPrompt = { id: 'local-1', text: 'first', userCount: 0, sent: false, ran: false };
+    expect(visibleQueued([q1, q2], null)).toEqual([q1, q2]);
+    expect(visibleQueued([q1, q2], { ...unsent, id: 'q1', sent: true })).toEqual([q2]);
+    expect(visibleQueued([q1, q2], unsent)).toEqual([q2]);
+    expect(visibleQueued([q1, { ...q1, id: 'q3' }], unsent)).toEqual([{ ...q1, id: 'q3' }]);
+    expect(visibleQueued([q1, q2], { ...unsent, text: 'other' })).toEqual([q1, q2]);
   });
 
   it('taken-back prompts go into the composer before what is typed there, their files into the chips', () => {

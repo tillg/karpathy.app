@@ -7,7 +7,7 @@ import { chipCommands, filterCommands, paletteQuery, recentCommands, recordComma
 import { readSelectionText, selectionCopier } from '../lib/copy-select';
 import { mountEmbed } from '../lib/embed';
 import { mediaKind } from '../lib/media';
-import { adoptStarted, applyChatEvent, attachWarning, changedPaths, isAcceptKey, lastContext, newOpens, nextSuggestion, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, withReturned, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
+import { adoptStarted, applyChatEvent, attachWarning, changedPaths, isAcceptKey, lastContext, newOpens, nextSuggestion, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, visibleQueued, withReturned, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
 import { readNdjson } from '../lib/ndjson';
 import { chatTime } from '../lib/time';
 import { useApp } from '../store';
@@ -33,6 +33,8 @@ function useChat(vaultId: string, chatId: string) {
   ui.current = app;
   /** The AI's open requests of this chat: only a live one moves the UI, once (lib/chat.ts). */
   const opens = useRef(newOpens());
+  /** A chat stream is being read: what the server does from now on reaches this chat, or the reload after it ends. */
+  const streamOpen = useRef(false);
 
   const show = useCallback((path: string | null) => {
     const a = ui.current;
@@ -52,13 +54,19 @@ function useChat(vaultId: string, chatId: string) {
         const d = await api.chat(vaultId, chatId);
         if (c.signal.aborted) return;
         setError(null);
-        setChat((prev) => ({ ...d, queued: d.queued ?? [], readonly: d.turn === 'idle' ? undefined : prev?.readonly }));
+        // Messages still on their way (local id until their POST answers) stay: the server may not have them yet.
+        setChat((prev) => ({ ...d, queued: [...(d.queued ?? []), ...(prev?.queued.filter((q) => q.id.startsWith('local-')) ?? [])], readonly: d.turn === 'idle' ? undefined : prev?.readonly }));
         // A reload after a dropped stream also picks up opens that completed in the gap.
         show(opensFromLoad(opens.current, d.messages, d.turn, defer()));
         if (d.turn === 'idle') return;
         const res = await api.chatStream(vaultId, chatId, c.signal);
         attempt = 0;
-        await readNdjson<ChatEvent>(res, (e) => { setChat((v) => v && applyChatEvent(v, e)); show(opensFromEvent(opens.current, e, defer())); });
+        streamOpen.current = true;
+        try {
+          await readNdjson<ChatEvent>(res, (e) => { setChat((v) => v && applyChatEvent(v, e)); show(opensFromEvent(opens.current, e, defer())); });
+        } finally {
+          streamOpen.current = false;
+        }
         // Stream ended: the turn went idle (or the connection dropped) — reload and check.
       } catch (e) {
         if (c.signal.aborted || (e instanceof ApiError && e.status < 500)) {
@@ -78,7 +86,14 @@ function useChat(vaultId: string, chatId: string) {
     return () => { ctrl.current?.abort(); document.removeEventListener('visibilitychange', wake); };
   }, [attach]);
 
-  return { chat, setChat, error, attach };
+  /**
+   * After a prompt's POST: follows the chat unless a stream is being read. A stream that is open now either still
+   * delivers the prompt's turn or ends into a reload made after the POST; without one, the turn may have started
+   * after the last reload found the chat idle (#155).
+   */
+  const follow = useCallback(() => { if (!streamOpen.current) void attach(); }, [attach]);
+
+  return { chat, setChat, error, follow };
 }
 
 function ToolChip({ call, open, onToggle }: { call: ToolCall; open: boolean; onToggle(): void }) {
@@ -242,7 +257,7 @@ const sentCommand = (text: string, list: Command[] | null) => {
 
 function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) {
   const { settings, setSettings, conflict, online, toast, paths, refreshFiles, commandsNonce, openPage, chatTitle } = useApp();
-  const { chat, setChat, error, attach } = useChat(vaultId, chatId);
+  const { chat, setChat, error, follow } = useChat(vaultId, chatId);
   // A drift check's suggested title (#148): the load has it; a chat-title event of this chat replaces it.
   const [titleSuggestion, setTitleSuggestion] = useState<string | null>(null);
   const loadedSuggestion = chat?.titleSuggestion;
@@ -318,6 +333,16 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
     void refreshFiles();
   };
   const [pending, setPending] = useState<PendingPrompt | null>(null);
+  // Stop reads the pending bubble as it is when its answer comes.
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  /** While a Stop is under way: pending texts that went back meanwhile, put into the composer with its answer, oldest first. */
+  const stopping = useRef<{ id?: string; text: string }[] | null>(null);
+  /** A pending prompt that never ran goes back into the composer, before what is typed there. */
+  const giveBack = (p: PendingPrompt) => {
+    if (stopping.current) stopping.current.push({ id: p.id, text: p.text });
+    else setText((t) => withReturned(t, draftRef.current, [{ id: '', text: p.text, attachments: [] }]).text);
+  };
   const scroller = useRef<HTMLDivElement>(null);
   const model = (settings?.model ?? '').split('/').pop() ?? '';
   const busy = chat?.turn === 'queued' || chat?.turn === 'running';
@@ -368,13 +393,13 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
     const adopted = adoptStarted(pending, chat);
     if (adopted) {
       setChat((c) => c && { ...c, started: undefined });
-      if (adopted.restore) setText((t) => withReturned(t, draftRef.current, [{ id: '', text: adopted.restore!.text, attachments: [] }]).text);
+      if (adopted.restore) giveBack(adopted.restore);
     }
     const p = adopted?.pending ?? pending;
     if (!p) return;
     const r = settlePending(p, chat);
     if (r === 'drop') setPending(null);
-    else if (r === 'restore') { setPending(null); setText((t) => withReturned(t, draftRef.current, [{ id: '', text: p.text, attachments: [] }]).text); }
+    else if (r === 'restore') { setPending(null); giveBack(p); }
     else if (r !== pending) setPending(r);
   }, [chat, pending, setChat]);
   /** Queued prompts taken back (Stop, Edit): into the composer, before what is typed there, their files into the chips. */
@@ -489,7 +514,7 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
           queued: c.queued.some((q) => q.id === id) ? c.queued.filter((q) => q.id !== local) : c.queued.map((q) => (q.id === local ? { ...q, id } : q)),
           turn: c.turn === 'idle' ? 'queued' : c.turn,
         });
-        if (asPending) void attach();
+        follow();
       } catch (e) {
         if (asPending) setPending((p) => (p?.id === local ? null : p));
         setChat((c) => c && { ...c, queued: c.queued.filter((q) => q.id !== local) });
@@ -501,14 +526,20 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
   };
   /** Stop: ends the running turn; the chat's queued prompts come back into the composer (#155). */
   const stop = async () => {
-    // The pending bubble's text goes back by itself when its turn goes idle without having run (settlePending): only
-    // its files come from here, in whichever order the idle event and this answer arrive.
-    const pendingId = pending?.id;
+    const held: { id?: string; text: string }[] = [];
+    stopping.current = held;
+    let restored: ReturnedPrompt[] = [];
     try {
-      const r = await api.abort(vaultId, chatId);
+      // A message still on its way would land on the stopped chat and run: it comes back with the others.
+      await sendChain.current;
+      restored = (await api.abort(vaultId, chatId))?.restored ?? [];
       setChat((c) => c && { ...c, queued: [] });
-      takeBack((r?.restored ?? []).map((b) => (b.id === pendingId ? { ...b, text: '' } : b)));
     } catch (e) { toast(errorText(e)); }
+    stopping.current = null;
+    // The pending bubble's text goes back by itself when its turn goes idle without having run (settlePending): from
+    // here only its files. One that went back during the Stop is the oldest, so it goes first.
+    const pendingIds = new Set([...held.map((h) => h.id), pendingRef.current?.id]);
+    takeBack([...held.map((h) => ({ id: '', text: h.text, attachments: [] })), ...restored.map((b) => (pendingIds.has(b.id) ? { ...b, text: '' } : b))]);
   };
 
   return (
@@ -546,7 +577,7 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
             </div>
           )}
           {chat?.turn === 'running' && <div className="turn-state"><span className="spin" />Working…</div>}
-          {chat?.queued.filter((q) => q.id !== pending?.id).map((q) => (
+          {chat && visibleQueued(chat.queued, pending).map((q) => (
             <div key={q.id} className="u pending queued" data-testid="queued-prompt" data-id={q.id}>
               {!!q.attachments?.length && <div className="u-files">{q.attachments.map((f) => <FileEmbed key={f} path={f} present />)}</div>}
               <span data-testid="chat-pending">{q.text}</span>

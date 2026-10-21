@@ -183,15 +183,31 @@ export function settlePending(p: PendingPrompt, c: ChatView): PendingPrompt | 'd
   return p;
 }
 
+/** A pending bubble whose POST has not answered yet (local id) that is the queued prompt `q`: same text and files. */
+const unsentIs = (p: PendingPrompt, q: QueuedPrompt) =>
+  !p.sent && p.text === q.text && (p.attachments ?? []).join('\n') === (q.attachments ?? []).join('\n');
+
 /**
  * A queued prompt that just started (#155) becomes the pending bubble (pure). A pending bubble that never ran (its turn
- * failed before it reached the AI) is handed back as `restore`, for the composer. Null: nothing changes.
+ * failed before it reached the AI) is handed back as `restore`, for the composer. Null: nothing changes. A pending
+ * bubble still waiting for its POST's answer that matches the started prompt is that prompt: it takes its id.
  */
 export function adoptStarted(p: PendingPrompt | null, c: ChatView): { pending: PendingPrompt; restore: PendingPrompt | null } | null {
   const s = c.started;
   if (!s || p?.id === s.id) return null;
+  if (p && unsentIs(p, s)) return { pending: { ...p, id: s.id, sent: true }, restore: null };
   const pending: PendingPrompt = { id: s.id, text: s.text, ...(s.attachments?.length ? { attachments: s.attachments } : {}), userCount: userCount(c), sent: true, ran: false };
   return { pending, restore: p && !p.ran && userCount(c) <= p.userCount ? p : null };
+}
+
+/**
+ * The queued bubbles to show (pure): all but the pending bubble's prompt. Before its POST answers, the pending bubble
+ * has a local id, while a reload may already list the prompt under the server's id: the first match is left out.
+ */
+export function visibleQueued(queued: QueuedPrompt[], p: PendingPrompt | null): QueuedPrompt[] {
+  if (!p) return queued;
+  const i = p.sent ? -1 : queued.findIndex((q) => unsentIs(p, q));
+  return queued.filter((q, j) => q.id !== p.id && j !== i);
 }
 
 /**

@@ -50,6 +50,12 @@ interface Running {
   holding: boolean;
   /** Paths the AI wrote in this turn: when it ends, the pictures those pages show move next to them. */
   edited: Set<string>;
+  /** The prompt this turn runs, once it left the queue: Stop hands it back while it has not reached opencode. */
+  turn?: Turn;
+  /** Set when the prompt goes to opencode (the 'running' event): from then on Stop aborts it there. */
+  prompted?: boolean;
+  /** Stopped after it left the queue: it never goes to opencode, or is aborted there once its prompt call returns. */
+  aborted?: boolean;
 }
 
 interface VaultChats {
@@ -375,9 +381,16 @@ export class ChatService {
     await this.chats(vaultId);
     const c = this.v.get(vaultId)!;
     const taken = this.takeBack(vaultId, chatId, new Set(c.queue.filter((t) => t.chatId === chatId).map((t) => t.id)));
-    // The lock is released once opencode reports the session idle.
-    if (c.running?.holding && c.running.chatId === chatId) await this.harness.abort(this.dir(vaultId), chatId);
-    else if (c.adopted?.ids.has(chatId)) await this.harness.abort(this.dir(vaultId), chatId);
+    const running = c.running?.holding && c.running.chatId === chatId ? c.running : null;
+    if (running && !running.prompted) {
+      // Out of the queue, not at opencode yet (open page, attachment check): it never goes there, and comes back too.
+      running.aborted = true;
+      if (running.turn) taken.unshift(running.turn);
+    } else if (running) {
+      running.aborted = true;
+      // The lock is released once opencode reports the session idle.
+      await this.harness.abort(this.dir(vaultId), chatId);
+    } else if (c.adopted?.ids.has(chatId)) await this.harness.abort(this.dir(vaultId), chatId);
     return { restored: await Promise.all(taken.map((t) => this.returned(vaultId, t))) };
   }
 
@@ -390,6 +403,8 @@ export class ChatService {
     const running = this.v.get(vaultId)?.running;
     if (state === 'queued') send(this.queuedEvent(vaultId));
     else send({ type: 'turn', state, ...(state === 'running' && running?.chatId === chatId && running.readonly ? { readonly: true } : {}) });
+    // The queue as it is now: a prompt may have started since the client loaded the chat (#155).
+    if (state !== 'idle') send({ type: 'queue', queued: this.queuedOf(vaultId, chatId) });
     if (state === 'idle') {
       end();
       return () => undefined;
@@ -426,12 +441,16 @@ export class ChatService {
           await this.refreshSkills(vaultId).catch((e) => console.warn(`skill refresh ${vaultId}:`, (e as Error).message));
       });
     } catch (e) {
-      c.queue.shift();
-      void this.saveQueue(vaultId);
-      this.emitQueue(vaultId, turn.chatId, turn.id);
       c.running = null;
-      this.emit(vaultId, turn.chatId, { type: 'error', message: `pull before the turn failed: ${(e as Error).message}` });
-      this.finish(vaultId, turn.chatId);
+      // Stop, Edit or ✕ may have taken it back while it waited for the lock: then the queue's head is another prompt.
+      const i = c.queue.indexOf(turn);
+      if (i >= 0) {
+        c.queue.splice(i, 1);
+        void this.saveQueue(vaultId);
+        this.emitQueue(vaultId, turn.chatId, turn.id);
+        this.emit(vaultId, turn.chatId, { type: 'error', message: `pull before the turn failed: ${(e as Error).message}` });
+        this.finish(vaultId, turn.chatId);
+      }
       return void this.kick(vaultId);
     }
     if (c.queue[0] !== turn) {
@@ -443,6 +462,7 @@ export class ChatService {
     c.queue.shift();
     void this.saveQueue(vaultId);
     running.holding = true;
+    running.turn = turn;
     this.emitQueue(vaultId, turn.chatId, turn.id);
     // A prompt sent while its chat was busy brings its open page now (#155).
     if (turn.openPage !== undefined)
@@ -468,6 +488,9 @@ export class ChatService {
       this.emit(vaultId, turn.chatId, { type: 'error', message: (e as Error).message });
       return this.endTurn(vaultId);
     }
+    // Stopped while it got ready: Stop already handed the prompt back.
+    if (running.aborted) return this.endTurn(vaultId);
+    running.prompted = true;
     running.readonly = this.vaults.isConflict(vaultId);
     running.startedAt = Date.now();
     running.tabId = turn.tabId;
@@ -487,6 +510,8 @@ export class ChatService {
       });
       running.started = true;
       this.startPoll(vaultId);
+      // Stopped while the prompt call was on its way: opencode may not have been busy yet when Stop aborted.
+      if (running.aborted) await this.harness.abort(this.dir(vaultId), turn.chatId).catch(() => undefined);
     } catch (e) {
       this.emit(vaultId, turn.chatId, { type: 'error', message: (e as Error).message });
       this.endTurn(vaultId);
