@@ -283,8 +283,8 @@ flowchart LR
 - **Delete a note** (recoverable until the next commit). On any file that isn't a note (code, HTML, media, binary) the
   button says "Delete file".
 - **File kinds** (#126): what the note pane shows follows the file's kind by name ([File kinds](domain.md#file-kinds)):
-  notes get everything below; HTML pages and code files are described under **HTML pages** and **Code files**; `.svg`
-  is a media file and shows as an image.
+  notes get everything below; HTML pages, code files and emails are described under **HTML pages**, **Code files** and
+  **Emails**; `.svg` is a media file and shows as an image.
 - **Code files** (#126): any text file that isn't a note or HTML page (`.py`, `.sh`, `.json`, `.txt`, `Dockerfile`, …)
   opens in the editor with syntax highlighting chosen by file name (CodeMirror's language list, each language loaded
   lazily and precached for offline); an unknown name is plain text with every line break as written. One view: no
@@ -298,6 +298,15 @@ flowchart LR
   to 10 MB), links to vault files open in the app (the back arrow returns), other links in a new tab. Never runs:
   scripts, forms, plugins; remote images and stylesheets don't load (a remote image shows as a link). A search hit or
   AI open at a line shows the page's source for that opening; the page mode stays.
+- **Emails** (#166): an `.eml` file (any case; e.g. an ingested `Input/…/original.eml`) shows as a mail, read-only,
+  in one view (no Write/Read toggle, find, outline, attach, autosave or save footer; Delete stays). On screen: the
+  **subject** (the file name when there is none), the **header block** (From, To, Cc, Reply-To, each only if present,
+  as `Name <address>`; the Date in the browser's locale), the attachments as cards (name, size; a tap downloads), and
+  the **body**: the HTML part in the same sandboxed, inert frame as an HTML page's Read mode, with its inline images
+  (`cid:`) in place, remote images as links and links in a new tab; without an HTML part, the text part with its line
+  breaks. Mails that aren't UTF-8 (Latin-1, 8-bit parts) show the same way. A mail over 50 MB asks first ("Load
+  anyway"); one that can't be read shows its file name and "This email can't be shown." A search hit in a mail opens
+  the mail. An image named only from CSS, one over 10 MB and a forwarded mail are attachments.
 - **Back arrow** (#139): a ↩ button in the note header, on every layout, shown only while the previous history entry is
   another file of the same vault opened in this tab (any kind); tooltip `Back to <file name>`. It does exactly what
   browser Back does (`history.back()`): the previous file opens at the place it was left. Not shown on the first file
@@ -739,6 +748,7 @@ sequenceDiagram
 | GitHub token (typed, to save or to test) | Masked state (last 4), token test result per account and vault |
 | Text file (note, HTML page, code file) | Saved file + new version; a note rendered from Markdown or an HTML page in a sandboxed frame (Read mode); a code file highlighted |
 | Media and other files in the vault (never edited) | Images, video and audio players; file cards with Open (PDF) / Download |
+| Email (`.eml`, never edited) | Subject, header block, the body (HTML in a sandboxed frame, or text), attachment downloads |
 | Photos and PDFs from the device (Attach button, drop, chat composer) | A new file in the page's own folder or a `Sources/upload-…/` folder; an embed, or a chip sent with the prompt |
 | Search query | Grouped hits with line snippets |
 | Chat prompt (`/name args` for a command) | Streamed reply, tool chips, changed notes |
@@ -824,6 +834,9 @@ both; a later change can restrict admin mode, taking nothing away from users. Th
   vault pages on a separate origin, a later change) and loads nothing remote; the frame scrolls itself. CSV and JSON
   show as code, not as a table or tree. UI texts still say "note" for any text file ("Create note", the note pane's
   label), except Delete and the back arrow's tooltip. No forward arrow.
+- **Emails** (#166): no `.msg` (Outlook) files; no reply or forward; no raw source view in the app (the AI and git see
+  it); vault search searches the raw file, not the decoded body; attachments only download (no in-app view); a
+  forwarded mail is an attachment card, not shown inline.
 - **Chat list right after a backend start:** the first list fetches each chat's last messages once (four at a time),
   so it is slower with many chats; a chat whose fetch failed shows its updated time and no bar until the next list.
 - Chat is disabled in vaults that contain `.opencode/`, `opencode.json` or `opencode.jsonc`.

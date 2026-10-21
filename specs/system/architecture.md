@@ -121,12 +121,13 @@ flowchart LR
   frontmatter hiding or the drop handler. EOL handling, history, search, `readOnly`, autosave and drafts are shared.
   See [Text files](#text-files).
 - **File kinds** (`lib/lang.ts`, #126): `fileKind(path, binary)` is the one place that decides — `media` when
-  `mediaKind(path)` (so `.svg` is media although its bytes are text), else `binary`, else `note` (`.md`/`.markdown`),
-  `html` (`.html`/`.htm`) or `code`. `languageFor(path)` = `LanguageDescription.matchFilename` over
+  `mediaKind(path)` (so `.svg` is media although its bytes are text), else `email` (`.eml`, #166, before the text
+  check), else `binary`, else `note` (`.md`/`.markdown`), `html` (`.html`/`.htm`) or `code`. `languageFor(path)` = `LanguageDescription.matchFilename` over
   `@codemirror/language-data` (extensions and full names like `Dockerfile`), `null` = plain text. `NotePane` routes by
   kind: `media`/`binary` → `MediaView`; `code` → the editor only (no toggle, outline, properties, attach; title keeps
-  the extension; "Delete file"); `html` → toggle on `pageMode`, Write = code view, Read = `HtmlView`. `newNote` writes
-  `# <title>` only for a note. See [Text files](#text-files).
+  the extension; "Delete file"); `html` → toggle on `pageMode`, Write = code view, Read = `HtmlView`; `email` →
+  `EmailView` (no toggle, `viewMode` = Read). `newNote` writes `# <title>` only for a note. See [Text files](#text-files)
+  and [Emails](#emails).
 - **Back arrow** (`store.tsx` `syncRoute`, `NotePane`, #139): every file route's history entry carries
   `{ prev: <path left> | null }` (`prev` only when the entry left is a file route of the same vault; a replace keeps
   the replaced entry's `prev`; `popstate` fills it in for entries the browser made itself, `history.state === null`).
@@ -1200,6 +1201,47 @@ stateDiagram-v2
 A reload restores `history.state` of the current entry, so the arrow is still right after a reload mid-session.
 Details: the Back arrow bullet in [Web app](#web-app-appsweb).
 
+## Emails
+
+`.eml` files (#166), web app only: the backend serves them like any file (`GET /file`, and `GET /raw` as
+`application/octet-stream` + attachment, which a `fetch` ignores).
+
+```mermaid
+flowchart TB
+    NP[NotePane] -- "kind = email" --> EV[EmailView]
+    EV -- "binary: HEAD, then GET /raw<br/>UTF-8: note.loaded" --> B[bytes]
+    B -- "lazy import" --> EM["lib/email.ts<br/>parseEmail (postal-mime)"]
+    EM -- "bodyHtml: cid → data:" --> PP[preparePage]
+    PP --> FR["sandboxed srcdoc frame (SANDBOX)"]
+    EV --> HB["subject, header block, text body,<br/>attachment buttons: plain React DOM"]
+```
+
+- **Bytes:** a UTF-8 mail (most are: quoted-printable and base64 are ASCII) came whole with `GET /file`, so
+  `EmailView` parses `TextEncoder().encode(note.loaded)` (byte-exact, CRLF included); only a `binary: true` mail is
+  fetched again (`rawHead`, then `api.raw`). Either way over `MAX_PREVIEW_BYTES` (50 MB) it shows a file card with
+  "Load anyway" first. Bytes stay out of the object-URL cache. `store.tsx` `load` drops a local draft of an email
+  (one left from when `.eml` opened as code) instead of restoring or autosaving it.
+- **Parsing** (`lib/email.ts`, own chunk via dynamic `import()`, so the main bundle and precache stay as they were):
+  `parseEmail` wraps **postal-mime** (pinned `4.0.11`; MIT-0, no dependencies; RFC 2047 headers, charsets incl.
+  Latin-1, quoted-printable, base64, `multipart/*`) with `attachmentEncoding: 'arraybuffer'` and
+  `rfc822Attachments: true` (a forwarded mail stays a part). Result: subject, From / To / Cc / Reply-To as
+  `Name <address>` (groups flattened), Date (invalid → none), html, text, `inline` and `attachments`. postal-mime
+  accepts any bytes, so `parseEmail` throws when there is no subject, From or body ("This email can't be shown.").
+- **Inline vs attachment:** an image part of at most 10 MB (`MAX_IMAGE_BYTES`, shared with HTML pages) whose
+  Content-ID a `src="cid:…"` in the HTML names is inline; the reference is percent-decoded and compared without case
+  (RFC 2392). Every other part is an attachment, so nothing goes missing (an image named only from CSS, one too big,
+  a forward). A nameless one is `attachment-N.<ext>`.
+- **Body:** `bodyHtml` (DOM) sets each `cid:` `src` to its part's `data:` URL (an unknown one keeps only its alt
+  text); then `preparePage` with no vault files (relative references resolve to nothing) makes it inert: no scripts,
+  forms, frames, `meta`, `base`; remote images become links (no tracking pixels: the frame inherits the app's CSP);
+  every link, image-map `<area>` included, opens in a new tab, and a `#` link loses its `target`, so nothing in a
+  page can move the app. Shown in `iframe.html-view` with `SANDBOX` (no `allow-scripts`, no `allow-same-origin`). No
+  HTML part → the text part in `.email-text` (`pre-wrap`, a text node).
+- **Header block and attachments:** React text nodes only; no mail HTML reaches the app DOM. The subject shows as
+  `.email-subject` (`.note-title` is screen-reader only). An attachment is a button: a tap makes a `blob:` URL of its
+  bytes as `application/octet-stream` (never the mail's type, so an HTML or SVG attachment can't open as a page of
+  the app), clicks a temporary `<a download>` and revokes the URL.
+
 ## Chat context usage
 
 #140. Shared types (`packages/shared`): `ContextUsage { used: number; limit?: number }`; `ChatMessage.context?`
@@ -2125,6 +2167,11 @@ The ones that shape the whole system:
   `allow-same-origin`. Scripts would need vault pages on a separate origin (own hostname, certificate, token
   handling): a later change. Rendering into the app's DOM was dropped (CSS leaks both ways), as was serving the page
   from `/raw` in the frame (the bearer token can't ride on a frame `src`).
+- **Emails parse in the browser** (#166): postal-mime on bytes the view already has; no backend route and no server
+  parsing of untrusted mail. The HTML body reuses the HTML-page path (`preparePage` + `SANDBOX`) rather than a second
+  sanitizer. Read-only, no source view (editing MIME by hand breaks mails); `.eml` decided before the text check, as
+  mails with Latin-1 parts are common. Rejected: mailparser (Node only), an own MIME parser, `message/rfc822` from
+  `/raw` (nothing the view needs).
 - **The back arrow is browser Back** (#139): history entries carry `{ prev }`, the arrow calls `history.back()`; an
   in-app stack would drift from browser Back, swipe-back and reloads (the bugs of #5).
 - **Context usage = the last reply's tokens against its model's window from the provider config** (#140): no
@@ -2134,6 +2181,13 @@ The ones that shape the whole system:
 
 ## Testing
 
+- **Email tests** (#166): synthetic fixtures `apps/web/src/lib/fixtures/*.eml` (alternative, related with a `cid:`
+  PNG + PDF + remote image, plain, Latin-1 not UTF-8; `.gitattributes` `*.eml -text` keeps their CRLF), always read
+  as bytes. Units `lang.test.ts` (kind rows), `email.test.ts` (headers, inline vs attachment, decoded `cid:`, CSS /
+  oversized / forwarded parts, Latin-1, garbage refused), `EmailView.test.tsx` (fake API: no `/raw` for UTF-8,
+  HEAD + `/raw` for binary, size limit on both paths, sandbox, `data:` image, attachment buttons, error state),
+  `html-page.test.ts` (`<area>` and `#` links); e2e `email.spec.ts` (desktop, WebKit, `@iphone`; `cspGuard`;
+  download, Latin-1, search hit, old draft dropped).
 - **Text files, back arrow, chat context tests** (#126, #139, #140): units `lang.test.ts` (the kind table, languages,
   plain fallback), `Editor.test.tsx` (code kind: no wikilinks, highlighting), `html-page.test.ts` (sanitizing, CSS and
   image inlining, remote → link, link rewriting, `../` outside the vault), `HtmlView.test.tsx`, `store.test.tsx`
