@@ -109,8 +109,8 @@ test.describe('AI settings', () => {
       const vision = page.getByTestId('settings-vision-model');
       await expect(title).toHaveValue(cur.defaultTitleModel);
       await expect(vision).toHaveValue(cur.defaultVisionModel);
-      await expect(page.getByText(`Default: ${cur.defaultTitleModel}`).first()).toBeVisible();
-      await expect(page.getByText(`Default: ${cur.defaultVisionModel}`).first()).toBeVisible();
+      await expect(page.getByTestId('settings-title-model-default')).toHaveText(`Default: ${cur.defaultTitleModel || 'the chat model'}`);
+      await expect(page.getByTestId('settings-vision-model-default')).toHaveText(`Default: ${cur.defaultVisionModel}`);
       await title.fill(other);
       await vision.fill(otherVision);
       await page.getByTestId('settings-save').click();
