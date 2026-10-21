@@ -39,6 +39,8 @@ interface Running {
   tabId?: string;
   /** False while still waiting for the lock (the slot is only reserved). */
   holding: boolean;
+  /** Paths the AI wrote in this turn: when it ends, the pictures those pages show move next to them. */
+  edited: Set<string>;
 }
 
 interface VaultChats {
@@ -348,7 +350,7 @@ export class ChatService {
     if (!c || c.running || c.queue.length === 0) return;
     const turn = c.queue[0]!;
     // Reserve the slot before awaiting anything, so a second kick doesn't start a turn too.
-    const running: Running = { chatId: turn.chatId, release: () => undefined, started: false, readonly: false, startedAt: Date.now(), holding: false };
+    const running: Running = { chatId: turn.chatId, release: () => undefined, started: false, readonly: false, startedAt: Date.now(), holding: false, edited: new Set() };
     c.running = running;
     try {
       running.release = await this.vaults.lock(vaultId).exclusiveThenShared('turn', async () => {
@@ -528,9 +530,15 @@ export class ChatService {
   private endTurn(vaultId: string) {
     const c = this.v.get(vaultId);
     if (!c?.running) return;
-    const { chatId, release, interrupted } = c.running;
+    const { chatId, release, interrupted, edited } = c.running;
     c.running = null;
-    release();
+    const pages = [...edited].filter((p) => /\.md$/i.test(p));
+    // Under the turn lock still, so no next turn writes while pages move.
+    if (pages.length)
+      void this.vaults.tidyAttachments(vaultId, pages)
+        .catch((e: Error) => console.warn(`tidy attachments ${vaultId}:`, e.message))
+        .finally(release);
+    else release();
     void this.vaults.browserCalls.closeVault(vaultId).catch(() => undefined);
     if (interrupted)
       this.emit(vaultId, chatId, { type: 'error', message: 'The AI service restarted during this turn, so the answer may be incomplete. Send the prompt again.' });
@@ -595,6 +603,7 @@ export class ChatService {
     if (!c) return;
     switch (e.type) {
       case 'file-edited':
+        c.running?.edited.add(e.path);
         void this.vaults.markAiTouched(vaultId, [e.path]).catch(() => undefined);
         return;
       case 'status':

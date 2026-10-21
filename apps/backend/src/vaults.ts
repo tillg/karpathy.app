@@ -24,6 +24,7 @@ import { BrowserCalls } from './browser-calls.js';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
 import { filesMentioning, graph, listTree, search, versionOf, versionOfFile } from './files.js';
+import { tidyAttachments, type TidyResult } from './tidy-attachments.js';
 import { Git, GitError, type GitIdentity } from './git.js';
 import { VaultLock } from './lock.js';
 import { normalizeRel, resolveInVault } from './paths.js';
@@ -953,6 +954,18 @@ export class Vaults {
       c.aiTouched[id] = [...new Set([...(c.aiTouched[id] ?? []), ...rel])];
       setStamps(c, id, rel, 'ai');
     });
+  }
+
+  /**
+   * After an AI turn: moves the pictures the pages it wrote show next to those pages (`tidyAttachments`). The caller
+   * holds the turn lock; nothing happens in Conflict. Moves and relinks count as the AI's changes.
+   */
+  async tidyAttachments(id: string, pages: string[]): Promise<TidyResult> {
+    this.requireReady(id);
+    if (this.runtime(id).conflict) return { moved: [], rewritten: [], skipped: [] };
+    const r = await tidyAttachments(this.vaultRootDir(id), { notes: pages });
+    if (r.moved.length) await this.markAiTouched(id, [...r.moved.flatMap((m) => [m.from, m.to]), ...r.rewritten]);
+    return r;
   }
 
   /** A person wrote these paths through the app (#122). Best effort: the write itself already succeeded. */

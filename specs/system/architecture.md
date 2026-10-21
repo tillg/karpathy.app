@@ -1337,6 +1337,15 @@ flowchart LR
   version-checked (`409 stale`), the attachment is written into the folder, the pages are rewritten, the page is
   renamed, its own text written, and its AI-touched mark renamed. `Vaults.afterRelinkScan` is a test seam between
   the scan and the checks.
+- **Tidy after a turn** (`tidy-attachments.ts`, `Vaults.tidyAttachments`): `Running.edited` collects the turn's
+  `file-edited` paths; `endTurn` runs the tidy on its `.md` pages and releases the turn lock only after it. Per
+  picture (`MEDIA` kind `image`, linked via `linkedFiles`, not in `Sources/`) not in or below the own folder of a page
+  showing it: owner = the showing page whose stem shares the longest prefix with the picture's name, then A–Z; a flat
+  owner moves into `dir/stem/` (`attachmentFolder`, an existing folder in other case kept, `rewriteLinks`), then the
+  picture moves there (`relinkFile`: path-form wikilinks and Markdown links to it; bare `![[name]]` stays). Planned on
+  an in-memory copy, a taken name skips that picture; every page to rewrite is version-checked before the first
+  rename. Moves and relinks are marked AI-touched (old and new paths); nothing in Conflict. The CLI
+  `tidy-attachments-cli.ts` (`just tidy-attachments`) runs the same on a whole clone, dry run unless `--apply`.
 - **Web, editor:** `NotePane.attach` filters non-uploadable files (one toast), `editor.track(at)` holds the cursor or
   drop point, and `store.uploadToNote` runs the files one after another: flush, pause autosave for that note,
   `prepare` (JPEG/HEIC: `createImageBitmap` with EXIF orientation → canvas ≤ 2048 px → JPEG 0.85, then APP1/APP13
