@@ -160,6 +160,9 @@ export interface PutFileRequest {
   version: string | null;
 }
 
+/** Longest search text `GET /vaults/:id/search` accepts (characters); longer → 400 `query-too-long`. */
+export const MAX_SEARCH_QUERY = 500;
+
 /** One result line of `GET /vaults/:id/search`; `line` 0 = found by file name or path only (`text` is the path). */
 export interface SearchHit {
   path: string;
@@ -211,15 +214,19 @@ export type ConflictChoice = 'mine' | 'theirs' | 'both';
  * first four characters.
  */
 export interface SecretFinding {
-  /** Vault-relative path (repo-relative when outside the vault root). */
+  /** Vault-relative path (repo-relative when outside the vault root), or `Commit message`. */
   file: string;
+  /** 1-based; 0 for a file too large to scan (rule `too-large-to-scan`). */
   line: number;
-  /** The gitleaks rule, e.g. `github-pat`, `generic-api-key`. */
+  /** The gitleaks rule, e.g. `github-pat`, `generic-api-key`, or `too-large-to-scan`. */
   rule: string;
   description: string;
-  /** At most the first four characters, then `…`. */
+  /** At most the first four characters, then `…`; empty for a file too large to scan. */
   masked: string;
-  /** Opaque id of this finding; "commit anyway" sends back the ones the user saw. */
+  /**
+   * Opaque id of this finding (a keyed hash of file, rule and the secret itself, so another secret on the same line
+   * is a new finding); "commit anyway" sends back the ones the user saw. Valid until the backend restarts.
+   */
   fingerprint: string;
 }
 

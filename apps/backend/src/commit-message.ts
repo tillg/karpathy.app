@@ -31,9 +31,14 @@ export class OpencodeCommitMessages implements CommitMessages {
   }
 
   private async run(vaultId: string) {
-    const { files, stat, diff } = await this.vaults.fullDiff(vaultId);
+    const { files, stat, diff: full } = await this.vaults.fullDiff(vaultId);
     const fallback = { message: fallbackMessage(files.length), fallback: true };
     if (files.length === 0 || this.vaults.harnessConfigIn(vaultId)) return fallback;
+    // Possible secrets never reach the model (#167); without a scan, no diff does.
+    const diff = await this.vaults.redactSecrets(vaultId, full).catch((e: Error) => {
+      console.warn(`secret scan for the commit message of ${vaultId} failed:`, e.message);
+      return '[diff left out: the secret scan could not run]';
+    });
     const dir = this.dirOf(vaultId);
     const text = [
       'Write the commit message for these changes.',

@@ -82,18 +82,38 @@ Secrets can sneak into a vault's data (an ingested mail with a login link that c
 this repo's code or into its settings. Both are scanned with **gitleaks**, pinned (8.30.1) and checksum-verified by
 `deploy/gitleaks/install.sh` (#141).
 
-- **Vault commits.** `Vaults.commit` stages the vault's changes, then runs `gitleaks git --staged` on them
-  (`apps/backend/src/secret-scan.ts`) before `git commit`. A finding refuses the commit with 422 `secrets`: file
-  (vault path), line, rule and a masked hint (at most the first four characters; gitleaks redacts the rest before
-  the backend sees it). The secret itself is never in a response, a log or the UI. Nothing is committed or pushed;
-  the change stays uncommitted. The scan **fails closed**: if gitleaks can't run, the commit is refused (503
-  `secret-scan-failed`).
+- **Vault commits.** `Vaults.commit` stages the vault's changes, then scans them and the commit message
+  (`apps/backend/src/secret-scan.ts`) before `git commit`. The scan reads **contents, not a diff**: every changed blob
+  (as git stores it: no attributes, filters or `-diff`, so binary files and NUL bytes are scanned too) and the
+  message are exported to a temp dir and scanned with `gitleaks dir`; a secret already in the replaced blob (same
+  rule, same secret; renames followed) is not reported again. A finding refuses the commit with 422 `secrets`: file
+  (vault path, or `Commit message`), line, rule and a masked hint (at most the first four characters). The secret
+  itself is never in a response, a log or the UI. Nothing is committed or pushed; the change stays uncommitted.
+  gitleaks' default rules skip some paths (images, lock files, `node_modules/`) and don't open archives; a changed
+  blob over 50 MB (the upload cap) is not scanned but reported as a `too-large-to-scan` finding, so it needs the same
+  deliberate *Commit anyway*.
+- **Fails closed.** If gitleaks or git can't run, times out (120 s), or gitleaks logs any warning or error other than
+  its "leaks found" summary (it reports a skipped or unreadable file that way and still exits 0), the commit is
+  refused (503 `secret-scan-failed`).
 - **Overrides, both deliberate.** *Commit anyway* in the dialog resends the fingerprints of the findings the user
   was shown (`allowSecrets`); the backend scans again and refuses any finding not in that list, so a secret that
-  arrived meanwhile still blocks. The backend logs each acknowledged finding (file, line, rule). A
-  `.gitleaksignore` at the vault repo's root (fingerprints) is honoured: it is a visible, committed file. Not
-  honoured: inline `gitleaks:allow` markers (a mail could carry one next to a real token) and a vault
-  `.gitleaks.toml` (the AI or an ingest could write one to switch rules off); gitleaks' default rules always apply.
+  arrived meanwhile still blocks. A fingerprint is an HMAC (key random per backend process) of file, rule and the
+  secret, so another secret of the same rule on the same line is a new finding; a restart in between means one more
+  prompt. The backend logs each acknowledged finding (file, line, rule). A `.gitleaksignore` at the vault repo's root
+  (fingerprints `file:rule:line`) is honoured **as committed in HEAD**: one the same commit creates or extends (an
+  AI or an ingest could write the predictable fingerprint) takes effect only after it is committed, which shows it in
+  the reviewed changes. Not honoured: inline `gitleaks:allow` markers (a mail could carry one next to a real token)
+  and a vault `.gitleaks.toml` (the AI or an ingest could write one to switch rules off); gitleaks' default rules
+  always apply.
+- **Unpushed commits.** Every push (`Repo.push`, also the pull's "push what's unpushed") first checks the commits in
+  `origin/<branch>..HEAD` against the list of commits the app scanned (`.git/karpathy-secret-scanned`). Any other one
+  (made in a terminal in the clone, or before the scan existed) is scanned on its own (its changes against its
+  parent, its message; the remote's `.gitleaksignore`). Clean → recorded and pushed. A finding → nothing is pushed,
+  all unpushed commits are folded back into uncommitted changes (as a pull does), and the push error says so; the
+  next Commit & Push scans them with *Commit anyway* at hand.
+- **Commit message proposal** (#167). The diff sent to the model has every possible secret of the uncommitted changes
+  (old and new side, `.gitleaksignore` not applied) replaced by `[possible secret removed]`. The scan stages into a
+  temp copy of the index, so the real index stays untouched; if it fails, the diff is left out of the prompt.
 - **This repo.** `deploy/gitleaks/scan-repo.sh` scans the whole history, staged, unstaged and untracked (not
   ignored) files, and prints findings redacted. It is the first step of `just check` and of CI (full-history
   checkout). Test fixtures build fake tokens at runtime, so the repo holds none.
@@ -287,6 +307,10 @@ The app writes vault files without a tap (`agents-standard.ts`), so it is fenced
 
 - **Paths:** relative only; no `..`, NUL, absolute paths or `.git` segments; every segment is checked for symlinks
   (`paths.ts`). Git checks out symlinks as plain files (`core.symlinks=false`).
+  The search index reads files through the same resolver (a symlink a watcher event reports is never followed, so no file
+  outside the vault shows up as a snippet).
+- **Search text:** at most 500 characters (`MAX_SEARCH_QUERY`, 400 `query-too-long`); repeated words count once and at
+  most 20 words are looked up, since ranking runs on the event loop.
 - **Git arguments:** `--end-of-options` on clone, fetch and push; branch names restricted to a safe-ref pattern; repo
   names to `owner/name`.
 - **File names:** no Windows-reserved names, forbidden characters, trailing dots or spaces, or case twins.
@@ -387,10 +411,10 @@ kinds, strings only) and can only change which fields and flags the form shows; 
 
 - **Secret scan limits** (#141): only the app's Commit & Push is scanned. Commits made elsewhere (Obsidian, a
   terminal) and pushed straight to GitHub are not; turning on GitHub push protection on the vault repos would
-  cover them. gitleaks finds known token formats and high-entropy `key=value` pairs, not every password. Before
-  the scan, the commit-message proposal has already sent the diff, secret included, to the LLM provider (as the
-  AI sees any note it reads). Fingerprints contain the line number, so an edit above a `.gitleaksignore`d line
-  revives the finding.
+  cover them. gitleaks finds known token formats and high-entropy `key=value` pairs, not every password; it skips
+  images and doesn't open archives or compressed PDF streams. The AI still sees any secret in a note it reads (and
+  so does the LLM provider). `.gitleaksignore` fingerprints contain the line number, so an edit above an ignored
+  line revives the finding.
 - No rate limiting on the token check.
 - **The exact position can be exfiltrated by prompt injection** (#151): a hostile page in a vault can tell the AI to
   call `user_location` and put the result into a `webfetch` URL to an attacker's host, a `websearch` query or a note.

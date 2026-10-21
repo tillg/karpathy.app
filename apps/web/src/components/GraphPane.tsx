@@ -19,6 +19,22 @@ const loadDepth = () => { try { return localStorage.getItem(DEPTH_KEY) === '2' ?
 /** Room around the local graph's notes when the camera fits them, for their names (px). */
 const FIT_PAD = 72;
 
+/** Distance of the camera from a graph of one note (close enough to read its name). */
+const ONE_NOTE_DISTANCE = 150;
+
+/**
+ * Fits the camera to the shown notes. One note has a bounding box of size zero, which zoomToFit answers with
+ * the camera on top of the dot (invisible, or filling the screen): that one is looked at from a fixed distance.
+ */
+function fitCamera(g: Live['g'], ms: number, padding: number) {
+  const nodes = g.graphData().nodes as { x?: number; y?: number; z?: number }[];
+  if (nodes.length > 1) return void g.zoomToFit(ms, padding);
+  const { x = 0, y = 0, z = 0 } = nodes[0] ?? {};
+  g.cameraPosition({ x, y, z: z + ONE_NOTE_DISTANCE }, { x, y, z }, ms);
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 /** Each vault's graph, read on its first open in this session; Refresh reads it again. */
 const cache = new Map<string, GraphData>();
 
@@ -133,7 +149,7 @@ export function GraphPane() {
         .linkColor(() => css.getPropertyValue('--label3').trim())
         .linkOpacity(0.35)
         .onEngineTick(() => setDrawn(true))
-        .onEngineStop(() => { if (fit.current) { fit.current = false; g.zoomToFit(400, latest.current.local ? FIT_PAD : 20); } })
+        .onEngineStop(() => { if (fit.current) { fit.current = false; fitCamera(g, 400, latest.current.local ? FIT_PAD : 20); } })
         .onNodeClick((n) => void latest.current.openNote(String(n.id)));
       // The same node objects for every view keep the layout when the scope changes.
       live.current = { g, css, three, degree, labels: new Map(), named: false, localNodes: new Map(), nodes: new Map(data.nodes.map((n) => [n.path, { id: n.path, type: n.type }])) };
@@ -192,8 +208,8 @@ export function GraphPane() {
     fitSoon.current.forEach(clearTimeout);
     // The local graph: once early, when the layout has roughly settled, and again when it stops (onEngineStop).
     // Back from it: the camera finds the vault's layout again, now and when it stops.
-    if (loc) fitSoon.current = [600, 1500, 3000].map((ms) => setTimeout(() => { if (latest.current.local) live.current?.g.zoomToFit(400, FIT_PAD); }, ms));
-    else if (mode) fitSoon.current = [300, 1500].map((ms) => setTimeout(() => live.current?.g.zoomToFit(400, 20), ms));
+    if (loc) fitSoon.current = [600, 1500, 3000].map((ms) => setTimeout(() => { if (latest.current.local && live.current) fitCamera(live.current.g, 400, FIT_PAD); }, ms));
+    else if (mode) fitSoon.current = [300, 1500].map((ms) => setTimeout(() => { if (live.current) fitCamera(live.current.g, 400, 20); }, ms));
   };
   /** Colours the notes: the open one orange, the others by type. */
   const paint = () => {
@@ -279,7 +295,7 @@ export function GraphPane() {
               </ul>
             )}
             <p>{view
-              ? `${view.nodes.length} notes${local ? ` within ${depth} ${depth === 1 ? 'link' : 'links'} of ${title(center!)}` : wikiOnly ? ' in Wiki' : ''} · ${view.links.length} links · ${local ? 'drag to move' : 'drag to rotate'}, pinch or scroll to zoom, tap a note to open it`
+              ? `${plural(view.nodes.length, 'note')}${local ? ` within ${depth} ${depth === 1 ? 'link' : 'links'} of ${title(center!)}` : wikiOnly ? ' in Wiki' : ''} · ${plural(view.links.length, 'link')} · ${local ? 'drag to move' : 'drag to rotate'}, pinch or scroll to zoom, tap a note to open it`
               : 'Loading…'}</p>
           </div>
         </>

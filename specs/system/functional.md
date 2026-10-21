@@ -422,6 +422,13 @@ snippets, the matched words marked; capped at 200 hits ("refine your search"); o
   indexed, or taken from a `lang:` in its frontmatter; very short notes match in all of them.
 - The last word also matches as the beginning of a word (`handt` finds "Handtuch"), so results come while typing.
   A word that matches nothing is looked up with typo tolerance (`glaicer` finds "glacier").
+- **Whole words only:** a word is found from its beginning, never from inside a longer word: `tuch` does not find
+  "Handtuch" (nor `tuch` the file `Handtuch.md`). Search for the compound, or its beginning.
+- **File names and paths:** the full file name counts, extension included (`pdf` finds every PDF, `report.pdf` and
+  `Meeting.md` find those files), and so do the folder names (`Wiki/glacier`).
+- **Limits:** a repeated word counts once and at most 20 different words are looked up (the rest are ignored); search
+  text longer than 500 characters is refused ("Search text: at most 500 characters"). Hidden, git-ignored and
+  symlinked files are never searched.
 - Several words find notes that contain all of them (in the text or the path) and show the lines of any of them; a
   `"quoted phrase"` matches as written (case and accents aside), within one line (#107).
 - **Order:** notes whose file name matches every word come first (#99); then the best matches: a word in the file
@@ -493,11 +500,16 @@ syntax, so the same note shows the same table in Obsidian. The block's text is n
 - **Discard** one file's changes (refused if the file changed since the diff was shown).
 - **Commit & Push:** proposes a message (AI, falls back to "Update N files"), editable; commits all uncommitted
   changes of the vault root and pushes. If new changes arrived since the review, the commit is refused with the list.
-- **Secret scan** (#141): before it commits, the app scans the changes for secrets (API keys, tokens, private keys:
-  gitleaks' rules). A finding refuses the commit and lists file, line, rule and at most the first four characters;
-  nothing is committed or pushed. **Remove** the secret (edit or discard the file) and commit again, or **Commit
-  anyway**, which covers exactly the findings shown (one that arrived later blocks again). A `.gitleaksignore` at the
-  vault repo's root (fingerprints `file:rule:line`) silences known false positives for good.
+- **Secret scan** (#141): before it commits, the app scans the changed files (binary ones too) and the commit message
+  for secrets (API keys, tokens, private keys: gitleaks' rules). A finding refuses the commit and lists file (or
+  "Commit message"), line, rule and at most the first four characters; nothing is committed or pushed. A changed
+  file over 50 MB can't be scanned and is listed as `too-large-to-scan`. **Remove** the secret (edit or discard the
+  file) and commit again, or **Commit anyway**, which covers exactly the secrets shown (one that arrived later, even
+  on the same line, blocks again). A committed `.gitleaksignore` at the vault repo's root (fingerprints
+  `file:rule:line`) silences known false positives for good; changes to it count only once they are committed.
+  Unpushed commits made outside the app are scanned before a push; if one holds a possible secret, nothing is pushed
+  and their changes become uncommitted again, for a normal Commit & Push. The proposed commit message is written
+  from a diff with the possible secrets taken out (#167).
 - **Unpushed commits:** "N unpushed commits · retry".
 - **Commit reminder** when changes pass the threshold: "Later" brings it back at 2× the threshold, a second "Later"
   silences it until the count drops again. Changes under `Input/` don't count (waiting input items aren't unsaved

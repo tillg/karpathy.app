@@ -20,8 +20,7 @@ import {
   type VaultState,
   type VaultStatus,
 } from '@karpathy/shared';
-import type { SecretFinding } from '@karpathy/shared';
-import { INPUT_DIR, isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
+import { INPUT_DIR, isUploadable, MAX_ATTACHMENT_BYTES, MAX_SEARCH_QUERY, rewriteLinks } from '@karpathy/shared';
 import { BrowserCalls } from './browser-calls.js';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
@@ -34,8 +33,11 @@ import { VaultLock } from './lock.js';
 import { normalizeRel, resolveInVault } from './paths.js';
 import { preflight } from './preflight.js';
 import { Repo, type FileHistory } from './repo.js';
-import { SecretScanner } from './secret-scan.js';
+import { MESSAGE_FILE, SecretScanner } from './secret-scan.js';
 import { VaultWatcher } from './watcher.js';
+
+/** Stands in for a possible secret in text sent to the model (#167). */
+const REDACTED = '[possible secret removed]';
 
 /** A repo check that takes longer than this has hung (a stalled remote); the add is refused. */
 const PREFLIGHT_TIMEOUT_MS = 60_000;
@@ -700,6 +702,7 @@ export class Vaults {
     this.requireReady(id);
     if (!q.trim()) return { hits: [], truncated: false };
     if (/[\r\n]/.test(q)) throw new HttpError(400, 'search text must be a single line', 'bad-query');
+    if (q.length > MAX_SEARCH_QUERY) throw new HttpError(400, `Search text: at most ${MAX_SEARCH_QUERY} characters`, 'query-too-long');
     return this.searchIndex(id).search(q);
   }
 
@@ -736,6 +739,15 @@ export class Vaults {
   async fullDiff(id: string) {
     this.requireReady(id);
     return this.repo(this.config(id)).fullDiff();
+  }
+
+  /** `text` with every possible secret of the vault's uncommitted changes replaced (#167). Throws if the scan fails. */
+  async redactSecrets(id: string, text: string): Promise<string> {
+    this.requireReady(id);
+    const v = this.config(id);
+    const secrets = await this.secretScanner.secretsInChanges(this.cloneDir(id), v.root || '.');
+    // Longest first: one secret can contain another.
+    return secrets.sort((a, b) => b.length - a.length).reduce((t, s) => t.split(s).join(REDACTED), text);
   }
 
   /**
@@ -813,7 +825,7 @@ export class Vaults {
     r.pullError = result.kind === 'offline' ? this.redact(result.error) : undefined;
     // Unpushed AI commits folded back into uncommitted changes: their files are AI-touched again.
     const aiPaths = result.kind !== 'offline' ? result.aiPaths ?? [] : [];
-    if (aiPaths.length) await this.store.update((c) => { c.aiTouched[id] = [...new Set([...(c.aiTouched[id] ?? []), ...aiPaths])]; });
+    await this.addAiTouched(id, aiPaths);
     if (result.kind === 'conflict') {
       await this.store.update((c) => {
         c.conflicts[id] = result.paths;
@@ -882,6 +894,10 @@ export class Vaults {
       const pull = await this.pullUnlocked(id);
       if (pull?.kind === 'conflict') throw new HttpError(409, 'pull ran into a conflict; resolve it, then commit', 'conflict');
       const repo = this.repo(this.config(id));
+      // Unpushed commits the app didn't scan (offline pull): folded back if they hold a possible secret, so this
+      // commit's scan covers them.
+      const unpushed = await repo.checkUnpushed().catch((e: Error) => this.scanFailed(id, e));
+      if (unpushed.kind === 'folded') await this.addAiTouched(id, unpushed.aiPaths);
       const changed = new Set((await repo.changes()).map((c) => c.path));
       if (paths && (paths.length !== changed.size || paths.some((p) => !changed.has(p))))
         throw new HttpError(409, 'The changes differ from what you reviewed (e.g. the AI changed more files while the commit waited). Review them and commit again.', 'changes-moved', { paths: [...changed] });
@@ -889,33 +905,40 @@ export class Vaults {
       const withAi = touched.some((p) => changed.has(p));
       let commit: string | null = null;
       if (await repo.stageAll()) {
-        await this.checkSecrets(id, repo, allowSecrets);
+        await this.checkSecrets(id, repo, message, allowSecrets);
         commit = await repo.commitStaged(message, withAi);
+        await repo.markScanned(commit);
       }
       if (commit) await this.store.update((c) => { delete c.aiTouched[id]; });
-      const unpushed = await repo.unpushedCount();
-      const push = unpushed > 0 ? await repo.push() : { pushed: false };
+      const push = (await repo.unpushedCount()) > 0 ? await repo.push() : { pushed: false };
+      if (push.aiPaths?.length) await this.addAiTouched(id, push.aiPaths);
       this.emitStatusSoon(id);
       return { commit, pushed: push.pushed, ...(push.error ? { pushError: push.error } : {}) };
     });
   }
 
-  /** Refuses the commit while the staged changes hold a possible secret the user hasn't acknowledged (#141). */
-  private async checkSecrets(id: string, repo: Repo, allowSecrets: readonly string[]) {
-    let findings: SecretFinding[];
-    try {
-      findings = await this.secretScanner.scanStaged(repo.dir);
-    } catch (e) {
-      // Fail closed: without a scan, nothing is pushed.
-      console.warn(`secret scan of ${id} failed:`, (e as Error).message);
-      throw new HttpError(503, "The secret scan couldn't run, so nothing was committed. Try again; if it keeps failing, check the backend log.", 'secret-scan-failed');
-    }
+  private async addAiTouched(id: string, paths: string[]) {
+    if (paths.length) await this.store.update((c) => { c.aiTouched[id] = [...new Set([...(c.aiTouched[id] ?? []), ...paths])]; });
+  }
+
+  /** Fail closed: without a scan, nothing is committed or pushed. */
+  private scanFailed(id: string, e: Error): never {
+    console.warn(`secret scan of ${id} failed:`, e.message);
+    throw new HttpError(503, "The secret scan couldn't run, so nothing was committed. Try again; if it keeps failing, check the backend log.", 'secret-scan-failed');
+  }
+
+  /**
+   * Refuses the commit while the staged changes or the message hold a possible secret the user hasn't
+   * acknowledged (#141).
+   */
+  private async checkSecrets(id: string, repo: Repo, message: string, allowSecrets: readonly string[]) {
+    const findings = await this.secretScanner.scanStaged(repo.dir, { message }).catch((e: Error) => this.scanFailed(id, e));
     const allowed = new Set(allowSecrets);
-    const open = findings.filter((f) => !allowed.has(f.fingerprint)).map((f) => ({ ...f, file: repo.toVaultPath(f.file) ?? f.file }));
+    const open = findings.filter((f) => !allowed.has(f.fingerprint)).map((f) => ({ ...f, file: f.file === MESSAGE_FILE ? f.file : (repo.toVaultPath(f.file) ?? f.file) }));
     if (findings.length > open.length)
       console.warn(`commit of ${id}: committing ${findings.length - open.length} acknowledged secret finding(s): ${findings.filter((f) => allowed.has(f.fingerprint)).map((f) => `${f.file}:${f.line} (${f.rule})`).join(', ')}`);
     if (open.length === 0) return;
-    const shown = open.slice(0, 5).map((f) => `${f.file} line ${f.line} (${f.rule}: ${f.masked})`);
+    const shown = open.slice(0, 5).map((f) => `${f.file}${f.line ? ` line ${f.line}` : ''} (${f.rule}${f.masked ? `: ${f.masked}` : ''})`);
     const more = open.length > shown.length ? ` and ${open.length - shown.length} more` : '';
     throw new HttpError(422, `Possible secret${open.length === 1 ? '' : 's'} in the changes: ${shown.join('; ')}${more}. Nothing was committed. Remove ${open.length === 1 ? 'it' : 'them'}, or commit anyway if ${open.length === 1 ? 'it is' : 'they are'} not secret.`, 'secrets', { findings: open });
   }
@@ -1097,7 +1120,7 @@ export class Vaults {
   }
 
   private repo(v: StoredVault, timeoutMs?: number): Repo {
-    return new Repo(this.cloneDir(v.id), v.branch, v.root, { identity: this.env.identity, token: this.env.githubToken?.(), timeoutMs });
+    return new Repo(this.cloneDir(v.id), v.branch, v.root, { identity: this.env.identity, token: this.env.githubToken?.(), timeoutMs }, this.secretScanner);
   }
 
   private refuseDuplicate(repo: string, branch: string, root: string, exceptId?: string) {
