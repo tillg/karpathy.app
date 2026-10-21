@@ -380,9 +380,9 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
   /** Queued prompts taken back (Stop, Edit): into the composer, before what is typed there, their files into the chips. */
   const takeBack = (back: ReturnedPrompt[]) => {
     if (!back.length) return;
-    const next = withReturned(text, draftRef.current, back);
-    setText(next.text);
-    setDraft(next.draft);
+    // What is typed now (the answer may come after more typing), not when Stop or Edit was tapped.
+    setText((now) => withReturned(now, draftRef.current, back).text);
+    setDraft(withReturned('', draftRef.current, back).draft);
     requestAnimationFrame(() => {
       const el = composer.current;
       if (!el) return;
