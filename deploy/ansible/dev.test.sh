@@ -59,6 +59,9 @@ as_user 'docker info >/dev/null' >/dev/null && ok "login user can use Docker" ||
 for tool in just rg jq gh claude; do
   as_user "$tool --version" >/dev/null && ok "$tool answers --version" || bad "$tool answers --version" "$(as_user "$tool --version" | tail -1)"
 done
+# herdr's and tmux's panes are interactive non-login shells: they read ~/.bashrc, not ~/.profile.
+out=$(docker exec -u "$user" -e HOME="/home/$user" -w "/home/$user" "$ctr" bash -ic 'command -v claude' 2>/dev/null)
+[ -n "$out" ] && ok "claude is on the PATH of a non-login shell" || bad "claude is on the PATH of a non-login shell" "not found"
 # Ubuntu's own just (1.21) can't parse the repo's justfile.
 docker cp "$here/../../justfile" "$ctr:/tmp/justfile" >/dev/null
 out=$(as_user 'just --justfile /tmp/justfile --summary') && ok "just parses the repo's justfile" || bad "just parses the repo's justfile" "$out"

@@ -52,7 +52,19 @@
     state: present
     update_cache: true
 
-# The native installer, per user into ~/.local/bin (on the login shell's PATH); it updates itself.
+# ~/.local/bin (claude, herdr) also for non-login shells: herdr's and tmux's panes read ~/.bashrc, not ~/.profile.
+- name: ~/.local/bin on the PATH of every interactive shell
+  ansible.builtin.blockinfile:
+    path: /home/{{ admin_user }}/.bashrc
+    marker: "# {mark} karpathy devtools"
+    block: |
+      case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0644"
+    create: true
+
+# The native installer, per user into ~/.local/bin; it updates itself.
 - name: Claude Code CLI
   ansible.builtin.shell: set -o pipefail && curl -fsSL https://claude.ai/install.sh | bash
   args:
