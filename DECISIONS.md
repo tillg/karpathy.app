@@ -2947,7 +2947,9 @@ edited: 2026-10-21
   or deploy (the task didn't ask for one).
 - **Why:** same rule as the other run; a review step is what you asked for there.
 - **Alternatives:** push `main` (refused before).
-- **Consequences:** #148 closes when the PR is merged; the demo run book (`karpathy_demo_wiki`, commit 50bea47, not
+- **Consequences:** 13:20: on your instruction ("merge main into our branch, then our branch onto main & push") pushed
+  `feat/148-chat-titles` to `main` as a fast-forward (`bf91f46..4dada12`); PR #165 shows merged, #148 closed.
+  #148 closes when the PR is merged; the demo run book (`karpathy_demo_wiki`, commit 50bea47, not
   pushed) goes out with the next release.
 
 # 2026-10-21 10:58 — Finish remove-ollama (#157): merge, verify, archive, release and deploy {#run-2026-10-21-1058}
