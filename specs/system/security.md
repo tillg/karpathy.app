@@ -334,7 +334,8 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   OpenRouter, reached through the egress proxy like in production; no model server runs on the Mac, so there is no
   admin API a prompt-injected AI could reach.
 - **Dev server** (`karpathy-dev`): reachable only over Tailscale after bootstrap, no public ports; its dev stacks
-  bind only to its loopback and are reached through SSH forwards. It holds no prod vaults and no prod secrets: only
+  bind only to its loopback and are reached through SSH forwards. Editing there with VS Code goes through the same SSH
+  connection (Remote-SSH): its VS Code Server listens on no external port, and there is no relay or second login. It holds no prod vaults and no prod secrets: only
   the dev OpenRouter/Exa keys (host secrets, mode 600) and a fine-grained GitHub token limited to `karpathy.app`,
   `karpathy_demo_wiki` and `ingest_email`. The developer's login user is uid 1000 with sudo and Docker there,
   accepted because the box is a separate, single-developer dev host.

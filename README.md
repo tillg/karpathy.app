@@ -282,6 +282,40 @@ every checkout on a host: `just dev up` copies a key missing in `deploy/secrets/
 **Prod** (the Hetzner server `app.karpathy.app`, reachable only over Tailscale) is never built or
 configured by hand: releases go there with `just deploy hetzner`, see [Deploying](#deploying).
 
+## Editing on the dev server in VS Code
+
+The code lives on `karpathy-dev`, the editor runs on the Mac. A VS Code window connected through **Remote-SSH**
+feels like a local one: file tree, search, inline ESLint, diffs, the Playwright and Vitest test views, a terminal, the
+Claude Code panel. But the files, git, Node, Docker and the dev stacks stay on the server. Nothing is copied or synced.
+
+**Once, on the Mac:** install VS Code and the **Remote - SSH** extension. Run *Shell Command: Install 'code' command
+in PATH* from the Command Palette, and add the `karpathy-dev` SSH entry ([deploy/README.md › Dev
+server](deploy/README.md#dev-server)).
+
+**Every day:**
+
+```sh
+just code                 # on the Mac: a VS Code window on the server's main clone (~/karpathy.app)
+just code <worktree>      # a second window on ~/karpathy.app/.worktrees/<worktree>
+```
+
+- **One window per checkout**, just like one stack per checkout. The first time, the window offers the project's
+  recommended extensions (ESLint, Playwright Test, Vitest, Claude Code, Ansible, `just`). Say yes; they install on
+  the server.
+- **Start a stack in the window's terminal** (`just dev up`) and open https://localhost:80N0 on the Mac, the same
+  port as from any terminal. Live reload works. `just prodtest` (80N5) and `just site` (8099) open on the Mac as well:
+  VS Code forwards those ports itself, and the Ports view lists them.
+- **`claude` works in the window**, as the CLI in the terminal or in the Claude Code panel, with the server's login.
+- **Commit from Source Control** as usual. The commits carry the server's git identity.
+- **Long runs belong in herdr or tmux.** The window reconnects by itself after a short drop. A terminal in it doesn't
+  survive a laptop that slept overnight, though. Run `claude` sessions and `just e2e` in herdr or tmux, next to the
+  window.
+
+Inside the window's terminal you're on the server: `code <file>` opens a file in this window, and
+`code .worktrees/<worktree>` opens a new one (`just code` there refuses and says so). The project's VS Code rules are in
+`.vscode/`, and they apply to every checkout. Setup details, ports and troubleshooting: [docs/dev-server.md ›
+VS Code](docs/dev-server.md#vs-code).
+
 ## Tests
 
 ```sh

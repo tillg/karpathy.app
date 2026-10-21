@@ -39,6 +39,7 @@ flowchart LR
 | GitHub access | `~/.git-credentials` on the server | A fine-grained token for `karpathy.app`, `karpathy_demo_wiki`, `ingest_email` (1 year). Clone, pull and push just work. |
 | Your login | `tgartner`, uid 1000, sudo, docker | The same name as on the Mac, so `ssh karpathy-dev` needs no user. |
 | SSH entry | the Mac's `~/.ssh/config`, `Host karpathy-dev` | Tailscale host name, keepalive, `LocalForward` 8010…8090. |
+| VS Code | the Mac's VS Code + Remote-SSH, `just code [worktree]`; `.vscode/` in the repo | An editor window on a checkout on the server: files, terminals, git and extensions run there. See [VS Code](#vs-code). |
 
 ## Connecting
 
@@ -83,6 +84,49 @@ Stack N listens on the server's `localhost:80N0`, and the forward maps it to the
 stack isn't reachable from the Mac. Either stop the Mac's stacks (`just dev down` in each checkout), or start the
 server's stacks on numbers the Mac doesn't use: `just dev stacks` on the Mac shows which are taken, `just dev up 4` on
 the server pins stack 4.
+
+## VS Code
+
+VS Code on the Mac edits the code on the server through **Remote-SSH**: the window is on the Mac, the files, terminals,
+git, language servers and extensions run on `karpathy-dev`. It uses the same SSH entry as a terminal, so it comes over
+Tailscale and brings the `LocalForward`s along.
+
+**Once, on the Mac:**
+
+1. Install VS Code and the extension **Remote - SSH** (`ms-vscode-remote.remote-ssh`).
+2. Command Palette › *Shell Command: Install 'code' command in PATH*, so `just code` can start it.
+3. In the user settings: `"remote.SSH.remotePlatform": { "karpathy-dev": "linux" }`, so VS Code doesn't ask every time.
+
+**Opening a window:** one window per checkout, like one stack per checkout.
+
+```sh
+just code                       # on the Mac: a window on ~/karpathy.app on the server
+just code <name>                # a window on ~/karpathy.app/.worktrees/<name>
+```
+
+`KARPATHY_DEVHOST` and `KARPATHY_DEVHOST_CHECKOUT` change the host and the checkout path (defaults `karpathy-dev` and
+`/home/$USER/karpathy.app`). `just code` refuses to run on the server itself: in a VS Code terminal there,
+`code .worktrees/<name>` opens a new window and `code <file>` opens a file in this one.
+
+The first connect installs the VS Code Server on the server (`~/.vscode-server/`, about a minute); VS Code keeps it up
+to date itself. The window then offers the recommended extensions (`.vscode/extensions.json`): ESLint, Playwright
+Test, Vitest, Claude Code, Ansible, `just` syntax. They install on the server side. The Claude Code extension uses the
+same login as the `claude` CLI there.
+
+**Ports:** the repo's `.vscode/settings.json` tells VS Code to leave the nine stack ports 8010…8090 alone: the SSH
+entry's `LocalForward` serves them, so a stack opens on the Mac at the same number and Vite's live reload works. Any
+other port a process on the server opens, VS Code forwards itself, at the same number if it is free on the Mac:
+`just prodtest` on 80N5 and the `just site` preview on 8099 thus reach the Mac's browser from a VS Code window (not
+from herdr, whose SSH entry doesn't forward them). The Ports view shows what VS Code forwards.
+
+**Long runs stay in herdr or tmux.** A VS Code terminal survives a short drop (the window reconnects by itself), but
+not a laptop that slept overnight. Run `claude` and `just e2e` in herdr or tmux; a VS Code window and herdr side by
+side are fine. If the conversation was in a VS Code terminal, `just resume` picks it up again.
+
+**File watching:** `.vscode/settings.json` keeps VS Code from watching and indexing `.worktrees/`, `tmp/`,
+`node_modules/` and the build outputs; each worktree gets its own window instead. `just devhost` raises the server's
+inotify limits (`fs.inotify.max_user_instances` = 1024, `fs.inotify.max_user_watches` = 1048576; Ubuntu's default of
+128 instances runs out with a few windows plus Vite, `tsc` and ESLint).
 
 ## Daily routine
 
@@ -144,6 +188,10 @@ year: regenerate it on GitHub (same repos and permissions), put it in with `just
 | `ssh karpathy-dev` times out | Is Tailscale on, on the Mac? `tailscale status` lists `karpathy-dev`. The Hetzner console shows whether the server runs. |
 | `just dev up`: `no OpenRouter key` | Neither the checkout nor `~/.config/karpathy/secrets/` has it: `just secrets dev` + `just devhost` on the Mac. |
 | `just check` refuses: Docker doesn't answer | `sudo systemctl restart docker`. |
+| VS Code: "Visual Studio Code is unable to watch for file changes" | The inotify limits are the defaults: `sysctl fs.inotify.max_user_instances` on the server should print 1024. Run `just devhost` from the Mac. |
+| https://localhost:80N0 stopped loading after closing VS Code or herdr | The forward belongs to the SSH connection that came first; closing it drops the forward. Reconnect, or keep `ssh -N karpathy-dev` open. |
+| VS Code opens a window but can't find the folder | The worktree doesn't exist on the server (`just code` doesn't check): `git worktree list` there. |
+| VS Code's Ports view shows 80N0 forwarded to another port | VS Code didn't read `.vscode/settings.json` (an old checkout without it?). As a fallback, put the same `remote.portsAttributes` into the remote settings: Command Palette › *Preferences: Open Remote Settings*. |
 
 ## Costs and limits
 

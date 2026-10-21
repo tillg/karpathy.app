@@ -11,3 +11,6 @@ devtools_host_secrets: {}
 devtools_github_token: ""
 # The login user's git identity (name, email) for commits on the dev host; empty fields are not set.
 devtools_git_user: {}
+# inotify limits for several VS Code windows plus Vite, tsc and ESLint per checkout (Ubuntu's default: 128 instances).
+devtools_inotify_max_user_instances: 1024
+devtools_inotify_max_user_watches: 1048576

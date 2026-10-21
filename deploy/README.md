@@ -296,6 +296,9 @@ subscription (the project plugins install in the first session). Then `just dev 
 SSH drops; a bare SSH shell takes them down with it. Daily routine, ports, troubleshooting:
 [docs/dev-server.md](../docs/dev-server.md).
 
+**Editing in VS Code:** `just code [worktree]` on the Mac opens a VS Code Remote-SSH window on the server's checkout
+(one-time setup in [docs/dev-server.md › VS Code](../docs/dev-server.md#vs-code)).
+
 - **One dev host at a time:** a Mac dev stack on the same port blocks that `LocalForward` (ssh warns "bind: Address
   already in use"). Stop the Mac's stacks (`just dev down`) before you connect, or the other way round.
 - **Host secrets:** `just dev up` copies each `*_api_key` missing in a checkout's `deploy/secrets/` from

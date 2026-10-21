@@ -1801,7 +1801,9 @@ flowchart TD
 - **Ports.** 80N0 is the proxy (the app over HTTPS; the Vite HMR socket goes through it, `HMR_CLIENT_PORT`), 80N1
   the backend's HTTP API on `127.0.0.1` for debugging without TLS (the backend can publish because it is also on
   the `egress` network), 80N5 the paired prodtest's proxy. 80N3 (opencode) and 80N4 (web) are reserved but never
-  published: both sit only on the `internal: true` network. The rest is spare.
+  published: both sit only on the `internal: true` network. The rest is spare. On the remote dev host the SSH entry
+  forwards 80N0 to the Mac; a VS Code Remote-SSH window leaves 80N0 alone (`.vscode/settings.json`) and forwards
+  80N5 itself ([deployment.md](deployment.md#dev-server)).
 - **`deploy/stack.sh`** (sourced; `jq`, `nc`) holds all of it; the compose files only interpolate `STACK`,
   `PROXY_PORT`, `BACKEND_PORT` and `PRODTEST_PORT`, and fail with a pointer to `just dev up` when they are unset
   (`:?`), so a raw `docker compose up` can't silently start a stack on a colliding port. `stack_resolve` picks N

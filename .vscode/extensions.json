@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "ms-playwright.playwright",
+    "vitest.explorer",
+    "anthropic.claude-code",
+    "redhat.ansible",
+    "nefrob.vscode-just-syntax"
+  ]
+}

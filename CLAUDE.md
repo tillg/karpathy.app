@@ -122,7 +122,8 @@ header `karpathy #N`).
 
 The remote dev host `karpathy-dev` (Hetzner, Tailscale only; `docs/dev-server.md`) is another dev host with
 its own stacks 1–9 and the same rules. It is Linux: no Keychain, no Rancher, no Lima; the dev topic for ntfy is in
-`tmp/.ntfy_dev_topic` there.
+`tmp/.ntfy_dev_topic` there. The developer may edit there in VS Code (`just code [worktree]` on the Mac, one window per
+checkout); `.vscode/` holds the project's settings for that.
 
 ## Progress messages (ntfy)
 

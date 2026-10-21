@@ -1,0 +1,27 @@
+{
+  "remote.portsAttributes": {
+    "8010": { "onAutoForward": "ignore" },
+    "8020": { "onAutoForward": "ignore" },
+    "8030": { "onAutoForward": "ignore" },
+    "8040": { "onAutoForward": "ignore" },
+    "8050": { "onAutoForward": "ignore" },
+    "8060": { "onAutoForward": "ignore" },
+    "8070": { "onAutoForward": "ignore" },
+    "8080": { "onAutoForward": "ignore" },
+    "8090": { "onAutoForward": "ignore" }
+  },
+  "files.watcherExclude": {
+    "**/.worktrees/**": true,
+    "**/tmp/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/_site/**": true,
+    "**/test-results/**": true,
+    "**/playwright-report/**": true
+  },
+  "search.exclude": {
+    "**/.worktrees": true,
+    "**/tmp": true,
+    "**/_site": true
+  }
+}
