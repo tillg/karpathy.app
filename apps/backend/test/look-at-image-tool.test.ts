@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildRequest, describeImage, resolveImage } from '../../../deploy/opencode/lib/look-at-image.js';
+import { buildRequest, describeImage, resolveImage, visionConfig } from '../../../deploy/opencode/lib/look-at-image.js';
 import { testDir } from './opencode-container.js';
 
 // The look_at_image tool's logic, on a real directory and a real local HTTP server standing in for the
@@ -71,14 +71,35 @@ describe('resolveImage', () => {
 
 describe('buildRequest', () => {
   it('has the data URL, the question and the model options', () => {
-    const req = buildRequest({ mime: 'image/png', data: PNG }, 'What colour?', { VISION_MODEL: 'vl', VISION_REQUEST_OPTIONS: '{"provider":{"zdr":true}}' });
+    const req = buildRequest({ mime: 'image/png', data: PNG }, 'What colour?', { model: 'vl', options: { provider: { zdr: true } } });
     expect(req).toMatchObject({ model: 'vl', stream: false, provider: { zdr: true } });
     const content = req.messages[0]!.content;
     expect(content[0]).toEqual({ type: 'text', text: 'What colour?' });
     expect(content[1]).toEqual({ type: 'image_url', image_url: { url: `data:image/png;base64,${PNG.toString('base64')}` } });
   });
   it('asks for a thorough description by default', () => {
-    expect(buildRequest({ mime: 'image/png', data: PNG }, undefined, { VISION_MODEL: 'vl' }).messages[0]!.content[0]).toMatchObject({ text: expect.stringMatching(/describe.*transcrib/i) });
+    expect(buildRequest({ mime: 'image/png', data: PNG }, undefined, { model: 'vl', options: {} }).messages[0]!.content[0]).toMatchObject({ text: expect.stringMatching(/describe.*transcrib/i) });
+  });
+});
+
+describe('visionConfig', () => {
+  const venv = { VISION_MODEL: 'vl', VISION_REQUEST_OPTIONS: '{"provider":{"zdr":true}}', VISION_MODEL_OPTIONS: '{"big":{"provider":{"order":["x"]}}}' };
+  const override = async (content: string) => {
+    const file = join(base, `vision-${Math.random().toString(36).slice(2)}.json`);
+    await writeFile(file, content);
+    return file;
+  };
+  it('an override file picks the model and its options from VISION_MODEL_OPTIONS', async () => {
+    expect(await visionConfig(venv, await override('{"model":"big"}'))).toEqual({ model: 'big', options: { provider: { order: ['x'] } } });
+  });
+  it('a model without options gets none', async () => {
+    expect(await visionConfig(venv, await override('{"model":"other"}'))).toEqual({ model: 'other', options: {} });
+  });
+  it('a missing or broken file keeps VISION_MODEL', async () => {
+    const want = { model: 'vl', options: { provider: { zdr: true } } };
+    expect(await visionConfig(venv, join(base, 'no-such.json'))).toEqual(want);
+    expect(await visionConfig(venv, await override('not json'))).toEqual(want);
+    expect(await visionConfig(venv, await override('{"model":""}'))).toEqual(want);
   });
 });
 
