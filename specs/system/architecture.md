@@ -90,6 +90,15 @@ flowchart LR
   legend, kept in localStorage `karpathy.graphHiddenTypes`). The same node objects feed both views, so
   toggling keeps the layout. A CSS-only "breathing graph" shows until the first engine tick. Node labels are DOM
   elements with `textContent`, never HTML strings; a `ResizeObserver` keeps the canvas at the pane size.
+  **Local graph** (#92): the store's `graphScope` (`local` | `wiki` | `all`, session only) picks the view; the
+  outline's "Local graph" sets `local` and opens the pane. `localGraph` (`lib/graph.ts`) takes the notes within the
+  depth (1 or 2, localStorage `karpathy.graphDepth`) of the open note over the same `/graph` data, following links both
+  ways, and every link between them; `withoutTypes` keeps the centre. On the same `3d-force-graph` instance the local
+  view switches to `numDimensions(2)` on its own node objects (so the vault's 3D layout is untouched; going back sets
+  3 before handing the vault's nodes back), stronger charge and faster alpha decay, one-finger/left-button pan, and
+  `nodeThreeObject` name sprites (canvas text, cached per note, disposed with the graph). The camera fits the notes
+  (`zoomToFit`) a few times while the layout settles and on engine stop. The canvas isn't keyboard or screen-reader
+  reachable, so the local view also renders its notes as an `sr-only` list of buttons that call `openNote`.
 - **Chat opens notes** (`lib/chat.ts`, `ChatPane` `useChat`): a pure open tracker per chat view (`seen`, `later`,
   `loaded`). The first history load only marks completed `open_note` calls as seen; later loads (reattach,
   visibility change) and live events open unseen completed calls. Outside the wide layout the last open of the turn

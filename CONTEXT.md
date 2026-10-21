@@ -95,6 +95,10 @@ A link that names a folder on the way to its target (`[[serien/foo]]`, `[Foo](..
 The vault's notes (`.md` files) and the links between them (wikilinks, embeds, relative Markdown links; not in code), shown in 3D by the graph dialog. A view only: it edits nothing.
 _Avoid_: Graph view (Obsidian's plugin), knowledge graph
 
+**Local graph**:
+The part of the note graph around the open note: the notes within 1 or 2 links of it, following its links and its backlinks, and the links between them.
+_Avoid_: Neighbourhood graph
+
 **Chat attachment**:
 A vault file sent with a prompt, so the model receives its content (image or PDF), not only its path. It is uploaded first, into a new `Sources/upload-…/` folder per message.
 _Avoid_: Attachment for a file in general
