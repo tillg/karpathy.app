@@ -160,6 +160,9 @@ export interface PutFileRequest {
   version: string | null;
 }
 
+/** Longest search text `GET /vaults/:id/search` accepts (characters); longer → 400 `query-too-long`. */
+export const MAX_SEARCH_QUERY = 500;
+
 /** One result line of `GET /vaults/:id/search`; `line` 0 = found by file name or path only (`text` is the path). */
 export interface SearchHit {
   path: string;

@@ -21,7 +21,7 @@ import {
   type VaultStatus,
 } from '@karpathy/shared';
 import type { SecretFinding } from '@karpathy/shared';
-import { INPUT_DIR, isUploadable, MAX_ATTACHMENT_BYTES, rewriteLinks } from '@karpathy/shared';
+import { INPUT_DIR, isUploadable, MAX_ATTACHMENT_BYTES, MAX_SEARCH_QUERY, rewriteLinks } from '@karpathy/shared';
 import { BrowserCalls } from './browser-calls.js';
 import { hasLegacy, isEmptyMove, migrateToAgents, restageSkillLink, scanLegacy } from './agents-standard.js';
 import type { ConfigData, ConfigStore, EditStamp, StoredVault } from './config-store.js';
@@ -697,6 +697,7 @@ export class Vaults {
     this.requireReady(id);
     if (!q.trim()) return { hits: [], truncated: false };
     if (/[\r\n]/.test(q)) throw new HttpError(400, 'search text must be a single line', 'bad-query');
+    if (q.length > MAX_SEARCH_QUERY) throw new HttpError(400, `Search text: at most ${MAX_SEARCH_QUERY} characters`, 'query-too-long');
     return this.searchIndex(id).search(q);
   }
 

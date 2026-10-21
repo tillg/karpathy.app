@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import request from 'supertest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { INCOMING_PATHS_MAX, MAX_UPLOAD_BYTES, type VaultEvent } from '@karpathy/shared';
+import { INCOMING_PATHS_MAX, MAX_SEARCH_QUERY, MAX_UPLOAD_BYTES, type VaultEvent } from '@karpathy/shared';
 import { makeApp, TOKEN } from './app-helpers.js';
 import { AI_TRAILER } from '../src/repo.js';
 import { makeRemote, sh } from './helpers.js';
@@ -785,6 +785,14 @@ describe('files', () => {
     const r = await t.api.get(`/vaults/${t.id}/search?q=${encodeURIComponent('a\nb')}`);
     expect(r.status).toBe(400);
     expect(r.body.error).not.toContain('rg');
+  });
+
+  it('a search query longer than the cap → 400 query-too-long', async () => {
+    const t = await vaultApp();
+    const r = await t.api.get(`/vaults/${t.id}/search?q=${'a'.repeat(MAX_SEARCH_QUERY + 1)}`);
+    expect(r.status).toBe(400);
+    expect(r.body.code).toBe('query-too-long');
+    expect((await t.api.get(`/vaults/${t.id}/search?q=${'a'.repeat(MAX_SEARCH_QUERY)}`)).status).toBe(200);
   });
 
   it('rejects traversal and symlinks', async () => {

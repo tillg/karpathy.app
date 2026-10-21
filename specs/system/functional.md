@@ -422,6 +422,13 @@ snippets, the matched words marked; capped at 200 hits ("refine your search"); o
   indexed, or taken from a `lang:` in its frontmatter; very short notes match in all of them.
 - The last word also matches as the beginning of a word (`handt` finds "Handtuch"), so results come while typing.
   A word that matches nothing is looked up with typo tolerance (`glaicer` finds "glacier").
+- **Whole words only:** a word is found from its beginning, never from inside a longer word: `tuch` does not find
+  "Handtuch" (nor `tuch` the file `Handtuch.md`). Search for the compound, or its beginning.
+- **File names and paths:** the full file name counts, extension included (`pdf` finds every PDF, `report.pdf` and
+  `Meeting.md` find those files), and so do the folder names (`Wiki/glacier`).
+- **Limits:** a repeated word counts once and at most 20 different words are looked up (the rest are ignored); search
+  text longer than 500 characters is refused ("Search text: at most 500 characters"). Hidden, git-ignored and
+  symlinked files are never searched.
 - Several words find notes that contain all of them (in the text or the path) and show the lines of any of them; a
   `"quoted phrase"` matches as written (case and accents aside), within one line (#107).
 - **Order:** notes whose file name matches every word come first (#99); then the best matches: a word in the file

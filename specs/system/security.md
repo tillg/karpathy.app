@@ -287,6 +287,10 @@ The app writes vault files without a tap (`agents-standard.ts`), so it is fenced
 
 - **Paths:** relative only; no `..`, NUL, absolute paths or `.git` segments; every segment is checked for symlinks
   (`paths.ts`). Git checks out symlinks as plain files (`core.symlinks=false`).
+  The search index reads files through the same resolver (a symlink a watcher event reports is never followed, so no file
+  outside the vault shows up as a snippet).
+- **Search text:** at most 500 characters (`MAX_SEARCH_QUERY`, 400 `query-too-long`); repeated words count once and at
+  most 20 words are looked up, since ranking runs on the event loop.
 - **Git arguments:** `--end-of-options` on clone, fetch and push; branch names restricted to a safe-ref pattern; repo
   names to `owner/name`.
 - **File names:** no Windows-reserved names, forbidden characters, trailing dots or spaces, or case twins.

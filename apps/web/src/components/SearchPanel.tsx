@@ -1,4 +1,4 @@
-import type { SearchHit } from '@karpathy/shared';
+import { MAX_SEARCH_QUERY, type SearchHit } from '@karpathy/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, errorText } from '../lib/api';
 import { markedSnippet, snippet } from '../lib/snippet';
@@ -62,7 +62,7 @@ export function SearchPanel() {
       <div className="sinput">
         <Icon n="search" size={18} />
         <input data-testid="search-input" type="search" placeholder={online ? 'Search vault' : 'Search needs a connection'}
-          value={q} onChange={(e) => setQ(e.target.value)} disabled={!online} autoComplete="off" />
+          value={q} onChange={(e) => setQ(e.target.value)} disabled={!online} autoComplete="off" maxLength={MAX_SEARCH_QUERY} />
       </div>
       {error && <div className="form-error">{error}</div>}
       {hits && <div className="meta" data-testid="search-meta">{hits.length} matches · {groups.length} notes</div>}
