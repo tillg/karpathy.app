@@ -34,7 +34,7 @@ backend (file API + opencode client + git sync) get built.
 **Admin mode** (#150). Everything that configures or watches the installation lives in a mode of its own,
 apart from notes and chat: the gear in the sidebar opens it, **Done** goes back to where you were. Six sections:
 **General** (commit reminder, version), **Vaults** (add, edit, remove), **Secrets & keys** (GitHub token,
-Instagram login, and whether each deployment secret is set — never its value), **AI** (model, web access),
+Instagram login, and whether each deployment secret is set — never its value), **AI** (chat model, title model, vision model, web access),
 **Usage** (LLM tokens per day, model and vault, with cost when the provider reports it) and **Server** (CPU,
 memory, load and disk over 1 h / 24 h / 7 d, sampled by the backend every 30 s). Wide screens show the sections in
 a left rail; the phone shows a list, and each section has only "‹ Admin" back to it. Switching vaults stays in the
@@ -142,7 +142,7 @@ live preview and `[[wikilinks]]`, search (several words find notes with all of t
 with an AI-proposed message, conflict resolution, and a streaming AI chat that reads and
 edits the vault through opencode. Ask the AI to show you a note ("open my reading list") and it
 opens notes in the editor through its `open_note` tool (on a phone or a smaller iPad when the reply is
-done; never while you are typing). With "this note" or "this page" it asks for the file you have open through its `current_page` tool. The AI can look at pictures too, in your vault or attached to a message, through its `look_at_image` tool (a separate vision model describes the image; the chat model can stay text-only). After a reply the AI may suggest your next prompt as grey ghost text in the chat box (its `suggest_next` tool): **Tab** on a keyboard or a tap on "Tap to use" puts it in, Enter sends it, typing makes it vanish. On a wide screen the ⇄ button on the note/chat divider swaps the two
+done; never while you are typing). With "this note" or "this page" it asks for the file you have open through its `current_page` tool. The AI can look at pictures too, in your vault or attached to a message, through its `look_at_image` tool (a separate vision model describes the image; the chat model can stay text-only). After a reply the AI may suggest your next prompt as grey ghost text in the chat box (its `suggest_next` tool): **Tab** on a keyboard or a tap on "Tap to use" puts it in, Enter sends it, typing makes it vanish. Chats name themselves (#148): a new chat is titled after its first prompt, after the second turn the title model gives it a title that says what the chat is about, and every 10 turns it checks whether the chat drifted; if so, a bar above the chat box asks "Rename this chat to “…”?" (**Rename** / **Keep**). On a wide screen the ⇄ button on the note/chat divider swaps the two
 columns, putting the chat in the large main column; the browser remembers the choice. Images, video, audio
 and PDFs in a note show up as **embeds** (`![[photo.png]]`, `![[clip.mp4|300]]`, `![alt](img/a.png)`) in Read mode, in
 Write mode (a block below the line; the text stays as written) and in chat answers; tapping an image opens
@@ -251,7 +251,7 @@ into `deploy/secrets/github_token` (or set one in the app: admin mode › Secret
 Every app setting lives in [`deploy/settings/`](deploy/settings/) (#133): `settings.yaml` holds each setting with
 the value all environments share, and `<env>.yaml` only what an environment changes: `dev` (dev stacks),
 `prodtest`, `test` (CI and integration tests) and `hetzner` (production). Among them:
-the LLM gateway and model (`ai.gateway`, `ai.model`, `gateways`), domain and TLS, timezone, git remote and
+the LLM gateway and model (`ai.gateway`, `ai.model`, `gateways`), the title model (`ai.title_model`, unset = `ai.model`), the vision model (`ai.vision_model`), domain and TLS, timezone, git remote and
 commit author, the web caps, and the dot-folders the file tree shows (`files.visible_dot_dirs`).
 
 ```sh
@@ -272,7 +272,8 @@ ai: { gateway: openrouter, model: openrouter/<model> }   # plus the key in deplo
 ```
 
 The model in the settings is the default; one set in the app (admin mode › AI) overrides it until you choose
-**Use default** again. The old hand-edited `deploy/.env` and `deploy/opencode.env` are no longer read:
+**Use default** again. The same holds for the **Title model** (writes the chat titles; a model of `ai.gateway`) and
+the **Vision model** (the model of `look_at_image`; a model of the vision gateway, i.e. the prefix of `ai.vision_model`). The old hand-edited `deploy/.env` and `deploy/opencode.env` are no longer read:
 `just dev up` names their keys and where each one goes now.
 
 **Prod** (the Hetzner server `app.karpathy.app`, reachable only over Tailscale) is never built or

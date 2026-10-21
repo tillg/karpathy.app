@@ -47,15 +47,18 @@ export function cleanTitle(answer: string): string {
 /**
  * AI-written chat titles (#148): after turn 2 the title model replaces the preliminary title (the first prompt); after
  * turn 10, 20, … it checks for drift and a new title becomes a suggestion the user accepts or dismisses. Runs like
- * the commit-message proposal: a throwaway opencode session with the tool-less `chat-title` agent, deleted afterwards.
+ * the commit-message proposal: a throwaway opencode session with the tool-less `chat-title` agent, deleted afterwards,
+ * but outside the vault's directory: its chat list would show it meanwhile (and a skill refresh there can't cut it off).
  * Never throws: a failing or slow model keeps the title.
  */
 export class ChatTitles {
   constructor(
-    private readonly vaults: Pick<Vaults, 'proposing' | 'harnessConfigIn'>,
+    private readonly vaults: Pick<Vaults, 'harnessConfigIn'>,
     private readonly store: ConfigStore,
     private readonly harness: Harness,
     private readonly dirOf: (vaultId: string) => string,
+    /** Where the throwaway sessions run: the vaults dir itself, so no vault's chat list (sessions of its own dir) shows them. */
+    private readonly taskDir: string,
     private readonly emit: (vaultId: string, e: VaultEvent) => void,
     private readonly timeoutMs = TIMEOUT_MS,
   ) {}
@@ -77,7 +80,7 @@ export class ChatTitles {
       const text = drift
         ? `${transcript(messages)}\n\nCurrent title: ${current}\n\nDoes the current title still describe this conversation? If it does, reply exactly KEEP. If not, reply with a better title.`
         : `${transcript(messages)}\n\nWrite the title of this conversation.`;
-      const title = cleanTitle(await this.ask(vaultId, text));
+      const title = cleanTitle(await this.ask(text));
       if (!title || title.toUpperCase() === 'KEEP' || title === current) return;
       if (drift) {
         await this.setSuggestion(vaultId, chatId, title);
@@ -123,29 +126,27 @@ export class ChatTitles {
     });
   }
 
-  /** One prompt in a throwaway session; marked as a proposal, so a skill refresh (which ends the vault's sessions) waits. */
-  private ask(vaultId: string, text: string): Promise<string> {
-    return this.vaults.proposing(vaultId, async () => {
-      const dir = this.dirOf(vaultId);
-      const settings = this.store.get().settings;
-      let sessionId: string | undefined;
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
-      try {
-        const work = (async () => {
-          sessionId = await this.harness.createSession(dir, 'chat title');
-          return this.harness.promptSync(dir, sessionId, { text, agent: 'chat-title', model: settings.titleModel || settings.model }, ctrl.signal);
-        })();
-        const aborted = new Promise<never>((_, rej) => ctrl.signal.addEventListener('abort', () => rej(new Error('timeout'))));
-        return await Promise.race([work, aborted]);
-      } finally {
-        clearTimeout(timer);
-        if (sessionId) {
-          const id = sessionId;
-          await this.harness.abort(dir, id).catch(() => undefined);
-          await this.harness.deleteSession(dir, id).catch(() => undefined);
-        }
+  /** One prompt in a throwaway session of the task dir. */
+  private async ask(text: string): Promise<string> {
+    const dir = this.taskDir;
+    const settings = this.store.get().settings;
+    let sessionId: string | undefined;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
+    try {
+      const work = (async () => {
+        sessionId = await this.harness.createSession(dir, 'chat title');
+        return this.harness.promptSync(dir, sessionId, { text, agent: 'chat-title', model: settings.titleModel || settings.model }, ctrl.signal);
+      })();
+      const aborted = new Promise<never>((_, rej) => ctrl.signal.addEventListener('abort', () => rej(new Error('timeout'))));
+      return await Promise.race([work, aborted]);
+    } finally {
+      clearTimeout(timer);
+      if (sessionId) {
+        const id = sessionId;
+        await this.harness.abort(dir, id).catch(() => undefined);
+        await this.harness.deleteSession(dir, id).catch(() => undefined);
       }
-    });
+    }
   }
 }

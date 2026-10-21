@@ -60,8 +60,10 @@ sequenceDiagram
     messages; `n` = user messages. `n === 2` → generate; `n >= 10 && n % 10 === 0` → drift check; else nothing.
   - Prompt text: the conversation as `User:` / `AI:` blocks of text parts (each cut at 1 500 chars, total at
     12 000, oldest dropped first), then for a drift check `Current title: …`.
-  - Runs under `vaults.proposing(vaultId)` in a throwaway session (`createSession(dir, 'chat title')`,
-    `promptSync(…, { agent: 'chat-title', model: settings.titleModel })`, 30 s timeout, abort + delete after).
+  - Runs in a throwaway session of the vaults dir itself (`/vaults`; a vault's chat list shows only sessions of its
+    own dir, so the job never appears there): `createSession('/vaults', 'chat title')`,
+    `promptSync(…, { agent: 'chat-title', model: settings.titleModel || settings.model })`, 30 s timeout, abort +
+    delete after. Its tokens don't show in Admin › Usage (which sums the vault dirs).
   - `clean`: first non-empty line, strip quotes/`Title:`/trailing period, cap 120 chars; empty → nothing.
     Drift: `KEEP` (any case, alone) or the same as the current title → nothing.
   - Result: `n === 2` → `harness.setTitle`; drift → store suggestion. Then `emit(vaultId, { type: 'chat-title',
@@ -107,4 +109,4 @@ when the file exists and parses, else `VISION_MODEL`; options = `VISION_MODEL_OP
 ## Risks
 
 - Small dev models may answer with more than a title: `clean` takes the first line and caps it.
-- The throwaway session can show in a chat list fetched during the job (same as commit messages).
+- Title calls are not in the usage report.

@@ -77,7 +77,7 @@ export class ChatService {
     /** The vaults dir as the harness sees it (`/vaults` in compose). */
     private readonly harnessVaultsDir: string,
   ) {
-    this.titles = new ChatTitles(vaults, store, harness, (id) => this.dir(id), (id, e) => vaults.publish(id, e));
+    this.titles = new ChatTitles(vaults, store, harness, (id) => this.dir(id), harnessVaultsDir, (id, e) => vaults.publish(id, e));
   }
 
   /** Opens one event subscription per ready vault; adopts turns still running in opencode. */

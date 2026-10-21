@@ -2790,6 +2790,10 @@ edited: 2026-10-21
   opencode's own `small_model` auto-title (only titles once, from the first message).
 - **Consequences:** the throwaway session may show in a chat list fetched in those seconds (as with commit messages).
   opencode's own first-message auto-title is left as is.
+  Changed at 11:50 after e2e showed the "chat title" row in the list (sorted first): the throwaway session now runs in
+  the vaults dir itself (`/vaults`), which no vault's list includes, and no longer under `vaults.proposing()` (a skill
+  refresh of the vault can't cut it off there). Cost: title calls don't show in Admin › Usage (it sums vault dirs). The
+  commit-message proposal still has the old flicker (not changed here).
 
 ## 11:10 — Title after the 2nd turn; drift check after turn 10, 20, 30, … as a suggestion the user accepts or dismisses {#run-2026-10-21-1056-5}
 

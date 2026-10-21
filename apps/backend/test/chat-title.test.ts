@@ -20,9 +20,9 @@ function fakeHarness(messages: ChatMessage[], reply: (input: PromptInput) => Pro
   const harness = {
     messages: async () => messages,
     listSessions: async () => [...sessions].map(([id, t]) => ({ id, title: t, updatedAt: 0 })),
-    createSession: async (_dir: string, t?: string) => {
+    createSession: async (dir: string, t?: string) => {
       sessions.set('tmp', t ?? '');
-      log.push('create');
+      log.push(`create ${dir}`);
       return 'tmp';
     },
     promptSync: async (_dir: string, _id: string, input: PromptInput) => {
@@ -46,10 +46,9 @@ async function setup(turns: number, reply: (input: PromptInput) => Promise<strin
   const store = await ConfigStore.open(await mkdtemp(join(tmpdir(), 'titles-')), { model: 'p/chat', titleModel: 'p/title' });
   const h = fakeHarness(chatOf(turns), reply, opts.title);
   const events: VaultEvent[] = [];
-  let proposing = 0;
-  const vaults = { proposing: async <T>(_id: string, fn: () => Promise<T>) => { proposing++; return fn(); }, harnessConfigIn: () => null };
-  const titles = new ChatTitles(vaults, store, h.harness, () => '/vaults/v', (_id, e) => { h.log.push('emit'); events.push(e); }, opts.timeoutMs ?? 2000);
-  return { ...h, store, titles, events, proposing: () => proposing };
+  const vaults = { harnessConfigIn: () => null };
+  const titles = new ChatTitles(vaults, store, h.harness, () => '/vaults/v', '/vaults', (_id: string, e: VaultEvent) => { h.log.push('emit'); events.push(e); }, opts.timeoutMs ?? 2000);
+  return { ...h, store, titles, events };
 }
 
 describe('ChatTitles.afterTurn', () => {
@@ -61,13 +60,12 @@ describe('ChatTitles.afterTurn', () => {
     expect(t.prompts[0]!.text).toContain('question 2');
     expect(t.prompts[0]!.text).toContain('answer 1');
     expect(t.events).toEqual([{ type: 'chat-title', chatId: 'chat', title: 'Weekend trip planning' }]);
-    expect(t.proposing()).toBe(1);
   });
 
-  it('the throwaway session is deleted before the event, so a list reload never shows it', async () => {
+  it("the throwaway session runs outside the vault's directory (never in its chat list) and is deleted before the event", async () => {
     const t = await setup(2, () => 'A title');
     await t.titles.afterTurn('v', 'chat');
-    expect(t.log).toEqual(['create', 'delete', 'setTitle', 'emit']);
+    expect(t.log).toEqual(['create /vaults', 'delete', 'setTitle', 'emit']);
     expect(t.sessions.has('tmp')).toBe(false);
   });
 
