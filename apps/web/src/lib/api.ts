@@ -1,7 +1,7 @@
 import type {
   BrowserCallResult,
   ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData, MetricsRange, MetricsReport,
-  OpenPage, SearchHit, SecretStatus, Settings, SettingsView, TokenTest, UploadResult, UsageDays, UsageReport, Vault, VaultConfig, VaultStatus,
+  OpenPage, ReturnedPrompt, SearchHit, SecretStatus, Settings, SettingsView, TokenTest, UploadResult, UsageDays, UsageReport, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
 import { clientContext, type ClientContext } from './client-context';
@@ -129,9 +129,13 @@ export const api = {
   renameChat: (id: string, chatId: string, title: string) => json<void>('PATCH', `${v(id)}/chats/${encodeURIComponent(chatId)}`, { title }),
   keepChatTitle: (id: string, chatId: string) => json<void>('DELETE', `${v(id)}/chats/${encodeURIComponent(chatId)}/title-suggestion`),
   prompt: (id: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage) =>
-    json<{ queued: boolean }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, promptBody(text, attachments, openPage, clientContext())),
+    json<{ queued: boolean; id: string }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/prompt`, promptBody(text, attachments, openPage, clientContext())),
   chatStream: (id: string, chatId: string, signal: AbortSignal) => request('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}/stream`, undefined, signal),
-  abort: (id: string, chatId: string) => json<void>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/abort`),
+  /** Stop: ends the running turn and hands back the chat's queued prompts (#155). */
+  abort: (id: string, chatId: string) => json<{ restored: ReturnedPrompt[] }>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/abort`),
+  /** Takes a queued prompt back before it runs (#155). */
+  unqueue: (id: string, chatId: string, promptId: string) =>
+    json<ReturnedPrompt>('DELETE', `${v(id)}/chats/${encodeURIComponent(chatId)}/queue/${encodeURIComponent(promptId)}`),
   answerBrowserCall: (id: string, chatId: string, callId: string, result: BrowserCallResult) =>
     json<void>('POST', `${v(id)}/chats/${encodeURIComponent(chatId)}/browser-calls/${encodeURIComponent(callId)}`, result),
 };
