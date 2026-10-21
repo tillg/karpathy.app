@@ -1,11 +1,14 @@
 import { isPdf } from '@karpathy/shared';
-import type { ChatDetail, ChatEvent, ChatMessage, ChatPart, ContextUsage, ModelInput, ToolCall } from '@karpathy/shared';
+import type { ChatDetail, ChatEvent, ChatMessage, ChatPart, ContextUsage, ModelInput, QueuedPrompt, ReturnedPrompt, ToolCall } from '@karpathy/shared';
+import type { ChipDraft } from './chips';
 
 export interface ChatView extends ChatDetail {
   readonly?: boolean;
   /** What a queued turn waits for. */
   waiting?: 'turn' | 'sync';
   error?: string;
+  /** The queued prompt that last left the queue to run (#155): shown as the pending bubble until its message arrives. */
+  started?: QueuedPrompt;
 }
 
 /** Applies one stream event to the chat (pure). */
@@ -15,6 +18,10 @@ export function applyChatEvent(c: ChatView, e: ChatEvent): ChatView {
       return { ...c, turn: e.state, readonly: e.readonly ?? c.readonly, waiting: e.waiting };
     case 'error':
       return { ...c, error: e.message };
+    case 'queue': {
+      const started = e.started ? c.queued.find((q) => q.id === e.started) : undefined;
+      return { ...c, queued: e.queued, ...(started ? { started } : {}) };
+    }
     case 'message': {
       const i = c.messages.findIndex((m) => m.id === e.message.id);
       if (i < 0) return { ...c, messages: [...c.messages, { ...e.message, parts: [] }] };
@@ -105,7 +112,8 @@ export function opensFromLoad(o: Opens, messages: ChatMessage[], turn: ChatView[
 /** A live stream event. Returns the note to show now. */
 export function opensFromEvent(o: Opens, e: ChatEvent, defer: boolean): string | null {
   const now = want(o, noteToOpen(e, o.seen), defer);
-  return e.type === 'turn' && e.state === 'idle' ? (turnEnded(o) ?? now) : now;
+  // A turn ends in idle, or in queued when more of the chat's prompts wait (#155).
+  return e.type === 'turn' && e.state !== 'running' ? (turnEnded(o) ?? now) : now;
 }
 
 /**
@@ -146,6 +154,8 @@ export function turns(messages: ChatMessage[]): Turn[] {
 
 /** An optimistic prompt shown as a user bubble until the server has the message. */
 export interface PendingPrompt {
+  /** The queued prompt it was (#155). */
+  id?: string;
   text: string;
   /** Vault paths of the files sent with it, shown in the bubble too. */
   attachments?: string[];
@@ -174,12 +184,27 @@ export function settlePending(p: PendingPrompt, c: ChatView): PendingPrompt | 'd
 }
 
 /**
- * A prompt queued on the server (after a reload, or sent from another device) becomes the pending
- * bubble when this client has none, so it is visible and a Stop restores it (pure).
+ * A queued prompt that just started (#155) becomes the pending bubble (pure). A pending bubble that never ran (its turn
+ * failed before it reached the AI) is handed back as `restore`, for the composer. Null: nothing changes.
  */
-export function adoptQueued(p: PendingPrompt | null, c: ChatView): PendingPrompt | null {
-  if (p || c.turn !== 'queued' || !c.queuedText) return p;
-  return { text: c.queuedText, userCount: userCount(c), sent: true, ran: false };
+export function adoptStarted(p: PendingPrompt | null, c: ChatView): { pending: PendingPrompt; restore: PendingPrompt | null } | null {
+  const s = c.started;
+  if (!s || p?.id === s.id) return null;
+  const pending: PendingPrompt = { id: s.id, text: s.text, ...(s.attachments?.length ? { attachments: s.attachments } : {}), userCount: userCount(c), sent: true, ran: false };
+  return { pending, restore: p && !p.ran && userCount(c) <= p.userCount ? p : null };
+}
+
+/**
+ * The composer after queued prompts were taken back (#155, pure): their texts, oldest first, before what is typed,
+ * their files in front of the chips. The draft keeps its upload folder, or takes the first returned file's.
+ */
+export function withReturned(text: string, draft: ChipDraft, back: ReturnedPrompt[]): { text: string; draft: ChipDraft } {
+  if (!back.length) return { text, draft };
+  const chips = back.flatMap((b) => b.attachments);
+  return {
+    text: [...back.map((b) => b.text), text].filter((t) => t.trim()).join('\n\n'),
+    draft: { chips: [...chips, ...draft.chips], folder: draft.folder ?? chips[0]?.path.split('/')[1] ?? null },
+  };
 }
 
 /**
@@ -189,7 +214,8 @@ export function adoptQueued(p: PendingPrompt | null, c: ChatView): PendingPrompt
 export function turnAnnouncement(prev: ChatView['turn'] | undefined, c: ChatView): string | null {
   if (!prev || prev === c.turn) return null;
   if (c.turn === 'running') return 'AI is replying…';
-  if (c.turn === 'queued') return c.waiting === 'sync' ? 'Waiting for sync…' : 'Waiting for other chat…';
+  // A turn that ends with more of the chat's prompts waiting ends in queued (#155): it finished all the same.
+  if (c.turn === 'queued' && prev !== 'running') return c.waiting === 'sync' ? 'Waiting for sync…' : 'Waiting for other chat…';
   // Only this turn's reply: the whole last assistant turn (its last message may hold just the hidden suggest_next call).
   const last = turns(c.messages).at(-1);
   const reply = last?.role === 'assistant' ? last : undefined;

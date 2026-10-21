@@ -532,6 +532,16 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   bar. Color: normal below 70 %, warning from 70 %, critical from 90 %.
 - **Send** (Enter; Shift+Enter for a newline) and **Stop**. One turn runs per vault at a time; others wait
   ("Waiting for other chat…" / "Waiting for sync…").
+- **Type ahead while the AI works** (#155): the message box stays usable during a reply. A message sent meanwhile
+  (Enter, or Send, which shows next to Stop once something is typed) waits as a **queued** bubble (dashed outline,
+  "Queued") below the reply and goes out by itself when the turn ends, in the order sent; up to 10 can wait per chat.
+  Each queued bubble has **Edit** (it leaves the queue and goes back into the message box, files back as chips) and
+  **✕** (it is dropped, its uploaded files deleted). Queued messages live on the server: they survive a reload, show
+  on every device and still go out with the app closed. **Stop** ends the running turn and puts every queued message
+  of the chat back into the message box (oldest first, before what is typed there), so nothing starts after a Stop
+  and nothing is lost. A turn that fails does not drop the messages queued behind it; a message whose own turn fails
+  before it reaches the AI goes back into the message box. A queued message is not given to the running turn: it is
+  the next turn (the AI sees it only after its current reply).
 - **Streaming reply** with Markdown and wikilinks, collapsible "Thinking", **tool chips** for files read, changed and
   opened (changed and opened ones open the note; long paths end in "…", the full path is the tooltip), and a footer
   listing the changed pages. A chat scrolled to the end stays at the end when its width changes.
@@ -847,6 +857,7 @@ stateDiagram-v2
   queued --> running: own turn + pull done
   queued --> idle: stop / pull failed
   running --> idle: AI finished / stop / error
+  running --> queued: AI finished, more of the chat's prompts wait
 ```
 
 Note save: Saved → Unsaved changes → Saving… → Saved, with side states *retrying*, *stale* (dialog: reload or
@@ -962,7 +973,8 @@ both; a later change can restrict admin mode, taking nothing away from users. Th
     5 × 20 MB per prompt).
   - Uploads stay in the git history for good; there is no per-vault quota.
   - PNG, GIF and WebP are uploaded as they are, metadata included.
-  - Stopping a queued prompt puts its text back, but not its attachments: their files stay in `Sources/upload-…/`.
+  - Stopping a prompt that is already leaving the queue (its pull runs) puts its text back, but not its attachments:
+    their files stay in `Sources/upload-…/` (Stop, Edit and ✕ on a queued bubble give the files back or delete them).
   - Images a moved page embeds aren't moved with it.
   - A synthesized drop with files isn't reliable in WebKit's automation: Safari drag and drop is checked by hand.
   - Still to be checked by hand: on a real iPhone, **Take photo** opening the camera, **Choose file** offering

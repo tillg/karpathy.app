@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatEvent, ChatMessage, ToolCall } from '@karpathy/shared';
-import { adoptQueued, applyChatEvent, changedPaths, lastContext, newOpens, nextSuggestion, noteToOpen, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, type ChatView, type PendingPrompt } from './chat';
+import { adoptStarted, applyChatEvent, withReturned, changedPaths, lastContext, newOpens, nextSuggestion, noteToOpen, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, type ChatView, type PendingPrompt } from './chat';
 
-const empty: ChatView = { id: 'c1', title: 'T', messages: [], turn: 'idle' };
+const empty: ChatView = { id: 'c1', title: 'T', messages: [], turn: 'idle', queued: [] };
 
 describe('applyChatEvent', () => {
   it('tracks turn state and read-only flag', () => {
@@ -135,18 +135,64 @@ describe('settlePending', () => {
   });
 });
 
-describe('adoptQueued (#13: queued prompt after reload / from another device)', () => {
-  it('shows the server-side queued prompt when there is no local one', () => {
-    const p = adoptQueued(null, { ...empty, turn: 'queued', queuedText: 'hello' });
-    expect(p).toEqual({ text: 'hello', userCount: 0, sent: true, ran: false });
-    // Stopped while queued → back into the composer.
-    expect(settlePending(p!, empty)).toBe('restore');
+describe('queued prompts (#155)', () => {
+  const q1 = { id: 'q1', text: 'first' };
+  const q2 = { id: 'q2', text: 'second', attachments: ['Sources/upload-x/a.png'] };
+
+  it('a queue event replaces the list; "started" keeps the prompt that left it', () => {
+    let c = applyChatEvent({ ...empty, turn: 'running' }, { type: 'queue', queued: [q1, q2] });
+    expect(c.queued).toEqual([q1, q2]);
+    expect(c.started).toBeUndefined();
+    c = applyChatEvent(c, { type: 'queue', queued: [q2], started: 'q1' });
+    expect(c.queued).toEqual([q2]);
+    expect(c.started).toEqual(q1);
+    // Removed (not started): nothing is kept.
+    expect(applyChatEvent(c, { type: 'queue', queued: [] }).started).toEqual(q1);
+    expect(applyChatEvent({ ...c, started: undefined }, { type: 'queue', queued: [] }).started).toBeUndefined();
   });
-  it('keeps a local pending prompt and ignores idle/running chats', () => {
-    const local: PendingPrompt = { text: 'mine', userCount: 0, sent: false, ran: false };
-    expect(adoptQueued(local, { ...empty, turn: 'queued', queuedText: 'x' })).toBe(local);
-    expect(adoptQueued(null, { ...empty, turn: 'queued' })).toBeNull();
-    expect(adoptQueued(null, { ...empty, turn: 'running', queuedText: 'x' })).toBeNull();
+
+  it('the started prompt becomes the pending bubble until the server has its message', () => {
+    const c: ChatView = { ...empty, turn: 'queued', started: q2 };
+    const r = adoptStarted(null, c);
+    expect(r).toEqual({ pending: { id: 'q2', text: 'second', attachments: ['Sources/upload-x/a.png'], userCount: 0, sent: true, ran: false }, restore: null });
+    // Stopped or failed before it ran → back into the composer.
+    expect(settlePending(r!.pending, empty)).toBe('restore');
+  });
+
+  it('a pending bubble that never ran goes back to the composer when the next queued prompt starts', () => {
+    const failed: PendingPrompt = { id: 'q1', text: 'first', userCount: 0, sent: true, ran: false };
+    expect(adoptStarted(failed, { ...empty, turn: 'queued', started: q2 })).toEqual({ pending: expect.objectContaining({ id: 'q2' }), restore: failed });
+    const ran = { ...failed, ran: true };
+    expect(adoptStarted(ran, { ...empty, turn: 'queued', started: q2 })?.restore).toBeNull();
+  });
+
+  it('nothing to adopt: no started prompt, or it is the pending one already', () => {
+    expect(adoptStarted(null, empty)).toBeNull();
+    const mine: PendingPrompt = { id: 'q1', text: 'first', userCount: 0, sent: true, ran: false };
+    expect(adoptStarted(mine, { ...empty, started: q1 })).toBeNull();
+  });
+
+  it('taken-back prompts go into the composer before what is typed there, their files into the chips', () => {
+    const draft = { chips: [{ path: 'Sources/upload-b/b.png', version: 'vb', mime: 'image/png', size: 2 }], folder: 'upload-b' };
+    const back = [
+      { id: 'q1', text: 'first', attachments: [] },
+      { id: 'q2', text: 'second', attachments: [{ path: 'Sources/upload-a/a.png', version: 'va', mime: 'image/png', size: 1 }] },
+    ];
+    expect(withReturned('typing', draft, back)).toEqual({
+      text: 'first\n\nsecond\n\ntyping',
+      draft: { chips: [...back[1]!.attachments, ...draft.chips], folder: 'upload-b' },
+    });
+    expect(withReturned('', { chips: [], folder: null }, back.slice(1))).toEqual({ text: 'second', draft: { chips: back[1]!.attachments, folder: 'upload-a' } });
+    expect(withReturned('x', draft, [])).toEqual({ text: 'x', draft });
+  });
+
+  it('a chat whose turn ends with more prompts waiting announces the reply and opens deferred notes', () => {
+    const c: ChatView = { ...empty, turn: 'queued', waiting: 'sync', messages: [{ id: 'a', role: 'assistant', createdAt: 1, parts: [{ type: 'text', id: 't', text: 'Done.' }] }] };
+    expect(turnAnnouncement('running', c)).toBe('Reply finished: Done.');
+    const o = newOpens();
+    opensFromLoad(o, [], 'running', true);
+    expect(opensFromEvent(o, { type: 'part', messageId: 'a', part: { type: 'tool', id: 'o', call: { id: 'o', tool: 'open_note', status: 'completed', path: 'n.md', writes: false, opens: true } } }, true)).toBeNull();
+    expect(opensFromEvent(o, { type: 'turn', state: 'queued', waiting: 'sync' }, true)).toBe('n.md');
   });
 });
 

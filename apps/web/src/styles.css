@@ -344,6 +344,11 @@ span.embed .embed-skel { width: 100%; border-radius: 8px; background: var(--fill
 .day { align-self: center; font-size: 12px; color: var(--label2); font-weight: 500; }
 .u { align-self: flex-end; max-width: 84%; background: var(--tint); color: var(--on-tint); padding: 9px 14px; border-radius: 20px 20px 6px 20px; font-size: 15.5px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
 .u.pending { opacity: .7; }
+/* A message waiting behind the running turn (#155): outlined, with its own Edit and ✕. */
+.u.queued { opacity: 1; background: transparent; color: var(--label); border: 1px dashed var(--tint); padding-bottom: 4px; }
+.q-acts { display: flex; align-items: center; justify-content: flex-end; gap: 2px; margin: 2px -8px 0 0; white-space: normal; }
+.q-tag { margin-right: auto; padding-right: 8px; font-size: 12px; font-weight: 500; color: var(--label2); }
+.q-acts .ib { height: 32px; min-width: 32px; color: var(--tint); }
 .a { font-size: 15.5px; line-height: 1.5; max-width: 100%; }
 .a .atext { font-size: 15.5px; line-height: 1.5; }
 .a .who { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--label2); font-weight: 600; margin-bottom: 6px; }

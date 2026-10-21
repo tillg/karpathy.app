@@ -239,7 +239,7 @@ flowchart TB
 | `bases.ts` | Bases query tables (#91): `parseBase` (YAML via `yaml`, core schema; v1 subset, `BaseError` `base-invalid` / `base-unsupported` → 422), a Pratt parser and evaluator for filter expressions (unsupported names refused before any file is read), and the file index: per vault root, every file's size, times, frontmatter and tags, re-read only when size or mtime changed (stat per query, no watcher coupling). `queryBase` filters, sorts (empty last, path as tie-break), caps at `limit` / 500 rows and serializes cells (`BaseCell`: dates as `YYYY-MM-DD[ HH:mm]`, `file.name` / `basename` / `path` as links). `POST /vaults/:id/base` `{ source }`. |
 | `lock.ts` | Per-vault reader/writer lock with writer preference (shared: `save`, `turn`, and `fetch` and `refresh` through `tryShared`, which never queues; exclusive: every other git operation). `fetch` and `refresh` are quiet: they don't change `busy`. `holds(label)` tells whether a shared holder with that label exists. |
 | `watcher.ts` | chokidar on the vault root, 300 ms debounce → `files-changed` + status events; every raw event also goes undebounced to the search index (`onEvent`). |
-| `chat.ts` | Chats and turns: per-vault queue (one running turn), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. Also the command list (`commands()`, name-clash rule, skill stamp and refresh) and command turns (`instructionsFor`) ([Commands](#commands)). |
+| `chat.ts` | Chats and turns: per-vault queue (one running turn; up to 10 prompts of a chat wait, each with an id, #155), pull before each turn, stream fan-out, abort, adoption of busy sessions after a restart. Also the command list (`commands()`, name-clash rule, skill stamp and refresh) and command turns (`instructionsFor`) ([Commands](#commands)). |
 | `harness/opencode.ts`, `harness/map.ts` | The only code that knows opencode: an ACP-shaped `Harness` interface (`commands(dir)`, `refresh(dir)` next to prompt, models and events) and the mapping of opencode events to app events. Tool names live only here: `WRITE_TOOLS` set `ToolCall.writes`, `OPEN_TOOLS` (`open_note`) set `ToolCall.opens`; `ToolCall.suggestion` is set from the `prompt` of `suggest_next`; `ToolCall.url` is set for `webfetch`, `open_url` and `save_url` (also in `WRITE_TOOLS`, so a download is a changed file and gets an AI stamp). `move_to_sources` is in `WRITE_TOOLS` too: its chip path is `Sources/<name>`, `writtenPaths` reports every moved file's old and new path from the tool's `metadata.files`. Context usage (#140): `mapMessageInfo` sets an assistant message's `context.used` from its `tokens` (`total`, else input + output + reasoning + cache read + write; 0 → none), and the harness adds `context.limit` by the message's model on chat load and stream, from `ModelLimits`. See [Chat context usage](#chat-context-usage). Usage (#150): `Harness.usageSessions(dir)` lists every session of a directory, children included and without a limit (`usageSessions()` in `map.ts`), and `Harness.sessionUsage(dir, id)` maps a session's messages to `UsageRow`s (`usageRows()`: per assistant message `created`, `provider/model`, tokens, cost, `completed`; metadata only). |
 | `usage.ts` | `UsageService.report(days)` (#150): lists each vault's sessions through a `UsageSource`, reads a session's rows only when its `time.updated` moved (cache per directory and session, concurrency 4, unfinished replies not cached), sums by day (process timezone), model and vault; a failing vault is logged and left out. See [Admin mode](#admin-mode). |
 | `metrics.ts` | `MetricsSampler` (#150): samples CPU, memory, load, the vaults and config disks and opencode's health every 30 s, keeps 7 days in memory and in `<CONFIG_DIR>/metrics.jsonl`, `report(range)` averages into ≤ 240 points. Host readers and the clock are injectable. See [Admin mode](#admin-mode). |
@@ -495,16 +495,33 @@ sequenceDiagram
   participant B as Backend
   participant O as opencode
   W->>B: POST /api/vaults/:id/chats/:chat/prompt
-  B-->>W: 202 queued
+  B-->>W: 202 queued {id}
   W->>B: GET …/stream (NDJSON)
   B->>B: lock: exclusive pull, then shared "turn"
   B->>O: session.promptAsync(agent, model)
   O-->>B: SSE events (status, message, part, delta, file.edited)
   B-->>W: turn / message / part / text-delta events
   O-->>B: session idle
-  B-->>W: turn idle (stream ends)
+  B-->>W: turn idle (stream ends), or queued if more of the chat's prompts wait
   B->>B: release lock, files-changed via watcher
 ```
+
+- **Queued prompts** (#155): `ChatService` keeps one FIFO queue per vault; each entry (`Turn`) has an id, its chat,
+  text, attachments, client context and, when it was sent while its chat was busy, its `openPage` (written to the
+  open-page file when its turn starts, so the running turn keeps reading its own page). `prompt()` no longer refuses a
+  busy chat; it refuses an 11th waiting prompt of a chat (`409 queue-full`). `turnState` puts `running` before
+  `queued`. The chat detail lists the chat's entries (`queued: QueuedPrompt[]`); the chat stream sends `{ type:
+  'queue', queued, started? }` whenever they change (`started`: the id that just left the queue, sent before its
+  `running`). A turn that ends while more of its chat's prompts wait emits `turn queued` instead of `idle` and keeps
+  the chat's streams open, so the client follows the next turn without a reload. `DELETE
+  /vaults/:id/chats/:chatId/queue/:promptId` (`unqueue`, `404 not-queued` once started) and `POST …/abort` (all of the
+  chat's entries, then `harness.abort` of a running turn) return `ReturnedPrompt`s: text plus the files that still
+  exist as composer chips (`version` from `versionOfFile`, `mime`, `size`). The web (`ChatPane`) chains its prompt
+  POSTs so quick sends keep their order, shows a busy chat's prompt as a queued bubble at once (local id until the
+  answer), an idle chat's as the pending bubble; `adoptStarted` turns a `started` entry into the pending bubble and
+  hands back one that never ran; `withReturned` merges returned prompts into the composer. A prompt is never sent into
+  a busy opencode session (as Claude Code's mid-turn messages are): the per-vault lock, the pull before each turn and
+  the idle-based turn end all rely on one prompt per turn, so the queue stays in the backend.
 
 - **Request/response** JSON over `fetch`; **streams** as NDJSON over `fetch` (no WebSockets, no SSE to the browser):
   the vault event stream (`status`, `files-changed`, the agents move, `browser-call` / `browser-call-done`, `chat-title`; never ends)

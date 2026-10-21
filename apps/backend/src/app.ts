@@ -409,8 +409,12 @@ export function createApp(d: AppDeps) {
   });
   api.post('/vaults/:id/chats/:chatId/prompt', async (req, res) => {
     const { text, attachments, openPage, ...client } = promptBody.parse(req.body);
-    await chat().prompt(req.params.id!, req.params.chatId!, text, attachments, openPage, client);
-    res.status(202).json({ queued: true });
+    const { id } = await chat().prompt(req.params.id!, req.params.chatId!, text, attachments, openPage, client);
+    res.status(202).json({ queued: true, id });
+  });
+  // Takes a queued prompt back before it runs (#155): its text and files, for the composer or for deletion.
+  api.delete('/vaults/:id/chats/:chatId/queue/:promptId', async (req, res) => {
+    res.json(await chat().unqueue(req.params.id!, req.params.chatId!, req.params.promptId!));
   });
   // The answering tab's result for a browser call (#151); validated and written once by BrowserCalls.
   api.post('/vaults/:id/chats/:chatId/browser-calls/:callId', async (req, res) => {
@@ -423,8 +427,7 @@ export function createApp(d: AppDeps) {
     res.on('close', stop);
   });
   api.post('/vaults/:id/chats/:chatId/abort', async (req, res) => {
-    await chat().abort(req.params.id!, req.params.chatId!);
-    res.status(204).end();
+    res.json(await chat().abort(req.params.id!, req.params.chatId!));
   });
 
   // Admin › Instagram: the ingest service logs in; the password passes through once (src/ingest.ts).

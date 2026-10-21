@@ -224,12 +224,12 @@ describe('chat API against a real opencode container', () => {
     const release = await t.vaults.lock(t.id).acquireExclusive();
     const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
     await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'Summarize the notes about gardening please' });
-    expect((await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body).toMatchObject({ turn: 'queued', queuedText: 'Summarize the notes about gardening please' });
+    expect((await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body).toMatchObject({ turn: 'queued', queued: [{ text: 'Summarize the notes about gardening please' }] });
     expect((await t.api.get(`/vaults/${t.id}/chats`)).body.find((c: { id: string }) => c.id === chatId)).toMatchObject({ turn: 'queued' });
     release();
     await waitIdle(t.chat, t.id, chatId);
     const d = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body;
-    expect(d.queuedText).toBeUndefined();
+    expect(d.queued).toEqual([]);
     expect(d.title).toBe('Summarize the notes about gardening please');
   });
 
@@ -358,7 +358,7 @@ describe('chat API against a real opencode container', () => {
     t.chat.close();
     // "Restart": the queue is read back from config.json, which holds the path and no bytes.
     const t2 = await makeApp(t.remote.remoteBase, { dirs: t.dirs });
-    expect(t2.store.get().queued[t.id]).toEqual([{ chatId, text: '', attachments: ['Sources/upload-x/a.png'] }]);
+    expect(t2.store.get().queued[t.id]).toEqual([{ id: expect.any(String), chatId, text: '', attachments: ['Sources/upload-x/a.png'] }]);
     await t2.vaults.close();
   });
 
@@ -500,6 +500,117 @@ describe('chat API against a real opencode container', () => {
     expect(await userAgents(t.raw, t.dir, chatId)).toEqual([]);
   });
 
+  it('next prompts of a busy chat queue behind its own turn and run in order (#155)', async () => {
+    const t = await setup();
+    const release = await t.vaults.lock(t.id).acquireExclusive();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    const p = `/vaults/${t.id}/chats/${chatId}/prompt`;
+    const ids: string[] = [];
+    for (const text of ['one', 'two', 'three']) {
+      const r = await t.api.post(p, { text });
+      expect(r.status).toBe(202);
+      expect(r.body.id).toEqual(expect.any(String));
+      ids.push(r.body.id);
+    }
+    expect(new Set(ids).size).toBe(3);
+    const d = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body;
+    expect(d.turn).toBe('queued');
+    expect(d.queued).toEqual([{ id: ids[0], text: 'one' }, { id: ids[1], text: 'two' }, { id: ids[2], text: 'three' }]);
+    release();
+    const end = Date.now() + 60_000;
+    while ((await userAgents(t.raw, t.dir, chatId)).length < 3 || t.chat.turnState(t.id, chatId) !== 'idle') {
+      if (Date.now() > end) throw new Error('queued prompts did not all run');
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const users = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body.messages.filter((m: { role: string }) => m.role === 'user');
+    expect(users.map((m: { parts: { type: string; text?: string }[] }) => m.parts.find((x) => x.type === 'text')?.text)).toEqual(['one', 'two', 'three']);
+    expect((await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body.queued).toEqual([]);
+  }, 90_000);
+
+  it('at most 10 queued prompts per chat (#155)', async () => {
+    const t = await setup();
+    await t.vaults.lock(t.id).acquireExclusive();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    for (let i = 0; i < 10; i++) expect((await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: `p${i}` })).status).toBe(202);
+    const r = await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'one too many' });
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe('queue-full');
+  });
+
+  it('a queued prompt can be taken back: DELETE returns it, it never runs, the queue event follows (#155)', async () => {
+    const t = await setup();
+    const release = await t.vaults.lock(t.id).acquireExclusive();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    await mkdir(join(t.vaults.vaultRootDir(t.id), 'Sources/upload-q'), { recursive: true });
+    await writeFile(join(t.vaults.vaultRootDir(t.id), 'Sources/upload-q/a.png'), 'png-bytes');
+    const a = (await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'keep me' })).body.id;
+    const got: ChatEvent[] = [];
+    t.chat.stream(t.id, chatId, (e) => got.push(e), () => undefined);
+    const b = (await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'take me back', attachments: ['Sources/upload-q/a.png', 'Sources/upload-q/gone.png'] })).body.id;
+    expect(got).toContainEqual({ type: 'queue', queued: [{ id: a, text: 'keep me' }, { id: b, text: 'take me back', attachments: ['Sources/upload-q/a.png', 'Sources/upload-q/gone.png'] }] });
+    const r = await t.api.delete(`/vaults/${t.id}/chats/${chatId}/queue/${b}`);
+    expect(r.status).toBe(200);
+    // Attachments come back as composer chips (what ✕ needs to delete them); a file that is gone is left out.
+    const { versionOf } = await import('../src/files.js');
+    expect(r.body).toEqual({ id: b, text: 'take me back', attachments: [{ path: 'Sources/upload-q/a.png', version: versionOf('png-bytes'), mime: 'image/png', size: 9 }] });
+    expect(got.at(-1)).toEqual({ type: 'queue', queued: [{ id: a, text: 'keep me' }] });
+    expect((await t.api.delete(`/vaults/${t.id}/chats/${chatId}/queue/${b}`)).status).toBe(404);
+    expect(t.store.get().queued[t.id]?.map((q) => q.text)).toEqual(['keep me']);
+    release();
+    await waitIdle(t.chat, t.id, chatId);
+    const users = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body.messages.filter((m: { role: string }) => m.role === 'user');
+    expect(users).toHaveLength(1);
+  });
+
+  it('a started prompt leaves the queue with a "started" queue event (#155)', async () => {
+    const t = await setup();
+    const release = await t.vaults.lock(t.id).acquireExclusive();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    const a = (await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'go' })).body.id;
+    const got: ChatEvent[] = [];
+    t.chat.stream(t.id, chatId, (e) => got.push(e), () => undefined);
+    release();
+    await waitIdle(t.chat, t.id, chatId);
+    const i = got.findIndex((e) => e.type === 'queue');
+    expect(got[i]).toEqual({ type: 'queue', queued: [], started: a });
+    expect(got.findIndex((e) => e.type === 'turn' && e.state === 'running')).toBeGreaterThan(i);
+  });
+
+  it('stop hands back every queued prompt of the chat and leaves other chats queued (#155)', async () => {
+    const t = await setup();
+    const release = await t.vaults.lock(t.id).acquireExclusive();
+    const a = (await t.api.post(`/vaults/${t.id}/chats`)).body.chatId;
+    const b = (await t.api.post(`/vaults/${t.id}/chats`)).body.chatId;
+    const ids = [];
+    for (const text of ['first', 'second']) ids.push((await t.api.post(`/vaults/${t.id}/chats/${a}/prompt`, { text })).body.id);
+    await t.api.post(`/vaults/${t.id}/chats/${b}/prompt`, { text: 'other chat' });
+    const r = await t.api.post(`/vaults/${t.id}/chats/${a}/abort`);
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ restored: [{ id: ids[0], text: 'first', attachments: [] }, { id: ids[1], text: 'second', attachments: [] }] });
+    expect(t.chat.turnState(t.id, a)).toBe('idle');
+    expect(t.chat.turnState(t.id, b)).toBe('queued');
+    release();
+    await waitIdle(t.chat, t.id, b);
+    expect(await userAgents(t.raw, t.dir, a)).toEqual([]);
+  });
+
+  it('a turn that fails before it runs does not drop the queued prompts behind it (#155)', async () => {
+    const t = await setup();
+    const release = await t.vaults.lock(t.id).acquireExclusive();
+    const { chatId } = (await t.api.post(`/vaults/${t.id}/chats`)).body;
+    // The first turn's attachment is missing: it ends with an error before reaching opencode.
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'bad', attachments: ['Sources/upload-x/missing.png'] });
+    await t.api.post(`/vaults/${t.id}/chats/${chatId}/prompt`, { text: 'still runs' });
+    release();
+    const end = Date.now() + 30_000;
+    while ((await userAgents(t.raw, t.dir, chatId)).length < 1 || t.chat.turnState(t.id, chatId) !== 'idle') {
+      if (Date.now() > end) throw new Error('the queued prompt was dropped');
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const users = (await t.api.get(`/vaults/${t.id}/chats/${chatId}`)).body.messages.filter((m: { role: string }) => m.role === 'user');
+    expect(users.map((m: { parts: { type: string; text?: string }[] }) => m.parts.find((x) => x.type === 'text')?.text)).toEqual(['still runs']);
+  }, 90_000);
+
   it('stream: queued → running → idle over NDJSON; idle chat ends immediately', async () => {
     const t = await setup();
     const server = http.createServer(t.app).listen(0);
@@ -602,7 +713,7 @@ describe('local time (#151)', () => {
     expect((await t.api.post(p, { text: 'x', tabId: '../../etc' })).status).toBe(400);
     expect((await t.api.post(p, { text: 'x', timeZone: 'x'.repeat(65) })).status).toBe(400);
     expect((await t.api.post(p, { text: 'x', tabId: 'tab-12345678', timeZone: 'Europe/Berlin', locale: 'de-DE' })).status).toBe(202);
-    expect(t.store.get().queued[t.id]).toEqual([{ chatId, text: 'x', tabId: 'tab-12345678', timeZone: 'Europe/Berlin', locale: 'de-DE' }]);
+    expect(t.store.get().queued[t.id]).toEqual([{ id: expect.any(String), chatId, text: 'x', tabId: 'tab-12345678', timeZone: 'Europe/Berlin', locale: 'de-DE' }]);
     t.chat.close();
   });
 });

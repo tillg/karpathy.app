@@ -1,10 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { uploadMime, type PromptClient, type ToolCall, type OpenPage, type ChatDetail, type Command, type ChatEvent, type ChatSummary, type TurnState } from '@karpathy/shared';
+import { MAX_QUEUED, uploadMime, type PromptClient, type QueuedPrompt, type ReturnedPrompt, type ToolCall, type OpenPage, type ChatDetail, type Command, type ChatEvent, type ChatSummary, type TurnState } from '@karpathy/shared';
 import { ChatTitles } from './chat-title.js';
 import type { ConfigStore } from './config-store.js';
 import { readFrontmatter } from './agents-standard.js';
+import { versionOfFile } from './files.js';
 import { commandInstructions, expandCommand, parseCommand, withoutBaseDir } from './harness/command.js';
 import { localTimeLine } from './harness/local-time.js';
 import type { Harness, HarnessCommand } from './harness/opencode.js';
@@ -17,10 +19,17 @@ type Listener = (e: ChatEvent) => void;
 
 /** `tabId` answers the turn's browser calls (#151); time zone and locale give the local-time line when it starts. */
 interface Turn extends PromptClient {
+  /** The queued prompt's id (#155): the client removes or edits it by this. */
+  id: string;
   chatId: string;
   text: string;
   /** Vault paths of files sent with the prompt (uploaded before); checked when the turn starts. */
   attachments?: string[];
+  /**
+   * The open page of a prompt sent while its chat was busy (#155), written when the turn starts so the running turn
+   * keeps seeing its own; null = nothing open. Absent: written when the prompt was sent (its chat was idle).
+   */
+  openPage?: OpenPage | null;
 }
 
 /** The turn without its undefined fields, as it is queued and saved. */
@@ -91,7 +100,7 @@ export class ChatService {
     const q = this.v.get(vaultId)?.queue ?? [];
     return this.store
       .update((c) => {
-        if (q.length) c.queued[vaultId] = q.map(({ chatId, text, attachments, tabId, timeZone, locale }) => withoutUndefined({ chatId, text, ...(attachments?.length ? { attachments } : {}), tabId, timeZone, locale }));
+        if (q.length) c.queued[vaultId] = q.map(({ id, chatId, text, attachments, openPage, tabId, timeZone, locale }) => withoutUndefined({ id, chatId, text, ...(attachments?.length ? { attachments } : {}), openPage, tabId, timeZone, locale }));
         else delete c.queued[vaultId];
       })
       .catch(() => undefined);
@@ -160,9 +169,10 @@ export class ChatService {
     } else release?.();
     if (guard) {
       // Prompts queued before a restart run now (#37).
-      const saved = this.store.get().queued[vaultId] ?? [];
+      // Entries saved before #155 have no id.
+      const saved = (this.store.get().queued[vaultId] ?? []).map((t) => ({ ...t, id: t.id ?? randomUUID() }));
       if (saved.length) {
-        c.queue.push(...saved.filter((t) => !c.queue.some((q) => q.chatId === t.chatId)));
+        c.queue.push(...saved.filter((t) => !c.queue.some((q) => q.id === t.id)));
         void this.kick(vaultId);
       }
     }
@@ -213,11 +223,18 @@ export class ChatService {
 
   turnState(vaultId: string, chatId: string): TurnState {
     const c = this.v.get(vaultId);
-    // A turn stays in the queue until it holds the lock (the pull may still be running).
-    if (c?.queue.some((t) => t.chatId === chatId)) return 'queued';
+    // A running chat may have more prompts queued (#155): it stays running until its turn ends.
     if (c?.running?.holding && c.running.chatId === chatId) return 'running';
     if (c?.adopted?.ids.has(chatId)) return 'running';
+    // A turn stays in the queue until it holds the lock (the pull may still be running).
+    if (c?.queue.some((t) => t.chatId === chatId)) return 'queued';
     return 'idle';
+  }
+
+  /** The chat's queued prompts, oldest first (#155). */
+  private queuedOf(vaultId: string, chatId: string): QueuedPrompt[] {
+    return (this.v.get(vaultId)?.queue ?? []).filter((t) => t.chatId === chatId)
+      .map(({ id, text, attachments }) => ({ id, text, ...(attachments?.length ? { attachments } : {}) }));
   }
 
   async list(vaultId: string): Promise<ChatSummary[]> {
@@ -237,14 +254,13 @@ export class ChatService {
     await this.requireChat(vaultId, chatId);
     const dir = this.dir(vaultId);
     const [messages, sessions] = await Promise.all([this.harness.messages(dir, chatId), this.harness.listSessions(dir)]);
-    const queuedText = this.v.get(vaultId)?.queue.find((t) => t.chatId === chatId)?.text;
     const titleSuggestion = this.titles.suggestion(vaultId, chatId);
     return {
       id: chatId,
       title: sessions.find((s) => s.id === chatId)?.title ?? '',
       messages,
       turn: this.turnState(vaultId, chatId),
-      ...(queuedText !== undefined ? { queuedText } : {}),
+      queued: this.queuedOf(vaultId, chatId),
       ...(titleSuggestion ? { titleSuggestion } : {}),
     };
   }
@@ -270,19 +286,69 @@ export class ChatService {
     await this.titles.forget(vaultId, chatId);
   }
 
-  async prompt(vaultId: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage, client: PromptClient = {}): Promise<void> {
+  /** Queues the prompt and returns its id. A busy chat's prompt waits behind its own turn (#155). */
+  async prompt(vaultId: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage, client: PromptClient = {}): Promise<{ id: string }> {
     await this.requireChat(vaultId, chatId);
     const c = this.v.get(vaultId)!;
-    if (this.turnState(vaultId, chatId) !== 'idle') throw new HttpError(409, 'this chat already has a turn running or queued', 'busy');
+    if (this.queuedOf(vaultId, chatId).length >= MAX_QUEUED) throw new HttpError(409, `At most ${MAX_QUEUED} messages can wait in a chat`, 'queue-full');
+    const idle = this.turnState(vaultId, chatId) === 'idle';
     // What the AI's current_page tool reports (#143); none = nothing open, never the page of an earlier prompt.
-    if (openPage) await writeOpenPage(this.vaults.vaultsPath(), chatId, openPage);
-    else await removeOpenPage(this.vaults.vaultsPath(), chatId);
-    c.queue.push(withoutUndefined({ chatId, text, ...(attachments?.length ? { attachments } : {}), ...client }));
+    // A busy chat's turn still reads its own page: this one is written when its turn starts.
+    if (idle) {
+      if (openPage) await writeOpenPage(this.vaults.vaultsPath(), chatId, openPage);
+      else await removeOpenPage(this.vaults.vaultsPath(), chatId);
+    }
+    const id = randomUUID();
+    c.queue.push(withoutUndefined({ id, chatId, text, ...(attachments?.length ? { attachments } : {}), ...(idle ? {} : { openPage: openPage ?? null }), ...client }));
     // 202 means the prompt survives a backend restart (#37).
     await this.saveQueue(vaultId);
-    this.emit(vaultId, chatId, this.queuedEvent(vaultId));
-    void this.titleFromFirstPrompt(vaultId, chatId, text || (attachments?.[0]?.split('/').pop() ?? ''));
+    this.emitQueue(vaultId, chatId);
+    if (this.turnState(vaultId, chatId) === 'queued') this.emit(vaultId, chatId, this.queuedEvent(vaultId));
+    if (idle) void this.titleFromFirstPrompt(vaultId, chatId, text || (attachments?.[0]?.split('/').pop() ?? ''));
     void this.kick(vaultId);
+    return { id };
+  }
+
+  private emitQueue(vaultId: string, chatId: string, started?: string) {
+    this.emit(vaultId, chatId, { type: 'queue', queued: this.queuedOf(vaultId, chatId), ...(started ? { started } : {}) });
+  }
+
+  /** Takes queued prompts of a chat out of the queue; the chat goes idle when nothing else of it waits or runs. */
+  private takeBack(vaultId: string, chatId: string, ids: Set<string>): Turn[] {
+    const c = this.v.get(vaultId)!;
+    const taken = c.queue.filter((t) => t.chatId === chatId && ids.has(t.id));
+    if (!taken.length) return [];
+    c.queue = c.queue.filter((t) => !taken.includes(t));
+    void this.saveQueue(vaultId);
+    this.emitQueue(vaultId, chatId);
+    if (this.turnState(vaultId, chatId) === 'idle') {
+      this.emit(vaultId, chatId, { type: 'turn', state: 'idle' });
+      this.endStreams(vaultId, chatId);
+    }
+    return taken;
+  }
+
+  /** A queued prompt with its files as composer chips; a file gone meanwhile is left out. */
+  private async returned(vaultId: string, t: Turn): Promise<ReturnedPrompt> {
+    const attachments: ReturnedPrompt['attachments'] = [];
+    for (const path of t.attachments ?? []) {
+      try {
+        const abs = await this.vaults.rawFile(vaultId, path);
+        const version = await versionOfFile(abs);
+        if (version !== null) attachments.push({ path, version, mime: uploadMime(path), size: (await stat(abs)).size });
+      } catch {
+        // gone or not a vault file: nothing to give back
+      }
+    }
+    return { id: t.id, text: t.text, attachments };
+  }
+
+  /** Takes one queued prompt back before it runs (#155): the composer gets it to edit, or ✕ deletes its files. */
+  async unqueue(vaultId: string, chatId: string, id: string): Promise<ReturnedPrompt> {
+    await this.chats(vaultId);
+    const [t] = this.takeBack(vaultId, chatId, new Set([id]));
+    if (!t) throw new HttpError(404, 'That message is no longer waiting: it has started or was removed.', 'not-queued');
+    return this.returned(vaultId, t);
   }
 
   /** opencode names new sessions "New session - <date>"; name the chat after its first prompt (the UI cuts it with CSS; the cap only guards pasted walls of text). */
@@ -301,19 +367,18 @@ export class ChatService {
     return { type: 'turn', state: 'queued', waiting: turnAhead ? 'turn' : 'sync' };
   }
 
-  async abort(vaultId: string, chatId: string): Promise<void> {
+  /**
+   * Stop: ends the chat's running turn and hands back all its queued prompts (#155), so none starts after a Stop
+   * and none is lost: the client puts them back into the composer.
+   */
+  async abort(vaultId: string, chatId: string): Promise<{ restored: ReturnedPrompt[] }> {
     await this.chats(vaultId);
     const c = this.v.get(vaultId)!;
-    const i = c.queue.findIndex((t) => t.chatId === chatId);
-    if (i >= 0) {
-      c.queue.splice(i, 1);
-      void this.saveQueue(vaultId);
-      this.emit(vaultId, chatId, { type: 'turn', state: 'idle' });
-      this.endStreams(vaultId, chatId);
-      return;
-    }
+    const taken = this.takeBack(vaultId, chatId, new Set(c.queue.filter((t) => t.chatId === chatId).map((t) => t.id)));
     // The lock is released once opencode reports the session idle.
-    if (c.running?.chatId === chatId || c.adopted?.ids.has(chatId)) await this.harness.abort(this.dir(vaultId), chatId);
+    if (c.running?.holding && c.running.chatId === chatId) await this.harness.abort(this.dir(vaultId), chatId);
+    else if (c.adopted?.ids.has(chatId)) await this.harness.abort(this.dir(vaultId), chatId);
+    return { restored: await Promise.all(taken.map((t) => this.returned(vaultId, t))) };
   }
 
   /**
@@ -363,6 +428,7 @@ export class ChatService {
     } catch (e) {
       c.queue.shift();
       void this.saveQueue(vaultId);
+      this.emitQueue(vaultId, turn.chatId, turn.id);
       c.running = null;
       this.emit(vaultId, turn.chatId, { type: 'error', message: `pull before the turn failed: ${(e as Error).message}` });
       this.finish(vaultId, turn.chatId);
@@ -377,6 +443,10 @@ export class ChatService {
     c.queue.shift();
     void this.saveQueue(vaultId);
     running.holding = true;
+    this.emitQueue(vaultId, turn.chatId, turn.id);
+    // A prompt sent while its chat was busy brings its open page now (#155).
+    if (turn.openPage !== undefined)
+      await (turn.openPage ? writeOpenPage(this.vaults.vaultsPath(), turn.chatId, turn.openPage) : removeOpenPage(this.vaults.vaultsPath(), turn.chatId)).catch(() => undefined);
     // The pull may just have brought in opencode project config (#27): never send it the dir.
     const unsafe = this.vaults.harnessConfigIn(vaultId);
     if (unsafe) {
@@ -548,9 +618,15 @@ export class ChatService {
     void this.titles.afterTurn(vaultId, chatId, Date.now());
   }
 
+  /** A chat's turn ended: idle, or queued while more of its prompts wait (#155; its streams go on). */
   private finish(vaultId: string, chatId: string) {
-    this.emit(vaultId, chatId, { type: 'turn', state: 'idle' });
-    this.endStreams(vaultId, chatId);
+    const queue = this.v.get(vaultId)?.queue ?? [];
+    // Its next prompt waits for the pull, or for another chat's prompt queued before it.
+    if (queue.some((t) => t.chatId === chatId)) this.emit(vaultId, chatId, { type: 'turn', state: 'queued', waiting: queue[0]!.chatId === chatId ? 'sync' : 'turn' });
+    else {
+      this.emit(vaultId, chatId, { type: 'turn', state: 'idle' });
+      this.endStreams(vaultId, chatId);
+    }
     this.stopPollIfIdle(vaultId);
   }
 

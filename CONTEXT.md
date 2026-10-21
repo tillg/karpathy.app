@@ -25,6 +25,10 @@ _Avoid_: Session, thread, conversation
 **Turn**:
 One user prompt in a chat plus everything the AI reads and changes in response.
 
+**Queued prompt**:
+A prompt waiting for its turn: sent while the chat's AI was still working (type ahead), or waiting for another chat or the sync. It can be edited or removed until it starts; Stop hands all of a chat's queued prompts back to the composer.
+_Avoid_: Pending message
+
 ### Changes
 
 **Uncommitted change**:
