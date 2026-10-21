@@ -1,7 +1,7 @@
 ---
 feature: eml-viewer
 title: "Proposal: viewer for .eml files"
-status: applying
+status: applied
 order: 1
 created: 2026-10-21
 edited: 2026-10-21

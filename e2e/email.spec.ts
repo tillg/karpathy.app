@@ -21,6 +21,7 @@ test('a .eml opens as a mail: subject, header block, body in a sandboxed frame, 
   seed(vault);
   await openApp(page, vault.id);
   await openMail(page, 'alternative.eml', 'Notes on the Analytical Engine');
+  await expect(page.getByTestId('email-subject')).toBeVisible();
   const head = page.getByTestId('email-head');
   await expect(head).toContainText('Ada Lovelace <ada@example.org>');
   await expect(head).toContainText('Charles Babbage <charles@example.org>, team@example.org');

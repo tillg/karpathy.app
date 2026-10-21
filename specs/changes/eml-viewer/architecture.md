@@ -1,7 +1,7 @@
 ---
 feature: eml-viewer
 title: "Architecture: viewer for .eml files"
-status: applying
+status: applied
 order: 3
 created: 2026-10-21
 edited: 2026-10-21
@@ -75,7 +75,8 @@ chunk: the main bundle and the PWA precache limits stay as they are.
   `arrayBuffer()`. Bytes are not put in the object-URL cache (parsed once, then dropped).
 - **Title while parsing:** the file name; the subject replaces it once parsing is done (stays the file name when
   the subject is empty).
-- **Title:** the subject (`h2.note-title`), else the file name.
+- **Title:** the subject (`h2.note-title`), else the file name. `.note-title` is visually hidden app-wide (the
+  breadcrumb shows the path), so the subject also shows on screen as `.email-subject` above the header block.
 - **Header block:** a definition list (`dl.email-head`, `data-testid="email-head"`), React text nodes only (no
   HTML from the mail reaches the app DOM). Date with `toLocaleString()` of the browser.
 - **HTML body:** `src`/`background` values `cid:<id>` are replaced by `data:` URLs from `inline` first (same

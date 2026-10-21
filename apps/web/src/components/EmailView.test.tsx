@@ -26,6 +26,8 @@ describe('EmailView (#166)', () => {
     const r = render(<EmailView vault="v" path="Mail/related.eml" text={text('related.eml')} binary={false} />);
     expect(r.container.querySelector('.note-title')!.textContent).toBe('related.eml');
     await waitFor(() => expect(r.container.querySelector('.note-title')!.textContent).toBe('Report with a picture'));
+    // .note-title is visually hidden app-wide: the subject also shows on screen.
+    expect(r.getByTestId('email-subject').textContent).toBe('Report with a picture');
     const head = r.getByTestId('email-head').textContent!;
     expect(head).toContain('Grace Hopper <grace@example.org>');
     expect(head).toContain('ada@example.org');

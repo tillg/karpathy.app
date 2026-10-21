@@ -72,6 +72,8 @@ export function EmailView({ vault, path, text, binary }: { vault: string; path: 
       )}
       {mail && (
         <>
+          {/* `.note-title` is only for screen readers (the breadcrumb shows the path): the subject is shown here. */}
+          {mail.subject && <div className="email-subject" data-testid="email-subject" aria-hidden="true">{mail.subject}</div>}
           <dl className="email-head" data-testid="email-head">
             {rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
           </dl>
