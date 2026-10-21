@@ -189,6 +189,7 @@ edited: 2026-10-21
   - [11:44 — Archive `remove-ollama` with its decisions open](#run-2026-10-21-1058-4)
   - [11:44 — Merge `remove-ollama` into `main` and push `main` directly](#run-2026-10-21-1058-5)
   - [11:44 — "Deploy" = release v0.0.31 and deploy it to hetzner (production)](#run-2026-10-21-1058-6)
+  - [11:50 — Retro: a CLAUDE.md line on secrets in a new worktree and the dummy-key e2e run](#run-2026-10-21-1058-7)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -2822,3 +2823,16 @@ edited: 2026-10-21
   before and after), only settings rendering loses the unused gateways.
 - **Alternatives:** stop at the push (the user asked to deploy).
 - **Consequences:** rollback: `just deploy hetzner 0.0.30`.
+
+## 11:50 — Retro: a CLAUDE.md line on secrets in a new worktree and the dummy-key e2e run {#run-2026-10-21-1058-7}
+
+- **Status:** open
+- **Context:** this run's worktree had no `deploy/secrets/`; with OpenRouter as the only model source, `just dev up`
+  stops at `missing secret openrouter_api_key`, and this Mac has no key outside the Ansible vault.
+- **Question:** which mechanical fix keeps the next agent from losing time here?
+- **Decision:** one line in CLAUDE.md (Parallel dev stacks): copy the main clone's `deploy/secrets/`; a dummy key runs
+  the non-`@llm` e2e. Other findings: the two stale relay comments (fixed in cb41fe1); load timeouts on a busy Mac are
+  already covered by CLAUDE.md and `check-preflight.sh`.
+- **Why:** a test can't check a gitignored directory in a worktree; `dev.sh`'s own error already names the secret.
+- **Alternatives:** have `dev.sh` copy secrets from the main clone automatically (hides which key a stack uses).
+- **Consequences:** none at runtime. Plugin-level: none to draft.
