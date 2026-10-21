@@ -209,6 +209,8 @@ edited: 2026-10-21
   - [19:19 — One agent per issue, each in its own worktree and dev stack; merge into `main` and push `main`](#run-2026-10-21-1919-3)
   - [19:19 — Update `specs/system/` directly instead of opening a spec change per issue](#run-2026-10-21-1919-4)
   - [19:19 — Demo run book chapters committed in the demo vault but not pushed (no release in this run)](#run-2026-10-21-1919-5)
+  - [19:45 — #141: gitleaks (pinned binary) over the staged diff at commit time, fail closed](#run-2026-10-21-1919-6)
+  - [19:45 — #141: "Commit anyway" for the shown findings plus `.gitleaksignore`; inline allows and vault configs ignored](#run-2026-10-21-1919-7)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3152,3 +3154,30 @@ edited: 2026-10-21
 - **Why:** the guide must not describe features prod doesn't have yet.
 - **Alternatives:** release and deploy (not asked for; production).
 - **Consequences:** push the demo vault after the next release.
+
+## 19:45 — #141: gitleaks (pinned binary) over the staged diff at commit time, fail closed {#run-2026-10-21-1919-6}
+
+- **Status:** open
+- **Context:** issue #141 (secret scan before pushing); the app is the only committer of its vault clones.
+- **Question:** which scanner, what to scan, and what if the scanner can't run?
+- **Decision:** gitleaks 8.30.1, downloaded and sha256-checked by `deploy/gitleaks/install.sh` (backend image, CI,
+  tests); scan `gitleaks git --staged` between staging and committing; a scanner failure refuses the commit (503).
+  This repo: `deploy/gitleaks/scan-repo.sh` in `just check` and CI (full history + work tree). No git pre-commit hook.
+- **Why:** proven rules catch the real case (mylife_wiki eb4f944: `generic-api-key` in an ingested .eml); the same
+  version everywhere; a pull folds unpushed commits back into changes, so every app commit is scanned once.
+- **Alternatives:** hand-written regexes; the gitleaks Docker image; trufflehog; scanning `origin..HEAD` at push time.
+- **Consequences:** backend tests download gitleaks once (network). Commits from Obsidian or a terminal aren't
+  scanned (GitHub push protection on the vault repos would cover them). Rollback: revert merge 00b0a32.
+
+## 19:45 — #141: "Commit anyway" for the shown findings plus `.gitleaksignore`; inline allows and vault configs ignored {#run-2026-10-21-1919-7}
+
+- **Status:** open
+- **Context:** issue #141; generic rules have false positives, and hidden files are awkward to edit on a phone.
+- **Question:** hard block, or an override?
+- **Decision:** the commit dialog lists the findings (file, line, rule, first ≤4 characters) with a red "Commit
+  anyway" that acknowledges exactly those fingerprints; `.gitleaksignore` at the repo root for lasting false
+  positives; inline `gitleaks:allow` markers and a vault `.gitleaks.toml` are ignored.
+- **Why:** ingested mail or the AI could plant an inline allow or a config that turns the scan off.
+- **Alternatives:** hard block without override; `.gitleaksignore` only.
+- **Consequences:** a deliberate tap still pushes a secret (logged by file, line, rule). The AI commit-message
+  proposal still sees the diff before the scan (filed as a follow-up issue).
