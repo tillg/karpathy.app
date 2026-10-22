@@ -233,6 +233,8 @@ edited: 2026-10-22
   - [14:04 — Agents: read-only triage agents close issues; one agent per bug and per ToDo issue, own worktree and stack](#run-2026-10-22-1404-4)
   - [14:40 — #162: diagnose on GitHub runners with a throwaway branch; fix save_url with getReader()](#run-2026-10-22-1404-5)
   - [14:40 — #137 and #154 stay open: both still hold on main / from a Hetzner IP](#run-2026-10-22-1404-6)
+  - [15:20 — #169: the backend works out the error's origin; no tool in flight = the model](#run-2026-10-22-1404-7)
+  - [15:20 — #121: bump every action to a verified node24 major, not the newest](#run-2026-10-22-1404-8)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3500,3 +3502,32 @@ edited: 2026-10-22
   issues).
 - **Consequences:** #137 waits on #168 (Mac relay proposal). The #154 comment suggests moving `HttpError` into its own
   module as a first step.
+
+## 15:20 — #169: the backend works out the error's origin; no tool in flight = the model {#run-2026-10-22-1404-7}
+
+- **Status:** open
+- **Context:** #169 asks the error pill to name the tool being invoked. opencode reports a failed turn as
+  `session.error` while the tool is still running, then marks that tool "Tool execution aborted".
+- **Question:** which tool to blame, and where to work it out?
+- **Decision:** the tool that was in flight when the turn failed (the last one started, if several); none in flight →
+  "From the model <id>". A per-session tracker in `apps/backend/src/harness/` (`ErrorOrigins`) works it out live;
+  reloads take it from the aborted tool part. The app's own errors and Stop get no prefix. The e2e test fakes a failed
+  turn with `page.route` (no hook makes the provider fail on a stack).
+- **Why:** a tool that fails on its own doesn't end the turn (its chip turns red); blaming the last tool used would
+  blame search for a provider error. Keeping opencode's abort convention inside `harness/` keeps the harness swappable.
+- **Alternatives:** name the last tool used; work it out in the web from the turn's parts; name every tool in flight.
+- **Consequences:** right after a backend↔opencode reconnect, a failure may say "model" until a reload. The WebKit
+  (iphone) e2e project can't launch on karpathy-dev until `just devhost` installs WebKit's libraries (retro item of
+  the last run).
+
+## 15:20 — #121: bump every action to a verified node24 major, not the newest {#run-2026-10-22-1404-8}
+
+- **Status:** open
+- **Context:** #121, the "Node.js 20 is deprecated" warning in GitHub Actions.
+- **Question:** which majors?
+- **Decision:** the first major per action whose `action.yml` says `using: node24` (e.g. checkout v6), major-tag
+  pinning as before. Merged in be06d0f.
+- **Why:** the smallest jump that removes the warning.
+- **Alternatives:** the newest majors (e.g. checkout v7).
+- **Consequences:** release.yml and pages.yml were only checked by reading `action.yml`; the next release shows
+  whether they run clean.
