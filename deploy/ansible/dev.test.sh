@@ -60,6 +60,15 @@ as_user 'docker info >/dev/null' >/dev/null && ok "login user can use Docker" ||
 for tool in just rg jq gh claude ansible btop; do
   as_user "$tool --version" >/dev/null && ok "$tool answers --version" || bad "$tool answers --version" "$(as_user "$tool --version" | tail -1)"
 done
+# Ansible: pipx's pinned ansible-core (Ubuntu's 2.16 is too old) and requirements.yml's collections.
+want=$(sed -n 's/^devtools_ansible_core_version: *//p' "$here/roles/devtools/defaults/main.yml")
+[[ "$(as_user 'ansible --version' | head -1)" == *"[core $want]"* ]] && ok "ansible-core is $want" \
+  || bad "ansible-core is $want" "$(as_user 'ansible --version' | head -1)"
+run dpkg -s ansible-core >/dev/null 2>&1 && bad "no Ubuntu ansible-core" "installed" || ok "no Ubuntu ansible-core"
+for c in community.docker ansible.posix; do
+  out=$(as_user "ansible-galaxy collection list $c -p ~/.ansible/collections" | awk -v c="$c" '$1 == c {print $2}')
+  [ -n "$out" ] && ok "$c $out in ~/.ansible/collections" || bad "$c in ~/.ansible/collections" "missing"
+done
 # herdr's and tmux's panes are interactive non-login shells: they read ~/.bashrc, not ~/.profile.
 out=$(docker exec -u "$user" -e HOME="/home/$user" -w "/home/$user" "$ctr" bash -ic 'command -v claude' 2>/dev/null)
 [ -n "$out" ] && ok "claude is on the PATH of a non-login shell" || bad "claude is on the PATH of a non-login shell" "not found"

@@ -229,7 +229,8 @@ paired prodtest. The number is remembered in `tmp/dev/stack`; `just e2e` and
 
 `just` lists all commands (`brew install just`); they wrap `deploy/dev.sh` and npm. Deploying
 also needs `brew install ansible ansible-lint qrencode jq` (the playbook, the login QR code and the
-deploy scripts).
+deploy scripts) and the playbook's collections: `ansible-galaxy collection install -r deploy/ansible/requirements.yml`.
+The remote dev host gets all of this from `just devhost`.
 
 Notes open at `https://localhost:80N0/#/<vault>/<path>` (Back/Forward work). Binary files
 (images, PDFs, …) are listed but not editable. A vault whose clone failed can be retried

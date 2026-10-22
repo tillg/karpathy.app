@@ -249,7 +249,7 @@ Each fresh server requests a new certificate; Let's Encrypt allows 5 for the sam
 Tailscale. It is a dev host like the Mac: `just dev up`, `just check`, `just e2e` and `claude` work there in several
 worktrees at once, with the same stack rules (stacks 1–9, one per checkout). Its stacks open on the Mac at
 `https://localhost:80N0` through SSH port forwards. The playbook is `ansible/dev.yml`: roles `base`, `tailscale`,
-`docker` (shared with prod) and `devtools` (Node 22, `just`, ripgrep, jq, netcat, btop, `gh`, Ansible, the Claude Code CLI,
+`docker` (shared with prod) and `devtools` (Node 22, `just`, ripgrep, jq, netcat, btop, `gh`, Ansible (pinned ansible-core via pipx plus `ansible/requirements.yml`), the Claude Code CLI,
 Playwright's Chromium). Your login has uid 1000 (sudo, docker) and there is no `deploy` user. It holds no prod data.
 
 **Setting it up:**

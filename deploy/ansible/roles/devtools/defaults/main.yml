@@ -5,6 +5,8 @@ devtools_just_version: 1.58.0
 devtools_just_url: >-
   https://github.com/casey/just/releases/download/{{ devtools_just_version }}/just-{{ devtools_just_version
   }}-{{ ansible_facts.architecture }}-unknown-linux-musl.tar.gz
+# ansible-core from PyPI (via pipx): Ubuntu 24.04's 2.16 is too old for requirements.yml's community.docker.
+devtools_ansible_core_version: 2.21.5
 # Provider keys for ~/.config/karpathy/secrets/ (name → value; empty ones are skipped) and the GitHub token, from the
 # dev vault (inventories/dev/group_vars/all/main.yml).
 devtools_host_secrets: {}

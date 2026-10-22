@@ -1,20 +1,4 @@
 {
-  "extraKnownMarketplaces": {
-    "till-claude-code-marketplace": {
-      "source": { "source": "github", "repo": "tillg/till-claude-code-marketplace" },
-      "autoUpdate": true
-    },
-    "mattpocock": {
-      "source": { "source": "github", "repo": "mattpocock/skills" },
-      "autoUpdate": true
-    }
-  },
-  "enabledPlugins": {
-    "claude-security@claude-plugins-official": true,
-    "spec@till-claude-code-marketplace": true,
-    "md2html@till-claude-code-marketplace": true,
-    "mattpocock-skills@mattpocock": true
-  },
   "hooks": {
     "SessionStart": [
       {
@@ -26,5 +10,27 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "claude-security@claude-plugins-official": true,
+    "spec@till-claude-code-marketplace": true,
+    "md2html@till-claude-code-marketplace": true,
+    "mattpocock-skills@mattpocock": true
+  },
+  "extraKnownMarketplaces": {
+    "till-claude-code-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "tillg/till-claude-code-marketplace"
+      },
+      "autoUpdate": true
+    },
+    "mattpocock": {
+      "source": {
+        "source": "github",
+        "repo": "mattpocock/skills"
+      },
+      "autoUpdate": true
+    }
   }
 }

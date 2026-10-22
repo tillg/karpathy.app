@@ -2,8 +2,8 @@
 # (Docker comes from role docker).
 - name: Command-line tools
   ansible.builtin.apt:
-    # ansible: `just check` renders a role template; qrencode and ffmpeg: e2e/token-scan.spec.ts's QR code video
-    name: [git, ripgrep, jq, netcat-openbsd, ansible-core, btop, qrencode, ffmpeg]
+    # pipx: Ansible (below); qrencode and ffmpeg: e2e/token-scan.spec.ts's QR code video
+    name: [git, ripgrep, jq, netcat-openbsd, pipx, btop, qrencode, ffmpeg]
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -83,6 +83,54 @@
   args:
     executable: /bin/bash
     creates: /home/{{ admin_user }}/.cache/ms-playwright/.karpathy-{{ devtools_playwright_version }}-webkit
+  become: true
+  become_user: "{{ admin_user }}"
+
+# Ansible for `just check` (dev.test.sh), `just deploy` and `just devhost`. Ubuntu's ansible-core (2.16) is too old for
+# the collections in requirements.yml (community.docker 5 needs 2.17+), so pipx's, pinned, like CI.
+- name: No Ubuntu Ansible
+  ansible.builtin.apt:
+    name: [ansible, ansible-core]
+    state: absent
+    autoremove: true
+
+- name: Installed ansible-core
+  ansible.builtin.command: /home/{{ admin_user }}/.local/bin/ansible --version
+  register: devtools_ansible
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Ansible-core {{ devtools_ansible_core_version }}
+  ansible.builtin.command: pipx install --force ansible-core=={{ devtools_ansible_core_version }}
+  when: ('[core ' ~ devtools_ansible_core_version ~ ']') not in devtools_ansible.stdout
+  changed_when: true
+  become: true
+  become_user: "{{ admin_user }}"
+
+- name: ~/.ansible
+  ansible.builtin.file:
+    path: /home/{{ admin_user }}/.ansible
+    state: directory
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0755"
+
+- name: Ansible collections list
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/requirements.yml"
+    dest: /home/{{ admin_user }}/.ansible/requirements.yml
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0644"
+  become: true
+  become_user: "{{ admin_user }}"
+
+# Into ~/.ansible/collections, where they shadow any older copy.
+- name: Ansible collections
+  ansible.builtin.command: /home/{{ admin_user }}/.local/bin/ansible-galaxy collection install -r /home/{{ admin_user }}/.ansible/requirements.yml
+  register: devtools_collections
+  changed_when: "'was installed successfully' in devtools_collections.stdout"
   become: true
   become_user: "{{ admin_user }}"
 
