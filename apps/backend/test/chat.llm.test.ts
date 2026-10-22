@@ -58,10 +58,14 @@ async function turn(t: T, text: string, chatId?: string, openPage?: OpenPage): P
   return { chatId: id, tools: [...tools.values()] };
 }
 
-/** The text of the chat's last assistant message. */
+/**
+ * The text of the chat's last turn, as the user reads it: every assistant message after the last user message
+ * (opencode starts a new assistant message per step, so text written before a tool call is in an earlier one, #163).
+ */
 async function reply(t: T, chatId: string): Promise<string> {
-  const msgs = (await t.chat.get(t.id, chatId)).messages.filter((m) => m.role === 'assistant');
-  return (msgs.at(-1)?.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join('');
+  const msgs = (await t.chat.get(t.id, chatId)).messages;
+  const turn = msgs.slice(msgs.findLastIndex((m) => m.role === 'user') + 1).filter((m) => m.role === 'assistant');
+  return turn.map((m) => m.parts.map((p) => (p.type === 'text' ? p.text : '')).join('')).join('\n\n');
 }
 
 async function withRetry<R>(fn: () => Promise<R>): Promise<R> {
@@ -206,7 +210,7 @@ describe('@llm /research', () => {
       const sources = await mdFiles(t, 'Sources');
       if (sources.length === 0) throw new Inconclusive(`no source saved: ${JSON.stringify(tools)}`);
       const urls = await Promise.all(sources.map(async (f) => /^url:\s*(\S+)/m.exec(await readFile(join(root, 'Sources', f), 'utf8'))?.[1]));
-      expect(urls.some((u) => u && fetched.includes(u))).toBe(true);
+      expect(urls.some((u) => u && fetched.includes(u)), `source urls ${JSON.stringify(urls)}, fetched ${JSON.stringify(fetched)}`).toBe(true);
       const changed = (await t.vaults.changes(t.id)).map((c) => c.path).filter((p) => p.startsWith('Wiki/'));
       const cites = await Promise.all(changed.map(async (p) => (await readFile(join(root, p), 'utf8')).includes('Sources/')));
       expect(cites.some(Boolean)).toBe(true);
