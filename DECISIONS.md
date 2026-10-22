@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-21
+edited: 2026-10-22
 ---
 
 **Contents**
@@ -226,6 +226,11 @@ edited: 2026-10-21
   - [23:00 — #168: propose a Mac relay for Instagram traffic instead of scraping in the browser](#run-2026-10-21-1919-20)
   - [23:30 — Release despite the `chat.spec.ts:128` and #162 flakes](#run-2026-10-21-1919-21)
   - [23:40 — Retro: dev host gets Playwright WebKit, qrencode and ffmpeg](#run-2026-10-21-1919-22)
+- [2026-10-22 14:04 — Issue sweep: close done issues, re-check bugs, build the ToDo issues](#run-2026-10-22-1404)
+  - [14:04 — "Done" = every acceptance point is on `main`; partly done stays open with a comment](#run-2026-10-22-1404-1)
+  - [14:04 — A bug counts as not reproducible after repeated runs on karpathy-dev without a failure](#run-2026-10-22-1404-2)
+  - [14:04 — Commit to `main` and push `main`](#run-2026-10-22-1404-3)
+  - [14:04 — Agents: read-only triage agents close issues; one agent per bug and per ToDo issue, own worktree and stack](#run-2026-10-22-1404-4)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3397,3 +3402,65 @@ edited: 2026-10-21
   `origin/main` that lagged my local merges (push `main` right after every merge); the five build agents reported
   "done" with 20 review findings left (plugin-level draft: have each agent run the adversarial review on its own
   diff before reporting); no way to deploy from karpathy-dev (decision 15).
+
+# 2026-10-22 14:04 — Issue sweep: close done issues, re-check bugs, build the ToDo issues {#run-2026-10-22-1404}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > - Go thru all the gh tickets, check if they are already done. I know that some are done but still on "open". If u find some that are done, make sure they are closed.
+  > - Then go thru all the bugs and check if they are still valid, i.e. try to reproduce them. I suspect many of the bugs in build process (flakieness) were due to using local models on my Mac - as we now use OpenRouter all along, they could be irrelevent. If u cannot reproduce them, close them with a remark
+  > - then implement all the issues that are labeled todo
+  >
+  > Try to use agents as much as possible to save context space. every time u start working on an issue set it to in-progress - when u are done close it or remove the in-progress label.
+
+## 14:04 — "Done" = every acceptance point is on `main`; partly done stays open with a comment {#run-2026-10-22-1404-1}
+
+- **Status:** open
+- **Context:** 36 open issues, many of them `feature-research` epics (#65–#93) from the feature report.
+- **Question:** when is an open issue "already done"?
+- **Decision:** close it only when everything the issue asks for is on `main` (code, and tests where the issue names
+  behaviour), with a comment naming the commits or files. Partly done → a comment listing what is there and what is
+  missing; the issue stays open.
+- **Why:** closing a half-done epic hides the rest of the work.
+- **Alternatives:** close when the core is done and file the rest as new issues (more tracker noise while the user is
+  away).
+- **Consequences:** the report lists the partly done ones; the user may split them.
+
+## 14:04 — A bug counts as not reproducible after repeated runs on karpathy-dev without a failure {#run-2026-10-22-1404-2}
+
+- **Status:** open
+- **Context:** bugs #136, #137, #142, #153, #154, #161, #162, #163; most are flakes seen under load or with the
+  local model on the Mac.
+- **Question:** what counts as "cannot reproduce"?
+- **Decision:** each bug is re-run the way it was reported, repeatedly (flaky unit tests: at least 5 full suite runs,
+  also with other stacks running; e2e/`@llm` specs: at least 3 runs; CI flakes: the GitHub runs since the report plus
+  local runs). No failure → close with a comment naming what was run. A failure → keep open (and fix if it is in
+  reach). Bugs that are not flakes (#137, #154) are checked against the code instead.
+- **Why:** a flake that passes once proves nothing; a handful of runs under load is the cheapest fair test.
+- **Alternatives:** close every Mac/local-model flake unchecked (the user's hunch, but unverified).
+- **Consequences:** a rare flake may come back; reopening is cheap.
+
+## 14:04 — Commit to `main` and push `main` {#run-2026-10-22-1404-3}
+
+- **Status:** open
+- **Overrides:** global CLAUDE.md / `/autonomous` default — no direct pushes to the default branch without asking
+- **Context:** same as earlier runs (#run-2026-10-21-1919-3): single-developer repo, work lands on `main`.
+- **Question:** branch + PR or `main`?
+- **Decision:** agents work in worktrees on their own branches; I merge into `main` and push `main`.
+- **Why:** issues close only once their fix is on the default branch; a PR nobody reviews until the user is back
+  would keep them all open.
+- **Alternatives:** one PR per issue.
+- **Consequences:** revert forward with `git revert` if a merge is wrong.
+
+## 14:04 — Agents: read-only triage agents close issues; one agent per bug and per ToDo issue, own worktree and stack {#run-2026-10-22-1404-4}
+
+- **Status:** open
+- **Context:** the user asked to use agents to save context.
+- **Question:** how to split the work?
+- **Decision:** three triage agents check the non-bug issues against the code (and close the done ones); bug agents
+  and ToDo agents each get their own worktree and dev stack (`just dev up`) and set `in-progress` while working.
+- **Why:** the checks are independent; separate stacks keep test runs apart.
+- **Alternatives:** do it all in this session (context fills up fast with 36 issues).
+- **Consequences:** parallel test runs load the host, which is also the condition the flakes were reported under — a
+  failure under that load still counts as reproduced.
