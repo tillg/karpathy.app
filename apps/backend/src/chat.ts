@@ -726,7 +726,7 @@ export class ChatService {
       case 'text-delta':
         return this.emit(vaultId, e.sessionId, { type: 'text-delta', messageId: e.messageId, partId: e.partId, delta: e.delta });
       case 'error':
-        if (!e.aborted) this.emit(vaultId, e.sessionId, { type: 'error', message: e.message });
+        if (!e.aborted) this.emit(vaultId, e.sessionId, { type: 'error', message: e.message, ...(e.origin ? { origin: e.origin } : {}) });
         return;
     }
   }

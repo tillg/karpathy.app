@@ -218,3 +218,29 @@ describe('queued messages while the AI works (#155)', () => {
     await waitFor(() => expect((screen.getByTestId('chat-composer') as HTMLTextAreaElement).value).toBe('A\n\nB\n\nC'));
   });
 });
+
+describe('error pill names its origin (#169)', () => {
+  const failed = (errorOrigin?: object) => detail({ messages: [
+    { id: 'u', role: 'user', createdAt: 1, parts: [{ type: 'text', id: 'p0', text: 'search it' }] },
+    { id: 'a', role: 'assistant', createdAt: 2, model: 'openrouter/qwen3-8b', parts: [], error: 'Insufficient credits', ...(errorOrigin ? { errorOrigin } : {}) },
+  ] });
+
+  it('a tool origin: the pill names the tool', async () => {
+    await openChat({ [`GET ${CHATS}/c1`]: failed({ kind: 'tool', tool: 'websearch' }) });
+    const pill = await screen.findByTestId('chat-error');
+    expect(pill.textContent).toBe('During tool websearch: Insufficient credits');
+    expect(pill.dataset.origin).toBe('tool');
+  });
+
+  it('a model origin: the pill names the model', async () => {
+    await openChat({ [`GET ${CHATS}/c1`]: failed({ kind: 'model' }) });
+    const pill = await screen.findByTestId('chat-error');
+    expect(pill.textContent).toBe('From the model qwen3-8b: Insufficient credits');
+    expect(pill.dataset.origin).toBe('model');
+  });
+
+  it('no origin: the message alone', async () => {
+    await openChat({ [`GET ${CHATS}/c1`]: failed() });
+    expect((await screen.findByTestId('chat-error')).textContent).toBe('Insufficient credits');
+  });
+});

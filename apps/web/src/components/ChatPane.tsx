@@ -1,4 +1,4 @@
-import { isPdf, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, WARN_UPLOAD_BYTES, type ChatEvent, type ChatPart, type ChatSummary, type Command, type QueuedPrompt, type ReturnedPrompt, type ToolCall } from '@karpathy/shared';
+import { isPdf, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS, WARN_UPLOAD_BYTES, type ChatEvent, type ChatMessage, type ChatPart, type ChatSummary, type Command, type QueuedPrompt, type ReturnedPrompt, type ToolCall } from '@karpathy/shared';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, api, errorText } from '../lib/api';
 import { prepare } from '../lib/attach';
@@ -7,7 +7,7 @@ import { chipCommands, filterCommands, paletteQuery, recentCommands, recordComma
 import { readSelectionText, selectionCopier } from '../lib/copy-select';
 import { mountEmbed } from '../lib/embed';
 import { mediaKind } from '../lib/media';
-import { adoptStarted, applyChatEvent, attachWarning, changedPaths, isAcceptKey, lastContext, newOpens, nextSuggestion, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, visibleQueued, withReturned, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
+import { adoptStarted, applyChatEvent, attachWarning, changedPaths, errorLine, isAcceptKey, lastContext, newOpens, nextSuggestion, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, userCount, visibleQueued, withReturned, type ChatError, type ChatView, type PendingPrompt, type Turn } from '../lib/chat';
 import { readNdjson } from '../lib/ndjson';
 import { chatTime } from '../lib/time';
 import { useApp } from '../store';
@@ -168,6 +168,19 @@ function FileEmbed({ path, present }: { path: string; present?: boolean }) {
   return <span className="embed" ref={host} />;
 }
 
+/** The model the chat's last reply ran with. */
+const lastModel = (messages: ChatMessage[]) => [...messages].reverse().find((m) => m.role === 'assistant' && m.model)?.model;
+
+/** A failed turn's pill: which tool was running, or the model, then the error (#169). */
+function ErrorPill({ e, model }: { e: ChatError; model?: string }) {
+  const line = errorLine(e, model);
+  return (
+    <div className="form-error" data-testid="chat-error" data-origin={e.origin?.kind} {...(e.origin?.kind === 'tool' ? { 'data-tool': e.origin.tool } : {})}>
+      {line.source && <b className="err-src">{line.source}: </b>}{line.message}
+    </div>
+  );
+}
+
 /** A user prompt, or one assistant turn: all its steps under one header (#63). */
 function Message({ t, model }: { t: Turn; model: string }) {
   const { openNote } = useApp();
@@ -186,7 +199,7 @@ function Message({ t, model }: { t: Turn; model: string }) {
     <div className="a" data-testid="assistant-message">
       <div className="who"><img src="/icon-192.png" alt="" />karpathy.app · {t.model?.split('/').pop() ?? model}</div>
       <Parts parts={t.parts} />
-      {t.errors.map((e, i) => <div className="form-error" key={i}>{e}</div>)}
+      {t.errors.map((e, i) => <ErrorPill key={i} e={e} model={t.model ?? model} />)}
       {changed.length > 0 && (
         <div className="changed" data-testid="turn-changed">
           <span>{changed.length === 1 ? 'Changed' : `${changed.length} pages changed`}</span>
@@ -590,7 +603,7 @@ function Conversation({ vaultId, chatId }: { vaultId: string; chatId: string }) 
             </div>
           ))}
           {chat?.turn === 'queued' && <div className="turn-state" data-testid="chat-queued"><span className="spin" />{chat.waiting === 'sync' ? 'Waiting for sync…' : 'Waiting for other chat…'}</div>}
-          {chat?.error && <div className="form-error">{chat.error}</div>}
+          {chat?.error && <ErrorPill e={{ message: chat.error, ...(chat.errorOrigin ? { origin: chat.errorOrigin } : {}) }} model={lastModel(chat.messages) ?? model} />}
         </div>
       </div>
       <div className="comp">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatEvent, ChatMessage, ToolCall } from '@karpathy/shared';
-import { adoptStarted, applyChatEvent, withReturned, changedPaths, lastContext, newOpens, nextSuggestion, noteToOpen, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, visibleQueued, type ChatView, type PendingPrompt } from './chat';
+import { adoptStarted, applyChatEvent, errorLine, withReturned, changedPaths, lastContext, newOpens, nextSuggestion, noteToOpen, opensFromEvent, opensFromLoad, settlePending, toolHref, toolLabel, turnAnnouncement, turns, visibleQueued, type ChatView, type PendingPrompt } from './chat';
 
 const empty: ChatView = { id: 'c1', title: 'T', messages: [], turn: 'idle', queued: [] };
 
@@ -250,6 +250,37 @@ describe('turnAnnouncement (issue #45)', () => {
     expect(turnAnnouncement('running', reply('', 'model down'))).toBe('Reply failed: model down');
     expect(turnAnnouncement('running', { ...reply('ok'), error: 'stream broke' })).toBe('Reply failed: stream broke');
   });
+
+  it('names where a failure came from (#169)', () => {
+    const r = reply('', 'Insufficient credits');
+    r.messages[1] = { ...r.messages[1]!, model: 'openrouter/qwen', errorOrigin: { kind: 'tool', tool: 'websearch' } };
+    expect(turnAnnouncement('running', r)).toBe('Reply failed: During tool websearch: Insufficient credits');
+    expect(turnAnnouncement('running', { ...reply('ok'), error: 'Insufficient credits', errorOrigin: { kind: 'model' } }))
+      .toBe('Reply failed: From the model: Insufficient credits');
+  });
+});
+
+describe('errorLine (#169: which tool or the model failed)', () => {
+  it('a tool origin names the tool', () => {
+    expect(errorLine({ message: 'Insufficient credits', origin: { kind: 'tool', tool: 'websearch' } }, 'openrouter/qwen'))
+      .toEqual({ source: 'During tool websearch', message: 'Insufficient credits', text: 'During tool websearch: Insufficient credits' });
+  });
+  it('a model origin names the model, without its provider', () => {
+    expect(errorLine({ message: 'Insufficient credits', origin: { kind: 'model' } }, 'openrouter/qwen/qwen3-8b').text).toBe('From the model qwen3-8b: Insufficient credits');
+    expect(errorLine({ message: 'x', origin: { kind: 'model' } }).source).toBe('From the model');
+  });
+  it('no origin (the backend\'s own error, or a stop) → the message alone', () => {
+    expect(errorLine({ message: 'pull before the turn failed: offline' }, 'openrouter/qwen')).toEqual({ message: 'pull before the turn failed: offline', text: 'pull before the turn failed: offline' });
+  });
+});
+
+describe('error origins in the chat view (#169)', () => {
+  it('a stream error keeps its origin; turns keep each message error\'s origin', () => {
+    const c = applyChatEvent(empty, { type: 'error', message: 'Insufficient credits', origin: { kind: 'tool', tool: 'look_at_image' } });
+    expect(c).toMatchObject({ error: 'Insufficient credits', errorOrigin: { kind: 'tool', tool: 'look_at_image' } });
+    const t = turns([{ id: 'a', role: 'assistant', createdAt: 1, parts: [], error: 'boom', errorOrigin: { kind: 'model' } }]);
+    expect(t[0]).toMatchObject({ errors: [{ message: 'boom', origin: { kind: 'model' } }] });
+  });
 });
 
 describe('turns (#63: one assistant block per turn)', () => {
@@ -268,7 +299,7 @@ describe('turns (#63: one assistant block per turn)', () => {
     ]);
     expect(t.map((x) => x.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
     const first = t[1]!;
-    expect(first).toMatchObject({ role: 'assistant', id: 'a1', model: 'openrouter/qwen', errors: ['boom'] });
+    expect(first).toMatchObject({ role: 'assistant', id: 'a1', model: 'openrouter/qwen', errors: [{ message: 'boom' }] });
     expect(first.role === 'assistant' && first.parts.map((p) => p.id)).toEqual(['t1', 't2', 'p3']);
     expect(first.role === 'assistant' && changedPaths(first.parts)).toEqual(['y.md']);
     expect(t[3]).toMatchObject({ role: 'assistant', id: 'a4', errors: [] });

@@ -338,6 +338,12 @@ export type ChatPart =
   /** A file sent with a prompt (chat attachment): its vault path, never its bytes. */
   | { type: 'file'; id: string; path: string; mime: string };
 
+/**
+ * Where a chat error came from (#169): the tool that was running when it happened, or the model's own
+ * request (no tool running, e.g. the provider is out of credits).
+ */
+export type ErrorOrigin = { kind: 'tool'; tool: string } | { kind: 'model' };
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
@@ -348,6 +354,8 @@ export interface ChatMessage {
   /** AI replies with tokens: how full the chat's context is after this reply. */
   context?: ContextUsage;
   error?: string;
+  /** Set with `error` unless the turn was stopped. */
+  errorOrigin?: ErrorOrigin;
 }
 
 export interface ChatDetail {
@@ -388,7 +396,8 @@ export type ChatEvent =
   | { type: 'message'; message: Omit<ChatMessage, 'parts'> }
   | { type: 'part'; messageId: string; part: ChatPart }
   | { type: 'text-delta'; messageId: string; partId: string; delta: string }
-  | { type: 'error'; message: string }
+  /** `origin`: the harness's error (#169); absent for the backend's own errors (pull failed, …), which name their cause. */
+  | { type: 'error'; message: string; origin?: ErrorOrigin }
   /** The chat's queued prompts changed (#155); `started`: the prompt that just left the queue to run. */
   | { type: 'queue'; queued: QueuedPrompt[]; started?: string };
 

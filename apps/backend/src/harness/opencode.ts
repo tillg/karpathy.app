@@ -1,7 +1,7 @@
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2/client';
 import type { ChatMessage, ChatSummary, ModelInput } from '@karpathy/shared';
 import { lastEntries, ModelLimits, type LastEntryCache } from './context-cache.js';
-import { mapEvent, mapMessages, mapModels, usageRows, usageSessions, withLimit, writtenPaths, type HarnessEvent, type UsageRow } from './map.js';
+import { ErrorOrigins, mapEvent, mapMessages, mapModels, usageRows, usageSessions, withLimit, writtenPaths, type HarnessEvent, type UsageRow } from './map.js';
 
 export type AgentName = 'vault' | 'vault-readonly' | 'commit-message' | 'chat-title';
 
@@ -232,6 +232,8 @@ export class OpencodeHarness implements Harness {
           continue;
         }
         let disposed = false;
+        // Per connection: a reconnect may have missed events, so it starts over.
+        const origins = new ErrorOrigins();
         try {
           const sub = await this.c.event.subscribe({ directory: dir }, { signal: ctrl.signal, sseMaxRetryAttempts: 1 } as never);
           for await (const raw of sub.stream) {
@@ -239,7 +241,8 @@ export class OpencodeHarness implements Harness {
             if (type === 'server.connected') for (const w of me.waiters.splice(0)) w();
             // A refresh (instance dispose) ends the stream on purpose: reconnect at once, it is no outage.
             if (type === 'server.instance.disposed') disposed = true;
-            const e = mapEvent(raw, dir);
+            const mapped = mapEvent(raw, dir);
+            const e = mapped && origins.apply(mapped);
             if (e?.type === 'message') {
               // A model not seen yet (a settings change): its window is fetched before the message goes out.
               if (e.message.model && !this.modelLimits.has(e.message.model)) await this.modelLimits.know([e.message.model]);

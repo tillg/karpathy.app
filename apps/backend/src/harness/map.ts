@@ -1,5 +1,5 @@
 import { posix } from 'node:path';
-import { BROWSER_TOOLS, type ChatMessage, type ChatPart, type ModelInput, type ToolCall, type ToolStatus } from '@karpathy/shared';
+import { BROWSER_TOOLS, type ChatMessage, type ChatPart, type ErrorOrigin, type ModelInput, type ToolCall, type ToolStatus } from '@karpathy/shared';
 
 /**
  * Maps opencode's wire shapes to the backend↔harness vocabulary (ACP-shaped: session /
@@ -11,9 +11,11 @@ export type HarnessEvent =
   | { type: 'message'; sessionId: string; message: Omit<ChatMessage, 'parts'> }
   | { type: 'part'; sessionId: string; messageId: string; part: ChatPart }
   | { type: 'text-delta'; sessionId: string; messageId: string; partId: string; delta: string }
-  | { type: 'error'; sessionId: string; message: string; aborted: boolean }
+  | { type: 'error'; sessionId: string; message: string; aborted: boolean; origin?: ErrorOrigin }
   | { type: 'file-edited'; path: string };
 
+/** opencode's error on a tool that was still running when its turn failed or stopped (session processor cleanup). */
+const ABORTED_TOOL = 'Tool execution aborted';
 const DENIED_PREFIX = 'The user has specified a rule which prevents you from using this specific tool call';
 /**
  * File-writing tools; save_url (deploy/opencode/tools) downloads a media file or PDF into the vault,
@@ -104,6 +106,14 @@ export function mapPart(part: Json, root: string): ChatPart | null {
   }
 }
 
+/** A tool that was running when its turn failed: still pending/running, or aborted by opencode for that. */
+const inFlight = (c: ToolCall) => c.status === 'pending' || c.status === 'running' || (c.status === 'error' && c.error === ABORTED_TOOL);
+
+/** The origin of an error (#169): the last of the tools running at the time, else the model's own request. */
+const originOf = (running: string[]): ErrorOrigin => (running.length ? { kind: 'tool', tool: running.at(-1)! } : { kind: 'model' });
+
+const isAbort = (e: unknown) => obj(e).name === 'MessageAbortedError';
+
 function errorMessage(e: unknown): string | undefined {
   const o = obj(e);
   if (!o.name && !o.data) return undefined;
@@ -131,6 +141,8 @@ export function mapMessageInfo(info: Json): Omit<ChatMessage, 'parts'> {
     ...(model ? { model } : {}),
     ...(used > 0 ? { context: { used } } : {}),
     ...(err ? { error: err } : {}),
+    // Live, the message comes without its parts: ErrorOrigins names the tool; a reload, mapMessages.
+    ...(err && !isAbort(info.error) ? { errorOrigin: { kind: 'model' as const } } : {}),
   };
 }
 
@@ -155,7 +167,9 @@ export function mapMessages(list: unknown[], root: string): ChatMessage[] {
   return list.map((m) => {
     const o = obj(m);
     const parts = (Array.isArray(o.parts) ? o.parts : []).map((p) => mapPart(obj(p), root)).filter((p): p is ChatPart => p !== null);
-    return { ...mapMessageInfo(obj(o.info)), parts };
+    const info = mapMessageInfo(obj(o.info));
+    const running = parts.flatMap((p) => (p.type === 'tool' && inFlight(p.call) ? [p.call.tool] : []));
+    return { ...info, ...(info.errorOrigin ? { errorOrigin: originOf(running) } : {}), parts };
   });
 }
 
@@ -227,11 +241,57 @@ export function mapEvent(raw: unknown, root: string): HarnessEvent | null {
       return { type: 'text-delta', sessionId, messageId: str(p.messageID) ?? '', partId: str(p.partID) ?? '', delta: str(p.delta) ?? '' };
     case 'session.error': {
       const err = obj(p.error);
-      return { type: 'error', sessionId, message: errorMessage(err) ?? 'error', aborted: err.name === 'MessageAbortedError' };
+      const aborted = isAbort(err);
+      return { type: 'error', sessionId, message: errorMessage(err) ?? 'error', aborted, ...(aborted ? {} : { origin: { kind: 'model' as const } }) };
     }
     case 'file.edited':
       return str(p.file) ? { type: 'file-edited', path: toVaultPath(str(p.file)!, root) } : null;
     default:
       return null;
+  }
+}
+
+/**
+ * Names the tool behind a live error (#169). Live events carry no parts with a message, so this follows each
+ * session's running tool calls: opencode publishes `session.error` while the tool still runs, then marks it
+ * aborted, then sends the message with its error. Feed it every mapped event in order; it returns the event,
+ * with a tool origin where a tool was running.
+ */
+export class ErrorOrigins {
+  /** session → message → part → its tool and whether opencode already aborted it, in the order the calls started. */
+  private running = new Map<string, Map<string, Map<string, { tool: string; aborted: boolean }>>>();
+
+  apply(e: HarnessEvent): HarnessEvent {
+    switch (e.type) {
+      case 'part': {
+        if (e.part.type !== 'tool') return e;
+        const msgs = this.running.get(e.sessionId) ?? new Map<string, Map<string, { tool: string; aborted: boolean }>>();
+        const parts = msgs.get(e.messageId) ?? new Map<string, { tool: string; aborted: boolean }>();
+        if (inFlight(e.part.call)) parts.set(e.part.id, { tool: e.part.call.tool, aborted: e.part.call.status === 'error' });
+        else parts.delete(e.part.id);
+        if (parts.size) msgs.set(e.messageId, parts);
+        else msgs.delete(e.messageId);
+        if (msgs.size) this.running.set(e.sessionId, msgs);
+        else this.running.delete(e.sessionId);
+        return e;
+      }
+      case 'message': {
+        // Kept until the session goes idle: opencode may send the failed message more than once.
+        if (!e.message.errorOrigin) return e;
+        const tools = [...(this.running.get(e.sessionId)?.get(e.message.id)?.values() ?? [])].map((t) => t.tool);
+        return { ...e, message: { ...e.message, errorOrigin: originOf(tools) } };
+      }
+      case 'error': {
+        // Only calls still running: one aborted by an earlier error of this turn is not this error's origin.
+        if (!e.origin) return e;
+        const tools = [...(this.running.get(e.sessionId)?.values() ?? [])].flatMap((m) => [...m.values()]).filter((t) => !t.aborted).map((t) => t.tool);
+        return { ...e, origin: originOf(tools) };
+      }
+      case 'status':
+        if (e.state === 'idle') this.running.delete(e.sessionId);
+        return e;
+      default:
+        return e;
+    }
   }
 }
