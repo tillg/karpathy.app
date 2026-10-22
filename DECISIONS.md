@@ -238,6 +238,8 @@ edited: 2026-10-22
   - [15:45 — #142 and #163: fix the tests (and the skill wording), not the assertions; #163 stays open](#run-2026-10-22-1404-9)
   - [15:30 — Close #161, #153, #136 as not reproduced (15 suite runs up to load 60, 0 failures)](#run-2026-10-22-1404-10)
   - [15:35 — Retro: quote `just e2e` arguments (test-first); CLAUDE.md line on running `@llm` tests one at a time](#run-2026-10-22-1404-11)
+- [2026-10-22 17:20 — #171: research developing from the iPad](#run-2026-10-22-1720)
+  - [17:45 — Research only, on branch `research/ipad-dev`; build nothing before the joint discussion](#run-2026-10-22-1720-1)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3583,3 +3585,28 @@ edited: 2026-10-22
 - **Why:** a test where there is a runtime surface, a CLAUDE.md pointer where there isn't.
 - **Alternatives:** install the host packages with sudo here (outside Ansible: drift).
 - **Consequences:** run `just devhost` from the Mac to give karpathy-dev WebKit, qrencode and ffmpeg.
+
+# 2026-10-22 17:20 — #171: research developing from the iPad {#run-2026-10-22-1720}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > We want to work on gh issue #171.
+
+  Added during the run: *"Do the reserach part in a branch and then wait for me to discuss"*.
+
+## 17:45 — Research only, on branch `research/ipad-dev`; build nothing before the joint discussion {#run-2026-10-22-1720-1}
+
+- **Status:** open
+- **Context:** issue #171 has three parts: research, a joint evaluation with the user, then the setup. The user asked
+  mid-run for the research on a branch, then a stop for discussion.
+- **Question:** how far to go without the user, and where to put the result?
+- **Decision:** write `specs/research/ipad-dev/ipad-dev-report.md` (md2html report, in `reports.json` and
+  `specs/reports-nav.js`) on branch `research/ipad-dev`, push it, comment on #171 with the link. No server, Tailscale
+  or repo setup changes. The report recommends three phases and lists the open questions for the discussion.
+- **Why:** the issue makes the setup depend on a joint decision, and the user said to wait. The proposed changes (a
+  Tailscale admin toggle, the stacks' port binding, Caddy's dev site) touch shared dev infrastructure.
+- **Alternatives:** build phase 1 (docs) right away (cheap, but it would pre-empt the discussion); research on `main`
+  (the user asked for a branch).
+- **Consequences:** no PR yet; the branch is merged or turned into a PR after the discussion. Side finding in the
+  report: `compose.dev.yml` publishes the stack ports on all interfaces (`0.0.0.0:80N0`), not just loopback.

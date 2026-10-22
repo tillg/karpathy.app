@@ -4,7 +4,8 @@
     "specs/changes/v1/v1-plan.md",
     "specs/research/prod-env/prod-env-report.md",
     "specs/research/run-2026-10-21/run-2026-10-21-report.md",
-    "specs/research/run-2026-10-22/run-2026-10-22-report.md"
+    "specs/research/run-2026-10-22/run-2026-10-22-report.md",
+    "specs/research/ipad-dev/ipad-dev-report.md"
   ],
   "reports": [
     {
@@ -30,6 +31,10 @@
     {
       "path": "specs/research/run-2026-10-22/run-2026-10-22-report.md",
       "label": "Run 2026-10-22"
+    },
+    {
+      "path": "specs/research/ipad-dev/ipad-dev-report.md",
+      "label": "iPad dev"
     }
   ],
   "brand": {
