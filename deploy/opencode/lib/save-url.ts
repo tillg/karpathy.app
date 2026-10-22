@@ -162,14 +162,20 @@ export async function saveUrl(dir: string, url: string, filePath: string, opts: 
     throw e.code === 'EEXIST' ? new Error(`already exists: ${t.rel}; choose another name`) : e;
   });
   let n = 0;
+  // A reader, not `for await`: Bun's async iterator over a fetch body with an await in the loop failed about one
+  // download in ten on GitHub runners with "undefined is not a function" (#162); getReader() never did.
+  const reader = res.body.getReader();
   try {
-    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    for (;;) {
+      const { done, value: chunk } = await reader.read();
+      if (done) break;
       n += chunk.byteLength;
       if (n > max) throw new Error(`larger than ${size(max)}`);
       await fh.write(chunk);
     }
     await fh.close();
   } catch (e) {
+    await reader.cancel().catch(() => undefined);
     await fh.close().catch(() => undefined);
     await unlink(t.abs).catch(() => undefined);
     throw e;
