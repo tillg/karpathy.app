@@ -116,6 +116,8 @@ header `karpathy #N`).
 - A new worktree has no `deploy/secrets/` (gitignored): `just dev up` copies missing `*_api_key` files from the host
   secrets `~/.config/karpathy/secrets/` (filled by Ansible on `karpathy-dev`, by hand on the Mac). Without
   `openrouter_api_key` in either place, `just dev up` stops; a dummy key still runs `just e2e --grep-invert @llm`.
+- `npm run test:llm` and `@llm` e2e specs spend OpenRouter credit: run them from one agent at a time. Parallel runs
+  hit "would exceed your available credits given your current in-flight requests" and prove nothing.
 - A full `just e2e` on a busy Mac fails dozens of tests that pass alone: re-run with `just e2e --last-failed`, and check
   any `@llm` spec that still fails against the commit before your change (own worktree and stack) before blaming it —
   the local dev model fails some of them on its own.

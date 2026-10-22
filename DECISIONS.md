@@ -236,6 +236,8 @@ edited: 2026-10-22
   - [15:20 — #169: the backend works out the error's origin; no tool in flight = the model](#run-2026-10-22-1404-7)
   - [15:20 — #121: bump every action to a verified node24 major, not the newest](#run-2026-10-22-1404-8)
   - [15:45 — #142 and #163: fix the tests (and the skill wording), not the assertions; #163 stays open](#run-2026-10-22-1404-9)
+  - [15:30 — Close #161, #153, #136 as not reproduced (15 suite runs up to load 60, 0 failures)](#run-2026-10-22-1404-10)
+  - [15:35 — Retro: quote `just e2e` arguments (test-first); CLAUDE.md line on running `@llm` tests one at a time](#run-2026-10-22-1404-11)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3549,3 +3551,35 @@ edited: 2026-10-22
   available credits given your current in-flight requests"; key limit $100, about $50 left) while several agents ran
   model tests at once. Run it once credits allow, then close #163. The agent stubbed the missing `qrencode`/`ffmpeg`
   in its scratchpad instead of installing them outside Ansible.
+
+## 15:30 — Close #161, #153, #136 as not reproduced (15 suite runs up to load 60, 0 failures) {#run-2026-10-22-1404-10}
+
+- **Status:** open
+- **Context:** three backend flakes (api.test.ts, 1 s waits in the event stream / openPage state file), all reported
+  from the Mac with several stacks and the native Ollama in Rancher's VM.
+- **Question:** close or keep?
+- **Decision:** closed as not planned / not reproduced, each with the run list: 5 sequential full runs, 3 rounds of two
+  parallel runs (one with load ~16), 2 rounds of two parallel runs at load 56–60; 0 failures. No GitHub failure of
+  those tests since 2026-10-08. The 1 s waits were not lengthened "just in case".
+- **Why:** the user's hunch fits: the setup they were seen on is gone.
+- **Alternatives:** also run on the Mac (not reachable from this run).
+- **Consequences:** reopen with host, load and test name if they come back. During that load test `just check` hit two
+  5 s timeouts in `packages/settings/test/cli.test.ts` (load ~38); they passed alone. Not filed: the load was
+  artificial.
+
+## 15:35 — Retro: quote `just e2e` arguments (test-first); CLAUDE.md line on running `@llm` tests one at a time {#run-2026-10-22-1404-11}
+
+- **Status:** open
+- **Context:** retro over this run. (1) `just e2e --grep "a b c"` split the pattern into file filters (`{{args}}`
+  unquoted). (2) parallel agents running model tests ran into OpenRouter's in-flight credit limit. (3) qrencode,
+  ffmpeg and WebKit libraries are still missing on karpathy-dev. (4) a bug agent force-pushed its throwaway branch
+  (decision 5). (5) CI on `main` was already red at the run's start (#162) and I didn't check that baseline first.
+  (6) I appended some `DECISIONS.md` sections with a Bash heredoc instead of Edit, against the skill's guardrail.
+- **Question:** which mechanical fix per item?
+- **Decision:** (1) `deploy/justfile.test.sh` (red first) + `[positional-arguments]` and `"$@"` in the recipe, run by
+  `just check` (09c798f). (2) one line in CLAUDE.md, Parallel dev stacks. (3) no change: role `devtools` already
+  installs them; it needs `just devhost` from the Mac. (4), (5) and (6) are plugin-level: drafted in the run report, not
+  published.
+- **Why:** a test where there is a runtime surface, a CLAUDE.md pointer where there isn't.
+- **Alternatives:** install the host packages with sudo here (outside Ansible: drift).
+- **Consequences:** run `just devhost` from the Mac to give karpathy-dev WebKit, qrencode and ffmpeg.
