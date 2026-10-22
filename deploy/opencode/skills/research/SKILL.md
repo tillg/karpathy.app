@@ -30,14 +30,16 @@ never the whole page.
 
 1. Read the wiki's index (e.g. `Wiki/index.md`) and the pages on the topic.
 2. If you have the web tools (`websearch`, `webfetch`), scout a little: **at most 3 searches and 2 fetches**.
-   Save nothing to `Sources/` in this turn. If you don't have them, say at the start of your reply that
-   **Web access** must be turned on in **Settings** before the run.
+   Save nothing to `Sources/` in this turn. If you don't have them, skip the scouting (step 4 says what to tell
+   the user).
 3. Write the plan note `Research/<YYYY-MM-DD>-<slug>.md` (folder per the vault's rules) with:
    - the topic;
    - 3–6 sub-questions as a checklist (`- [ ] …`);
    - what the wiki already covers, with links to those pages;
    - the budget: at most 8 sources per run turn.
 4. End your reply with: "Edit the note if you like, then reply **go**." Write nothing else in this turn.
+   **Without the web tools**, the reply must also contain, right before that line, the sentence: "**Web access** is
+   off: turn it on in **Settings** before you reply go." Never leave it out: the run can't search without it.
 
 If you can't write files (the vault is in conflict and editing is denied), put the plan into your reply
 instead.
@@ -48,8 +50,9 @@ instead.
 2. **No web tools:** answer and tick off the sub-questions the wiki already covers, tell the user to turn on
    **Web access** in **Settings** for the rest, and stop.
 3. For each open sub-question: at most 2 web searches. Pick useful results. Before fetching a URL, search
-   `Sources/` for it and skip it if it is there already. Fetch it, then save a source file (below). **At most
-   8 new sources per run turn.**
+   `Sources/` for it and skip it if it is there already. Fetch it, then save a source file (below). If a fetch
+   fails, fetch another result instead: save a source only for a page you fetched, never from search results
+   alone. **At most 8 new sources per run turn.**
 4. Create or update wiki pages that answer the questions and cite their source files. Update the vault's
    index and log pages if it has them.
 5. Tick off answered sub-questions in the plan note (`- [x]`) and link the pages that answer them.
