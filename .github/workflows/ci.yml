@@ -12,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Full history: the secret scan checks every commit, not only the last one (#141).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
       - run: bash deploy/gitleaks/scan-repo.sh
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with: { node-version: 22, cache: npm }
       - run: sudo apt-get update && sudo apt-get install -y ripgrep
       - run: npm ci
@@ -28,7 +28,7 @@ jobs:
       # The ingest image's build context: the private ingest-email repo at its pinned commit (read-only deploy key).
       - id: ie
         run: echo "ref=$(cat deploy/ingest/ingest-email.ref)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { repository: tillg/ingest_email, ref: '${{ steps.ie.outputs.ref }}', ssh-key: '${{ secrets.INGEST_EMAIL_DEPLOY_KEY }}', path: tmp/ingest_email-src, persist-credentials: false }
       - run: docker build -q --build-context ingest_email=tmp/ingest_email-src -t kai-test-ingest -f deploy/ingest/Dockerfile .
       - run: npm test
@@ -46,7 +46,7 @@ jobs:
     # Syntax checks don't decrypt the vaults; the dummy password only satisfies the vault client.
     env: { ANSIBLE_VAULT_PASSWORD: dummy }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - run: pipx install ansible-core && pipx install ansible-lint
       # Into the user path explicitly: the runner's preinstalled Ansible has them elsewhere, and
       # pipx's ansible-lint only sees ~/.ansible/collections.
@@ -60,8 +60,8 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with: { node-version: 22, cache: npm }
       - run: sudo apt-get update && sudo apt-get install -y ripgrep
       - run: npm ci
