@@ -235,6 +235,7 @@ edited: 2026-10-22
   - [14:40 — #137 and #154 stay open: both still hold on main / from a Hetzner IP](#run-2026-10-22-1404-6)
   - [15:20 — #169: the backend works out the error's origin; no tool in flight = the model](#run-2026-10-22-1404-7)
   - [15:20 — #121: bump every action to a verified node24 major, not the newest](#run-2026-10-22-1404-8)
+  - [15:45 — #142 and #163: fix the tests (and the skill wording), not the assertions; #163 stays open](#run-2026-10-22-1404-9)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3531,3 +3532,20 @@ edited: 2026-10-22
 - **Alternatives:** the newest majors (e.g. checkout v7).
 - **Consequences:** release.yml and pages.yml were only checked by reading `action.yml`; the next release shows
   whether they run clean.
+
+## 15:45 — #142 and #163: fix the tests (and the skill wording), not the assertions; #163 stays open {#run-2026-10-22-1404-9}
+
+- **Status:** open
+- **Context:** both reproduced on `main`. #142 failed 3/3 because the note now moves to `Ideas/Ideas.md` when the
+  turn ends (43e3f4d, specified in `functional.md`). #163: `reply()` read only the last assistant message, but
+  opencode starts a new message per step, so the web-access sentence was often in an earlier one.
+- **Question:** loosen the assertions, or fix what the tests read?
+- **Decision:** #142's test follows the move and checks it; `reply()` reads every assistant message of the turn
+  (assertion unchanged); the `/research` skill gets a fixed web-access sentence and saves sources only for fetched
+  pages (a model-facing change). Merged in f3c6f84; #142 closed, #163 left open.
+- **Why:** the user sees the whole turn; the move is specified behaviour.
+- **Alternatives:** loosen `/web access/i`; close #163 on the partial evidence.
+- **Consequences:** `npm run test:llm` couldn't be re-run fully: OpenRouter refused requests ("would exceed your
+  available credits given your current in-flight requests"; key limit $100, about $50 left) while several agents ran
+  model tests at once. Run it once credits allow, then close #163. The agent stubbed the missing `qrencode`/`ffmpeg`
+  in its scratchpad instead of installing them outside Ansible.
