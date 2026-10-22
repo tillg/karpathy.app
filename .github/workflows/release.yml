@@ -26,7 +26,7 @@ jobs:
       latest: ${{ steps.v.outputs.latest }}
       built: ${{ steps.v.outputs.built }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with: { fetch-depth: 0 }
       # One version string without the v: image tag, APP_VERSION and what /api/health reports.
       - id: v
@@ -50,12 +50,12 @@ jobs:
     needs: [guard]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with: { node-version: 22, cache: npm }
       - run: npm ci --workspace apps/web --include-workspace-root
       - run: APP_VERSION=${{ needs.guard.outputs.version }} npm run build -w apps/web
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: web-dist, path: apps/web/dist, retention-days: 1 }
 
   build:
@@ -70,23 +70,23 @@ jobs:
     runs-on: ${{ matrix.runner }}
     permissions: { contents: read, packages: write }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # The ingest image's build context: the private ingest-email repo at its pinned commit (read-only deploy key).
       - if: matrix.image == 'ingest'
         id: ie
         run: echo "ref=$(cat deploy/ingest/ingest-email.ref)" >> "$GITHUB_OUTPUT"
       - if: matrix.image == 'ingest'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with: { repository: tillg/ingest_email, ref: '${{ steps.ie.outputs.ref }}', ssh-key: '${{ secrets.INGEST_EMAIL_DEPLOY_KEY }}', path: tmp/ingest_email-src, persist-credentials: false }
       - if: matrix.image == 'proxy'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with: { name: web-dist, path: tmp/web-dist }
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with: { registry: ghcr.io, username: '${{ github.actor }}', password: '${{ secrets.GITHUB_TOKEN }}' }
       # Pushed by digest only; the manifest job puts the version tag on both arches at once.
       - id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/${{ matrix.image }}/Dockerfile
@@ -102,7 +102,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
       - run: mkdir -p digests && echo "${{ steps.build.outputs.digest }}" > "digests/${{ matrix.image }}-${{ matrix.arch }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: 'digest-${{ matrix.image }}-${{ matrix.arch }}', path: digests/*, retention-days: 1 }
 
   manifest:
@@ -113,10 +113,10 @@ jobs:
       matrix:
         image: [proxy, backend, opencode, egress, ingest]
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { pattern: 'digest-${{ matrix.image }}-*', merge-multiple: true, path: digests }
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with: { registry: ghcr.io, username: '${{ github.actor }}', password: '${{ secrets.GITHUB_TOKEN }}' }
       # Release candidates and hotfixes on older lines never move :latest.
       - env:
@@ -135,7 +135,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions: { contents: write }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # compose.yml is the release asset a deployment downloads (specs/system/deployment.md, key decisions).
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
