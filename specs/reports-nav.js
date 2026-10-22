@@ -8,6 +8,7 @@ const REPORTS = [
   ['changes/v1/v1-plan.html', 'V1 plan'],
   ['research/prod-env/prod-env-report.html', 'Prod environment'],
   ['research/run-2026-10-21/run-2026-10-21-report.html', 'Run 2026-10-21'],
+  ['research/run-2026-10-22/run-2026-10-22-report.html', 'Run 2026-10-22'],
 ];
 
 const base = document.currentScript.src;

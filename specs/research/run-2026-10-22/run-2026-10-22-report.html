@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autonomous run 2026-10-22: issue sweep, bug re-checks, two ToDos, v0.0.35</title>
+<meta name="description" content="Run report: 11 issues closed, the save_url flake found and fixed, chat error pills that name their tool, GitHub Actions on Node 24, release v0.0.35.">
+<meta name="generator" content="md2html 0.6.0">
+<style>
+@layer base, theme;
+@layer base {
+:root {
+  --bg: #fbfbfa; --fg: #1d1d1f; --muted: #5f6368; --line: #e3e3e0; --card: #ffffff;
+  --accent: #1f5bd6; --go: #1e7b3a; --go-bg: #e6f4ea; --partial: #8a5a00; --partial-bg: #fdf1d6;
+  --no: #b3261e; --no-bg: #fce8e6; --code: #f2f2ef; --figure-bg: #ffffff;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #16171a; --fg: #e8e8ea; --muted: #a0a3a8; --line: #2c2e33; --card: #1e2024;
+    --accent: #8ab4ff; --go: #7fd49a; --go-bg: #173524; --partial: #f0c36a; --partial-bg: #3a2e12;
+    --no: #ff9b91; --no-bg: #3d1a17; --code: #26282d; --figure-bg: #ffffff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #16171a; --fg: #e8e8ea; --muted: #a0a3a8; --line: #2c2e33; --card: #1e2024;
+  --accent: #8ab4ff; --go: #7fd49a; --go-bg: #173524; --partial: #f0c36a; --partial-bg: #3a2e12;
+  --no: #ff9b91; --no-bg: #3d1a17; --code: #26282d; --figure-bg: #ffffff; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; overflow-wrap: break-word; }
+main { max-width: 980px; margin: 0 auto; padding: 32px 16px 80px; }
+.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.appicon { flex: none; width: 48px; height: 48px; border-radius: 11px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; }
+h2 { font-size: 1.4rem; margin: 48px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 28px 0 8px; }
+p, li { max-width: 72ch; }
+a { color: var(--accent); }
+code { background: var(--code); padding: 1px 5px; border-radius: 4px; font-size: .88em; }
+pre { background: var(--code); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 12px 0; overflow-x: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; border-radius: 0; font-size: .85rem; }
+blockquote { margin: 12px 0; padding: 0 0 0 16px; border-left: 3px solid var(--line); color: var(--muted); }
+img { max-width: 100%; height: auto; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 32px 0; }
+hr + h2 { border-top: 0; padding-top: 0; margin-top: 0; }
+.sub { color: var(--muted); margin: 0 0 24px; }
+.sub img { height: 1.2em; width: auto; vertical-align: middle; }
+.tldr { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; }
+.tldr p:first-child { margin-top: 0; }
+.tldr > :last-child { margin-bottom: 0; }
+nav.toc { columns: 2; column-gap: 32px; font-size: .95rem; margin-top: 20px; }
+nav.toc a { display: block; padding: 2px 0; }
+@media (max-width: 640px) { nav.toc { columns: 1; } }
+.tbl { overflow-x: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; background: var(--code); }
+tr:last-child td { border-bottom: 0; }
+th[align="center"], td[align="center"] { text-align: center; }
+th[align="right"], td[align="right"] { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.v { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+td .v { white-space: nowrap; }
+.go { color: var(--go); background: var(--go-bg); }
+.partial { color: var(--partial); background: var(--partial-bg); }
+.no { color: var(--no); background: var(--no-bg); }
+figure { margin: 16px 0; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+figure img { display: block; max-width: 100%; height: auto; margin: 0 auto; background: var(--figure-bg); border-radius: 6px; }
+figcaption { color: var(--muted); font-size: .85rem; margin-top: 8px; text-align: center; }
+figcaption a.mmd-src { white-space: nowrap; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; min-width: 0; }
+.card h4 { margin: 0 0 6px; font-size: 1rem; }
+.card p { margin: 6px 0; font-size: .93rem; }
+.contains-task-list { list-style: none; padding-left: 20px; }
+.footnotes { margin-top: 48px; padding-top: 12px; border-top: 1px solid var(--line); font-size: .9rem; color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+.reports-nav { display: flex; align-items: center; gap: 4px;
+  padding: 8px 16px; overflow-x: auto; white-space: nowrap; scrollbar-width: none;
+  background: var(--card); border-bottom: 1px solid var(--line);
+  font: 500 14px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+.reports-nav::-webkit-scrollbar { display: none; }
+.reports-nav .brand { display: flex; align-items: center; gap: 8px; margin-right: 8px; color: var(--muted); }
+.reports-nav .brand img { width: 20px; height: 20px; border-radius: 5px; }
+.reports-nav a.item { padding: 6px 12px; border-radius: 999px; color: var(--fg); text-decoration: none; }
+.reports-nav a.item:hover { background: rgba(127,127,127,.12); }
+.reports-nav a.item[aria-current="page"] { background: var(--accent); color: var(--bg); }
+
+.report-meta { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 16px; padding: 0; font-size: .88rem; }
+.report-meta div { display: flex; align-items: baseline; gap: 6px; }
+.report-meta dt { color: var(--muted); }
+.report-meta dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.report-status { display: inline-block; padding: 1px 10px; border-radius: 999px; font-size: .8rem; font-weight: 600; }
+.report-status.research { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.report-status.ongoing { color: var(--partial); background: var(--partial-bg); }
+.report-status.implemented { color: var(--go); background: var(--go-bg); }
+}
+@layer theme {
+/* karpathy.app theme for md2html reports. Layered after md2html's base.css.
+ * base.css already is the karpathy.app house style (Apple-like, light + dark), so this file
+ * only holds deliberate deviations from it.
+ */
+
+/* Diagrams are drawn for a white background: keep the whole figure frame white in dark mode too,
+ * as in the hand-written reports. */
+figure { background: var(--figure-bg); }
+figcaption { color: #5f6368; }
+
+/* ```text blocks are ASCII wireframes (feature report): box-drawing lines must touch, so use a
+ * real monospace font and a tight line height on the <pre> itself (the line box comes from it). */
+pre:has(> code.language-text) { font: 12.5px/1.22 "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace; }
+pre > code.language-text { font: inherit; }
+}
+</style>
+</head>
+<body>
+<nav class="reports-nav" aria-label="Reports"><span class="brand"><img src="../../../assets/icons/icon-192.png" alt="">karpathy.app</span><a class="item" href="../features/feature-report.html">Features</a><a class="item" href="../browser-only/browser-only-report.html">Browser-only</a><a class="item" href="../../changes/v1/v1-plan.html">V1 plan</a><a class="item" href="../prod-env/prod-env-report.html">Prod environment</a><a class="item" href="../run-2026-10-21/run-2026-10-21-report.html">Run 2026-10-21</a><a class="item" href="run-2026-10-22-report.html" aria-current="page">Run 2026-10-22</a></nav>
+<main>
+<header class="top"><h1>Autonomous run 2026-10-22: issue sweep, bug re-checks, two ToDos, v0.0.35</h1><img class="appicon" src="../../../assets/icons/icon-192.png" alt="karpathy.app" width="48" height="48"></header>
+<dl class="report-meta"><div><dt>Created</dt><dd>2026-10-22</dd></div><div><dt>Last edited</dt><dd>2026-10-22</dd></div><div><dt>Status</dt><dd><span class="report-status implemented">Implemented</span></dd></div></dl>
+<p class="sub">What the /autonomous run of 2026-10-22 (14:04–16:40, on karpathy-dev) did: checked every open issue against main, re-ran every bug, built #169 and #121, and released v0.0.35. Process decisions are in <a href="../../../DECISIONS.md">DECISIONS.md</a>.</p>
+<div class="tldr">
+<p><strong>11 issues closed, 30 open. Two real bugs fixed, three old flakes closed as not reproducible, both ToDo issues built. v0.0.35 is released: prod gets it with <code>just deploy hetzner 0.0.35</code> on your Mac.</strong></p>
+<ol>
+<li><strong>Issue sweep:</strong> only #61 (search AND + accents) was already done and is closed; #85 is partly done (commented). The other 26 non-bug issues are not built yet.</li>
+<li><strong>Bugs:</strong> your hunch held for the backend flakes (#161, #153, #136): 15 full suite runs up to load 60, no failure. But #162 (<code>save_url</code>) was real and not about models: Bun's stream iterator failed about 1 download in 10 on GitHub runners, prod included; fixed. #142 was a stale test; fixed. #163's fix is merged but waits for clean LLM runs (OpenRouter credit ran short).</li>
+<li><strong>#169:</strong> the chat's red error pill now says where the error came from: "During tool websearch: Insufficient credits" or "From the model …".</li>
+<li><strong>#121:</strong> every GitHub Action runs on Node 24; the deprecation warning is gone.</li>
+</ol>
+<p><strong>Your part:</strong> deploy v0.0.35, run <code>just devhost</code>, push the demo vault, top up OpenRouter credit, review the decisions.</p>
+</div>
+<nav class="toc" aria-label="Contents">
+<a href="#built">1. What was built and fixed</a>
+<a href="#sweep">2. Issue sweep</a>
+<a href="#quality">3. Testing</a>
+<a href="#release">4. Release</a>
+<a href="#todo">5. What you need to do</a>
+<a href="#sources">6. Sources</a>
+</nav>
+<h2 id="built">1. What was built and fixed</h2>
+<div class="cards">
+<div class="card"><h4>#169 Error pills name their source</h4>
+<p>When a reply fails, the red pill says which tool was running at that moment ("During tool websearch: …") or, when none was, that the model's own request failed ("From the model qwen3-8b: …"). It works live and after a reload, and the screen-reader announcement says the same. The app's own errors (a failed pull, a restarted AI service) and Stop keep their text. With several tools running at once it names the last one started; right after the backend reconnects to opencode it may say "model" until a reload.</p>
+</div>
+<div class="card"><h4>#121 GitHub Actions on Node 24</h4>
+<p>checkout, setup-node, upload/download-artifact, the docker actions and the Pages actions are bumped to the first major that runs on Node 24, each checked against its <code>action.yml</code>. CI shows no "Node.js 20 is deprecated" warning any more.</p>
+</div>
+<div class="card"><h4>#162 save_url downloads (real bug)</h4>
+<p>The AI's <code>save_url</code> tool failed about one download in ten on GitHub runners with "undefined is not a function": Bun's async iterator over a fetch body breaks when the loop awaits a file write. It now reads with <code>getReader()</code>: 0 failures in 270 probe downloads on GitHub runners, CI green.</p>
+</div>
+<div class="card"><h4>#142 and #163 (test fixes)</h4>
+<p>#142: the picture test still looked for <code>Ideas.md</code>, which since yesterday moves to <code>Ideas/Ideas.md</code> with its picture. #163: the <code>/research</code> tests read only the last message of a turn, but opencode starts a new message per step; they now read the whole turn, and the skill states its web access in a fixed sentence.</p>
+</div>
+</div>
+<h2 id="sweep">2. Issue sweep</h2>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Issue</th>
+<th>Verdict</th>
+<th>What happened</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>#61 Search AND + accents</td>
+<td>done</td>
+<td>closed: on <code>main</code> since #138</td>
+</tr>
+<tr>
+<td>#85 Token, cost and context meter</td>
+<td>partly</td>
+<td>commented: context meter and per-vault usage exist; per-turn cost and Compact don't</td>
+</tr>
+<tr>
+<td>#161, #153, #136 Backend flakes under load</td>
+<td>not reproducible</td>
+<td>closed: 15 full runs (sequential, parallel, load 16 and 56–60), 0 failures; no CI failure since 2026-10-08</td>
+</tr>
+<tr>
+<td>#162 <code>save_url</code> on GitHub runners</td>
+<td>real</td>
+<td>fixed (1108e79), closed</td>
+</tr>
+<tr>
+<td>#142 Picture e2e</td>
+<td>real (stale test)</td>
+<td>fixed (f3c6f84), closed</td>
+</tr>
+<tr>
+<td>#163 <code>@llm</code> /research tests</td>
+<td>real (test read too little)</td>
+<td>fix merged (f3c6f84); open until a few clean <code>npm run test:llm</code> runs</td>
+</tr>
+<tr>
+<td>#137 Instagram 429 on prod</td>
+<td>still valid</td>
+<td>open: this Hetzner host is throttled too; waits on #168</td>
+</tr>
+<tr>
+<td>#154 BrowserCalls ↔ Vaults circular import</td>
+<td>still valid</td>
+<td>open: the refactor isn't small</td>
+</tr>
+<tr>
+<td>#169, #121 (ToDo)</td>
+<td>built</td>
+<td>merged, closed</td>
+</tr>
+<tr>
+<td>the other 24 enhancement / research issues</td>
+<td>not done</td>
+<td>untouched</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="quality">3. Testing</h2>
+<div class="tbl"><table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>just check</code> on <code>main</code> (lint, typecheck, secret scan, unit suites, deploy tests)</td>
+<td>green; two settings-CLI timeouts at load ~38 (during the flake load test) passed alone</td>
+</tr>
+<tr>
+<td>E2E without <code>@llm</code>, Chromium desktop, iPad and iPhone</td>
+<td>268 passed; 5 failed in the batch and passed on <code>--last-failed</code> (the known busy-host flakes)</td>
+</tr>
+<tr>
+<td>#169 review by a second agent</td>
+<td>no functional bug; one comment/spec fix on opencode's event order, with a regression test</td>
+</tr>
+<tr>
+<td>CI on <code>main</code></td>
+<td>green</td>
+</tr>
+<tr>
+<td>Release v0.0.35</td>
+<td>see §5</td>
+</tr>
+</tbody>
+</table></div>
+<p>Not run: WebKit projects and <code>token-scan.spec.ts</code> (karpathy-dev lacks WebKit's libraries, qrencode and ffmpeg until <code>just devhost</code>); a clean full <code>npm run test:llm</code> (credit).</p>
+<h2 id="release">4. Release</h2>
+<p>Version <strong>0.0.35</strong>, tagged from <code>main</code> with <code>just release 0.0.35</code>; the release workflow builds and publishes the images. It contains everything since v0.0.34: #169, #162, #121, the #142/#163 test fixes, the quoted <code>just e2e</code> arguments, and the dev host's Ansible via pipx (<code>devtools</code> role).</p>
+<p>Deploy on the Mac: <code>just deploy hetzner 0.0.35</code>. Rollback: <code>just deploy hetzner 0.0.34</code>.</p>
+<h2 id="todo">5. What you need to do</h2>
+<ol>
+<li><strong>Deploy:</strong> <code>just deploy hetzner 0.0.35</code> on the Mac.</li>
+<li><strong>Push the demo vault</strong> after the deploy: <code>~/git/karpathy_demo_wiki</code> on karpathy-dev has the new "When something fails" section in chapter 10 (#169).</li>
+<li><strong>Run <code>just devhost</code></strong> from the Mac: gives karpathy-dev WebKit, qrencode, ffmpeg and the pipx Ansible.</li>
+<li><strong>Top up OpenRouter credit</strong>, then run <code>npm run test:llm</code> a few times and close #163.</li>
+<li><strong>Review the decisions</strong> in <a href="../../../DECISIONS.md">DECISIONS.md</a> (run 2026-10-22 14:04), the two overrides first: pushing straight to <code>main</code>, and one force-push of a bug agent's own throwaway branch.</li>
+<li><strong>Answer the #168 questions</strong> (Instagram relay) when you get to it.</li>
+</ol>
+<p>Retro: <code>just e2e</code> now passes quoted arguments through (test in <code>just check</code>); CLAUDE.md says to run <code>@llm</code> tests from one agent at a time. Drafted for the autonomous plugin, not filed: repeat the hard limits in every subagent prompt, record the default branch's CI state at the start, block shell writes to <code>DECISIONS.md</code>.</p>
+<h2 id="sources">6. Sources</h2>
+<ul>
+<li>GitHub issues <a href="https://github.com/tillg/karpathy.app/issues/169">#169</a>, <a href="https://github.com/tillg/karpathy.app/issues/121">#121</a>, <a href="https://github.com/tillg/karpathy.app/issues/162">#162</a>, <a href="https://github.com/tillg/karpathy.app/issues/163">#163</a>, <a href="https://github.com/tillg/karpathy.app/issues/142">#142</a>, <a href="https://github.com/tillg/karpathy.app/issues/161">#161</a>, <a href="https://github.com/tillg/karpathy.app/issues/153">#153</a>, <a href="https://github.com/tillg/karpathy.app/issues/136">#136</a>, <a href="https://github.com/tillg/karpathy.app/issues/137">#137</a>, <a href="https://github.com/tillg/karpathy.app/issues/154">#154</a>, <a href="https://github.com/tillg/karpathy.app/issues/85">#85</a>, <a href="https://github.com/tillg/karpathy.app/issues/61">#61</a>.</li>
+<li><a href="../../../DECISIONS.md">DECISIONS.md</a>, run 2026-10-22 14:04.</li>
+<li>Commits <code>fd7d7de..</code> on <code>main</code>; tag <code>v0.0.35</code>.</li>
+</ul>
+</main>
+</body>
+</html>
