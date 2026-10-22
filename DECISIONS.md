@@ -252,7 +252,7 @@ edited: 2026-10-22
 
 ## 17:16 — Archive 08_vault_management and 06_md_to_html; keep 02, 03, 04, 05 {#run-2026-10-02-1716-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `specs/` held `02_features`, `03_browser_only`, `04_v1`, `05_prod_env`, `06_md_to_html`,
   `08_vault_management` next to `system/`. Their `status` keys were set inconsistently (research dirs
   carried `applied`/`applying`), so they could not decide the question.
@@ -271,7 +271,7 @@ edited: 2026-10-22
 
 ## 17:16 — Research results go to `specs/research/`, the open V1 plan to `specs/changes/v1/` {#run-2026-10-02-1716-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the spec plugin keeps open changes in `specs/changes/<kebab-name>/` (with `feature` = that
   name) and the system description in `specs/system/`; the repo used numbered `NN_snake_case` dirs.
   md2html's spec lint only treats `specs/changes/<name>/` as a change directory.
@@ -296,7 +296,7 @@ edited: 2026-10-22
 
 ## 17:16 — Keep 05_prod_env as research although its hoster decision is deployed {#run-2026-10-02-1716-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the prod-env report's decision (Hetzner, Tailscale, loop-mounted vault FS) is live and
   described in `specs/system/deployment.md`; its disk-space work items (check before adding a vault, clone
   cap) are not built (`functional.md` lists the gap).
@@ -311,7 +311,7 @@ edited: 2026-10-22
 
 ## 17:16 — Rename 02_features despite the links in issues #64–#93 {#run-2026-10-02-1716-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the 30 feature-research issues link to `specs/02_features/feature-report.md` on `main`.
 - **Question:** move the feature research like the others, or leave it at its old path?
 - **Decision:** move it to `specs/research/features/`.
@@ -323,7 +323,7 @@ edited: 2026-10-22
 
 ## 17:16 — Archive by hand, without committing {#run-2026-10-02-1716-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:archive` commits twice after asking for the message; `/autonomous` forbids running
   `/spec:archive` and pushing, and the user didn't ask for a commit.
 - **Question:** how to archive 08 and 06?
@@ -335,7 +335,7 @@ edited: 2026-10-22
 
 ## 17:16 — No Playwright test marathon for a docs-only run {#run-2026-10-02-1716-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/autonomous` step 4 asks for end-to-end testing; this run changes no app code.
 - **Question:** run the browser test marathon?
 - **Decision:** no. Verification is: the test suite before archiving, md2html lint and `build --check`
@@ -347,7 +347,7 @@ edited: 2026-10-22
 
 ## 17:21 — Put the feature report's hand-added menu bar into its build script {#run-2026-10-02-1716-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** rebuilding `feature-report.html` after the move showed that the committed HTML had a
   `<script src="../reports-nav.js">` tag and a Created / Last edited / Status line that
   `build-report-html.mjs` doesn't produce (added by hand earlier).
@@ -371,7 +371,7 @@ edited: 2026-10-22
 
 ## 23:19 — Push the demo vault although /autonomous normally doesn't push {#run-2026-10-02-2319-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/autonomous` forbids `git push` without the user; the task itself says "commit and push the vault".
 - **Question:** Push `tillg/karpathy_demo_wiki` or only commit locally?
 - **Decision:** Commit and push the demo vault repo (only that repo; nothing in `karpathy_app` is pushed).
@@ -382,7 +382,7 @@ edited: 2026-10-22
 
 ## 23:19 — Images as plain Markdown with relative paths into Sources/media/, Wikimedia Commons only {#run-2026-10-02-2319-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the user asked for pictures on the wiki pages; an image feature for the app is being built in
   another session, so the format isn't settled.
 - **Question:** Which embed syntax, where to store the files, which image sources?
@@ -396,7 +396,7 @@ edited: 2026-10-22
 
 ## 23:45 — Take over the prod-only synthesis commit into the repo, then clean up prod's diverged clone {#run-2026-10-02-2319-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** prod's `demo-vault` holds commit 8edeeaa (the Similaun-vs-Cevedale synthesis from the iPhone
   screenshot turn) that it can't push (403: the app's fine-grained token has no write access to the repo).
 - **Question:** Lose that commit, wait for the user to grant the token, or bring its content in another way?
@@ -410,7 +410,7 @@ edited: 2026-10-22
 
 ## 23:50 — Keep the screenshot pages free of images {#run-2026-10-02-2319-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the app doesn't render images yet (feature in progress elsewhere); the screenshots show
   `similaun` and `coffee-mug-and-donut`.
 - **Question:** Add images to every fitting page, or spare the pages in the screenshots?
@@ -421,7 +421,7 @@ edited: 2026-10-22
 
 ## 00:15 — No prod test marathon and no screenshots in this run {#run-2026-10-02-2319-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/autonomous` asks to test end-to-end until the user returns; another session's run is bug-hunting
   prod with this very vault, and the user said to wait with the screenshots until that session's release is live.
 - **Question:** Test the demo vault in the prod app now and take the screenshots, or stop after the push?
@@ -434,7 +434,7 @@ edited: 2026-10-22
 
 ## 00:40 — Screenshots on 0.0.5, iPad with the chat as the main column, AI-written pages kept {#run-2026-10-02-2319-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the other session's release ended up as 0.0.5 (0.0.4 failed CI) and it finished its bug hunt, so the
   screenshot hold from the previous decision was lifted. On the iPad the answer came as a table that wrapped in the
   narrow chat pane, twice.
@@ -459,7 +459,7 @@ edited: 2026-10-22
 
 ## 23:22 — Fix the test-network race in the helper instead of retrying CI {#run-2026-10-02-2322-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the release check for v0.0.3 failed twice on `docker network create kai-test-net` ("already exists"):
   `chat.test.ts` and `opencode-tools.test.ts` (from the `open_note` commit) start opencode in parallel workers.
 - **Question:** Retry, serialize the test files, or make the network creation idempotent?
@@ -474,7 +474,7 @@ edited: 2026-10-22
 
 ## 23:22 — Deploy 0.0.4 to prod although /autonomous normally does nothing irreversible {#run-2026-10-02-2322-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the user asked earlier in this session to "deploy to PROD", and the task tests "it in prod".
 - **Question:** Deploy `just deploy hetzner 0.0.4`, or test the old prod version?
 - **Decision:** Deploy 0.0.4 to hetzner (app.karpathy.app) once the release workflow has published it.
@@ -484,7 +484,7 @@ edited: 2026-10-22
 
 ## 23:22 — Test in prod read-mostly: never commit from the demo vault, discard my test edits {#run-2026-10-02-2322-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the demo vault `karpathy_demo_wiki` is being finished by another session right now (run
   2026-10-02 23:19); its prod clone already holds an unpushed commit. Commit & Push in the app would push to the user's
   GitHub repo.
@@ -499,7 +499,7 @@ edited: 2026-10-22
 
 ## 23:22 — File the bugs as GitHub issues, fix them in local commits, no push or redeploy {#run-2026-10-02-2322-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the task says "document the bugs in github and fix them"; `/autonomous` forbids `git push`.
 - **Question:** Create issues and push fixes + redeploy, or keep fixes local?
 - **Decision:** File each bug as an issue in `tillg/karpathy.app` (label `bug`, plus the triage label `ready-for-agent`)
@@ -511,7 +511,7 @@ edited: 2026-10-22
 
 ## 23:45 — Build the opencode test image once in CI, and fix the Ollama start race too {#run-2026-10-02-2322-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** after the network fix, the v0.0.4 check failed on a second race (`docker run --name kai-test-ollama`:
   name in use), and the next CI run on main timed out in both `beforeAll` hooks (951 s): since `ce3053d` each test
   file builds `deploy/opencode/Dockerfile` itself, so two cold builds ran in parallel on the runner.
@@ -527,7 +527,7 @@ edited: 2026-10-22
 
 ## 23:45 — Release the fix as v0.0.5; leave v0.0.4 as a dead tag {#run-2026-10-02-2322-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the task says "release 0.0.4", but tag v0.0.4 is already pushed on 4b93ff4, whose check failed (no
   release published). Earlier the user chose a new version (0.0.4) over re-pointing the dead v0.0.3 tag.
 - **Question:** Delete and re-push v0.0.4 on the fixed commit, or tag v0.0.5?
@@ -539,7 +539,7 @@ edited: 2026-10-22
 
 ## 00:07 — File 21 bugs (#96–#116) with labels bug + e2e-found; drop one false positive {#run-2026-10-02-2322-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** bug hunt in prod v0.0.5, demo vault, Playwright MCP (log: `tmp/bughunt/bugs.md`, screenshots in
   `tmp/bughunt/`). The label `ready-for-agent` from decision 4 doesn't exist in the repo.
 - **Question:** Which findings count, and how to label them?
@@ -553,7 +553,7 @@ edited: 2026-10-22
 
 ## 00:07 — Leave the image bug #97 to the image feature in progress {#run-2026-10-02-2322-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** relative image embeds don't render (#97); the user is building image display in another session
   (confirmed by the demo-vault session).
 - **Question:** Fix #97 here?
@@ -564,7 +564,7 @@ edited: 2026-10-22
 
 ## 00:07 — Fix in four parallel agents in the main tree, one commit per area {#run-2026-10-02-2322-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** 20 fixes in four mostly disjoint areas: Read-mode rendering (#96, #101, #102, #108–#116), search
   (#99, #107), chat UI (#103, #105, #106), tree and shell (#98, #100, #104). Worktrees would create branches, which the
   user's global rules forbid without permission.
@@ -579,7 +579,7 @@ edited: 2026-10-22
 
 ## 00:07 — Note embeds ![[note]] become a marked link, not a transclusion {#run-2026-10-02-2322-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #114 — `![[note]]` renders as "!" + link. Obsidian transcludes the note (and images, see #97).
 - **Question:** Transclude the note in Read mode, or render a clean link?
 - **Decision:** Render a link marked as an embed (class `wl embed`, no "!"); image embeds stay with #97.
@@ -589,7 +589,7 @@ edited: 2026-10-22
 
 ## 00:35 — Accept two changed search tests whose expectations the fixes change {#run-2026-10-02-2322-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the user's rules forbid changing tests to make them pass without permission. The search fixes (#99
   name matches first, #107 several words = all words) change behaviour two existing tests in
   `apps/backend/test/api.test.ts` pinned: "search finds content and file names" expected `Home.md` before `Other.md`
@@ -604,7 +604,7 @@ edited: 2026-10-22
 
 ## 00:35 — Add jsdom as a web dev dependency for sanitizer tests {#run-2026-10-02-2322-12}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `renderMarkdown` calls DOMPurify, which needs a DOM; the web unit tests ran in Node without one, so
   nothing tested the sanitized output so far.
 - **Question:** Test only `toHtml` (unsanitized), or add a DOM to the tests?
@@ -616,7 +616,7 @@ edited: 2026-10-22
 
 ## 00:35 — New chat titles keep up to 500 characters; old titles stay cut {#run-2026-10-02-2322-13}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #103 — the backend cut chat titles at 60 characters with "…"; the list then couldn't use its width.
 - **Question:** Remove the cut, and what about existing chats?
 - **Decision:** `titleFromFirstPrompt` keeps up to 500 characters; CSS ellipsis cuts at the real width, with the full
@@ -627,7 +627,7 @@ edited: 2026-10-22
 
 ## 01:00 — Frontmatter values link only under related and sources {#run-2026-10-02-2322-14}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #108 asks that frontmatter list values naming an existing note become links. Values like tags
   (`coffee`) often share a name with a note.
 - **Question:** Link every matching value, or only under keys that hold note references?
@@ -640,7 +640,7 @@ edited: 2026-10-22
 
 ## 01:00 — Fix the review's confirmed findings; leave the low-risk rest documented {#run-2026-10-02-2322-15}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** adversarial review of the four fix commits (54037cf..4fe1f3c): Defects, Standards and Spec axes.
 - **Question:** Which findings to fix now?
 - **Decision:** Fix: forged `data-note` in note HTML (security), search read errors → 500, the #104 phone effect
@@ -668,7 +668,7 @@ edited: 2026-10-22
 
 ## 09:30 — Push, tag and deploy to prod, as the task asks {#run-2026-10-03-0925-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/autonomous` forbids `git push` and other irreversible steps; the task explicitly asks for push,
   a new version and a prod deploy.
 - **Question:** Follow the guardrail or the task?
@@ -679,7 +679,7 @@ edited: 2026-10-22
 
 ## 09:30 — Release as v0.0.7 after both features; plain push to main after web search {#run-2026-10-03-0925-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** "commit and push" after search, "commit and push it all with a new version no" after media. Last tag
   `v0.0.6`.
 - **Question:** Which version, and does web search get its own release?
@@ -690,7 +690,7 @@ edited: 2026-10-22
 
 ## 09:30 — Notify via the hetzner alert ntfy topic {#run-2026-10-03-0925-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the task asks for ntfy notifications; no topic was named.
 - **Question:** Which topic?
 - **Decision:** `vault_ntfy_topic` of the hetzner target on ntfy.sh (the one the user subscribes to for alerts),
@@ -701,7 +701,7 @@ edited: 2026-10-22
 
 ## 09:30 — Drive both plan.md files by hand, one worker agent per feature, in sequence {#run-2026-10-03-0925-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:apply` isn't available in this session; the dev stack's ports allow only one e2e run at a time.
 - **Question:** How to apply the two changes?
 - **Decision:** One worker agent per change works through its `plan.md` test-first, ticking steps; independent pure
@@ -713,7 +713,7 @@ edited: 2026-10-22
 
 ## 09:30 — Skip the real-device iOS PDF check in the media plan {#run-2026-10-03-0925-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** media plan, phase 5 "Visual check": "tap Open on a PDF in the installed iOS home-screen app on a real
   device (ask the user)".
 - **Question:** Wait for the user?
@@ -724,7 +724,7 @@ edited: 2026-10-22
 
 ## 09:52 — Squid in our own Alpine image as the egress proxy, not smokescreen {#run-2026-10-03-0925-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Plan phase 2: spike smokescreen against Squid, pick the one that passes all cases with the least config, pin by digest.
 - **Question:** Which proxy?
 - **Decision:** Squid 6 on an Alpine base pinned by digest (`deploy/egress/Dockerfile`, 12-line `squid.conf`: one `dst` ACL for loopback, RFC 1918, CGNAT, link-local, ULA, `::1`, then allow all).
@@ -734,7 +734,7 @@ edited: 2026-10-22
 
 ## 09:52 — opencode password: a file secret, generated on the target by Ansible, by script in dev and prodtest {#run-2026-10-03-0925-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** The plan names the secret `opencode_password` but not how a deployment gets it; prod is Ansible (role app) with the release's compose.yml.
 - **Question:** Where does the value come from, and how does opencode read it?
 - **Decision:** Compose secret `opencode_password`. Dev (`deploy/dev.sh`) and prodtest (`just prodtest`) create it with `openssl rand`; the app role writes it once on the target with a random value and `force: false`, so it is kept on later deploys and needs no vault entry or operator input. opencode reads it through `deploy/opencode/entrypoint.sh` (secret file, else env `OPENCODE_SERVER_PASSWORD`, else none); the backend through `OPENCODE_PASSWORD_FILE`; the healthcheck builds the Basic header with busybox `wget --header` (busybox wget has no `--user`).
@@ -744,7 +744,7 @@ edited: 2026-10-22
 
 ## 09:52 — Ship the egress proxy as a fourth release image {#run-2026-10-03-0925-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Prod pulls images from GHCR by the release's compose.yml; the new `egress` service needs an image there.
 - **Question:** Build a custom image or use a stock one?
 - **Decision:** `egress` joins the build and manifest matrices in `release.yml` and `app_images` in the app role.
@@ -754,7 +754,7 @@ edited: 2026-10-22
 
 ## 09:52 — Existing and planned tests adapted for the proxy and the new setting {#run-2026-10-03-0925-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Plan tests assume https and uppercase proxy env for busybox wget; the new default setting changes an existing equality.
 - **Question:** Which test changes are needed?
 - **Decision:** (1) `config-store.test.ts` default-settings assertion gets `webAccess: true` (it pins the whole object). (2) `egress.test.ts` uses http:// targets with `http_proxy` set lowercase on `docker exec` because busybox wget reads only lowercase env, ignores NO_PROXY and can't CONNECT; CONNECT is tested with a raw socket to the proxy's published port, public cases skip offline. (3) The redirect case uses `http://httpbin.org/redirect-to`. (4) The loopback 401 case uses `wget -Y off`. (5) Settings-form e2e spec serialises the server-wide switch with a lock directory.
@@ -764,7 +764,7 @@ edited: 2026-10-22
 
 ## 09:52 — Web access switch sits in the Settings form and is saved with its Save button {#run-2026-10-03-0925-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Plan: a switch in Settings; the form already has one Save button for threshold and model.
 - **Question:** Save on toggle or with the form?
 - **Decision:** A checkbox styled as a switch (`role=switch`, `data-testid=settings-web-access`) in `SettingsForm`, saved with "Save settings".
@@ -774,7 +774,7 @@ edited: 2026-10-22
 
 ## 09:52 — Dev and prodtest: Ollama stays direct via NO_PROXY, and joins the egress network in dev {#run-2026-10-03-0925-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Ollama sits on a private IP the proxy refuses, and `ollama pull` needs the internet while `internal` is `internal: true`.
 - **Question:** How do dev and test keep a local model?
 - **Decision:** opencode gets `NO_PROXY=localhost,127.0.0.1,0.0.0.0,ollama` in dev and prodtest (and the test container the Ollama container name); the dev `ollama` service is on `internal` + `egress`.
@@ -784,7 +784,7 @@ edited: 2026-10-22
 
 ## 09:52 — known-url plugin excludes the current call when counting caps {#run-2026-10-03-0925-12}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** The hook may run after the current tool part is already stored; counting it would make cap N allow only N-1 calls.
 - **Question:** Count the current call?
 - **Decision:** The plugin drops parts with the current `callID` before `callsThisTurn` and refuses at `count >= cap`.
@@ -794,7 +794,7 @@ edited: 2026-10-22
 
 ## 10:12 — egress.test retries a proxy 503 (DNS timeout) and plan-gaps compose assertions follow the new topology {#run-2026-10-03-0925-13}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** In one full `just check` run the "internal host refused" case saw `503 Service Unavailable` instead of 403 (Squid's DNS lookup via Docker's resolver timed out under the parallel test workers). Separately, `plan-gaps.test.ts` pinned the old topology (three services, secrets per service).
 - **Question:** May these tests change?
 - **Decision:** `egress.test.ts` asks again (up to 3 more times) when the answer is 503; a persistent 503 still fails. `plan-gaps.test.ts` now expects four services, the `opencode_password` secret on backend and opencode, and a new topology test (internal network `internal: true`, opencode only on it, egress on both, proxy env set).
@@ -804,7 +804,7 @@ edited: 2026-10-22
 
 ## 10:31 — Known URLs come only from user text and read / webfetch / websearch output, never from text the AI wrote {#run-2026-10-03-0925-14}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Review: `knownTexts` counted every completed tool output, so `todowrite` output, or a note the AI wrote and then read back, could mint a "known" URL carrying vault data.
 - **Question:** Which chat text may make a URL known?
 - **Decision:** User text parts plus the output of `read`, `webfetch` and `websearch`. A `read` of a path the AI wrote or edited earlier in the session (write, edit, multiedit, apply_patch, patch inputs) is excluded. Unit tests pin both echo paths.
@@ -814,7 +814,7 @@ edited: 2026-10-22
 
 ## 10:31 — The image list of a deploy comes from the release's own compose.yml {#run-2026-10-03-0925-15}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Review: `app_images` now has `egress`, so the GHCR check failed for every release older than this one, blocking rollbacks.
 - **Question:** How to keep old releases deployable?
 - **Decision:** The app role downloads the release's `compose.yml` on the Mac, takes its `image: ghcr.io/tillg/karpathy.app-<name>:` lines and checks those. `app_images` stays as the superset for removing old images (a missing image is tolerated). Checked with `--check` against the local VM and v0.0.6: it lists proxy, backend, opencode.
@@ -824,7 +824,7 @@ edited: 2026-10-22
 
 ## 10:31 — No Ansible handling for the network becoming internal: compose recreates it {#run-2026-10-03-0925-16}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Review: existing hosts have `karpathy-app_internal` without `internal: true`; would `docker compose up -d` error?
 - **Question:** Does the upgrade need a manual step?
 - **Decision:** None. Reproduced with a throwaway project (old shape up, named volume with data, then the new shape up): compose stops the containers, removes and recreates the network with `internal=true`, restarts them, and the volume content survived.
@@ -834,7 +834,7 @@ edited: 2026-10-22
 
 ## 10:31 — Fail closed in the plugin and the entrypoint; tighter Squid rules; Squid package pinned {#run-2026-10-03-0925-17}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Review items: the plugin ignored an error from `session.messages`; the entrypoint started without auth when the secret file was empty; Squid lacked port rules and some address ranges.
 - **Question:** Behaviour on failure, and how strict is the proxy?
 - **Decision:** The plugin throws when the message fetch fails. The entrypoint exits non-zero when `/run/secrets/opencode_password` exists but is empty or unreadable (no-auth only without a secret file and without env, the bake step). Callers count only running/completed parts for caps. `squid.conf`: CONNECT only to 443, HTTP only to 80, 443, 1025-65535, and ranges for 0.0.0.0/8, multicast/reserved, `::`, ff00::/8, 2002::/16 (written as ranges, because Squid reads a `0.0.0.0/8` or `::/128` mask as match-everything). `squid=6.12-r0` pinned next to the digest-pinned base. Healthcheck strips base64 line wraps.
@@ -844,7 +844,7 @@ edited: 2026-10-22
 
 ## 10:31 — Review fixes to the specs and tests (constructed-URL test, default-on check, fragment wording) {#run-2026-10-03-0925-18}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** The "constructed URL" @llm test had the `?q=` URL in the user's prompt, so it was known and proved nothing; the switch e2e patched `webAccess: true` before checking the default; domain.md said a fragment makes a URL unknown while plan and code ignore it.
 - **Question:** What do the tests and the spec say?
 - **Decision:** The prompt now follows the plan (no `?q=` URL). The switch e2e asserts the state it finds first (earlier tests restore true), then toggles. domain.md says a fragment is ignored because it never leaves the client. Non-link web chips carry the full URL as `title`. One shared `basicAuth` helper in `harness/opencode.ts` serves src and tests. README notes that NO_PROXY hosts bypass Squid.
@@ -854,7 +854,7 @@ edited: 2026-10-22
 
 ## 11:05 — Push web search with three pre-existing plan-gaps e2e failures left alone {#run-2026-10-03-0925-19}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** full e2e on the dev stack: 3 cases in `e2e/plan-gaps.spec.ts` fail (×2 browsers). `/api/health`
   expects no `built`/`deployed` keys, but `HEAD` already returns them; `mount` is missing in the opencode image; the
   local `karpathy-app-proxy` image is a stale build without the godaddy module. None is touched by web search. e2e
@@ -868,7 +868,7 @@ edited: 2026-10-22
 
 ## 10:50 — The egress 503 in CI was a dead test target, not Squid DNS; the retry is removed {#run-2026-10-03-0925-20}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** CI failed `egress.test.ts › internal host refused` with `503 Service Unavailable` instead of 403. Decision 13 had added a retry on 503 and left the root cause open.
 - **Question:** Why 503, and could the same break prod chats?
 - **Decision:** Root cause: the test's internal target ran `httpd` from the unpinned `alpine` image. Newer alpine (3.24, pulled fresh on CI) has no `httpd` applet, so the container exited at once, its name stopped resolving, and Squid answered 503 (DNS failure) instead of 403. Reproduced locally (`sh: httpd: not found`, exited 127). The target now uses the digest-pinned alpine 3.22 of the egress image with a `nc` loop, `ensureEgress` throws if it is not running, and the test first checks the target answers directly. The 503 retry is removed. Squid also gets `positive_dns_ttl 1 minute`, `negative_dns_ttl 1 second`, `dns_timeout 5 seconds`.
@@ -878,7 +878,7 @@ edited: 2026-10-22
 
 ## 12:20 — Media change: Phase 2 by a sub-agent, UI e2e written next to the code instead of strictly red first {#run-2026-10-03-0925-21}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Plan phases 1–2 touch disjoint files; phases 3–4 couple the e2e tests to new components.
 - **Question:** How to work through the plan?
 - **Decision:** Phase 2 (shared `mediaKind`, `/raw`) went to a worker agent, test first (verified red). Phase 1 and the unit tests of phase 3 were red first. The phase 3/4 e2e cases (embeds, viewer, widget) were written right after the components, then run until green; the existing-behaviour tests (fix-20 .bin case) were run before the change.
@@ -888,7 +888,7 @@ edited: 2026-10-22
 
 ## 12:20 — Write-mode Back and mode switch restore by line, not by pixel; the e2e checks the text at the top {#run-2026-10-03-0925-22}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** CodeMirror's heights below the viewport are estimates until measured; the same `scrollTop` showed different text (a 3-section drift, 40 % flaky) after Back. Its own `scrollIntoView` doesn't scroll the outer `.scroll` pane until the editor has laid out, and in dev StrictMode remounts the view right after the effect that calls it.
 - **Question:** How to keep the place in Write mode?
 - **Decision:** The store remembers `{top, line}`; in Write mode the editor scrolls the saved top line to the top (`gotoLine(line, {align:'start', focus:false})`: after two frames, retried every 100 ms until the line is rendered at the top twice, halted by user input; `view.current` is read late). Read mode restores `scrollTop` for up to 1 s. `.scroll` gets `overflow-anchor: none`. The Write-mode e2e compares the first visible text line (Back) or the embed's position (tap test, ±40 px) instead of `scrollTop` ±10 px. Embed widgets have an `estimatedHeight` from remembered natural sizes.
@@ -898,7 +898,7 @@ edited: 2026-10-22
 
 ## 12:20 — Big media: HEAD for the size, then GET only on request (no aborted GET) {#run-2026-10-03-0925-23}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Plan: GET, abort when Content-Length is over 50 MB. Under load the abort lagged and the whole 51 MB flowed over loopback (test flaky).
 - **Question:** How to guarantee no transfer of a big file?
 - **Decision:** `objectUrl` sends `HEAD /raw` first; over the cap it resolves `tooLarge` with no GET. The e2e asserts that no GET happened before "Load anyway" and one full GET after.
@@ -908,7 +908,7 @@ edited: 2026-10-22
 
 ## 12:20 — Offline embed test is its own case and skipped on WebKit; PDF Open test accepts a download of the blob URL {#run-2026-10-03-0925-24}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Playwright WebKit's offline mode bypasses the service worker (offline.spec.ts skips for that reason); headless Chromium has no PDF viewer and downloads a PDF navigation; the prod CSP (`connect-src 'self'`) forbids `fetch(blob:)`, so the app must not fetch its own blob and the test can't either.
 - **Question:** How to keep the plan's assertions?
 - **Decision:** Offline embeds: separate test, WebKit skipped, `launchOptions` flag as in offline.spec.ts; "no error toast" = the toast region is empty. Open: the test takes the new tab's `blob:` URL from a navigation or a download event; the `application/pdf` check via `fetch` runs only when the stack sends no CSP (dev). The app keeps the `Blob` in the cache entry and re-wraps it without a fetch. The PDF fixture carries the four high-bit bytes real PDFs have, since the backend decides "binary" by content (an all-ASCII PDF opened in the editor).
@@ -918,7 +918,7 @@ edited: 2026-10-22
 
 ## 12:20 — Plumbing: web dev container mounts packages/shared/src, `just prodtest e2e` takes arguments, Rancher restarted {#run-2026-10-03-0925-25}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** The web app now imports `mediaKind` at runtime; the dev web container only had shared's package.json. The plan runs `just prodtest e2e e2e/media.spec.ts`, which the recipe rejected. Mid-run all published ports refused connections.
 - **Question:** What to change outside the feature?
 - **Decision:** `deploy/compose.dev.yml` mounts `../packages/shared/src` into web (as backend does); `justfile` `prodtest action *args` passes args to Playwright; restarted Rancher Desktop (allowed) when 8443 refused.
@@ -928,7 +928,7 @@ edited: 2026-10-22
 
 ## 12:20 — Small deviations from the architecture: no `media` in the store, no `loading=lazy`, embeds remount on file change {#run-2026-10-03-0925-26}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** While building.
 - **Question:** Where does the code differ from architecture.md?
 - **Decision:** (1) The media viewer derives the kind from the path (`mediaKind`), the store has no `media` field. (2) Images have no `loading=lazy` (blob URLs: nothing to defer; lazy images have no height before load, which breaks scroll restore); known natural sizes give a skeleton and an `aspect-ratio`. (3) A `files-changed` event that drops cached bytes bumps `mediaEpoch`, and shown embeds remount (the plan's freshness test needs the shown image to follow). (4) `Embed.tsx` is `Embed.ts` (no JSX). (5) A player that can't play keeps the player and gets a file card below it; a broken image becomes a card. (6) `renderMarkdown(md, ctx, startLine?)`: ctx = `{exists, href?, relative?, resolveEmbed?}`; `data-line` only when `startLine` is passed (Read view), so chat HTML is unchanged. (7) The HTML width suffix is `max-width: min(Npx, 100%)`: a plain pixel max-width overflowed the phone column (found in the visual check).
@@ -938,7 +938,7 @@ edited: 2026-10-22
 
 ## 12:20 — Visual check with a Playwright script, not the MCP browser {#run-2026-10-03-0925-27}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** The Playwright MCP browser refuses the dev stack's self-signed certificate (ERR_CERT_AUTHORITY_INVALID).
 - **Question:** How to look at it at 1×?
 - **Decision:** `tmp/visual.mjs` (Playwright, `ignoreHTTPSErrors`, `deviceScaleFactor: 1`) screenshots Read and Write mode at 390 and 1280 px to `tmp/media/`, and reports `scrollWidth`; the images were read. Checked: last embeds of a long note (wide image, video with width suffix, PDF card, missing card) and the right edge. Found and fixed an overflow of the Write-mode block on the phone. The real-iOS PDF check stays skipped (decision 5).
@@ -948,7 +948,7 @@ edited: 2026-10-22
 
 ## 12:45 — Review fixes: SVG sanitized before it becomes a blob; cache refcount and identity checks {#run-2026-10-03-0925-28}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Review: an SVG blob (type `image/svg+xml`, app origin) opened via "open image in new tab" would run its script with the token in reach; eviction/invalidate could revoke URLs of mounted players; a late fetch could overwrite a newer cache entry.
 - **Question:** How to close these?
 - **Decision:** Every `.svg` is run through DOMPurify's SVG profile (`sanitizeSvg`, jsdom unit test + an e2e that checks the shown image's blob has no script; the blob read runs on dev only, as the prod CSP forbids `fetch(blob:)`). `objectUrl` returns a `release()`; entries with holders are never evicted; an entry is only written or deleted if it is still the cached one (`cache.get(k) === entry`), an orphaned result serves its asker and frees its URL on the last release. `mountEmbed`'s stop releases. `invalidate` still revokes held URLs, because it bumps `mediaEpoch` and the players remount. Opened from the tree, an SVG is a text file and opens as an editable note (the backend says binary:false): left as is.
@@ -958,7 +958,7 @@ edited: 2026-10-22
 
 ## 12:45 — Review fixes: chat link consistency, kept players across streamed tokens, forged placeholders, data: images, remote links {#run-2026-10-03-0925-29}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Review items 4, 6, 9, 12, 14, 17.
 - **Question:** What was done?
 - **Decision:** (4) The Markdown component with a `base` (chat) resolves a clicked wikilink from that base, like its hover href. (12) `mountEmbeds` takes the previous render's mounts: an embed with the same file/width/caption moves its players into the new placeholder (`moveTo`), so a streaming answer doesn't reset a video; dropped cached bytes start over. (14) Placeholders carry a per-render random `data-ek`; a hook strips `embed`/`data-path/kind/width/alt/target` and `data-ek` from every other element (unit test). (6) `![](data:image/*)` renders as an inline `<img>` (CSP `img-src` allows `data:`); other remote images stay links. (17) Remote embeds, `//host/x` included, get `target=_blank rel=noopener noreferrer`. (9) An embed inside a link gets no tap-to-open handler: the link wins.
@@ -968,7 +968,7 @@ edited: 2026-10-22
 
 ## 12:45 — Review fixes: incremental Write-mode embeds, paren paths, comments; raw route dot rules; PDF Open {#run-2026-10-03-0925-30}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Review items 5, 7, 10, 11, 13, 15, 16.
 - **Question:** What was done?
 - **Decision:** (5) The embed field maps decorations through a change and rebuilds only the touched lines; a new file list or media epoch rebuilds all; `resolveWikilink` builds its path Set once per file list (WeakMap). Known gap: an edit that opens a code fence doesn't hide embeds below it until the next full rebuild. (7) One shared `EMBED_RE` with one level of balanced parentheses (`photo (1).png`) for the editor. (13) Embeds after an odd number of `%%` are not shown in Write mode. (10) PDF Open: toast when the popup is blocked, the re-wrapped URL is revoked after 60 s. (11) `rawFile` refuses any dot segment (hidden files, `.`/`..`) with 400, and `sendFile` uses `dotfiles: 'allow'` so a dot in the vault's own path can't 404 everything; the test covers `.obsidian/pic.png` and `./pic.png`, not a dotted vault dir. (15) The tap test checks the cursor didn't move (Chromium; WebKit reports no DOM selection) and that a video click doesn't navigate. (16) The tree test switches to Read first and checks the mode after a binary and a note.
@@ -978,7 +978,7 @@ edited: 2026-10-22
 
 ## 12:45 — Review items left as they are, and why {#run-2026-10-03-0925-31}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** Review item 8 and test order.
 - **Question:** What did I not do?
 - **Decision:** (8) A missing Content-Length is now "unknown" (no size shown; the 50 MB check can't fire, such responses are compressed text-like types). Caddy's `encode` can't be matched by path (its `match` takes response matchers only), so `/raw` stays encoded; media types aren't compressible by default, so their length survives. The new unit tests (sanitizeSvg, forged placeholders, `EMBED_RE`, `rawType`, data/remote links) and the dotted `.obsidian` test were written after the code, not before.
@@ -988,7 +988,7 @@ edited: 2026-10-22
 
 ## 13:08 — Fix the CI race in the egress test helper; treat one DELETE 405 as a flake {#run-2026-10-03-0925-32}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** CI on `cfcad7d` failed: `docker inspect kai-test-target` → "No such object" in two test files. The
   helper from the web-search fix let parallel workers race while the pinned alpine image was being pulled. Locally, a
   cold full backend run once failed `plan-gaps` › "DELETE removes the local clone directory" with 405; the second
@@ -1020,7 +1020,7 @@ edited: 2026-10-22
 
 ## 15:14 — Archive, commit, push, deploy to prod and ntfy, as the task asks {#run-2026-10-04-1514-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/autonomous` forbids `git push`, `/spec:archive` and other irreversible steps without the user; the
   task explicitly asks for all of them. `/spec:archive` asks to confirm the commit message.
 - **Question:** Follow the guardrail or the explicit task?
@@ -1032,7 +1032,7 @@ edited: 2026-10-22
 
 ## 15:21 — Update three stale `plan-gaps` e2e tests to today's stack instead of archiving on red {#run-2026-10-04-1514-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:archive` runs the full suite. `just check` was green (13 + 215 + 115); e2e 280 passed, 6 failed:
   the same 3 tests of `e2e/plan-gaps.spec.ts` on `desktop` and `webkit-desktop`. None touches media or sticky mode;
   they were written for the MVP stack.
@@ -1054,7 +1054,7 @@ edited: 2026-10-22
 
 ## 15:21 — One system-docs commit for both archives, then one cleanup commit per change {#run-2026-10-04-1514-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:archive` wants per change: commit 1 = implementation + system docs, commit 2 = change dir
   removed. Both implementations are already committed (`cfcad7d`, `824678c` and earlier), and the media and web-search
   edits interleave in the same system files.
@@ -1069,7 +1069,7 @@ edited: 2026-10-22
 
 ## 15:30 — No redeploy after the archive: prod 0.0.7 already carries all product code {#run-2026-10-04-1514-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the task says "deploy to prod" between steps. `/api/health` on app.karpathy.app reports 0.0.7; the
   commits since `v0.0.7` are CI, tests, decisions and system docs only.
 - **Question:** Cut a release and redeploy anyway?
@@ -1100,7 +1100,7 @@ edited: 2026-10-22
 
 ## 15:35 — Remote changes: a badge and a one-tap pull, reversing "no pull button" {#run-2026-10-04-1514-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #117 asks only to *see* remote changes; the related #74 adds a one-tap pull. `specs/system` says
   "There is no user-facing pull button".
 - **Question:** Badge only, or badge plus pull?
@@ -1112,7 +1112,7 @@ edited: 2026-10-22
 
 ## 15:35 — Proposals written by four parallel agents, without the HTML view, next to the open v1 change {#run-2026-10-04-1514-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:propose` checks for open changes (v1 is `proposed`, the roadmap) and ends by opening the HTML
   view in a browser.
 - **Question:** Archive or stop for v1, and run the HTML view unattended?
@@ -1124,7 +1124,7 @@ edited: 2026-10-22
 
 ## 15:40 — No Playwright MCP session against prod or dev: logging the browser in was blocked {#run-2026-10-04-1514-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the task asks to "test a lot with mcp_playwrite with the demo vault". The MCP browser needs the bearer
   token (login link or localStorage). Claude Code's permission classifier refused reading the prod token from the
   Ansible vault, and then refused reading how the e2e helpers get the dev token ("credential materialization").
@@ -1186,7 +1186,7 @@ edited: 2026-10-22
 
 ## 15:44 — remote-changes: a shared-lock background fetch every 2 minutes while a vault is open {#run-2026-10-04-1514-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** proposal written by a background agent (#117, #74), on the badge-plus-pull decision above.
 - **Question:** How to fetch and count without blocking saves and turns?
 - **Decision:** The backend fetches every 2 min for each vault with a connected event stream, plus once per connect.
@@ -1203,7 +1203,7 @@ edited: 2026-10-22
 
 ## 15:44 — attachments: upload into Sources/media/ first, send the AI the path; warn on a text-only model {#run-2026-10-04-1514-12}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** proposal written by a background agent (#87). It verified opencode's file parts (opencode resizes
   images to ≤ 2000 px / 5 MB and replaces unreadable files with an error note) and iOS HEIC behaviour (WebKit bugs
   267277, 292350, 273444). **The production model `openrouter/z-ai/glm-5.3` is text-only**, and opencode's `read`
@@ -1223,7 +1223,7 @@ edited: 2026-10-22
 
 ## 15:48 — Nothing added to the demo vault; agents' choices logged as one entry per change; #120 filed {#run-2026-10-04-1514-13}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the task asks to add samples and descriptions to `Karpathy Demo` between steps. Its guide (updated
   2026-10-04) already covers media embeds, sticky mode and web access. The four agents made 13–21 choices each.
 - **Question:** Edit the demo vault anyway; log every agent choice as its own decision?
@@ -1252,7 +1252,7 @@ edited: 2026-10-22
 
 ## 12:00 — Push, release and deploy to prod, as the task asks {#run-2026-10-05-1200-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/autonomous` doesn't push or do anything irreversible without the user; the task asks for exactly
   that (commit and push, a new version, publish to prod).
 - **Question:** follow the skill's guardrail or the task?
@@ -1265,7 +1265,7 @@ edited: 2026-10-22
 
 ## 12:00 — Skip the iPhone and Obsidian device checks: they need a person {#run-2026-10-05-1200-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** "Finish your tests": the attachments change was archived with its device check partly open (iPhone
   camera, library, HEIC → `.jpg`; Obsidian after a commit). Safari drag and drop on the Mac was checked by the user.
 - **Question:** wait for those checks before releasing?
@@ -1291,7 +1291,7 @@ edited: 2026-10-22
 
 ## 13:46 — Push, release, deploy to prod and archive, as the task asks {#run-2026-10-05-1346-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/autonomous` doesn't push, archive or do anything irreversible without the user; the task asks for
   each of these by name.
 - **Question:** follow the skill's guardrail or the task?
@@ -1304,7 +1304,7 @@ edited: 2026-10-22
 
 ## 13:46 — Treat `/spec:apply` as the OK for the e2e test changes the proposal lists {#run-2026-10-05-1346-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the global rule forbids changing tests without permission. The proposal's section "Tests this change
   has to touch" asked for that OK; the user's next action was `/spec:apply`, then this task.
 - **Question:** wait for an explicit "yes" or go ahead?
@@ -1318,7 +1318,7 @@ edited: 2026-10-22
 
 ## 13:46 — Treat the backend auth test failure as flaky, not as a red baseline {#run-2026-10-05-1346-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the baseline `just check` failed once in `apps/backend/test/api.test.ts` › auth › "401 without or
   with a wrong token, 200 with the right one" (404 instead of 401). This change touches no backend code; the test
   passes when run alone.
@@ -1330,7 +1330,7 @@ edited: 2026-10-22
 
 ## 14:20 — No link from a token error in the Vaults dialog to Settings {#run-2026-10-05-1346-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:adversarial-code-review` (Defects, MEDIUM): a vault that fails with "the server's GitHub token
   has no access" opens in the Vaults dialog, and the token is no longer one tap away (the list's Settings button is
   gone). The proposal lists cross-links as out of scope.
@@ -1342,7 +1342,7 @@ edited: 2026-10-22
 
 ## 14:50 — Archive on the 14:12 test run and my own commit messages {#run-2026-10-05-1346-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:archive` runs the full suite again and asks the user to approve the commit message. Since the
   full run at 14:12 (e2e 367 passed, 5 skipped; `just check` green) only tests were tightened after the review
   (`settings-split`, `version`, `admin`: re-run, 26 passed) and `specs/system/` and `README.md` were edited.
@@ -1362,7 +1362,7 @@ edited: 2026-10-22
 
 ## 18:39 — Merge to main, push, release and deploy to prod, as the task asks {#run-2026-10-08-1839-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/autonomous` — deploy only to non-production unless the task names production; CLAUDE.md
   — never create or switch branches without permission (the task asks to merge into `main`).
 - **Context:** `central-settings-yaml`; the task names merge, push and a prod deploy explicitly.
@@ -1382,7 +1382,7 @@ edited: 2026-10-22
 
 ## 18:45 — Commit closely related plan steps together {#run-2026-10-08-1839-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:apply` (inside `/autonomous`) — commit each ticked step.
 - **Context:** `central-settings-yaml` plan steps 1–6 (loader, schema, secrets) share one module and
   were written test-first as one red → green round.
@@ -1394,7 +1394,7 @@ edited: 2026-10-22
 
 ## 18:45 — Treat openrouter as a built-in gateway kind: any model id is valid {#run-2026-10-08-1839-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `central-settings-yaml` step 5 (cross-field rules); `architecture.md` names only
   `anthropic` and `openai` as kinds with built-in models.
 - **Question:** must an openrouter model be listed under the gateway's `models`?
@@ -1406,7 +1406,7 @@ edited: 2026-10-22
 
 ## 18:45 — The backend parses settings.json with its own small schema {#run-2026-10-08-1839-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `central-settings-yaml` step 13; `architecture.md` says the shared schema is "exported to
   the backend".
 - **Question:** make the backend image depend on `packages/settings`, or give it its own schema of the
@@ -1420,7 +1420,7 @@ edited: 2026-10-22
 
 ## 19:05 — Treat the two backend failures of the baseline as flaky {#run-2026-10-08-1839-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `central-settings-yaml`; the baseline `just check` before any change had 2 failures:
   `api.test.ts` › new file name "Neue Notiz?.md" → 400 and `chat.test.ts` › deleting a chat removes it.
 - **Question:** a red baseline (commit on "no new failures") or flaky tests?
@@ -1435,7 +1435,7 @@ edited: 2026-10-22
 
 ## 19:20 — Admin model: a "Default: …" line and a "Use default" button, not a picker entry {#run-2026-10-08-1839-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `central-settings-yaml` step 17; the spec says the picker's first entry is
   `Default (model)`, but the Admin's model field is a free-text input, not a picker.
 - **Question:** turn the field into a picker, or keep the text field?
@@ -1448,7 +1448,7 @@ edited: 2026-10-22
 
 ## 19:20 — No built-in model fallback in the backend; one existing test updated {#run-2026-10-08-1839-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** CLAUDE.md — never make tests pass by changing them without permission.
 - **Context:** `central-settings-yaml` step 15; `config-store.ts` had `anthropic/claude-sonnet-5` as its
   default, and `config-store.test.ts` › "starts with default settings" asserted it. The plan's last step
@@ -1464,7 +1464,7 @@ edited: 2026-10-22
 
 ## 19:30 — Test dev.sh's render and legacy check as stack.sh functions, not with a fake docker {#run-2026-10-08-1839-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `central-settings-yaml` step 19 planned a fake `docker` on `PATH` running `dev.sh up`.
   `dev.sh up` claims a real stack in this checkout's `tmp/dev/stack`, so a fake run would disturb it.
 - **Question:** how to test "dev up renders first and refuses legacy files"?
@@ -1477,7 +1477,7 @@ edited: 2026-10-22
 
 ## 19:40 — Tests read the committed settings files, never the developer's overlay {#run-2026-10-08-1839-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `central-settings-yaml`; once this Mac had a `deploy/settings/dev.local.yaml`, the tests of
   the real `dev` settings saw OpenRouter instead of Ollama.
 - **Question:** how do tests ignore a developer's overlay?
@@ -1489,7 +1489,7 @@ edited: 2026-10-22
 
 ## 19:40 — Migrate this Mac's deploy/.env and opencode.env into dev.local.yaml and a secret file {#run-2026-10-08-1839-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `central-settings-yaml` step 20; this checkout's gitignored `deploy/.env` chose
   `openrouter/z-ai/glm-5.3` for dev and `deploy/opencode.env` held the OpenRouter key.
 - **Question:** keep the user's dev choice, or fall back to the committed Ollama default?
@@ -1502,7 +1502,7 @@ edited: 2026-10-22
 
 ## 19:55 — Keep the targets' vault layout; role app maps vault values to secret names {#run-2026-10-08-1839-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `central-settings-yaml` step 25 planned one vault entry per secret name and a new
   `fill_vault.py`. The prod vault is encrypted with a Keychain password and holds only
   `vault_opencode_env: { OPENROUTER_API_KEY }` besides the existing entries.
@@ -1518,7 +1518,7 @@ edited: 2026-10-22
 
 ## 19:55 — Keep `domain` in the inventory, checked against the settings {#run-2026-10-08-1839-12}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `central-settings-yaml` step 26; the monitoring role (Gatus) and the smoke check read
   `domain`, and `just deploy --only monitoring` runs without role app.
 - **Question:** drop `domain` from `group_vars` (it repeats `proxy.domain`)?
@@ -1529,7 +1529,7 @@ edited: 2026-10-22
 
 ## 20:30 — Act on the review: providers via OPENCODE_CONFIG_CONTENT, and which findings stay open {#run-2026-10-08-1839-13}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `central-settings-yaml`, `/spec:adversarial-code-review` over `ee26a7a..HEAD` (Defects,
   Standards, Spec). The HIGH finding: moving the OpenRouter ZDR routing from the managed `opencode.json` into
   an `OPENCODE_CONFIG` file let a vault's own `opencode.json` override it. Checked on the dev stack: a
@@ -1552,7 +1552,7 @@ edited: 2026-10-22
 
 ## 21:05 — Archive central-settings-yaml with its decisions still open {#run-2026-10-08-1839-14}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`.
 - **Context:** `central-settings-yaml`: 30/30 steps ticked, suite green (api.test flakiness aside, see
   decision 5), v0.0.16 live on hetzner. Decisions run-2026-10-08-1839-1 … -14 are unreviewed.
@@ -1565,7 +1565,7 @@ edited: 2026-10-22
 
 ## 21:15 — Retro: pin opencode's provider merge order with an integration test {#run-2026-10-08-1839-15}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** retro of this run. The ZDR regression (providers in an `OPENCODE_CONFIG` file, merged before
   a vault's own `opencode.json`) passed every planned test and was found only by the adversarial review;
   an opencode upgrade could change the merge order again unnoticed.
@@ -1588,7 +1588,7 @@ edited: 2026-10-22
 
 ## 18:58 — Push to main, release and deploy to prod, as the task asks {#run-2026-10-08-1858-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `~/.claude/CLAUDE.md` — commit or push only when asked / production deploys need confirmation; the task
   names commit, push and prod, so this is the standing permission, logged once.
 - **Context:** `rework-ingestion-pipeline`, 11/17 steps done, nothing committed; the repo works on `main` (earlier runs
@@ -1605,7 +1605,7 @@ edited: 2026-10-22
 
 ## 18:58 — Commit this session's uncommitted work for the change {#run-2026-10-08-1858-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/autonomous` — a file dirty before the run is never committed.
 - **Context:** steps 1–11 (and step 12's role changes) were written in this same session before `/autonomous` was
   invoked, so every file is "dirty before the run"; `specs/changes/rework-ingestion-pipeline/` was untracked at the
@@ -1619,7 +1619,7 @@ edited: 2026-10-22
 
 ## 18:58 — Write the Instagram-login stand-ins the plan asks for {#run-2026-10-08-1858-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `~/.claude/CLAUDE.md` — never mock anything without explicit permission (the plan itself asks for the
   user's OK before steps 13, 14 and 16 write them).
 - **Context:** `rework-ingestion-pipeline` steps 13, 14, 16: a real Instagram login can't run in tests (flag risk, 2FA).
@@ -1633,7 +1633,7 @@ edited: 2026-10-22
 
 ## 18:58 — Add the code callback to instascraper in its own repo; leave ingest_email untouched {#run-2026-10-08-1858-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** prerequisites in other repos. `~/git/instascraper` is clean; `~/git/ingest_email` has someone's
   uncommitted work in 9 files (Instagram deferral, one-call label move).
 - **Question:** do the prerequisite work there?
@@ -1647,7 +1647,7 @@ edited: 2026-10-22
 
 ## 18:58 — Give CI read access to ingest_email with a deploy key, not a personal token {#run-2026-10-08-1858-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `tillg/ingest_email` is private; the ingest image's build must fetch it in CI and the release workflow.
 - **Question:** which credential?
 - **Decision:** a read-only deploy key on `tillg/ingest_email`, its private half as repo secret
@@ -1660,7 +1660,7 @@ edited: 2026-10-22
 
 ## 18:58 — No Ingest button in the phone Files header {#run-2026-10-08-1858-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `rework-ingestion-pipeline` architecture §3 also names "the phone Files tab header".
 - **Question:** add a second button there?
 - **Decision:** no; the button in the `Input` row is visible in the phone Files tab already.
@@ -1670,7 +1670,7 @@ edited: 2026-10-22
 
 ## 18:58 — Deploy prod with no ingest profiles; leave the cutover to the user {#run-2026-10-08-1858-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the plan's "After release (ops, not steps)": drain the Mac with the old `/ingest`, stop the Mac's launchd
   agent, then enable profiles. Two pollers on one Gmail label would double-fetch.
 - **Question:** enable the `mylife`/`frechen` profiles on `hetzner` now?
@@ -1683,7 +1683,7 @@ edited: 2026-10-22
 
 ## 19:20 — Extend the compose topology tests for the new ingest service {#run-2026-10-08-1858-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `~/.claude/CLAUDE.md` — never make tests pass by changing them without explicit permission.
 - **Context:** `rework-ingestion-pipeline` steps 10 and 14: `apps/backend/test/plan-gaps.test.ts` pins the exact service
   list ("four services") and each service's exact secrets; the change adds the `ingest` service and gives the backend
@@ -1697,7 +1697,7 @@ edited: 2026-10-22
 
 ## 19:20 — Instagram status read from the vaults, not from ingest_email {#run-2026-10-08-1858-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `rework-ingestion-pipeline` step 13; architecture §6 has instascraper write `/state/instagram-status.json`
   on a rejected session, which needs ingest_email changes (decision 4 leaves that repo alone).
 - **Question:** how does `GET /instagram/status` know "expired" and "N links waiting"?
@@ -1711,7 +1711,7 @@ edited: 2026-10-22
 
 ## 19:55 — Tick step 15 without the manual real-Instagram connect {#run-2026-10-08-1858-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:apply` — tick a step only when its Verify passes (step 15's Verify includes "on the `local` VM a
   real connect with your account ends in Connected as @…").
 - **Context:** `rework-ingestion-pipeline` step 15; the manual part needs the user's Instagram password and phone (2FA).
@@ -1725,7 +1725,7 @@ edited: 2026-10-22
 
 ## 19:55 — e2e: skill via push + pull, @llm and Instagram cases in one project {#run-2026-10-08-1858-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `rework-ingestion-pipeline` step 16. (1) A skill written into the clone behind the backend's back isn't in
   opencode's command list until the next pull (opencode caches skills per directory). (2) Two `@llm` turns at once on the
   shared dev Ollama made the 3B model miss the 4-min window; with "list Input/, then move" it also wandered. (3) The
@@ -1741,7 +1741,7 @@ edited: 2026-10-22
 
 ## 20:20 — Count fix-124's @llm failure as baseline, not as a new failure {#run-2026-10-08-1858-12}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:apply` — Verify (`just e2e` → all green) must pass before ticking step 16.
 - **Context:** `rework-ingestion-pipeline` step 16. Full `just e2e`: 463 passed, 4 failed; on rerun three passed
   (sticky-mode place, outline typing speed: flaky) and `fix-124 @llm asked to add a picture…` failed again in desktop
@@ -1755,7 +1755,7 @@ edited: 2026-10-22
 
 ## 20:20 — Run-book chapter left uncommitted in the demo vault {#run-2026-10-08-1858-13}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** step 17 and CLAUDE.md "Demo run book": `Karpathy Demo.md` in `~/git/karpathy_demo_wiki` already had
   another agent's uncommitted chapter (`.agents` in the file tree) when this run started.
 - **Question:** commit the run book?
@@ -1768,7 +1768,7 @@ edited: 2026-10-22
 
 ## 20:30 — Release after the central-settings-yaml release, separately {#run-2026-10-08-1858-14}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** another session (karpathy_app, change `central-settings-yaml`, #133) tagged `v0.0.16-rc.1` while this run
   was about to; both changes use the `local` VM and `hetzner`. That change moves all settings to `deploy/settings/`.
 - **Question:** one release for both, or one after the other?
@@ -1780,7 +1780,7 @@ edited: 2026-10-22
 
 ## 21:00 — Fix the review's high and medium findings; leave four for follow-up {#run-2026-10-08-1858-15}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:adversarial-code-review` of `ee26a7a..HEAD` (three axes).
 - **Question:** which findings to fix before release?
 - **Decision:** fixed, test-first: Instagram username as a path (rmtree traversal), an ingest-side 401 logging the
@@ -1800,7 +1800,7 @@ edited: 2026-10-22
 
 ## 20:50 — Retro: name the dead port forwarder in the test helper's error {#run-2026-10-08-1858-16}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:retro` inside this run. Three backend suites failed with "opencode did not start: opencode server
   listening …": the container was fine, Rancher Desktop's port forwarder had died (every published port refused).
 - **Question:** which environment fix?
@@ -1812,7 +1812,7 @@ edited: 2026-10-22
 
 ## 22:00 — Run deploy-e2e against the VM's remotes of the other checkout {#run-2026-10-08-1858-17}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** step 12's Verify (`just deploy-e2e local`). The Lima VM was created from `~/git/karpathy_app`, so it
   mounts that checkout's `tmp/dev/remotes` as `/remotes`; the e2e helpers write their bare repos into this checkout's
   `tmp/dev/remotes/e2e`, and every clone failed (391 of 436 red, all "repository doesn't exist").
@@ -1826,7 +1826,7 @@ edited: 2026-10-22
 
 ## 22:30 — Archive rework-ingestion-pipeline with its decisions still open {#run-2026-10-08-1858-18}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`.
 - **Context:** all 17 steps ticked, full suite and VM e2e green, v0.0.17 live; the decisions of this run (1–19) are
   `open` because nobody can review them during the run.
@@ -1838,7 +1838,7 @@ edited: 2026-10-22
 
 ## 22:30 — Leave the public ingest image as it is; the user decides {#run-2026-10-08-1858-19}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the archive's system update found that the GHCR images are public (targets pull anonymously), so
   `ghcr.io/tillg/karpathy.app-ingest:0.0.17-rc.1` and `:0.0.17` contain the installed `ingest_email` package (its
   `src/` modules only: no tests, fixtures or mails) of the private `tillg/ingest_email` repo.
@@ -1925,7 +1925,7 @@ edited: 2026-10-22
 
 ## 23:30 — #137: a recipe that imports this Mac's Instagram session, run against prod after the deploy {#run-2026-10-12-2325-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #137 lists four options; the issue's "Done when" needs an Instagram link resolved on prod. Logins from
   the Hetzner IP get HTTP 429, and the Mac holds a working instascraper session (`~/.config/instascraper/`).
 - **Question:** which option, and is the session put on prod in this run?
@@ -1943,7 +1943,7 @@ edited: 2026-10-22
 
 ## 00:05 — Baseline: main is green except the load-flaky api.test.ts; it must pass alone at low load before a merge {#run-2026-10-12-2325-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `just check` on `main` (7040992): everything green but `apps/backend/test/api.test.ts` — 4 failed in the
   full run, 10 *other* ones failed when the file ran alone at load average 22 (two fix agents' stacks and an Ollama
   model on the same Mac). Known flake under load: #136.
@@ -1958,7 +1958,7 @@ edited: 2026-10-22
 
 ## 00:20 — #134 is a web fix: chips and the Ingest button reload commands on a skill-file change {#run-2026-10-12-2325-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #134; a new backend test (a skill saved through the file API shows in the next `/commands`) passes on
   `main`: `commands()` already re-stamps `SKILL.md` files and refreshes opencode. The issue names the palette, the chips
   and the Ingest button; only the palette reloaded the list (each time it opens), the other two only after a pull or an
@@ -1974,7 +1974,7 @@ edited: 2026-10-22
 
 ## 00:35 — #142: save_url gets an optional `note` that it appends the embed to, after wording alone failed 0/6 {#run-2026-10-12-2325-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #142; the first fix (save_url's description and result text say "now edit the note and add
   `![[path]]`", plus refusing `: * " \ < > | ?` in any path segment, which stops `Ideas.md:img.png`) is on
   `fix/142-embed-picture` (8ea9a1c). The e2e stayed red: 0/6 on three wordings. The dev model (qwen2.5:3b) saves the
@@ -1992,7 +1992,7 @@ edited: 2026-10-22
 
 ## 01:05 — Restart Rancher Desktop after the Mac's disk filled up; reclaim only build cache {#run-2026-10-12-2325-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** at 00:50 the Mac's data volume hit 0 bytes free (896 of 926 GiB; `~/Library` 354 GiB, the Rancher VM disk
   77 GiB); every shell command and the #142 agent failed with `ENOSPC`, and the Docker VM answered with I/O errors.
   This run's worktrees held under 1 GiB.
@@ -2007,7 +2007,7 @@ edited: 2026-10-22
 
 ## 01:05 — Merge #142 at 6/12 on its e2e and ship it; the issue stays open {#run-2026-10-12-2325-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** the task — "When all tests are ok, commit, push, merge to main" (the @llm e2e for #142 isn't ok)
 - **Context:** `fix/142-embed-picture` (c48d0cf): unit and container tests green; the e2e embed test passes 6 of 12
   runs with the dev model (0 of 18 on `main`), its sibling 10 of 12. The rest is the 3b model printing the call as text
@@ -2023,7 +2023,7 @@ edited: 2026-10-22
 
 ## 01:40 — One release for both runs: the enhancements run tags and deploys v0.0.22 {#run-2026-10-12-2325-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** both fixes are on `main` (1f2c608); the parallel enhancements run (`~/git/karpathy2`, run
   `2026-10-12 23:32`) also releases and deploys. Asked over a session message, it chose to tag `v0.0.22` from `main`
   at 80ff006 (contains 1f2c608) and deploy it to hetzner itself.
@@ -2038,7 +2038,7 @@ edited: 2026-10-22
 
 ## 01:55 — Retro: `just dev up` refuses with less than 10 GiB free {#run-2026-10-12-2325-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** retro of this run: the Mac's disk filled up while two runs built images and ran e2e on several stacks;
   the Docker VM broke and an agent lost its last steps.
 - **Question:** what mechanical check stops that next time?
@@ -2053,7 +2053,7 @@ edited: 2026-10-22
 
 ## 02:10 — No open-ended e2e testing tonight: 8.5 GiB free disk {#run-2026-10-12-2325-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/autonomous` step 5 (test end-to-end until the user returns). The disk is at 8.5 GiB free after the
   other run's builds, below the 10 GiB that `just dev up` now requires (decision 9).
 - **Question:** start a stack and test anyway?
@@ -2065,7 +2065,7 @@ edited: 2026-10-22
 
 ## 02:10 — Appended to DECISIONS.md and resolved merge conflicts by script {#run-2026-10-12-2325-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/autonomous` and `decisions.md` — edit `DECISIONS.md` and spec files with the Edit/Write tools only
 - **Context:** the run header and decisions 2–4 were appended with a shell heredoc; the `DECISIONS.md` conflict with
   the parallel run and the `architecture.md` / `security.md` merge conflicts on `fix/142-embed-picture` were resolved
@@ -2094,7 +2094,7 @@ edited: 2026-10-22
 
 ## 23:45 — Small issues are tweaks, tool-adding issues are full changes; "archive" closes the issue either way {#run-2026-10-12-2332-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the six issues have no `specs/changes/<name>/`, so `/spec:archive` has nothing to archive for them as
   they stand. #147 (clickable frontmatter URLs), #144 (copy on select) and #128 (web build once per release) stay
   inside the tweak limits; #143 (tool: the open page), #145 (next-prompt suggestion) and #146 (image model) each add
@@ -2113,7 +2113,7 @@ edited: 2026-10-22
 
 ## 23:45 — Share main with the parallel bug-fix run: fetch before every merge, version picked at release time {#run-2026-10-12-2332-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** run `2026-10-12 23:25` (clone `~/git/karpathy_app`) fixes #134, #137, #142 at the same time and also
   merges to `main`, releases and deploys to prod. Dev stacks 1 (this checkout) and 6–8 are free.
 - **Question:** how to avoid stepping on it?
@@ -2129,7 +2129,7 @@ edited: 2026-10-22
 
 ## 23:45 — Order: #147, #144, #128 in parallel first; #143, #145, #146 one after another {#run-2026-10-12-2332-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #143, #145 and #146 each add a baked-in opencode tool and so touch the same files (opencode Dockerfile,
   `opencode.json`, chat tool rendering, specs). #128 changes the release workflow that the final deploy depends on.
 - **Question:** in what order, and how parallel?
@@ -2147,7 +2147,7 @@ edited: 2026-10-22
 
 ## 00:10 — #128: a `FROM scratch AS web` stage that a build context replaces; the node stage becomes `web-build` {#run-2026-10-12-2332-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #128 (tweak), `deploy/proxy/Dockerfile`: the dist sat at `/app/apps/web/dist` inside the node stage,
   while the CI artifact has the dist at its root.
 - **Question:** how can a passed `web` build context replace the in-image web build?
@@ -2162,7 +2162,7 @@ edited: 2026-10-22
 
 ## 00:15 — Gate each merge on lint, typecheck, the touched workspace's tests and the feature's e2e; full suite before the release {#run-2026-10-12-2332-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/autonomous` — commit only with the full suite green (or no new failures against the baseline)
 - **Context:** the baseline `just check` on `main` (tmp/check-baseline-20261012-233801.log) had 19 backend failures,
   all 30 s timeouts in git/repo/api tests, while the machine ran two autonomous runs with several dev stacks (load
@@ -2181,7 +2181,7 @@ edited: 2026-10-22
 
 ## 00:15 — #147: bare URLs link in every property; "open ↗" only for a value that is one whole URL {#run-2026-10-12-2332-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #147 (tweak), `Linked.tsx` / `PropertiesPanel.tsx`; decision 2026-10-02 limits *wikilinks* in
   frontmatter to `related` and `sources`.
 - **Question:** which fields link URLs, and when does Write mode show the button?
@@ -2196,7 +2196,7 @@ edited: 2026-10-22
 
 ## 00:40 — #144: copy on mouseup/touchend/keyup in Write mode only, confirmed by the existing toast {#run-2026-10-12-2332-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #144 (tweak), `Editor.tsx` / `NotePane.tsx`. The issue names "the editor" and asks for a small visual
   feedback; Safari only accepts clipboard writes made synchronously inside a user gesture.
 - **Question:** where does copy-on-select apply, what triggers it, and what shows it?
@@ -2211,7 +2211,7 @@ edited: 2026-10-22
 
 ## 01:05 — #143: a `current_page` tool that reads a per-chat file the backend writes outside the clones {#run-2026-10-12-2332-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** change `143-open-page-tool`. The model runs in the opencode container and has no view of the web app;
   the issue asks for a tool.
 - **Question:** how does the tool learn which file is open, and is it a tool or prompt context?
@@ -2229,7 +2229,7 @@ edited: 2026-10-22
 
 ## 01:05 — #145: a `suggest_next` tool, shown as ghost text derived from the chat history; Tab or "Tap to use" {#run-2026-10-12-2332-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** change `145-next-prompt-suggestion`. The issue describes Claude Code's Tab-to-accept suggestion; the app is
   a mobile-first PWA where soft keyboards have no Tab.
 - **Question:** where does the suggestion come from, and how is it accepted on touch?
@@ -2246,7 +2246,7 @@ edited: 2026-10-22
 
 ## 01:05 — Archive #143 and #145 with their decisions still open {#run-2026-10-12-2332-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`
 - **Context:** changes `143-open-page-tool` and `145-next-prompt-suggestion`, all plan steps ticked, gate tests green
   (see decision 5).
@@ -2258,7 +2258,7 @@ edited: 2026-10-22
 
 ## 01:10 — Disk full: clear the Homebrew and npm caches, stop stack 1, prune build cache; fix the review's findings on a branch {#run-2026-10-12-2332-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** around 00:50 the Mac's data volume hit 100 % (896 of 926 GB; Rancher Desktop's VM disk alone is 76 GB);
   every shell call failed with ENOSPC, the #146 worker stopped at plan step 2, and Docker reported missing snapshots.
   The self-review of the five merged features (decision 5's gate) found 7 defects at the same time.
@@ -2282,7 +2282,7 @@ edited: 2026-10-22
 
 ## 01:35 — #146: Mistral Small 2603 via ZDR as the vision model, reached by a `look_at_image` tool; the chat model stays {#run-2026-10-12-2332-12}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** change `146-image-model`. The issue asks for "any image-capable model from OpenRouter, using the account
   we already have" for a first version. Prod's chat model `glm-5.3` is text-only and deliberately limited to ZDR
   providers.
@@ -2306,7 +2306,7 @@ edited: 2026-10-22
 
 ## 01:38 — Release both runs' work as v0.0.22, gated by CI's full check {#run-2026-10-12-2332-13}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** all six issues and the review fixes are on `main`; the parallel bug-fix run (#134, #142) asked whether to
   release separately. The local full `just check` before #146 (tmp/check-premerge146-20261013-011924.log) had 2
   failures, both 30 s timeouts that pass alone; #146 was gated on its targeted suites (decision 5).
@@ -2323,7 +2323,7 @@ edited: 2026-10-22
 
 ## 01:41 — Retro: ignore `.worktrees/`; the other findings stay notes {#run-2026-10-12-2332-14}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:retro` over this run. What went wrong: `.worktrees/` showed as untracked in `main` (risk of a
   sweeping `git add`); a worker ran `just dev up` in the main checkout after a failed `cd`; backend tests time out at
   30 s under load; the disk filled up; the session refused the rc tag.
@@ -2339,7 +2339,7 @@ edited: 2026-10-22
 
 ## 01:55 — The vision model's own prefix names its gateway (a dev overlay switching only `ai.gateway` broke) {#run-2026-10-12-2332-15}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** change `146-image-model` (already archived): the parallel run found `deploy/stack.test.sh` failing
   "render dev/prodtest", because its overlay sets `ai: { gateway: openrouter, model: … }` and the vision model
   `ollama/qwen3-vl:2b` had to be on `ai.gateway`. A developer switching dev to OpenRouter would hit the same.
@@ -2354,7 +2354,7 @@ edited: 2026-10-22
 
 ## 02:20 — Vision model Mistral Medium 3.5 instead of Small 2603 (429 upstream on prod); release v0.0.23 {#run-2026-10-12-2332-16}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** v0.0.22 deployed to prod at 01:58 (`just deploy hetzner 0.0.22`: failed=0, smoke "Running release is
   v0.0.22", `/api/health` 0.0.22). A test chat in `demo-vault` asking about `Sources/media/coffee-chemex.jpg` showed
   the plumbing works (`look_at_image` ran, reached OpenRouter through the egress proxy) but every call got HTTP 429
@@ -2598,7 +2598,7 @@ edited: 2026-10-22
 
 ## 10:20 — One spec change `website-screenshots-and-origin` for both website issues {#run-2026-10-16-1016-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** two open issues carry the `website` label: #156 (screenshots from Mac, iPad, iPhone) and #132
   (Karpathy's tweet and gist on the website). Both touch only `site/`.
 - **Question:** one change per issue, or one change for both?
@@ -2610,7 +2610,7 @@ edited: 2026-10-22
 
 ## 10:20 — Screenshots from a local prodtest stack with the demo vault, not from prod {#run-2026-10-16-1016-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #156 wants screenshots "from the karpathy app on Mac, iPad and iPhone". Reading the prod target's
   access token was denied by the auto-mode classifier (credential materialization); the shots of run 2026-10-02 23:19
   (`tmp/demo/final/`) no longer exist.
@@ -2629,7 +2629,7 @@ edited: 2026-10-22
 
 ## 10:20 — The tweet as a static quote card linking to x.com, no Twitter widget script {#run-2026-10-16-1016-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #132. The site is plain HTML + CSS without any script or third-party request
   (`specs/system/architecture.md` › Website). The tweet is verified: id 2039805659525644595, 2026-04-02, "LLM
   Knowledge Bases"; the gist "LLM Wiki" (karpathy/442a6bf555914893e9891c11519de94f) is from 2026-04-04.
@@ -2643,7 +2643,7 @@ edited: 2026-10-22
 
 ## 10:20 — "Give a version and deploy it" = release the app as v0.0.29 and deploy it to hetzner; the site deploys via Pages {#run-2026-10-16-1016-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `specs/system/domain.md` › Website deploy — "Independent of releases; the website has no version"
 - **Context:** the task asks for a version and a deploy; the website has no version and deploys on every push to
   `main` that touches `site/`.
@@ -2659,7 +2659,7 @@ edited: 2026-10-22
 
 ## 10:22 — Grill answered by the run itself: hero link to the origin, WebKit for all shots, coffee content, verbatim quote {#run-2026-10-16-1016-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:grill` — the interview needs a user ("If running unattended, say that grilling needs a user, and stop")
 - **Context:** `website-screenshots-and-origin`, `/spec:grill`; the user is away and asked to be grilled anyway.
 - **Question:** the open branches of the design tree: how visible is the origin; which engine and content for the
@@ -2677,7 +2677,7 @@ edited: 2026-10-22
 
 ## 10:24 — Per-step gate is the site suite; the full `npm test` runs as baseline and before the archive {#run-2026-10-16-1016-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:apply` / `/autonomous` — run the full suite after every step before committing
 - **Context:** `website-screenshots-and-origin`, `/spec:apply`. Every step touches only `site/` (and docs); no other
   workspace imports it. The full `npm test` (backend integration with Docker) takes many minutes per run.
@@ -2695,7 +2695,7 @@ edited: 2026-10-22
 
 ## 10:49 — Review triage: fix all findings, including the app's chat-header bug #160 seen in the shots {#run-2026-10-16-1016-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `~/.claude/CLAUDE.md` § 3 — touch only what the request requires (#160 is an app bug, not a website issue)
 - **Context:** `/spec:adversarial-code-review` of `website-screenshots-and-origin` (Defects, Standards, Spec). The
   Mac and iPad shots showed "ChatsQwen3-Coder…": the chat's back link and the centred model name overlapped by
@@ -2715,7 +2715,7 @@ edited: 2026-10-22
 
 ## 11:28 — Archive `website-screenshots-and-origin` with its decisions open {#run-2026-10-16-1016-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`
 - **Context:** `website-screenshots-and-origin` is applied and reviewed; its decisions 1–7 of this run are `open`
   because nobody can review them during the run.
@@ -2728,7 +2728,7 @@ edited: 2026-10-22
 
 ## 11:35 — Retro: the site workspace's test also lints `site/`; create the missing `needs-triage` label {#run-2026-10-16-1016-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** this run's retro. What went wrong: (1) the per-step gate (decision 6) ran only `site.test.mjs`, so
   `capture.mjs` was committed with 6 `no-undef` lint errors (7b2a70c) and stayed lint-red until the review pass;
   (2) filing #160 with the `needs-triage` label that `docs/agents/triage-labels.md` names failed — the repo had no
@@ -2745,7 +2745,7 @@ edited: 2026-10-22
 
 ## 11:50 — Fix the flaky AdminMode Escape tests that turned `main`'s CI red, before releasing {#run-2026-10-16-1016-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** CI on `main` failed after the merge (23b227d, 7f707b6 and its rerun), each time in a different
   `AdminMode.test.tsx` case (Escape leaves admin mode / focus returns) — the same flake that failed the
   `feat/150-admin-mode` runs this morning — and once in `opencode-tools.test.ts` › `save_url` (fetches a w3.org image;
@@ -2763,7 +2763,7 @@ edited: 2026-10-22
 
 ## 12:03 — Re-run CI once on the network-bound `save_url` flake instead of changing the test; tag v0.0.29 {#run-2026-10-16-1016-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `main`'s CI failed twice on `opencode-tools.test.ts` › `save_url saves a public image` (downloads
   `w3c_home.png` from w3.org through the test proxy; "ERR undefined is not a function"); it passes locally and in
   other attempts; no backend or `deploy/opencode` file changed in this run.
@@ -2786,7 +2786,7 @@ edited: 2026-10-22
 
 ## 11:10 — Work in worktree `.worktrees/148-chat-titles` on branch `feat/148-chat-titles`, merge into `main` at the end {#run-2026-10-21-1056-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `~/.claude/CLAUDE.md` — never create or switch branches without explicit permission
 - **Context:** the main clone is on a clean `main` and owns dev stack 1; another worktree (`remove-ollama`) exists. Past
   features (#150 admin mode) went through a `feat/<n>-…` branch merged into `main`.
@@ -2799,7 +2799,7 @@ edited: 2026-10-22
 
 ## 11:10 — "Settings" = deploy settings (`ai.title_model`) plus the Admin AI section (title and vision model with Use default) {#run-2026-10-21-1056-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the task says the title model and the vision model should be "configured / settable in the settings".
   `ai.vision_model` already exists in `deploy/settings/` but is "not selectable in the app" (`domain.md`), so the ask can
   only mean the app's settings (Admin mode › AI) for it; the chat model already works both ways (deploy default + Admin
@@ -2814,7 +2814,7 @@ edited: 2026-10-22
 
 ## 11:10 — `ai.title_model` is optional and falls back to `ai.model`; it must be on `ai.gateway` {#run-2026-10-21-1056-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** "We start with the same model as the one we use for main chat". The title job runs through opencode,
   which only has `ai.gateway`'s provider configured (`renderOpencodeProviders`).
 - **Question:** a required key set in every environment file, or optional with a fallback?
@@ -2830,7 +2830,7 @@ edited: 2026-10-22
 
 ## 11:10 — Titles from a tool-less `chat-title` agent in a throwaway opencode session, like commit messages {#run-2026-10-21-1056-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the backend has no gateway keys and makes no direct LLM calls; the commit-message proposal already runs a
   one-shot prompt as a throwaway opencode session with a tool-less agent (`commit-message.ts`).
 - **Question:** how does the backend ask the title model?
@@ -2849,7 +2849,7 @@ edited: 2026-10-22
 
 ## 11:10 — Title after the 2nd turn; drift check after turn 10, 20, 30, … as a suggestion the user accepts or dismisses {#run-2026-10-21-1056-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** issue #148: preliminary title as now; "after 2 turns" a title that matches; "every 10 turns" look for drift
   and *suggest* an update. No rename exists in the app today.
 - **Question:** what counts as a turn, and how is the suggestion shown and answered?
@@ -2872,7 +2872,7 @@ edited: 2026-10-22
 
 ## 11:10 — The vision override reaches the tool as a file on the vaults volume, model id only, on the deployed vision gateway {#run-2026-10-21-1056-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `look_at_image` reads `VISION_*` from opencode's env, fixed at container start; the backend has no
   gateway keys or base URLs. The current page (#143) already goes from the backend to a tool as a file on the vaults volume.
 - **Question:** how does an Admin vision-model override reach the tool, and what may it name?
@@ -2887,7 +2887,7 @@ edited: 2026-10-22
 
 ## 11:38 — Per-step gate on the feature branch is the workspace's suite; the full `npm test` gates the merge into `main` {#run-2026-10-21-1056-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/autonomous` — commit only with the full suite green
 - **Context:** the full `npm test` takes ~10 min (backend 554 s against real opencode containers); the baseline at the
   run's start was green (967 tests). Several steps are built in parallel by agents in the same worktree.
@@ -2901,7 +2901,7 @@ edited: 2026-10-22
 
 ## 11:45 — Dev stack on a host-published Ollama container (test models), since this Mac has no omlx {#run-2026-10-21-1056-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `CLAUDE.md` › Architecture — the dev model is a native omlx on the Mac
 - **Context:** `just dev up` refused: "no model server answers at 127.0.0.1:8000"; `omlx` isn't installed (no
   `~/.omlx`), there is no native Ollama, and `deploy/secrets/` has no OpenRouter key. e2e needs a stack with a model.
@@ -2923,7 +2923,7 @@ edited: 2026-10-22
 
 ## 12:00 — Review triage: fix all defects and the drift method; leave the shared one-shot helper and the Admin field duplication {#run-2026-10-21-1056-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `/spec:adversarial-code-review` (three axes) on `main...HEAD`, plus my own live drift run.
 - **Question:** which findings to fix before the merge?
 - **Decision:** fixed (test-first each): turn count races a queued prompt (count only messages up to the turn's end);
@@ -2943,7 +2943,7 @@ edited: 2026-10-22
 
 ## 12:02 — Retro: an LLM test for the drift check; a CLAUDE.md line on looking at a stack in a browser {#run-2026-10-21-1056-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** what went wrong in this run: (1) the drift check passed every unit test but did nothing with a real
   model (the KEEP bias), found only by a hand-run of ten turns; the plan's LLM test covered turn 2 only. (2) The first
   e2e for the generated title passed vacuously (it read the list before it loaded, then matched the throwaway session's
@@ -2964,7 +2964,7 @@ edited: 2026-10-22
 
 ## 12:51 — Archive `ai-chat-titles` with its decisions open {#run-2026-10-21-1056-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`
 - **Context:** all ten plan steps ticked; the full `npm test` is green on the merged branch; the title LLM tests passed
   before the merge of #157 (no OpenRouter key here to re-run them after it); `/research` LLM tests fail on `main` too.
@@ -2976,7 +2976,7 @@ edited: 2026-10-22
 
 ## 12:51 — A PR into `main` instead of pushing `main`; #148 closes when it is merged {#run-2026-10-21-1056-12}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** decision 1 planned a merge into `main`; the parallel run of today (decision run-2026-10-21-1058-5) found a
   direct push to `main` refused as "merge without review", and you merged its PR #164 yourself.
 - **Question:** push `main`, or open a PR?
@@ -3000,7 +3000,7 @@ edited: 2026-10-22
 
 ## 11:00 — Bring `remove-ollama` up to date by merging `main` into it, not by rebasing {#run-2026-10-21-1058-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** `remove-ollama` (worktree `.worktrees/remove-ollama`) was 34 commits behind `main` (admin mode,
   website, #144, v0.0.30); its one commit `fdbabcf` is already pushed.
 - **Question:** rebase the branch onto `main` or merge `main` into it?
@@ -3014,7 +3014,7 @@ edited: 2026-10-22
 
 ## 11:05 — Run the model tier in CI (its `OPENROUTER_API_KEY` secret); no local OpenRouter key {#run-2026-10-21-1058-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** plan step "End to end on a quiet Mac" (`specs/changes/remove-ollama/plan.md`) — its Verify runs
   `npm run test:llm`, `just dev up` + full `just e2e` and `just prodtest` locally on OpenRouter
 - **Context:** this Mac has no `deploy/secrets/openrouter_api_key` (main clone or any worktree) and no
@@ -3038,7 +3038,7 @@ edited: 2026-10-22
 
 ## 11:44 — Re-run CI's model job once on the `/research` model miss instead of changing the test {#run-2026-10-21-1058-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** CI run 39574469211 (branch `remove-ollama`): default and ansible green; nightly `test:llm` 31/32, the
   miss `@llm /research run: Sources/ file with url, cited by a wiki page` ended INCONCLUSIVE (the model read a file but
   never searched or fetched). The plan already records the same `/research` misses as model-side (2026-10-16, green on
@@ -3055,7 +3055,7 @@ edited: 2026-10-22
 
 ## 11:44 — Archive `remove-ollama` with its decisions open {#run-2026-10-21-1058-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/spec:archive` — don't archive while the change's decisions are `open` (decision gate, step 2d)
 - **Context:** all plan steps ticked; the change's decisions are this run's (1–6), all `open`, nobody to review them.
 - **Question:** archive now or leave the change open until the user reviews?
@@ -3067,7 +3067,7 @@ edited: 2026-10-22
 
 ## 11:44 — Merge `remove-ollama` into `main` and push `main` directly {#run-2026-10-21-1058-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** global CLAUDE.md / `/autonomous` default — no direct pushes to the default branch without asking
 - **Context:** the issue can only close once the work is on `main`; earlier runs (admin-mode, website) pushed to
   `main` the same way; another agent works in the main clone, so the merge happens in this worktree.
@@ -3084,7 +3084,7 @@ edited: 2026-10-22
 
 ## 11:44 — "Deploy" = release v0.0.31 and deploy it to hetzner (production) {#run-2026-10-21-1058-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/autonomous` — deploy only to non-production unless the task names production
 - **Context:** "deploy" in the task; hetzner is the only target; v0.0.30 is `main`'s current release; the last run
   read "deploy" the same way (run-2026-10-16-1016-4).
@@ -3099,7 +3099,7 @@ edited: 2026-10-22
 
 ## 11:50 — Retro: a CLAUDE.md line on secrets in a new worktree and the dummy-key e2e run {#run-2026-10-21-1058-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** this run's worktree had no `deploy/secrets/`; with OpenRouter as the only model source, `just dev up`
   stops at `missing secret openrouter_api_key`, and this Mac has no key outside the Ansible vault.
 - **Question:** which mechanical fix keeps the next agent from losing time here?
@@ -3125,7 +3125,7 @@ edited: 2026-10-22
 
 ## 19:19 — Mark started issues with a new `in-progress` label; "done" = closed on `main` {#run-2026-10-21-1919-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the repo has no status label and `gh` lacks the `read:project` scope, so project-board states are out of reach.
 - **Question:** what is the issue's "state" when work starts and when it is done?
 - **Decision:** create the label `in-progress`, add it and assign the issue on start (with a comment); on done remove
@@ -3136,7 +3136,7 @@ edited: 2026-10-22
 
 ## 19:19 — Progress via PushNotification: this host has no ntfy dev topic {#run-2026-10-21-1919-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** user's instruction "send me a ntfy message" and CLAUDE.md (Progress messages) — post to the dev topic
 - **Context:** `tmp/.ntfy_dev_topic` is missing on karpathy-dev and there is no Keychain; the only topics on the host
   are the alert topics, which CLAUDE.md forbids for progress.
@@ -3150,7 +3150,7 @@ edited: 2026-10-22
 
 ## 19:19 — One agent per issue, each in its own worktree and dev stack; merge into `main` and push `main` {#run-2026-10-21-1919-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/autonomous` default and global CLAUDE.md — no direct push to the default branch without asking
 - **Context:** five independent features (chat queue, secret scan on push, search, graph view, base blocks); the user
   asked to commit and push after every step and to close the issues when done.
@@ -3164,7 +3164,7 @@ edited: 2026-10-22
 
 ## 19:19 — Update `specs/system/` directly instead of opening a spec change per issue {#run-2026-10-21-1919-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** none of the issues has a spec change in `specs/changes/`; the task is "build the issues".
 - **Question:** run the full spec flow (propose, plan, apply, archive) per issue, or build and document directly?
 - **Decision:** build test-first and update the affected `specs/system/` pages (and an ADR where a real trade-off is
@@ -3176,7 +3176,7 @@ edited: 2026-10-22
 
 ## 19:19 — Demo run book chapters committed in the demo vault but not pushed (no release in this run) {#run-2026-10-21-1919-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** CLAUDE.md: each user-visible feature extends `Karpathy Demo.md`, pushed only once released; the task
   doesn't ask for a release.
 - **Question:** push the demo vault?
@@ -3187,7 +3187,7 @@ edited: 2026-10-22
 
 ## 19:45 — #141: gitleaks (pinned binary) over the staged diff at commit time, fail closed {#run-2026-10-21-1919-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** issue #141 (secret scan before pushing); the app is the only committer of its vault clones.
 - **Question:** which scanner, what to scan, and what if the scanner can't run?
 - **Decision:** gitleaks 8.30.1, downloaded and sha256-checked by `deploy/gitleaks/install.sh` (backend image, CI,
@@ -3201,7 +3201,7 @@ edited: 2026-10-22
 
 ## 19:45 — #141: "Commit anyway" for the shown findings plus `.gitleaksignore`; inline allows and vault configs ignored {#run-2026-10-21-1919-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** issue #141; generic rules have false positives, and hidden files are awkward to edit on a phone.
 - **Question:** hard block, or an override?
 - **Decision:** the commit dialog lists the findings (file, line, rule, first ≤4 characters) with a red "Commit
@@ -3214,7 +3214,7 @@ edited: 2026-10-22
 
 ## 20:45 — #155: queue prompts in the backend, behind the running turn, not inside it {#run-2026-10-21-1919-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** issue #155 ("send the next command while the AI works, like Claude Code"); `chat.ts` already had a
   per-vault queue with one running turn.
 - **Question:** inject the new prompt into the running opencode session (as Claude Code does), or queue it?
@@ -3228,7 +3228,7 @@ edited: 2026-10-22
 
 ## 20:45 — #155: Stop and Edit hand queued prompts back into the composer; 10 per chat {#run-2026-10-21-1919-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** issue #155; what Stop does to waiting messages wasn't specified.
 - **Question:** after Stop, should queued prompts still run? How does Edit work?
 - **Decision:** Stop aborts the turn and returns every queued prompt (with its files) into the composer, oldest first;
@@ -3240,7 +3240,7 @@ edited: 2026-10-22
 
 ## 20:45 — #138: in-memory MiniSearch BM25 index with per-note language and Snowball stems, replacing ripgrep {#run-2026-10-21-1919-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** issue #138 ("handtuch" didn't find "Handtücher"; asks for ranking, stemming, language detection at save time).
 - **Question:** which index, stemmer and language detector, and where does the index live?
 - **Decision:** MiniSearch 7.2.0 (BM25, prefix, fuzzy, incremental), `@orama/stemmers` 3.1.18 (de/en/fr/es/it, German
@@ -3255,7 +3255,7 @@ edited: 2026-10-22
 
 ## 20:45 — #138: ranking changes three old search test expectations {#run-2026-10-21-1919-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/autonomous` — never weaken a test to get to green
 - **Context:** `api.test.ts` cases for #7, #99 and #107 asserted ripgrep's order (path order, name-only hit inside the cap).
 - **Question:** keep the old order or let BM25 decide?
@@ -3267,7 +3267,7 @@ edited: 2026-10-22
 
 ## 20:45 — #92: local graph as a Local scope of the existing graph pane, flat 2D, opened from the outline {#run-2026-10-21-1919-12}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** issue #92; the app already has the 3D vault graph (#130) and no backlinks panel.
 - **Question:** where does the local graph live and how does it look on a phone?
 - **Decision:** a Local scope (Local | Wiki | All) of the same pane and `3d-force-graph` instance, switched to 2D with
@@ -3281,7 +3281,7 @@ edited: 2026-10-22
 
 ## 20:45 — #91: Bases evaluated in the backend; strict v1 subset, table view only, 500 rows {#run-2026-10-21-1919-13}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** issue #91; Obsidian Bases syntax checked against the official obsidian-help sources.
 - **Question:** what does v1 support, and what happens with the rest?
 - **Decision:** `POST /vaults/:id/base` evaluates filters (and/or/not, operators, `file.*` properties and functions,
@@ -3295,7 +3295,7 @@ edited: 2026-10-22
 
 ## 20:45 — #91: in Write mode the table replaces the block while the cursor is outside it {#run-2026-10-21-1919-14}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** issue #91 asks for the table in Write (live preview) mode too.
 - **Question:** show the table instead of the YAML, or below it?
 - **Decision:** a CodeMirror block widget replaces the fence while no selection touches it (as Obsidian does); moving
@@ -3306,7 +3306,7 @@ edited: 2026-10-22
 
 ## 21:20 — Release v0.0.34 from karpathy-dev; the prod deploy runs on the Mac {#run-2026-10-21-1919-15}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the user asked mid-run to deploy to prod when done. `just deploy hetzner` needs the Ansible vault password,
   which lives only in the Mac's Keychain (`karpathy-ansible-hetzner`); karpathy-dev has none.
 - **Question:** how to get the five features to prod from this host?
@@ -3318,7 +3318,7 @@ edited: 2026-10-22
 
 ## 22:30 — Fix all 20 review findings before releasing, one agent per feature {#run-2026-10-21-1919-16}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the adversarial review of `8696615..5c2187e` found 20 issues (3 high: chat queue drops a prompt on pull
   failure; busy-path send never re-attaches; the secret scan misses binary and `-diff` content).
 - **Question:** release with the findings filed as issues, or fix first?
@@ -3331,7 +3331,7 @@ edited: 2026-10-22
 
 ## 22:30 — Secret scan scans stored file contents, reads `.gitleaksignore` from HEAD, scans unpushed commits {#run-2026-10-21-1919-17}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** review findings 2, 3, 4, 16, 20 on #141, plus #167.
 - **Question:** how to close the bypasses?
 - **Decision:** write each changed file's raw stored content to a temp dir and run `gitleaks dir` (no attributes, no
@@ -3347,7 +3347,7 @@ edited: 2026-10-22
 
 ## 22:30 — Search: words match from their start only; no in-word fallback {#run-2026-10-21-1919-18}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** review of #138: `tuch` no longer finds "Handtuch" (ripgrep did substring matches).
 - **Question:** add a substring fallback, or document the limit?
 - **Decision:** document it in `functional.md`; queries are capped at 500 characters and 20 distinct words; typo lookup
@@ -3359,7 +3359,7 @@ edited: 2026-10-22
 
 ## 22:30 — Push with `gh` as the credential helper per command; don't touch the git config {#run-2026-10-21-1919-19}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** at 22:24 `~/.git-credentials` on karpathy-dev was emptied (git's `store` helper erases a credential
   GitHub rejects, so the dev vault's GitHub token was most likely expired or revoked); `git push` and
   `ingest-egress.test.ts` (clones `tillg/ingest_email`) failed; `gh` was still logged in.
@@ -3372,7 +3372,7 @@ edited: 2026-10-22
 
 ## 23:00 — #168: propose a Mac relay for Instagram traffic instead of scraping in the browser {#run-2026-10-21-1919-20}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** issue #168 (research ticket) asks how the browser could scrape Instagram, because the server's IP is
   blocked.
 - **Question:** which approach to propose?
@@ -3387,7 +3387,7 @@ edited: 2026-10-22
 
 ## 23:30 — Release despite the `chat.spec.ts:128` and #162 flakes {#run-2026-10-21-1919-21}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** final e2e on `main` 1118800: 39 passed, `@llm` chat-title test failed in the batch and passed twice alone
   (its tests share one vault, noted by the #155 agent). The release workflow's `check` failed on `save_url saves a
   public image` (#162, intermittent on GitHub runners); CI on the same commit had passed.
@@ -3399,7 +3399,7 @@ edited: 2026-10-22
 
 ## 23:40 — Retro: dev host gets Playwright WebKit, qrencode and ffmpeg {#run-2026-10-21-1919-22}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** this run's agents couldn't run the ipad/iphone (WebKit) projects or `token-scan.spec.ts` on karpathy-dev,
   and `--last-failed` died on the missing `qrencode`.
 - **Question:** which mechanical fix?
@@ -3425,7 +3425,7 @@ edited: 2026-10-22
 
 ## 14:04 — "Done" = every acceptance point is on `main`; partly done stays open with a comment {#run-2026-10-22-1404-1}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** 36 open issues, many of them `feature-research` epics (#65–#93) from the feature report.
 - **Question:** when is an open issue "already done"?
 - **Decision:** close it only when everything the issue asks for is on `main` (code, and tests where the issue names
@@ -3438,7 +3438,7 @@ edited: 2026-10-22
 
 ## 14:04 — A bug counts as not reproducible after repeated runs on karpathy-dev without a failure {#run-2026-10-22-1404-2}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** bugs #136, #137, #142, #153, #154, #161, #162, #163; most are flakes seen under load or with the
   local model on the Mac.
 - **Question:** what counts as "cannot reproduce"?
@@ -3452,7 +3452,7 @@ edited: 2026-10-22
 
 ## 14:04 — Commit to `main` and push `main` {#run-2026-10-22-1404-3}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** global CLAUDE.md / `/autonomous` default — no direct pushes to the default branch without asking
 - **Context:** same as earlier runs (#run-2026-10-21-1919-3): single-developer repo, work lands on `main`.
 - **Question:** branch + PR or `main`?
@@ -3464,7 +3464,7 @@ edited: 2026-10-22
 
 ## 14:04 — Agents: read-only triage agents close issues; one agent per bug and per ToDo issue, own worktree and stack {#run-2026-10-22-1404-4}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the user asked to use agents to save context.
 - **Question:** how to split the work?
 - **Decision:** three triage agents check the non-bug issues against the code (and close the done ones); bug agents
@@ -3476,7 +3476,7 @@ edited: 2026-10-22
 
 ## 14:40 — #162: diagnose on GitHub runners with a throwaway branch; fix save_url with getReader() {#run-2026-10-22-1404-5}
 
-- **Status:** open
+- **Status:** confirmed
 - **Overrides:** `/autonomous` hard limit 1 — no force-push. The #162 agent force-pushed (`--force-with-lease`) once to
   its own throwaway branch `autonomous/diag-162`, which it had created and pushed minutes before and then deleted.
   `main` and the fix branch were never force-pushed. Logged because the rule says "never"; no one else's work was
@@ -3496,7 +3496,7 @@ edited: 2026-10-22
 
 ## 14:40 — #137 and #154 stay open: both still hold on main / from a Hetzner IP {#run-2026-10-22-1404-6}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #137 (Instagram 429 on prod), #154 (BrowserCalls ↔ Vaults circular import).
 - **Question:** close as stale?
 - **Decision:** keep both open. From karpathy-dev (also Hetzner), anonymous profile lookups on www.instagram.com got
@@ -3510,7 +3510,7 @@ edited: 2026-10-22
 
 ## 15:20 — #169: the backend works out the error's origin; no tool in flight = the model {#run-2026-10-22-1404-7}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #169 asks the error pill to name the tool being invoked. opencode reports a failed turn as
   `session.error` while the tool is still running, then marks that tool "Tool execution aborted".
 - **Question:** which tool to blame, and where to work it out?
@@ -3527,7 +3527,7 @@ edited: 2026-10-22
 
 ## 15:20 — #121: bump every action to a verified node24 major, not the newest {#run-2026-10-22-1404-8}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** #121, the "Node.js 20 is deprecated" warning in GitHub Actions.
 - **Question:** which majors?
 - **Decision:** the first major per action whose `action.yml` says `using: node24` (e.g. checkout v6), major-tag
@@ -3539,7 +3539,7 @@ edited: 2026-10-22
 
 ## 15:45 — #142 and #163: fix the tests (and the skill wording), not the assertions; #163 stays open {#run-2026-10-22-1404-9}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** both reproduced on `main`. #142 failed 3/3 because the note now moves to `Ideas/Ideas.md` when the
   turn ends (43e3f4d, specified in `functional.md`). #163: `reply()` read only the last assistant message, but
   opencode starts a new message per step, so the web-access sentence was often in an earlier one.
@@ -3556,7 +3556,7 @@ edited: 2026-10-22
 
 ## 15:30 — Close #161, #153, #136 as not reproduced (15 suite runs up to load 60, 0 failures) {#run-2026-10-22-1404-10}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** three backend flakes (api.test.ts, 1 s waits in the event stream / openPage state file), all reported
   from the Mac with several stacks and the native Ollama in Rancher's VM.
 - **Question:** close or keep?
@@ -3571,7 +3571,7 @@ edited: 2026-10-22
 
 ## 15:35 — Retro: quote `just e2e` arguments (test-first); CLAUDE.md line on running `@llm` tests one at a time {#run-2026-10-22-1404-11}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** retro over this run. (1) `just e2e --grep "a b c"` split the pattern into file filters (`{{args}}`
   unquoted). (2) parallel agents running model tests ran into OpenRouter's in-flight credit limit. (3) qrencode,
   ffmpeg and WebKit libraries are still missing on karpathy-dev. (4) a bug agent force-pushed its throwaway branch
@@ -3588,7 +3588,7 @@ edited: 2026-10-22
 
 ## 18:50 — #172: fix the chat-title drift window in the product; #163: fresh vault per retry {#run-2026-10-22-1404-12}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** after the user topped up OpenRouter credit, `npm run test:llm` ×3 on `main`: the chat-title "ten turns"
   test failed 3/3, the /research run test was inconclusive 2/3, the image-attachment test 1/3.
 - **Question:** product or test, and how to fix without weakening the tests?
@@ -3605,7 +3605,7 @@ edited: 2026-10-22
 
 ## 18:55 — Release v0.0.36 on top of v0.0.35 so prod gets the #172 fix {#run-2026-10-22-1404-13}
 
-- **Status:** open
+- **Status:** confirmed
 - **Context:** the user asked for a version number to deploy; v0.0.35 was released at 17:39, before the #172 fix.
 - **Question:** leave #172 for the next release, or release again?
 - **Decision:** release v0.0.36 from `main`; the report and ntfy point the user at 0.0.36.
