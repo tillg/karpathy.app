@@ -238,6 +238,8 @@ edited: 2026-10-22
   - [15:45 — #142 and #163: fix the tests (and the skill wording), not the assertions; #163 stays open](#run-2026-10-22-1404-9)
   - [15:30 — Close #161, #153, #136 as not reproduced (15 suite runs up to load 60, 0 failures)](#run-2026-10-22-1404-10)
   - [15:35 — Retro: quote `just e2e` arguments (test-first); CLAUDE.md line on running `@llm` tests one at a time](#run-2026-10-22-1404-11)
+  - [18:50 — #172: fix the chat-title drift window in the product; #163: fresh vault per retry](#run-2026-10-22-1404-12)
+  - [18:55 — Release v0.0.36 on top of v0.0.35 so prod gets the #172 fix](#run-2026-10-22-1404-13)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3583,3 +3585,30 @@ edited: 2026-10-22
 - **Why:** a test where there is a runtime surface, a CLAUDE.md pointer where there isn't.
 - **Alternatives:** install the host packages with sudo here (outside Ansible: drift).
 - **Consequences:** run `just devhost` from the Mac to give karpathy-dev WebKit, qrencode and ffmpeg.
+
+## 18:50 — #172: fix the chat-title drift window in the product; #163: fresh vault per retry {#run-2026-10-22-1404-12}
+
+- **Status:** open
+- **Context:** after the user topped up OpenRouter credit, `npm run test:llm` ×3 on `main`: the chat-title "ten turns"
+  test failed 3/3, the /research run test was inconclusive 2/3, the image-attachment test 1/3.
+- **Question:** product or test, and how to fix without weakening the tests?
+- **Decision:** #172 (new): at turn 10 the drift check read all ten turns, including the two the title came from, so
+  a topic change after turn 2 was never suggested before turn 20. It now reads turns 3–10
+  (`apps/backend/src/chat-title.ts`, `functional.md` updated, unit test red first); the LLM test waits for a
+  generated title. #163: the retry ran in the first try's vault, where everything was already done; each try now gets a
+  fresh vault, and the plan turn's searches count. Assertions unchanged. Both tests then passed 3/3. Merged in 4610f76,
+  #172 and #163 closed.
+- **Why:** the drift scenario is what the feature exists for; the /research skill tells the run turn to reuse the
+  plan's scouted URLs.
+- **Alternatives:** a 20-turn test (more credit, product gap stays); force a search in the run turn (wasted searches).
+- **Consequences:** the image-attachment test's one inconclusive run is not looked into.
+
+## 18:55 — Release v0.0.36 on top of v0.0.35 so prod gets the #172 fix {#run-2026-10-22-1404-13}
+
+- **Status:** open
+- **Context:** the user asked for a version number to deploy; v0.0.35 was released at 17:39, before the #172 fix.
+- **Question:** leave #172 for the next release, or release again?
+- **Decision:** release v0.0.36 from `main`; the report and ntfy point the user at 0.0.36.
+- **Why:** one deploy with every fix of the run; v0.0.35 is not deployed yet.
+- **Alternatives:** deploy v0.0.35 and leave #172 for later.
+- **Consequences:** v0.0.35 stays as an unused tag. Rollback: `just deploy hetzner 0.0.34`.
