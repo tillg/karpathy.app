@@ -64,16 +64,18 @@ describe('chat titles with a real model', () => {
       await chat.prompt(id, chatId, text);
       await new Promise<void>((resolve) => chat.stream(id, chatId, () => undefined, resolve));
     };
-    await turn('Give me one tip for growing tomatoes on a balcony. One sentence, use no tools.');
+    const first = 'Give me one tip for growing tomatoes on a balcony. One sentence, use no tools.';
+    await turn(first);
     await turn('Which tomato variety suits a small pot? One sentence, use no tools.');
     // Small models answer "keep" when asked whether a title still fits (#148): the check must not rely on that.
+    // The preliminary title (the first prompt) names tomatoes too: wait for the generated one (#172).
     const end2 = Date.now() + 120_000;
-    let title = '';
-    while (!/tomat/i.test(title) && Date.now() < end2) {
+    let title = first;
+    while ((title === first || !/tomat/i.test(title)) && Date.now() < end2) {
       await new Promise((r) => setTimeout(r, 1000));
       title = (await chat.get(id, chatId)).title;
     }
-    if (!/tomat/i.test(title)) throw new Error(`INCONCLUSIVE: the turn-2 title doesn't name tomatoes: ${title}`);
+    if (title === first || !/tomat/i.test(title)) throw new Error(`INCONCLUSIVE: no generated turn-2 title that names tomatoes: ${title}`);
     for (const q of ['flour for sourdough bread', 'proofing time for sourdough', 'oven temperature for sourdough bread', 'feeding a sourdough starter',
       'why sourdough bread turns out dense', 'baking sourdough in a Dutch oven', 'scoring sourdough bread', 'storing baked sourdough bread'])
       await turn(`A question about ${q}: answer in one sentence, use no tools.`);
