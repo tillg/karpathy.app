@@ -76,7 +76,7 @@ async function withRetry<R>(fn: () => Promise<R>): Promise<R> {
     try {
       return await fn();
     } catch (e2) {
-      if (e2 instanceof Inconclusive) throw new Error(`INCONCLUSIVE: ${e2.message}`, { cause: e2 });
+      if (e2 instanceof Inconclusive) throw new Error(`INCONCLUSIVE: ${e2.message} (first try: ${e.message})`, { cause: e2 });
       throw e2;
     }
   }
@@ -194,14 +194,16 @@ describe('@llm /research', () => {
   });
 
   it('@llm /research run: Sources/ file with url, cited by a wiki page', async () => {
-    const t = await setup(testlandWiki);
-    await t.store.update((c) => { c.settings.webAccess = true; });
     await withRetry(async () => {
+      // A fresh vault per try: a retry in the same one finds the first try's sources and plan done, and fetches nothing (#163).
+      const t = await setup(testlandWiki);
+      await t.store.update((c) => { c.settings.webAccess = true; });
       const plan = await turn(t, '/research who invented the World Wide Web');
       const notes = await mdFiles(t, 'Research');
       if (notes.length === 0) throw new Inconclusive(`no plan note: ${JSON.stringify(plan.tools)}`);
       const { tools } = await turn(t, 'go', plan.chatId);
-      const searches = tools.filter((x) => x.tool === 'websearch');
+      // The plan turn's scouting search may have found the URLs the run turn fetches (the skill allows it, #163).
+      const searches = [...plan.tools, ...tools].filter((x) => x.tool === 'websearch');
       const fetched = tools.filter((x) => x.tool === 'webfetch' && x.status === 'completed').map((x) => x.url);
       if (searches.length === 0 || fetched.length === 0) throw new Inconclusive(`no search or fetch: ${JSON.stringify(tools)}`);
       expect(searches.length).toBeLessThanOrEqual(20);
