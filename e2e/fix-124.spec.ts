@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, openApp, openNote, test } from './helpers';
 
 // #124: the AI saves a picture from a known URL into the vault (save_url) and the chat shows it as a changed
-// file that opens in the media view. Real model turns (the dev model), so long timeouts and assertions on the
+// file that opens in the media view. Real model turns (the test model on OpenRouter), so long timeouts and assertions on the
 // chip and the file, never on answer text.
 const TURN = 8 * 60_000;
 test.describe.configure({ timeout: 20 * 60_000 });
@@ -56,13 +56,16 @@ test('@llm asked to add a picture to a note, the AI saves it and embeds it', asy
   await page.getByTestId('chat-send').click();
   await expect(page.getByTestId('chat-stop')).toBeAttached();
   await expect(page.getByTestId('chat-send')).toBeAttached({ timeout: TURN });
-  const saved = (await api.changes(vault.id)).map((c) => c.path).filter((p) => p.endsWith('.png'));
-  expect(saved).toHaveLength(1);
+  const pngs = async () => (await api.changes(vault.id)).map((c) => c.path).filter((p) => p.endsWith('.png'));
+  // When the turn ends, the flat note moves into its own folder and the picture with it (Pictures follow the AI's pages).
+  await expect.poll(pngs, { timeout: 10_000 }).toEqual([expect.stringMatching(/^Ideas\//)]);
+  const saved = await pngs();
+  expect(await api.file(vault.id, 'Ideas.md')).toBeNull();
   const name = saved[0]!.split('/').pop()!;
   // Either embed form, by path or by name.
-  expect((await api.file(vault.id, 'Ideas.md'))!.content).toMatch(new RegExp(`!\\[[^\\]]*\\]?\\]?\\(?[^)\\]]*${name.replace('.', '\\.')}`));
+  expect((await api.file(vault.id, 'Ideas/Ideas.md'))!.content).toMatch(new RegExp(`!\\[[^\\]]*\\]?\\]?\\(?[^)\\]]*${name.replace('.', '\\.')}`));
   // The note shows the picture (Write mode's live preview).
-  await openNote(page, 'Ideas.md');
+  await openNote(page, 'Ideas/Ideas.md');
   await expect.poll(() => page.locator('.cm-content .embed img').first().evaluate((e: HTMLImageElement) => e.naturalWidth), { timeout: 15_000 }).toBeGreaterThan(0);
   await page.screenshot({ path: test.info().outputPath('note-with-picture.png'), scale: 'css' });
 });
