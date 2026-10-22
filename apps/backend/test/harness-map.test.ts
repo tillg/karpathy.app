@@ -327,6 +327,13 @@ describe('error origin (#169): which tool was running when a turn failed, else t
     expect(out.at(-1)).toMatchObject({ type: 'error', origin: { kind: 'model' } });
   });
 
+  it('live, in opencode 1.18.25\'s order (processor halt → cleanup → runner idle): both pills name the tool', () => {
+    const idle = { type: 'session.status', properties: { sessionID: 's', status: { type: 'idle' } } };
+    const out = run([tool('p2', 'websearch', 'running'), sessionError(credits), idle, tool('p2', 'websearch', 'error', aborted), msg(credits), idle]);
+    expect(out.find((e) => e.type === 'error')).toMatchObject({ origin: { kind: 'tool', tool: 'websearch' } });
+    expect(out.filter((e) => e.type === 'message').at(-1)).toMatchObject({ message: { errorOrigin: { kind: 'tool', tool: 'websearch' } } });
+  });
+
   it('reload: a stored message error takes the tool opencode aborted in that message', () => {
     const stored = (state: Record<string, unknown>) => [{ info: msg(credits).properties.info, parts: [{ id: 'p2', type: 'tool', tool: 'look_at_image', callID: 'c', state: { input: {}, ...state } }] }];
     expect(mapMessages(stored({ status: 'error', ...aborted }), '/v')[0]!.errorOrigin).toEqual({ kind: 'tool', tool: 'look_at_image' });

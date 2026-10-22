@@ -253,9 +253,10 @@ export function mapEvent(raw: unknown, root: string): HarnessEvent | null {
 
 /**
  * Names the tool behind a live error (#169). Live events carry no parts with a message, so this follows each
- * session's running tool calls: opencode publishes `session.error` while the tool still runs, then marks it
- * aborted, then sends the message with its error. Feed it every mapped event in order; it returns the event,
- * with a tool origin where a tool was running.
+ * session's running tool calls. opencode 1.18.25 on a failed turn: `session.error` while the tool still runs,
+ * `idle`, the tool marked aborted, the message with its error, `idle` again. The first idle forgets the session;
+ * the aborted tool comes back with its part update, so the message still finds it, and the last idle frees it.
+ * Feed it every mapped event in order; it returns the event, with a tool origin where a tool was running.
  */
 export class ErrorOrigins {
   /** session → message → part → its tool and whether opencode already aborted it, in the order the calls started. */
@@ -276,7 +277,7 @@ export class ErrorOrigins {
         return e;
       }
       case 'message': {
-        // Kept until the session goes idle: opencode may send the failed message more than once.
+        // The message's aborted tools stay until the turn's last idle, so a repeated message keeps its origin.
         if (!e.message.errorOrigin) return e;
         const tools = [...(this.running.get(e.sessionId)?.get(e.message.id)?.values() ?? [])].map((t) => t.tool);
         return { ...e, message: { ...e.message, errorOrigin: originOf(tools) } };
