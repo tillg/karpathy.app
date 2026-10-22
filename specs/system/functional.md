@@ -572,6 +572,12 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
 - **Streaming reply** with Markdown and wikilinks, collapsible "Thinking", **tool chips** for files read, changed and
   opened (changed and opened ones open the note; long paths end in "…", the full path is the tooltip), and a footer
   listing the changed pages. A chat scrolled to the end stays at the end when its width changes.
+- **Error pills say where a failure came from** (#169): a reply that fails (the provider is out of credits, rate
+  limits, a timeout, …) ends in a red pill that names the tool that was running when it failed ("During tool websearch:
+  Insufficient credits") or, with no tool running, the model ("From the model qwen3-8b: …"). Also after a reload. The
+  app's own errors (a pull before the turn failed, the AI service restarted, …) name their cause themselves and get no
+  prefix; a Stop shows none. A tool that fails on its own does not end the turn: its chip turns red and opens its error
+  on tap.
 - **Clean Markdown from the AI** (#118): after every AI write of a note, the app checks the whole file for Markdown
   that Obsidian shows broken and tells the AI in that write's result, so it fixes the note in the same turn. Two
   mistakes are caught: a wikilink broken across lines (shown as plain text), and `[[page|alias]]` in a table row, whose

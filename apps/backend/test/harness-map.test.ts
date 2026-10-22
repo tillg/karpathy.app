@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { mapEvent, mapMessageInfo, mapMessages, mapModels, mapPart, withLimit, mapToolPart, usageRows, usageSessions, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
+import { ErrorOrigins, mapEvent, mapMessageInfo, mapMessages, mapModels, mapPart, withLimit, mapToolPart, usageRows, usageSessions, toVaultPath, writtenPaths, type HarnessEvent } from '../src/harness/map.js';
 
 // Real opencode 1.18.25 event captures from the Phase 0 spike (vault root /vaults/a).
 const raw = readFileSync(join(import.meta.dirname, 'fixtures/opencode-events.jsonl'), 'utf8')
@@ -267,5 +267,76 @@ describe('usageSessions', () => {
       { id: 'other', directory: '/v/b', time: { created: 3, updated: 30 } },
     ];
     expect(usageSessions(list, '/v/a')).toEqual([{ id: 'root', updatedAt: 10 }, { id: 'child', updatedAt: 20 }]);
+  });
+});
+
+describe('error origin (#169): which tool was running when a turn failed, else the model', () => {
+  const credits = { name: 'APIError', data: { message: 'Insufficient credits', statusCode: 402 } };
+  const tool = (id: string, name: string, status: string, extra: Record<string, unknown> = {}) =>
+    ({ type: 'message.part.updated', properties: { sessionID: 's', part: { id, sessionID: 's', messageID: 'm1', type: 'tool', tool: name, callID: `c-${id}`, state: { status, input: {}, ...extra } } } });
+  const msg = (error?: unknown) => ({ type: 'message.updated', properties: { sessionID: 's', info: { id: 'm1', sessionID: 's', role: 'assistant', time: { created: 1 }, providerID: 'openrouter', modelID: 'x', ...(error ? { error } : {}) } } });
+  const sessionError = (error: unknown) => ({ type: 'session.error', properties: { sessionID: 's', error } });
+  const aborted = { error: 'Tool execution aborted', metadata: { interrupted: true } };
+  /** Feeds opencode events through mapEvent + the tracker, as the harness subscription does. */
+  const run = (raws: unknown[]) => {
+    const o = new ErrorOrigins();
+    return raws.map((r) => mapEvent(r, '/v')).filter((e): e is HarnessEvent => e !== null).map((e) => o.apply(e));
+  };
+
+  it('a message error with no tool running → origin model', () => {
+    expect(mapMessageInfo(msg(credits).properties.info).errorOrigin).toEqual({ kind: 'model' });
+    const [e] = run([sessionError(credits)]);
+    expect(e).toMatchObject({ type: 'error', message: 'Insufficient credits', origin: { kind: 'model' } });
+  });
+
+  it('no error → no origin; an abort (Stop) → no origin', () => {
+    expect(mapMessageInfo(msg().properties.info)).not.toHaveProperty('errorOrigin');
+    const abort = { name: 'MessageAbortedError', data: { message: 'Aborted' } };
+    expect(mapMessageInfo(msg(abort).properties.info)).not.toHaveProperty('errorOrigin');
+    expect(run([sessionError(abort)])[0]).not.toHaveProperty('origin');
+  });
+
+  it('live: session.error while a tool runs → origin that tool (opencode publishes the error before it aborts the tool)', () => {
+    const out = run([tool('p1', 'read', 'completed', { output: 'x', title: 'Home.md' }), tool('p2', 'websearch', 'running', { input: { query: 'q' } }), sessionError(credits)]);
+    expect(out.at(-1)).toMatchObject({ type: 'error', origin: { kind: 'tool', tool: 'websearch' } });
+  });
+
+  it('live: the message error after opencode aborted the running tool → origin that tool', () => {
+    const out = run([tool('p2', 'websearch', 'running'), sessionError(credits), tool('p2', 'websearch', 'error', aborted), msg(credits)]);
+    const m = out.at(-1);
+    expect(m).toMatchObject({ type: 'message', message: { error: 'Insufficient credits', errorOrigin: { kind: 'tool', tool: 'websearch' } } });
+  });
+
+  it('live: a failed message sent again keeps its tool origin', () => {
+    const out = run([tool('p2', 'websearch', 'running'), tool('p2', 'websearch', 'error', aborted), msg(credits), msg(credits)]);
+    expect(out.at(-1)).toMatchObject({ type: 'message', message: { errorOrigin: { kind: 'tool', tool: 'websearch' } } });
+  });
+
+  it('live: a session error after a tool was aborted by an earlier one → not that tool', () => {
+    const out = run([tool('p2', 'websearch', 'running'), sessionError(credits), tool('p2', 'websearch', 'error', aborted), sessionError(credits)]);
+    expect(out.at(-1)).toMatchObject({ type: 'error', origin: { kind: 'model' } });
+  });
+
+  it('live: tools that finished (completed, or failed on their own) are not the origin', () => {
+    const out = run([tool('p1', 'websearch', 'completed', { output: 'x' }), tool('p2', 'read', 'error', { error: 'File not found' }), msg(credits)]);
+    expect(out.at(-1)).toMatchObject({ type: 'message', message: { errorOrigin: { kind: 'model' } } });
+  });
+
+  it('live: an idle session forgets its running tools', () => {
+    const out = run([tool('p2', 'websearch', 'running'), { type: 'session.status', properties: { sessionID: 's', status: { type: 'idle' } } }, sessionError(credits)]);
+    expect(out.at(-1)).toMatchObject({ type: 'error', origin: { kind: 'model' } });
+  });
+
+  it('live, in opencode 1.18.25\'s order (processor halt → cleanup → runner idle): both pills name the tool', () => {
+    const idle = { type: 'session.status', properties: { sessionID: 's', status: { type: 'idle' } } };
+    const out = run([tool('p2', 'websearch', 'running'), sessionError(credits), idle, tool('p2', 'websearch', 'error', aborted), msg(credits), idle]);
+    expect(out.find((e) => e.type === 'error')).toMatchObject({ origin: { kind: 'tool', tool: 'websearch' } });
+    expect(out.filter((e) => e.type === 'message').at(-1)).toMatchObject({ message: { errorOrigin: { kind: 'tool', tool: 'websearch' } } });
+  });
+
+  it('reload: a stored message error takes the tool opencode aborted in that message', () => {
+    const stored = (state: Record<string, unknown>) => [{ info: msg(credits).properties.info, parts: [{ id: 'p2', type: 'tool', tool: 'look_at_image', callID: 'c', state: { input: {}, ...state } }] }];
+    expect(mapMessages(stored({ status: 'error', ...aborted }), '/v')[0]!.errorOrigin).toEqual({ kind: 'tool', tool: 'look_at_image' });
+    expect(mapMessages(stored({ status: 'completed', output: 'x' }), '/v')[0]!.errorOrigin).toEqual({ kind: 'model' });
   });
 });

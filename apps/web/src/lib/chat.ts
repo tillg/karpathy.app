@@ -1,5 +1,5 @@
 import { isPdf } from '@karpathy/shared';
-import type { ChatDetail, ChatEvent, ChatMessage, ChatPart, ContextUsage, ModelInput, QueuedPrompt, ReturnedPrompt, ToolCall } from '@karpathy/shared';
+import type { ChatDetail, ChatEvent, ChatMessage, ChatPart, ContextUsage, ErrorOrigin, ModelInput, QueuedPrompt, ReturnedPrompt, ToolCall } from '@karpathy/shared';
 import type { ChipDraft } from './chips';
 
 export interface ChatView extends ChatDetail {
@@ -7,6 +7,8 @@ export interface ChatView extends ChatDetail {
   /** What a queued turn waits for. */
   waiting?: 'turn' | 'sync';
   error?: string;
+  /** Where the stream's error came from (#169). */
+  errorOrigin?: ErrorOrigin;
   /** The queued prompt that last left the queue to run (#155): shown as the pending bubble until its message arrives. */
   started?: QueuedPrompt;
 }
@@ -17,7 +19,7 @@ export function applyChatEvent(c: ChatView, e: ChatEvent): ChatView {
     case 'turn':
       return { ...c, turn: e.state, readonly: e.readonly ?? c.readonly, waiting: e.waiting };
     case 'error':
-      return { ...c, error: e.message };
+      return { ...c, error: e.message, errorOrigin: e.origin };
     case 'queue': {
       const started = e.started ? c.queued.find((q) => q.id === e.started) : undefined;
       return { ...c, queued: e.queued, ...(started ? { started } : {}) };
@@ -130,7 +132,20 @@ export function noteToOpen(e: ChatEvent, seen: Set<string>): string | null {
 
 export type Turn =
   | { role: 'user'; id: string; message: ChatMessage }
-  | { role: 'assistant'; id: string; model?: string; parts: ChatPart[]; errors: string[] };
+  | { role: 'assistant'; id: string; model?: string; parts: ChatPart[]; errors: ChatError[] };
+
+/** An error shown in the chat, and where it came from (#169). */
+export interface ChatError { message: string; origin?: ErrorOrigin }
+
+/**
+ * An error pill's text (#169, pure): the tool that was running when the error happened, or the model (`provider/model`,
+ * shown without its provider), then the message. No origin (the backend's own errors name their cause): the message alone.
+ */
+export function errorLine(e: ChatError, model?: string): { source?: string; message: string; text: string } {
+  const name = model?.split('/').pop();
+  const source = !e.origin ? undefined : e.origin.kind === 'tool' ? `During tool ${e.origin.tool}` : name ? `From the model ${name}` : 'From the model';
+  return { ...(source ? { source } : {}), message: e.message, text: source ? `${source}: ${e.message}` : e.message };
+}
 
 /**
  * The chat as the user reads it (#63, pure): the harness makes one assistant message per tool
@@ -146,11 +161,13 @@ export function turns(messages: ChatMessage[]): Turn[] {
     else if (last?.role === 'assistant') {
       last.parts = [...last.parts, ...m.parts];
       last.model ??= m.model;
-      if (m.error) last.errors.push(m.error);
-    } else out.push({ role: 'assistant', id: m.id, model: m.model, parts: m.parts, errors: m.error ? [m.error] : [] });
+      if (m.error) last.errors.push(chatError(m));
+    } else out.push({ role: 'assistant', id: m.id, model: m.model, parts: m.parts, errors: m.error ? [chatError(m)] : [] });
   }
   return out;
 }
+
+const chatError = (m: ChatMessage): ChatError => ({ message: m.error!, ...(m.errorOrigin ? { origin: m.errorOrigin } : {}) });
 
 /** An optimistic prompt shown as a user bubble until the server has the message. */
 export interface PendingPrompt {
@@ -235,8 +252,8 @@ export function turnAnnouncement(prev: ChatView['turn'] | undefined, c: ChatView
   // Only this turn's reply: the whole last assistant turn (its last message may hold just the hidden suggest_next call).
   const last = turns(c.messages).at(-1);
   const reply = last?.role === 'assistant' ? last : undefined;
-  const error = c.error ?? reply?.errors[0];
-  if (error) return `Reply failed: ${error}`;
+  const error = c.error !== undefined ? { message: c.error, ...(c.errorOrigin ? { origin: c.errorOrigin } : {}) } : reply?.errors[0];
+  if (error) return `Reply failed: ${errorLine(error, reply?.model).text}`;
   const text = (reply?.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join(' ').trim();
   return text ? `Reply finished: ${text.length > 300 ? `${text.slice(0, 300)}…` : text}` : 'Reply finished';
 }
