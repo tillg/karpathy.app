@@ -33,6 +33,7 @@ check:
     bash deploy/ansible/dev.test.sh
     bash deploy/check-preflight.test.sh
     bash deploy/code.test.sh
+    bash deploy/justfile.test.sh
     bash deploy/ingest/run.test.sh
     bash deploy/ingest/compose.test.sh
     bash deploy/ingest/server.test.sh
@@ -51,8 +52,9 @@ test *args:
     npm test -- {{args}}
 
 # Playwright e2e against this checkout's dev stack; extra args go to Playwright
+[positional-arguments]
 e2e *args:
-    npx playwright test {{args}}
+    npx playwright test "$@"
 
 # Prod images on https://localhost:80N5, paired with this checkout's dev stack N: `just prodtest` starts it; `just prodtest down`; `just prodtest e2e [playwright args]`
 prodtest action="up" *args:
