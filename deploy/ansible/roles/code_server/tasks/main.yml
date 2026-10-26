@@ -42,5 +42,5 @@
   ansible.builtin.script:
     cmd: "{{ playbook_dir }}/../tailnet-serve.sh 443 http://127.0.0.1:{{ code_server_port }}"
   register: code_server_serve
-  changed_when: "'changed' in code_server_serve.stdout"
+  changed_when: code_server_serve.stdout | trim == 'changed'
   when: code_server_tailnet_serve | bool

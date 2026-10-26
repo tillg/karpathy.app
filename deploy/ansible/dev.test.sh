@@ -27,15 +27,17 @@ for _ in $(seq 60); do
   sleep 1
 done
 
-# No tailnet in the container: a fake `tailscale` (HTTPS on, nothing served yet) logs the calls of role code_server's
-# serve task, which the extra vars switch on.
+# No tailnet in the container: a fake `tailscale` (HTTPS on, nothing served until a `serve --bg`, which it then
+# reports) logs the calls of role code_server's serve task, which the extra vars switch on.
 docker exec -i "$ctr" bash -c 'cat >/usr/local/bin/tailscale && chmod +x /usr/local/bin/tailscale' <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>/tmp/tailscale-calls
 case "$*" in
   "status --json") echo '{"CertDomains": ["devtest.example.ts.net"], "Self": {"DNSName": "devtest.example.ts.net."}}' ;;
-  "serve status --json") echo '{}' ;;
-  serve\ --bg*) ;;
+  "serve status --json") cat /tmp/tailscale-serve.json 2>/dev/null || echo '{}' ;;
+  "serve --bg --https=443 "*)
+    printf '{"TCP": {"443": {"HTTPS": true}}, "Web": {"devtest.example.ts.net:443": {"Handlers": {"/": {"Proxy": "%s"}}}}}' \
+      "${@: -1}" >/tmp/tailscale-serve.json ;;
   *) echo "fake tailscale: unexpected $*" >&2; exit 99 ;;
 esac
 EOF
@@ -142,5 +144,13 @@ run grep -qx 'trusted-origins: \[devtest.example.ts.net\]' "$conf" && ok "code-s
   || bad "code-server config: trusted-origins is the node's name" "$(run cat "$conf")"
 out=$(run grep '^serve --bg' /tmp/tailscale-calls)
 eq "the role published code-server on the tailnet" "$out" "serve --bg --https=443 http://127.0.0.1:8080"
+
+# Idempotent: a second run changes nothing (`just devhost` reports changed=0), also with the serve entry in place.
+log2="${log%.log}-second.log"
+(cd "$here" && ansible-playbook -i "$ctr," -c community.docker.docker -e "$vars" dev.yml) >"$log2" 2>&1 </dev/null
+out=$(grep -o 'changed=[0-9]*' "$log2" | tail -1)
+eq "second run: changed=0" "$out" changed=0 \
+  || grep -B1 '^changed:' "$log2" | grep '^TASK' | sed 's/^/     changed: /'
+eq "second run: no second serve call" "$(run grep -c '^serve --bg' /tmp/tailscale-calls)" 1
 
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
