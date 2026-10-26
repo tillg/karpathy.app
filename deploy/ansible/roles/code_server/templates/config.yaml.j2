@@ -1,0 +1,9 @@
+# {{ ansible_managed }}: role code_server. No password: only the user's own tailnet devices reach it (docs/dev-server.md).
+bind-addr: 127.0.0.1:{{ code_server_port }}
+auth: none
+cert: false
+disable-telemetry: true
+disable-update-check: true
+{% if code_server_tailnet_serve | bool %}
+trusted-origins: [{{ (code_server_tailnet.stdout | from_json).Self.DNSName | regex_replace('\\.$', '') }}]
+{% endif %}

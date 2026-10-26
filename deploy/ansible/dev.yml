@@ -1,5 +1,5 @@
 # A remote dev host (deploy/README.md, "Dev server"): `just devhost`. Like a target's host part (site.yml), without
-# vaults_fs, app and monitoring.
+# vaults_fs, app and monitoring; plus the browser editor (code_server).
 - name: Dev host
   hosts: all
   become: true
@@ -13,3 +13,4 @@
     - { role: tailscale, when: tailscale_enabled }
     - docker
     - devtools
+    - { role: code_server, when: code_server_enabled }

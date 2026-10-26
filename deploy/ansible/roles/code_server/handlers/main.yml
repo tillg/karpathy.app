@@ -1,0 +1,4 @@
+- name: Restart code-server
+  ansible.builtin.systemd_service:
+    name: code-server@{{ admin_user }}
+    state: restarted

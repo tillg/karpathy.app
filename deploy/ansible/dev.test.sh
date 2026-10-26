@@ -27,9 +27,22 @@ for _ in $(seq 60); do
   sleep 1
 done
 
+# No tailnet in the container: a fake `tailscale` (HTTPS on, nothing served yet) logs the calls of role code_server's
+# serve task, which the extra vars switch on.
+docker exec -i "$ctr" bash -c 'cat >/usr/local/bin/tailscale && chmod +x /usr/local/bin/tailscale' <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>/tmp/tailscale-calls
+case "$*" in
+  "status --json") echo '{"CertDomains": ["devtest.example.ts.net"], "Self": {"DNSName": "devtest.example.ts.net."}}' ;;
+  "serve status --json") echo '{}' ;;
+  serve\ --bg*) ;;
+  *) echo "fake tailscale: unexpected $*" >&2; exit 99 ;;
+esac
+EOF
+
 user=dev
 vars=$(cat <<EOF
-{"target": "devtest", "tailscale_enabled": false, "timezone": "Europe/Berlin", "admin_user": "$user",
+{"target": "devtest", "tailscale_enabled": false, "code_server_tailnet_serve": true, "timezone": "Europe/Berlin", "admin_user": "$user",
  "admin_authorized_keys": ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEz0bHnKXzR7hb0h7FVmJ0wXqZ8r7Yy1oGg0ZsVnQk2B devtest"],
  "devtools_host_secrets": {"openrouter_api_key": "or-test", "exa_api_key": "exa-test"}, "devtools_github_token": "gh-test",
  "devtools_git_user": {"name": "Dev Test", "email": "dev@example.invalid"}}
@@ -106,5 +119,28 @@ v=$(run sysctl -n fs.inotify.max_user_instances)
 [ "$v" -ge 1024 ] 2>/dev/null && ok "inotify: max_user_instances ≥ 1024" || bad "inotify: max_user_instances ≥ 1024" "$v"
 v=$(run sysctl -n fs.inotify.max_user_watches)
 [ "$v" -ge 1048576 ] 2>/dev/null && ok "inotify: max_user_watches ≥ 1048576" || bad "inotify: max_user_watches ≥ 1048576" "$v"
+
+# code_server: the browser editor (specs/changes/ipad-code-server), as the login user, on loopback only.
+want=$(sed -n 's/^code_server_version: *//p' "$here/roles/code_server/defaults/main.yml" 2>/dev/null)
+out=$(as_user 'code-server --version' | head -1)
+[[ -n "$want" && "$out" == "$want "* ]] && ok "code-server is $want" || bad "code-server is the pinned version ($want)" "$out"
+eq "code-server@$user is active" "$(run systemctl is-active "code-server@$user")" active
+eq "code-server@$user is enabled" "$(run systemctl is-enabled "code-server@$user")" enabled
+out=
+for _ in $(seq 30); do out=$(run curl -sf http://127.0.0.1:8080/healthz) && break; sleep 1; done
+[[ "$out" == *'"status"'* ]] && ok "code-server answers /healthz on 127.0.0.1:8080" \
+  || bad "code-server answers /healthz on 127.0.0.1:8080" "$out"
+# Listening sockets (state 0A) on port 8080 (1F90), IPv4 and IPv6; the image has no ss. 0100007F = 127.0.0.1.
+out=$(run cat /proc/net/tcp /proc/net/tcp6 | awk '$4 == "0A" && $2 ~ /:1F90$/ {print $2}' | paste -sd' ')
+eq "code-server listens on loopback only" "$out" 0100007F:1F90
+conf="/home/$user/.config/code-server/config.yaml"
+eq "code-server config: mode 600, owner $user" "$(run stat -c '%a %U' "$conf")" "600 $user"
+run grep -qx 'auth: none' "$conf" && ok "code-server config: auth none" || bad "code-server config: auth none" "$(run cat "$conf")"
+run grep -qx 'bind-addr: 127.0.0.1:8080' "$conf" && ok "code-server config: bind-addr 127.0.0.1:8080" \
+  || bad "code-server config: bind-addr 127.0.0.1:8080" "$(run cat "$conf")"
+run grep -qx 'trusted-origins: \[devtest.example.ts.net\]' "$conf" && ok "code-server config: trusted-origins is the node's name" \
+  || bad "code-server config: trusted-origins is the node's name" "$(run cat "$conf")"
+out=$(run grep '^serve --bg' /tmp/tailscale-calls)
+eq "the role published code-server on the tailnet" "$out" "serve --bg --https=443 http://127.0.0.1:8080"
 
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

@@ -93,7 +93,7 @@ if target == "dev":
     ask("vault_exa_api_key", "Exa API key for web search (optional, Enter skips)", optional=True,
         found=(from_file("secrets/exa_api_key"), "deploy/secrets/exa_api_key"))
     ask("vault_github_token", "GitHub fine-grained token (karpathy.app, karpathy_demo_wiki, ingest_email: Contents read/write)")
-    ask("vault_tailscale_authkey", "Tailscale auth key (tag:server, pre-approved, single-use)")
+    ask("vault_tailscale_authkey", "Tailscale auth key (tag:server-dev, pre-approved, single-use)")
     save()
     sys.exit(0)
 
@@ -119,7 +119,7 @@ for cap in ("WEB_FETCH_CAP", "WEB_SEARCH_CAP"):
     ask(cap, f"{cap}: web calls per turn (optional, Enter keeps the default 20)", hidden=False, optional=True, into=providers)
 for name in [k for k, v in providers.items() if not v]:
     del providers[name]
-ask("vault_tailscale_authkey", "Tailscale auth key (tag:server, pre-approved, single-use)")
+ask("vault_tailscale_authkey", "Tailscale auth key (tag:server-prod, pre-approved, single-use)")
 ask("vault_heartbeat_url", "healthchecks.io ping URL of this target's check", hidden=False, optional=True)
 ask("vault_git_author_name", "Git author name for vault commits", hidden=False)
 ask("vault_git_author_email", "Git author e-mail for vault commits", hidden=False)

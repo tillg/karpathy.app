@@ -1,0 +1,15 @@
+# The node carries this server's own tag (tailscale_tag): the tailnet policy grants by tag, so a wrong one (an auth
+# key from the other server, the old shared server tag) silently changes what the server may reach and who reaches it.
+- name: Tailnet tags
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_tags
+  changed_when: false
+  check_mode: false
+
+- name: This server is tagged {{ tailscale_tag }}
+  ansible.builtin.assert:
+    that: tailscale_tag in ((tailscale_tags.stdout | from_json).Self.Tags | default([], true))
+    fail_msg: >-
+      This server carries {{ (tailscale_tags.stdout | from_json).Self.Tags | default([], true) | join(', ') or 'no tag' }},
+      not {{ tailscale_tag }}. In the Tailscale admin console › Machines › {{ tailscale_hostname }} › Edit ACL tags,
+      set {{ tailscale_tag }} (docs/dev-server.md, "Tailnet policy"), then run again.

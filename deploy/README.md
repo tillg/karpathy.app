@@ -209,8 +209,9 @@ the app.
 1. Book it (Ubuntu 24.04, your SSH key, firewalls `no-inbound` + `setup-ssh`, backups on) and note
    its public IP. Background: [prod-env report §8](../specs/research/prod-env/prod-env-report.md#guide)
    (its steps 8.3–8.10 are what the playbook does).
-2. In the Tailscale admin console, add `tag:server` to `tagOwners` and create an auth key: tagged
-   `tag:server`, pre-approved, single-use.
+2. In the Tailscale admin console, add `tag:server-prod` to `tagOwners` and create an auth key: tagged
+   `tag:server-prod`, pre-approved, single-use. The tailnet policy ([docs/dev-server.md](../docs/dev-server.md#tailnet-policy))
+   names it; `just deploy` stops if the server carries another tag.
 3. `just secrets hetzner`: GoDaddy key, GitHub token, OpenRouter key, the Tailscale key, the
    healthchecks.io ping URL, the git author. Subscribe to the printed ntfy topic on your phone.
    In healthchecks.io, give the check two integrations to that topic: ntfy for DOWN (priority for up
@@ -249,14 +250,18 @@ Each fresh server requests a new certificate; Let's Encrypt allows 5 for the sam
 Tailscale. It is a dev host like the Mac: `just dev up`, `just check`, `just e2e` and `claude` work there in several
 worktrees at once, with the same stack rules (stacks 1–9, one per checkout). Its stacks open on the Mac at
 `https://localhost:80N0` through SSH port forwards. The playbook is `ansible/dev.yml`: roles `base`, `tailscale`,
-`docker` (shared with prod) and `devtools` (Node 22, `just`, ripgrep, jq, netcat, btop, `gh`, Ansible (pinned ansible-core via pipx plus `ansible/requirements.yml`), the Claude Code CLI,
+`docker` (shared with prod), `code_server` (the browser editor for the iPad, published with `tailscale serve`;
+[docs/dev-server.md](../docs/dev-server.md#ipad-the-browser-editor)) and `devtools` (Node 22, `just`, ripgrep, jq, netcat, btop, `gh`, Ansible (pinned ansible-core via pipx plus `ansible/requirements.yml`), the Claude Code CLI,
 Playwright's Chromium). Your login has uid 1000 (sudo, docker) and there is no `deploy` user. It holds no prod data.
 
 **Setting it up:**
 
 1. Book it in the Hetzner console: **CAX41** (ARM, 16 vCPU, 32 GB), Ubuntu 24.04, your SSH key, firewalls
    `no-inbound` + `setup-ssh`, **backups on** (it holds uncommitted work). Note its public IP.
-2. Tailscale admin console: create an auth key tagged `tag:server`, pre-approved, single-use.
+2. Tailscale admin console: create an auth key tagged `tag:server-dev`, pre-approved, single-use (the tag is in the
+   tailnet policy's `tagOwners`, [docs/dev-server.md](../docs/dev-server.md#tailnet-policy)). The policy must be in
+   place and **HTTPS Certificates** on (DNS page): the playbook publishes the browser editor with `tailscale serve`
+   and stops while they are off.
 3. Create a fine-grained GitHub token for `karpathy.app`, `karpathy_demo_wiki` and `ingest_email` (Contents
    read/write; Pull requests read/write if agents should open PRs).
 4. `just secrets dev`: the OpenRouter key, the Exa key (optional), the GitHub token, the Tailscale key. The vault's

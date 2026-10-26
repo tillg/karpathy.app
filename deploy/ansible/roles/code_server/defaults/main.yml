@@ -1,0 +1,14 @@
+# The browser editor on a remote dev host (specs/changes/ipad-code-server): code-server on loopback, published to the
+# tailnet with `tailscale serve`. dev.yml runs the role only when code_server_enabled.
+code_server_enabled: true
+# Pinned like just and Playwright; dev.test.sh checks the installed version. Bumped by hand.
+code_server_version: 4.141.0
+code_server_arch: "{{ {'aarch64': 'arm64', 'x86_64': 'amd64'}[ansible_facts.architecture] }}"
+code_server_url: >-
+  https://github.com/coder/code-server/releases/download/v{{ code_server_version }}/code-server_{{
+  code_server_version }}_{{ code_server_arch }}.deb
+# Loopback only; not a stack port (80N0–80N9) or just site's 8099.
+code_server_port: 8080
+# Publish it at https://<host>.<tailnet>.ts.net/ with `tailscale serve` (deploy/tailnet-serve.sh). Needs the tailnet's
+# HTTPS certificates; dev.test.sh switches it on with a fake tailscale.
+code_server_tailnet_serve: "{{ tailscale_enabled }}"

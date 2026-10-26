@@ -9,7 +9,9 @@ admin_user: tgartner
 # inventory and make a host of it.
 admin_authorized_keys: "{{ lookup('file', playbook_dir ~ '/keys/dev.pub').splitlines() }}"
 
-# Single-use, tagged tag:server, pre-approved; only used when the host joins the tailnet.
+# The server's own tag; the tailscale role checks the node carries it (docs/dev-server.md, "Tailnet policy").
+tailscale_tag: tag:server-dev
+# Single-use, tagged tag:server-dev, pre-approved; only used when the host joins the tailnet.
 tailscale_authkey: "{{ vault_tailscale_authkey }}"
 # The host secrets every checkout on the dev host falls back to, and the fine-grained token for git.
 devtools_host_secrets:
