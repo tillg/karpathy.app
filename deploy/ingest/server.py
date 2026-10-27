@@ -1,4 +1,5 @@
-"""The ingest service's internal endpoint: connect Instagram from the browser (Admin › Instagram, via the backend).
+"""The ingest service's internal endpoint: connect Instagram from the browser (Admin › Instagram, via the backend), and
+the job API of the Instagram workers (via the backend's worker routes).
 
 Routes (every request needs `Authorization: Bearer <ingest_token>`):
 
@@ -6,6 +7,8 @@ Routes (every request needs `Authorization: Bearer <ingest_token>`):
     POST /instagram/login       {username, password} → {state: "connected", account} | {state: "code", via}
     POST /instagram/code        {code}               → {state: "connected", account}
     POST /instagram/disconnect                       → status
+    POST /instagram/jobs/claim  {name}               → {id, url, leaseUntil} | 204 no job | 409 not-worker-mode
+    POST /instagram/jobs/<id>/release                → 204
 
 States: not-connected, waiting-for-code, connected, expired. The status never logs in (a login is a flag-risk event):
 `expired` means a session exists but the resolver still reports `no-session` for Instagram links in a vault's Input/.
@@ -14,6 +17,12 @@ The login runs in a worker thread (instascraper's `login_interactive_free`); whe
 code, the thread blocks until `POST /instagram/code` hands one over, at most `code_timeout` seconds. One pending login
 at a time: a new one replaces it. The session is written to a staging dir and moved into place only on success, so a
 pending login never touches a working session. The password is passed to the login once and never stored or logged.
+
+Worker mode (`INGEST_INSTAGRAM_SOURCE=worker`): Instagram workers on the user's machines scrape the posts. A job is a
+post's shortcode, derived on every claim from the vaults' `Input/*/index.md` `unresolved_links`, never stored, so the
+same post in two vaults is one job. A claim leases the oldest wanted job (by the item's mtime) to a worker for
+`LEASE_S`. Leases live in memory: a restart frees them, which is harmless. In local mode (the default) ingest-email
+scrapes on the server and a claim answers 409.
 """
 
 import hmac
@@ -24,6 +33,8 @@ import re
 import shutil
 import tempfile
 import threading
+import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -32,6 +43,18 @@ import yaml
 FIRST_ANSWER_S = 90  # how long POST /login waits for the login to connect or ask for a code
 # An Instagram username, never a path: it becomes part of file names.
 USERNAME = re.compile(r"^(?!\.+$)[A-Za-z0-9._]{1,30}$")
+# A job id is a post's shortcode: checked before it becomes part of any path.
+SHORTCODE = re.compile(r"^[A-Za-z0-9_-]{5,40}$")
+# ingest-email's own pattern for an Instagram post or Reel link.
+SHORTCODE_IN_URL = re.compile(r"instagram\.com/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)")
+WORKER_NAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+JOB_ROUTE = re.compile(r"^/instagram/jobs/(.+)/(result|failure|release)$")
+SOURCES = ("local", "worker")
+LEASE_S = 30 * 60
+
+
+def _iso(t):
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 EXPIRED_CODE = (400, {"error": "expired-code", "message": "The code request expired: connect again"})
@@ -95,16 +118,21 @@ class _Login:
 
 
 class Service:
-    def __init__(self, *, token, state_dir, session_dir, vaults_dir, login, code_timeout):
+    def __init__(self, *, token, state_dir, session_dir, vaults_dir, login, code_timeout, instagram_source="local", clock=time.time):
+        if instagram_source not in SOURCES:
+            raise ValueError(f"INGEST_INSTAGRAM_SOURCE must be one of {', '.join(SOURCES)}, not {instagram_source!r}")
         self.token = token
         self.state_dir = Path(state_dir)
         self.session_dir = Path(session_dir)
         self.vaults_dir = Path(vaults_dir)
         self.login = login
         self.code_timeout = code_timeout
+        self.source = instagram_source
+        self.clock = clock
         self.lock = threading.Lock()
         self.pending: _Login | None = None
         self.last_error: str | None = None
+        self.leases: dict[str, tuple[str, float]] = {}  # shortcode → (worker name, lease end)
 
     # ---- state ----
     def account(self):
@@ -123,13 +151,13 @@ class Service:
         env.write_text("\n".join([*lines, f"IG_USERNAME={account}"]) + "\n")
         os.chmod(env, 0o600)
 
-    def waiting_links(self, since=None):
-        """Instagram links the resolver couldn't fetch for want of a session; with `since`, only those it reported
-        after that time (an item is rewritten on every resolve attempt)."""
-        n = 0
+    def _unresolved(self, since=None):
+        """(item mtime, link) for every `unresolved_links` entry of the vaults' Input/ items; with `since`, only of
+        items written after that time."""
         for index in self.vaults_dir.glob("*/Input/*/index.md"):
             try:
-                if since is not None and index.stat().st_mtime <= since:
+                mtime = index.stat().st_mtime
+                if since is not None and mtime <= since:
                     continue
                 text = index.read_text(encoding="utf-8")
                 if not text.startswith("---"):
@@ -137,10 +165,33 @@ class Service:
                 meta = yaml.safe_load(text.split("---", 2)[1]) or {}
             except Exception:  # noqa: BLE001 — a broken item is not this endpoint's problem
                 continue
-            for link in meta.get("unresolved_links") or []:
-                if isinstance(link, dict) and "instagram.com" in str(link.get("url", "")) and link.get("reason") == "no-session":
-                    n += 1
-        return n
+            links = meta.get("unresolved_links") if isinstance(meta, dict) else None
+            for link in links if isinstance(links, list) else []:
+                if isinstance(link, dict):
+                    yield mtime, link
+
+    def waiting_links(self, since=None):
+        """Instagram links the resolver couldn't fetch for want of a session; with `since`, only those it reported
+        after that time (an item is rewritten on every resolve attempt)."""
+        return sum(1 for _, link in self._unresolved(since)
+                   if "instagram.com" in str(link.get("url", "")) and link.get("reason") == "no-session")
+
+    def jobs(self):
+        """Every shortcode in some item's `unresolved_links` → the oldest such item's mtime."""
+        found = {}
+        for mtime, link in self._unresolved():
+            m = SHORTCODE_IN_URL.search(str(link.get("url", "")))
+            if m and SHORTCODE.match(m.group(1)):
+                found[m.group(1)] = min(mtime, found.get(m.group(1), mtime))
+        return found
+
+    def _job_state(self, code, now):
+        """Caller holds the lock."""
+        lease = self.leases.get(code)
+        if lease and lease[1] > now:
+            return "leased"
+        self.leases.pop(code, None)
+        return "waiting"
 
     def status(self):
         waiting = self.waiting_links()
@@ -232,33 +283,78 @@ class Service:
             f.unlink()
         return 200, self.status()
 
+    # ---- worker mode: jobs ----
+    def claim(self, name):
+        if self.source != "worker":
+            return 409, {"error": "not-worker-mode", "message": "This server scrapes Instagram itself (local mode)"}
+        now = self.clock()
+        jobs = self.jobs()
+        with self.lock:
+            for code in sorted(jobs, key=lambda c: (jobs[c], c)):
+                if self._job_state(code, now) == "waiting":
+                    self.leases[code] = (name, now + LEASE_S)
+                    return 200, {"id": code, "url": f"https://www.instagram.com/p/{code}/", "leaseUntil": _iso(now + LEASE_S)}
+        return 204, None
+
+    def release(self, code):
+        with self.lock:
+            self.leases.pop(code, None)
+        return 204, None
+
 
 def _handler(svc: Service):
     class Handler(BaseHTTPRequestHandler):
+        # Keep-alive: every answer sets Content-Length (or is a 204), and a request whose body wasn't read to its end
+        # closes the connection, so the next request never starts inside an old body.
+        protocol_version = "HTTP/1.1"
+        timeout = 300  # an idle keep-alive connection doesn't hold its thread for ever
+
         def log_message(self, fmt, *args):  # request line only; bodies (passwords) are never logged
             print(f"ingest-server: {self.command} {self.path.split('?')[0]}", flush=True)
 
-        def _send(self, status, body):
-            data = json.dumps(body).encode()
+        def _send(self, status, body=None):
+            data = b"" if status == 204 else json.dumps(body).encode()
             self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
+            if self._unread:
+                self.send_header("Connection", "close")
+                self.close_connection = True
+            if status != 204:
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
 
+        def _length(self):
+            """The request's Content-Length; None if absent, -1 if unusable (chunked, not a number, negative)."""
+            if self.headers.get("Transfer-Encoding"):
+                return -1
+            raw = self.headers.get("Content-Length")
+            if raw is None:
+                return None
+            try:
+                n = int(raw)
+            except ValueError:
+                return -1
+            return n if n >= 0 else -1
+
         def _authorized(self):
+            self._unread = self._length() not in (None, 0)
             if svc.token and hmac.compare_digest(self.headers.get("Authorization", "").encode(), f"Bearer {svc.token}".encode()):
                 return True
             self._send(401, {"error": "unauthorized"})
             return False
 
         def _body(self):
+            n = self._length() or 0
+            if not 0 <= n <= 10_000:
+                return None
+            data = self.rfile.read(n)
+            self._unread = len(data) != n
             try:
-                n = int(self.headers.get("Content-Length") or 0)
-                body = json.loads(self.rfile.read(n) or b"{}") if 0 <= n <= 10_000 else None
-                return body if isinstance(body, dict) else None
+                body = json.loads(data or b"{}")
             except ValueError:
                 return None
+            return body if isinstance(body, dict) else None
 
         def do_GET(self):
             if not self._authorized():
@@ -289,13 +385,27 @@ def _handler(svc: Service):
                 return self._send(*svc.send_code(code.strip()))
             if self.path == "/instagram/disconnect":
                 return self._send(*svc.disconnect())
+            if self.path == "/instagram/jobs/claim":
+                name = body.get("name")
+                if not isinstance(name, str) or not WORKER_NAME.match(name):
+                    return self._send(400, {"error": "bad-request", "message": "name must match [A-Za-z0-9._-]{1,64}"})
+                return self._send(*svc.claim(name))
+            job = JOB_ROUTE.match(self.path)
+            if job and job.group(2) != "result":
+                code = job.group(1)
+                if not SHORTCODE.match(code):
+                    return self._send(400, {"error": "bad-id"})
+                if job.group(2) == "release":
+                    return self._send(*svc.release(code))
             self._send(404, {"error": "not-found"})
 
     return Handler
 
 
-def make_server(*, port, token, state_dir, session_dir, vaults_dir, login, code_timeout=300.0, host="127.0.0.1"):
-    svc = Service(token=token, state_dir=state_dir, session_dir=session_dir, vaults_dir=vaults_dir, login=login, code_timeout=code_timeout)
+def make_server(*, port, token, state_dir, session_dir, vaults_dir, login, code_timeout=300.0, host="127.0.0.1",
+                instagram_source="local", clock=time.time):
+    svc = Service(token=token, state_dir=state_dir, session_dir=session_dir, vaults_dir=vaults_dir, login=login,
+                  code_timeout=code_timeout, instagram_source=instagram_source, clock=clock)
     srv = ThreadingHTTPServer((host, port), _handler(svc))
     srv.daemon_threads = True
     return srv
@@ -322,13 +432,15 @@ def main():
         print("ingest-server: FAKE Instagram login (dev stack)", flush=True)
     else:
         from instascraper.auth import login_interactive_free as login
+    source = os.environ.get("INGEST_INSTAGRAM_SOURCE") or "local"
     srv = make_server(
         port=int(os.environ.get("INGEST_SERVER_PORT", "8090")), host="0.0.0.0", token=token,
         state_dir=Path(os.environ.get("INGEST_STATE", "/state")),
         session_dir=Path.home() / ".config" / "instascraper",
         vaults_dir=Path(os.environ.get("INGEST_VAULTS", "/vaults")), login=login,
+        instagram_source=source,
     )
-    print(f"ingest-server: listening on :{srv.server_address[1]}", flush=True)
+    print(f"ingest-server: listening on :{srv.server_address[1]} (Instagram source: {source})", flush=True)
     srv.serve_forever()
 
 

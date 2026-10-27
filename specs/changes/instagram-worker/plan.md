@@ -56,7 +56,7 @@ flowchart LR
 
 ## Ingest service (`deploy/ingest/server.py`)
 
-- [ ] HTTP/1.1, `INGEST_INSTAGRAM_SOURCE`, the job scan, `POST /instagram/jobs/claim` (oldest wanted shortcode, 30-minute lease to a name, 204 when none, 409 in local mode) and `POST /instagram/jobs/:id/release`; ids checked against `^[A-Za-z0-9_-]{5,40}$`
+- [x] HTTP/1.1, `INGEST_INSTAGRAM_SOURCE`, the job scan, `POST /instagram/jobs/claim` (oldest wanted shortcode, 30-minute lease to a name, 204 when none, 409 in local mode) and `POST /instagram/jobs/:id/release`; ids checked against `^[A-Za-z0-9_-]{5,40}$`
   - Depends on: none
   - Test first: `deploy/ingest/test_server.py` › "claim in local mode is 409 not-worker-mode", "claim returns the shortcode of an unresolved /p/ or /reel/ link with a synthesized /p/ url", "the same shortcode in two vaults is one job", "a leased job isn't handed out again until the lease ends", "release frees it at once", "an expired lease frees it", "no wanted link → 204", "a resolved or failed_links entry is no job", "a bad id is 400 before any path is built", "two requests on one keep-alive connection both answer". Fail today: no such routes, HTTP/1.0.
   - Verify: `bash deploy/ingest/server.test.sh` → all green

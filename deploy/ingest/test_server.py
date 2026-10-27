@@ -51,33 +51,67 @@ class FakeLogin:
         return username
 
 
+class Clock:
+    """The server's clock (leases, backoff, pruning, lastSeen); starts at the real time, moves only when told."""
+
+    def __init__(self):
+        self.t = time.time()
+
+    def __call__(self):
+        return self.t
+
+    def advance(self, seconds):
+        self.t += seconds
+
+
 @pytest.fixture()
-def svc(tmp_path):
+def start(tmp_path):
+    """Starts a server on the test's state, home and vault dirs; several calls share them (a restart)."""
     state, home, vaults = tmp_path / "state", tmp_path / "home", tmp_path / "vaults"
     for d in (state, home, vaults):
-        d.mkdir()
-    fake = FakeLogin()
-    srv = server.make_server(
-        port=0, token=TOKEN, state_dir=state, session_dir=home / ".config" / "instascraper",
-        vaults_dir=vaults, login=fake, code_timeout=1.0,
-    )
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
-    t.start()
-    base = f"http://127.0.0.1:{srv.server_address[1]}"
+        d.mkdir(exist_ok=True)
+    clock = Clock()
+    servers = []
 
-    def call(method, path, body=None, token=TOKEN):
-        req = urllib.request.Request(base + path, method=method, data=None if body is None else json.dumps(body).encode())
-        if token:
-            req.add_header("Authorization", f"Bearer {token}")
-        req.add_header("Content-Type", "application/json")
-        try:
-            with urllib.request.urlopen(req, timeout=10) as r:
-                return r.status, json.loads(r.read() or b"{}")
-        except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read() or b"{}")
+    def start_(source="local"):
+        fake = FakeLogin()
+        srv = server.make_server(
+            port=0, token=TOKEN, state_dir=state, session_dir=home / ".config" / "instascraper",
+            vaults_dir=vaults, login=fake, code_timeout=1.0, instagram_source=source, clock=clock,
+        )
+        servers.append(srv)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
 
-    yield type("Svc", (), {"call": staticmethod(call), "base": base, "fake": fake, "state": state, "home": home, "vaults": vaults, "tmp": tmp_path})
-    srv.shutdown()
+        def call(method, path, body=None, token=TOKEN):
+            req = urllib.request.Request(base + path, method=method, data=None if body is None else json.dumps(body).encode())
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("Content-Type", "application/json")
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    return r.status, json.loads(r.read() or b"{}")
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read() or b"{}")
+
+        return type("Svc", (), {"call": staticmethod(call), "base": base, "fake": fake, "state": state, "home": home,
+                                "vaults": vaults, "tmp": tmp_path, "clock": clock})
+
+    yield start_
+    for srv in servers:
+        srv.shutdown()
+        srv.server_close()
+
+
+@pytest.fixture()
+def svc(start):
+    return start()
+
+
+@pytest.fixture()
+def wsvc(start):
+    """A server in worker mode (INGEST_INSTAGRAM_SOURCE=worker)."""
+    return start("worker")
 
 
 def no_password_under(root: Path) -> bool:
@@ -221,3 +255,116 @@ def test_other_login_failures_name_the_reason(svc):
     status, body = svc.call("POST", "/instagram/login", {"username": "challenged", "password": PASSWORD})
     assert status == 502 and body["error"] == "login-failed"
     assert "ChallengeRequired" in body["message"] and PASSWORD not in body["message"]
+
+
+# ---- worker mode: jobs, claim, lease, release ----
+
+def ig_item(svc, name, urls, *, vault="mylife", age=0, reason="worker", key="unresolved_links"):
+    """An Input/ item whose `key` lists `urls`; its mtime is `age` seconds before the server's clock."""
+    item = svc.vaults / vault / "Input" / name
+    item.mkdir(parents=True, exist_ok=True)
+    links = "".join(f"- url: {url}\n  attempts: 0\n  reason: {reason}\n" for url in urls)
+    index = item / "index.md"
+    index.write_text(f"---\ntitle: {name}\n{key}:\n{links}---\n# {name}\n")
+    t = svc.clock() - age
+    os.utime(index, (t, t))
+    return index
+
+
+def claim(svc, name="mac"):
+    return svc.call("POST", "/instagram/jobs/claim", {"name": name})
+
+
+def test_claim_in_local_mode_is_409_not_worker_mode(svc):
+    ig_item(svc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    status, body = claim(svc)
+    assert status == 409 and body["error"] == "not-worker-mode"
+
+
+def test_claim_returns_the_shortcode_of_an_unresolved_post_or_reel_link_with_a_synthesized_p_url(wsvc):
+    ig_item(wsvc, "mail-new", ["https://www.instagram.com/p/AAAAA1/?igsh=tracking"], age=100)
+    ig_item(wsvc, "mail-old", ["https://instagram.com/reel/BBBBB2", "https://example.com/x"], age=200)
+    status, body = claim(wsvc)
+    assert status == 200
+    # The oldest item first; the URL is rebuilt from the shortcode, the mail's own URL never leaves the server.
+    assert body["id"] == "BBBBB2" and body["url"] == "https://www.instagram.com/p/BBBBB2/"
+    assert body["leaseUntil"]
+    assert claim(wsvc)[1]["id"] == "AAAAA1"
+    assert claim(wsvc)[0] == 204
+
+
+def test_the_same_shortcode_in_two_vaults_is_one_job(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/SAME_1/"], vault="mylife")
+    ig_item(wsvc, "mail-b", ["https://www.instagram.com/reel/SAME_1/"], vault="work")
+    assert claim(wsvc)[1]["id"] == "SAME_1"
+    assert claim(wsvc)[0] == 204
+
+
+def test_a_leased_job_isnt_handed_out_again_until_the_lease_ends(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert claim(wsvc, "mac")[1]["id"] == "AAAAA1"
+    assert claim(wsvc, "pi")[0] == 204
+    wsvc.clock.advance(29 * 60)
+    assert claim(wsvc, "pi")[0] == 204
+
+
+def test_an_expired_lease_frees_it(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert claim(wsvc, "mac")[1]["id"] == "AAAAA1"
+    wsvc.clock.advance(31 * 60)
+    assert claim(wsvc, "pi")[1]["id"] == "AAAAA1"
+
+
+def test_release_frees_it_at_once(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert claim(wsvc)[1]["id"] == "AAAAA1"
+    assert wsvc.call("POST", "/instagram/jobs/AAAAA1/release")[0] == 204
+    assert claim(wsvc)[1]["id"] == "AAAAA1"
+    # Releasing what nobody holds is fine too.
+    assert wsvc.call("POST", "/instagram/jobs/ZZZZZ9/release")[0] == 204
+
+
+def test_no_wanted_link_is_204(wsvc):
+    assert claim(wsvc)[0] == 204
+    ig_item(wsvc, "mail-a", ["https://example.com/x", "https://www.instagram.com/someprofile/"])
+    assert claim(wsvc)[0] == 204
+
+
+def test_a_resolved_or_failed_links_entry_is_no_job(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"], key="resolved_links")
+    ig_item(wsvc, "mail-b", ["https://www.instagram.com/p/BBBBB2/"], key="failed_links")
+    assert claim(wsvc)[0] == 204
+
+
+def test_claim_needs_a_worker_name(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    for body in ({}, {"name": ""}, {"name": "a b"}, {"name": "../x"}, {"name": "x" * 65}, {"name": 3}):
+        assert wsvc.call("POST", "/instagram/jobs/claim", body)[0] == 400, body
+    assert claim(wsvc)[1]["id"] == "AAAAA1"
+
+
+def test_a_bad_id_is_400_before_any_path_is_built(wsvc):
+    before = sorted(p.relative_to(wsvc.state) for p in wsvc.state.rglob("*"))
+    for bad in ["abcd", "x" * 41, "a%20b", "..","...%2F..", "a.b.c.d", "a/b/../c", "%2e%2e%2fstate"]:
+        status, body = wsvc.call("POST", f"/instagram/jobs/{bad}/release")
+        assert (status, body.get("error")) == (400, "bad-id"), bad
+    assert sorted(p.relative_to(wsvc.state) for p in wsvc.state.rglob("*")) == before
+
+
+def test_two_requests_on_one_keep_alive_connection_both_answer(wsvc):
+    import http.client
+
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    host, port = wsvc.base.split("//")[1].split(":")
+    c = http.client.HTTPConnection(host, int(port), timeout=5)
+    headers = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
+    c.request("POST", "/instagram/jobs/claim", body=json.dumps({"name": "mac"}), headers=headers)
+    r = c.getresponse()
+    assert r.status == 200 and json.loads(r.read())["id"] == "AAAAA1"
+    c.request("GET", "/instagram/status", headers=headers)
+    r = c.getresponse()
+    assert r.status == 200 and "state" in json.loads(r.read())
+    c.request("POST", "/instagram/jobs/AAAAA1/release", headers=headers)
+    r = c.getresponse()
+    assert r.status == 204 and r.read() == b""
+    c.close()
