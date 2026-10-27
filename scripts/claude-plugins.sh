@@ -8,6 +8,7 @@ marketplaces=(tillg/till-claude-code-marketplace mattpocock/skills anthropics/cl
 plugins=(
   spec@till-claude-code-marketplace
   md2html@till-claude-code-marketplace
+  autonomous@till-claude-code-marketplace
   mattpocock-skills@mattpocock
   claude-security@claude-plugins-official
 )

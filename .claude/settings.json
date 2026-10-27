@@ -15,6 +15,7 @@
     "claude-security@claude-plugins-official": true,
     "spec@till-claude-code-marketplace": true,
     "md2html@till-claude-code-marketplace": true,
+    "autonomous@till-claude-code-marketplace": true,
     "mattpocock-skills@mattpocock": true
   },
   "extraKnownMarketplaces": {
