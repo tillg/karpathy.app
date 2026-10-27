@@ -539,7 +539,8 @@ of GitHub's version vs. the app's (or "deleted on GitHub / in this app"), with *
   text, cursor, scroll, undo); the browser remembers the choice across reloads; closing the chat keeps it.
 - **Chat titles** (#148): a new chat is titled with its first prompt (the *preliminary title*). When its 2nd turn ends,
   the **title model** writes a short title from what has been discussed, in the chat's language, and it replaces the
-  preliminary one. Every 10th turn (10, 20, 30, …) the title model titles the last ten turns afresh; if that title
+  preliminary one. Every 10th turn (10, 20, 30, …) the title model titles the last ten turns afresh (at turn 10: turns 3–10, not
+  the two the title was made from); if that title
   shares less than half of its significant words with the current one, the chat has drifted and a bar above the composer asks "Rename this
   chat to “…”?" with **Rename** (the suggestion becomes the title) and **Keep** (it is dropped). The suggestion stays
   until answered, also after a reload and on any other device; the next drift check replaces an unanswered one. The

@@ -92,8 +92,9 @@ export class ChatTitles {
       if (turns !== TITLE_TURN && !drift) return;
       const titleOf = async () => (await this.harness.listSessions(dir)).find((s) => s.id === chatId)?.title;
       const current = (await titleOf()) ?? '';
-      // A drift check titles the last ten turns afresh: small models answer "keep" to "does the title still fit?".
-      const recent = drift ? messages.slice(users[turns - DRIFT_EVERY]) : messages;
+      // A drift check titles the last ten turns afresh: small models answer "keep" to "does the title still fit?". Never
+      // the turns the title was made from (at turn 10 that's turns 3-10): they'd pull the fresh title back to its topic.
+      const recent = drift ? messages.slice(users[Math.max(turns - DRIFT_EVERY, TITLE_TURN)]) : messages;
       const title = cleanTitle(await this.ask(`${transcript(recent)}\n\nWrite the title of this conversation.`));
       if (!title || title.toUpperCase() === 'KEEP') return;
       // Renamed or deleted meanwhile: the user's choice wins.

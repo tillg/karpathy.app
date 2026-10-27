@@ -94,6 +94,14 @@ describe('ChatTitles.afterTurn', () => {
     expect(t.prompts[0]!.text).not.toMatch(/User: question 10\b/);
   });
 
+  it("the first drift check (turn 10) leaves out the turns the title was made from (1-2): they'd pull the fresh title back to its topic", async () => {
+    const t = await setup(10, () => 'Budget for the new kitchen', { title: 'Weekend trip planning' });
+    await t.titles.afterTurn('v', 'chat');
+    expect(t.prompts[0]!.text).toContain('User: question 3');
+    expect(t.prompts[0]!.text).toContain('User: question 10');
+    expect(t.prompts[0]!.text).not.toMatch(/User: question [12]\b/);
+  });
+
   it('a fresh title on the same topic as the current one (or KEEP) stores no suggestion', async () => {
     for (const answer of ['KEEP', '"Weekend trip planning"', 'Planning the weekend', 'Weekend trips in the Alps', 'Trip ideas']) {
       const t = await setup(20, () => answer, { title: 'Weekend trip planning' });
