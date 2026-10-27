@@ -249,6 +249,8 @@ edited: 2026-10-27
   - [12:20 — The worker token is a deploy secret `ingest_worker_token`, valid only on the job routes](#run-2026-10-27-1145-6)
   - [12:20 — In worker mode the ingest service counts failures and backs off; waits never count an attempt](#run-2026-10-27-1145-7)
   - [12:20 — The worker is a Python package in this repo, installed with pipx, run by launchd or systemd --user](#run-2026-10-27-1145-8)
+  - [13:40 — Pin ingest-email to a commit on its pushed feature branch `instagram-worker`, no tag](#run-2026-10-27-1145-9)
+  - [13:40 — Implementation details the plan left open (limits, ledger window, no claim without a session)](#run-2026-10-27-1145-10)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3719,3 +3721,24 @@ edited: 2026-10-27
 - **Why:** calls the scraper as a library like ingest-email does; pipx gives an isolated venv on macOS and Linux; launchd/systemd are the native supervisors.
 - **Alternatives:** a Docker image (heavy on a Mac, awkward for an interactive Instagram login); shelling out to the `instascrape` CLI (loses typed errors).
 - **Consequences:** every worker host needs Tailscale (prod's proxy listens on the tailnet only); one Instagram account per worker, the UI warns when more than one worker is active.
+
+## 13:40 — Pin ingest-email to a commit on its pushed feature branch `instagram-worker`, no tag {#run-2026-10-27-1145-9}
+
+- **Status:** open
+- **Overrides:** plan step 3 of `instagram-worker` — "Release the ingest-email tag"
+- **Context:** `instagram-worker` steps 1–3 change the private repo `tillg/ingest_email`. The permission check refused an agent that was to push its default branch and a tag.
+- **Question:** how does karpathy.app get the new ingest-email?
+- **Decision:** commits on a branch `instagram-worker` in `tillg/ingest_email` (from the old pin, which is also its `main`), pushed; `deploy/ingest/ingest-email.ref` = `395db52`. No tag, `main` there untouched.
+- **Why:** `fetch-source.sh` pins by commit and fetches from origin, so a pushed branch commit is enough; it stays within what the permission check allows.
+- **Alternatives:** merge into ingest_email's `main` and tag (refused; the user's call).
+- **Consequences:** for the user: merge `instagram-worker` into ingest_email's `main` (a fast-forward) and tag it when convenient; the pin stays valid either way. Deleting that branch before merging would orphan the pinned commit.
+
+## 13:40 — Implementation details the plan left open (limits, ledger window, no claim without a session) {#run-2026-10-27-1145-10}
+
+- **Status:** open
+- **Context:** `instagram-worker` steps 4–18, reported by the implementing agents.
+- **Question:** several small choices the architecture didn't fix.
+- **Decision:** ingest service: tar members checked before extraction (absolute paths refused, not stripped), results stored flat, 1 GiB unpacked and 1 MiB `metadata.json` caps, duplicate names refused, ISO UTC timestamps, workers not seen for 30 days and `incoming/` leftovers older than a day pruned, name/version required on claim and heartbeat (400). ingest-email: a result wins over a marker; a broken marker counts as none; worker mode without `instagram_results_dir` waits with that reason. Worker: `ActivityLedger` gets `profile.window_seconds` (the real constructor needs it); no claim without a session file (straight to `needs-login`); `get_client` runs with stdin on `/dev/null`; a 409 (server in local mode) = idle with a message; `configure` sends a heartbeat and refuses to save a rejected token; the services stop gracefully (up to 5 minutes) and restart at most once a minute; the backend's JSON limit on the worker routes is 10 kB like the ingest service's.
+- **Why:** each is the safer or simpler reading of `architecture.md`; none changes the API contract.
+- **Alternatives:** per item, the obvious opposite (e.g. strip absolute paths, claim and release when logged out every 10 minutes).
+- **Consequences:** `architecture.md` is updated at archive time from these. macOS worker logs aren't rotated (≈ 150 kB/day); instascraper v1.1.0 doesn't use ffmpeg, so doctor's ffmpeg check is informational only.
