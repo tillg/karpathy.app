@@ -7,9 +7,12 @@ The real server runs on a free port with real files; only instascraper's login (
 replaced by a scripted fake.
 """
 
+import gzip
+import io
 import json
 import os
 import stat
+import tarfile
 import threading
 import time
 import urllib.error
@@ -368,3 +371,162 @@ def test_two_requests_on_one_keep_alive_connection_both_answer(wsvc):
     r = c.getresponse()
     assert r.status == 204 and r.read() == b""
     c.close()
+
+
+# ---- worker mode: result upload ----
+
+def result_files(code, prefix=""):
+    return {f"{prefix}post.md": b"# a post\n", f"{prefix}metadata.json": json.dumps({"shortcode": code}).encode(),
+            f"{prefix}1.jpg": b"\xff\xd8 a jpeg"}
+
+
+def tarball(files, extra=()):
+    """A tar.gz of `files` (name → bytes) plus raw TarInfo members `extra` (links, devices, …)."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for name, data in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+        for info in extra:
+            tf.addfile(info)
+    return buf.getvalue()
+
+
+def put(svc, code, data=b"", headers=None):
+    """A raw PUT of a result: `headers` replaces the default Content-Length; the body is sent only if given."""
+    import http.client
+
+    host, port = svc.base.split("//")[1].split(":")
+    c = http.client.HTTPConnection(host, int(port), timeout=5)
+    c.putrequest("PUT", f"/instagram/jobs/{code}/result")
+    c.putheader("Authorization", f"Bearer {TOKEN}")
+    c.putheader("Content-Type", "application/gzip")
+    for k, v in (headers if headers is not None else {"Content-Length": str(len(data))}).items():
+        c.putheader(k, v)
+    c.endheaders()
+    if data:
+        c.send(data)
+    r = c.getresponse()
+    body = r.read()
+    c.close()
+    return r.status, json.loads(body) if body else {}
+
+
+def results(svc):
+    return svc.state / "instagram" / "results"
+
+
+def leftovers(svc):
+    """Everything under results/ and incoming/."""
+    return sorted(str(p.relative_to(svc.state)) for d in ("results", "incoming")
+                  for p in (svc.state / "instagram" / d).rglob("*"))
+
+
+def test_a_valid_tarball_lands_in_results_and_the_lease_ends(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    ig_item(wsvc, "mail-b", ["https://www.instagram.com/p/BBBBB2/"], age=-10)
+    assert claim(wsvc)[1]["id"] == "AAAAA1"
+    assert put(wsvc, "AAAAA1", tarball(result_files("AAAAA1", "AAAAA1/"))) == (204, {})
+    stored = results(wsvc) / "AAAAA1"
+    assert sorted(p.name for p in stored.iterdir()) == ["1.jpg", "metadata.json", "post.md"]
+    assert (stored / "post.md").read_bytes() == b"# a post\n"
+    assert leftovers(wsvc) == ["instagram/results/AAAAA1", *(f"instagram/results/AAAAA1/{n}" for n in ("1.jpg", "metadata.json", "post.md"))]
+    # A stored result is no job any more; the next claim gets the other one.
+    assert claim(wsvc)[1]["id"] == "BBBBB2"
+    # A flat tarball (no <id>/ level) is fine too.
+    assert put(wsvc, "BBBBB2", tarball(result_files("BBBBB2"))) == (204, {})
+    assert sorted(p.name for p in (results(wsvc) / "BBBBB2").iterdir()) == ["1.jpg", "metadata.json", "post.md"]
+
+
+def test_a_second_upload_of_the_same_id_is_204_and_changes_nothing(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert put(wsvc, "AAAAA1", tarball(result_files("AAAAA1"))) == (204, {})
+    other = {**result_files("AAAAA1"), "post.md": b"# another\n", "2.jpg": b"x"}
+    assert put(wsvc, "AAAAA1", tarball(other)) == (204, {})
+    assert (results(wsvc) / "AAAAA1" / "post.md").read_bytes() == b"# a post\n"
+    assert not (results(wsvc) / "AAAAA1" / "2.jpg").exists()
+    assert not list((wsvc.state / "instagram" / "incoming").iterdir())
+
+
+def test_an_upload_after_the_lease_lapsed_still_counts_while_the_id_is_wanted(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert claim(wsvc)[1]["id"] == "AAAAA1"
+    wsvc.clock.advance(45 * 60)
+    assert put(wsvc, "AAAAA1", tarball(result_files("AAAAA1"))) == (204, {})
+    assert (results(wsvc) / "AAAAA1" / "post.md").exists()
+
+
+def test_no_content_length_is_411(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert put(wsvc, "AAAAA1", headers={})[0] == 411
+    status, body = put(wsvc, "AAAAA1", b"5\r\nhello\r\n0\r\n\r\n", headers={"Transfer-Encoding": "chunked"})
+    assert (status, body["error"]) == (411, "length-required")
+    assert leftovers(wsvc) == []
+
+
+def test_content_length_600_mb_is_413_and_the_body_isnt_read(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    # No body is sent at all: a server that tried to read it would time out instead of answering.
+    status, body = put(wsvc, "AAAAA1", headers={"Content-Length": str(600 * 1024 * 1024)})
+    assert (status, body["error"]) == (413, "too-large")
+    assert leftovers(wsvc) == []
+
+
+def special(name, kind, **kw):
+    info = tarfile.TarInfo(name)
+    info.type = kind
+    for k, v in kw.items():
+        setattr(info, k, v)
+    return info
+
+
+@pytest.mark.parametrize("label, files, extra", [
+    ("absolute path", {**result_files("AAAAA1"), "/etc/evil": b"x"}, ()),
+    ("absolute path of the id dir", result_files("AAAAA1", "/AAAAA1/"), ()),
+    ("..", {**result_files("AAAAA1"), "../evil": b"x"}, ()),
+    ("nested ..", {**result_files("AAAAA1", "AAAAA1/"), "AAAAA1/../../evil": b"x"}, ()),
+    ("symlink", result_files("AAAAA1"), [special("link.jpg", tarfile.SYMTYPE, linkname="/etc/passwd")]),
+    ("hard link", result_files("AAAAA1"), [special("hard.jpg", tarfile.LNKTYPE, linkname="post.md")]),
+    ("device file", result_files("AAAAA1"), [special("dev", tarfile.CHRTYPE, devmajor=1, devminor=3)]),
+    ("fifo", result_files("AAAAA1"), [special("fifo", tarfile.FIFOTYPE)]),
+    ("41 files", {**result_files("AAAAA1"), **{f"{i}.jpg": b"x" for i in range(10, 48)}}, ()),
+    ("a name with a space", {**result_files("AAAAA1"), "my photo.jpg": b"x"}, ()),
+    ("two directory levels", result_files("AAAAA1", "AAAAA1/sub/"), ()),
+    ("a directory not named after the id", result_files("AAAAA1", "BBBBB2/"), ()),
+    ("flat and nested mixed", {**result_files("AAAAA1"), "AAAAA1/2.jpg": b"x"}, ()),
+    ("missing post.md", {k: v for k, v in result_files("AAAAA1").items() if k != "post.md"}, ()),
+    ("missing metadata.json", {k: v for k, v in result_files("AAAAA1").items() if k != "metadata.json"}, ()),
+    ("metadata shortcode != id", result_files("BBBBB2"), ()),
+    ("metadata not JSON", {**result_files("AAAAA1"), "metadata.json": b"{nope"}, ()),
+])
+def test_an_invalid_result_is_422_and_nothing_is_kept(wsvc, label, files, extra):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    status, body = put(wsvc, "AAAAA1", tarball(files, extra))
+    assert (status, body.get("error")) == (422, "invalid-result"), label
+    assert body["message"]
+    assert leftovers(wsvc) == [], label
+    assert not (wsvc.tmp / "evil").exists() and not (wsvc.state / "evil").exists()
+
+
+@pytest.mark.parametrize("data", [b"not a gzip at all", gzip.compress(b"not a tar"), tarball(result_files("AAAAA1"))[:-40]],
+                         ids=["plain bytes", "gzip but no tar", "truncated"])
+def test_not_a_gzip_tarball_is_422(wsvc, data):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    status, body = put(wsvc, "AAAAA1", data)
+    assert (status, body["error"]) == (422, "invalid-result")
+    assert leftovers(wsvc) == []
+
+
+def test_an_id_nobody_wants_is_404(wsvc, svc):
+    status, body = put(wsvc, "AAAAA1", tarball(result_files("AAAAA1")))
+    assert (status, body["error"]) == (404, "unknown-job")
+    assert leftovers(wsvc) == []
+    # Local mode wants nothing.
+    ig_item(svc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert put(svc, "AAAAA1", tarball(result_files("AAAAA1")))[0] == 404
+
+
+def test_a_result_with_a_bad_id_is_400(wsvc):
+    assert put(wsvc, "a%2F..", tarball(result_files("AAAAA1")))[0] == 400
+    assert put(wsvc, "abc", tarball(result_files("AAAAA1")))[0] == 400

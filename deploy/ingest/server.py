@@ -9,6 +9,7 @@ Routes (every request needs `Authorization: Bearer <ingest_token>`):
     POST /instagram/disconnect                       → status
     POST /instagram/jobs/claim  {name}               → {id, url, leaseUntil} | 204 no job | 409 not-worker-mode
     POST /instagram/jobs/<id>/release                → 204
+    PUT  /instagram/jobs/<id>/result  tar.gz         → 204 | 404 unknown-job | 411 | 413 too-large | 422 invalid-result
 
 States: not-connected, waiting-for-code, connected, expired. The status never logs in (a login is a flag-risk event):
 `expired` means a session exists but the resolver still reports `no-session` for Instagram links in a vault's Input/.
@@ -22,18 +23,23 @@ Worker mode (`INGEST_INSTAGRAM_SOURCE=worker`): Instagram workers on the user's 
 post's shortcode, derived on every claim from the vaults' `Input/*/index.md` `unresolved_links`, never stored, so the
 same post in two vaults is one job. A claim leases the oldest wanted job (by the item's mtime) to a worker for
 `LEASE_S`. Leases live in memory: a restart frees them, which is harmless. In local mode (the default) ingest-email
-scrapes on the server and a claim answers 409.
+scrapes on the server and a claim answers 409. A worker uploads a scraped post as a tar.gz; once checked, it lands in
+the dropbox `<state>/instagram/results/<shortcode>/`, where ingest-email's resolver maps it into the vault (it stays
+the only writer of `Input/`). An upload is idempotent and needs no live lease.
 """
 
+import gzip
 import hmac
 import json
 import os
 import queue
 import re
 import shutil
+import tarfile
 import tempfile
 import threading
 import time
+import zlib
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -51,10 +57,73 @@ WORKER_NAME = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 JOB_ROUTE = re.compile(r"^/instagram/jobs/(.+)/(result|failure|release)$")
 SOURCES = ("local", "worker")
 LEASE_S = 30 * 60
+# Result uploads (untrusted): the tarball's size, its unpacked size, the files in it and their names.
+MAX_RESULT = 500 * 1024 * 1024
+MAX_UNPACKED = 1024 * 1024 * 1024
+MAX_METADATA = 1024 * 1024
+MAX_FILES = 40
+FILE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+CHUNK = 1024 * 1024
 
 
 def _iso(t):
     return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _unpack(tarball: Path, staging: Path, code):
+    """Unpacks an uploaded result into the empty dir `staging`, flat; returns None, or what is wrong with it.
+
+    The members are checked before anything is written: regular files only, either all flat or all in one `<code>/`
+    directory, at most MAX_FILES, safe names, a bounded unpacked size. `filter='data'` guards the extraction itself.
+    Then the files the resolver needs: `post.md`, and `metadata.json` naming this shortcode."""
+    try:
+        with tarfile.open(tarball, mode="r:gz") as tf:
+            files, shapes, total = [], set(), 0
+            for m in tf:
+                parts = m.name.split("/")
+                if not all(FILE_NAME.match(p) and p not in (".", "..") for p in parts):
+                    return f"unsafe name {m.name[:80]!r}: only [A-Za-z0-9._-], no absolute paths or '..'"
+                if m.isdir():
+                    if parts != [code]:
+                        return f"directory {m.name[:80]!r}: at most one level, named after the shortcode"
+                    continue
+                if not m.isreg():
+                    return f"{m.name[:80]!r} is not a regular file (no links or devices)"
+                if len(parts) == 2 and parts[0] == code:
+                    shapes.add("nested")
+                elif len(parts) == 1:
+                    shapes.add("flat")
+                else:
+                    return f"{m.name[:80]!r}: files go flat or in one directory named after the shortcode"
+                files.append(m)
+                total += m.size
+                if len(files) > MAX_FILES:
+                    return f"more than {MAX_FILES} files"
+                if total > MAX_UNPACKED:
+                    return f"more than {MAX_UNPACKED // 2**20} MB unpacked"
+            if len(shapes) > 1:
+                return "files both flat and in a directory"
+            names = [m.name.rsplit("/", 1)[-1] for m in files]
+            if len(set(names)) != len(names):
+                return "a file name appears twice"
+            for required in ("post.md", "metadata.json"):
+                if required not in names:
+                    return f"{required} is missing"
+            if files[names.index("metadata.json")].size > MAX_METADATA:
+                return "metadata.json is too large"
+            tf.extractall(staging, members=[m.replace(name=n, deep=False) for m, n in zip(files, names)], filter="data")
+    except (tarfile.TarError, EOFError, zlib.error, gzip.BadGzipFile):
+        return "not a gzip tarball"
+    # What landed must be exactly the checked regular files.
+    if sorted(p.name for p in staging.iterdir() if p.is_file() and not p.is_symlink()) != sorted(names):
+        return "unexpected entries after unpacking"
+    try:
+        meta = json.loads((staging / "metadata.json").read_text(encoding="utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return "metadata.json is not JSON"
+    if not isinstance(meta, dict) or meta.get("shortcode") != code:
+        return "metadata.json's shortcode is not this job's id"
+    return None
 
 
 EXPIRED_CODE = (400, {"error": "expired-code", "message": "The code request expired: connect again"})
@@ -133,6 +202,11 @@ class Service:
         self.pending: _Login | None = None
         self.last_error: str | None = None
         self.leases: dict[str, tuple[str, float]] = {}  # shortcode → (worker name, lease end)
+        # The dropbox ingest-email reads in worker mode, and the uploads on their way into it (same filesystem).
+        self.results_dir = self.state_dir / "instagram" / "results"
+        self.incoming_dir = self.state_dir / "instagram" / "incoming"
+        for d in (self.state_dir / "instagram", self.results_dir, self.incoming_dir):
+            d.mkdir(exist_ok=True, mode=0o700)
 
     # ---- state ----
     def account(self):
@@ -187,6 +261,8 @@ class Service:
 
     def _job_state(self, code, now):
         """Caller holds the lock."""
+        if (self.results_dir / code).is_dir():
+            return "ready"
         lease = self.leases.get(code)
         if lease and lease[1] > now:
             return "leased"
@@ -301,6 +377,49 @@ class Service:
             self.leases.pop(code, None)
         return 204, None
 
+    def upload_answer(self, code):
+        """What a result upload gets before its body is read: None (go ahead), or the final (status, body)."""
+        if (self.results_dir / code).is_dir():
+            return 204, None  # idempotent: a result is already there
+        if self.source != "worker":
+            return 404, {"error": "unknown-job"}
+        with self.lock:
+            leased = code in self.leases
+        # Wanted, or leased: a late upload after a lapsed lease still counts while some item wants the post.
+        if not leased and code not in self.jobs():
+            return 404, {"error": "unknown-job"}
+        return None
+
+    def store_result(self, code, body, length):
+        """Copies `length` bytes of `body` (a tar.gz) to a temp file, unpacks and checks it in a staging dir and moves
+        that into results/<code>/. Nothing of a refused or broken upload is kept."""
+        fd, tmp = tempfile.mkstemp(dir=self.incoming_dir, suffix=".tar.gz")
+        staging = None
+        try:
+            with os.fdopen(fd, "wb") as f:
+                left = length
+                while left:
+                    chunk = body.read(min(CHUNK, left))
+                    if not chunk:
+                        raise ConnectionError("the upload ended early")
+                    f.write(chunk)
+                    left -= len(chunk)
+            staging = Path(tempfile.mkdtemp(dir=self.incoming_dir))
+            problem = _unpack(Path(tmp), staging, code)
+            if problem:
+                return 422, {"error": "invalid-result", "message": problem}
+            with self.lock:
+                target = self.results_dir / code
+                if not target.exists():
+                    os.replace(staging, target)
+                    staging = None
+                self.leases.pop(code, None)
+            return 204, None
+        finally:
+            Path(tmp).unlink(missing_ok=True)
+            if staging:
+                shutil.rmtree(staging, ignore_errors=True)
+
 
 def _handler(svc: Service):
     class Handler(BaseHTTPRequestHandler):
@@ -398,6 +517,42 @@ def _handler(svc: Service):
                 if job.group(2) == "release":
                     return self._send(*svc.release(code))
             self._send(404, {"error": "not-found"})
+
+        def do_PUT(self):
+            if not self._authorized():
+                return
+            job = JOB_ROUTE.match(self.path)
+            if not job or job.group(2) != "result":
+                return self._send(404, {"error": "not-found"})
+            code = job.group(1)
+            if not SHORTCODE.match(code):
+                return self._send(400, {"error": "bad-id"})
+            n = self._length()
+            if n is None or self.headers.get("Transfer-Encoding"):
+                return self._send(411, {"error": "length-required"})
+            if n < 0:
+                return self._send(400, {"error": "bad-request", "message": "bad Content-Length"})
+            if n > MAX_RESULT:  # refused before a byte of the body is read
+                return self._send(413, {"error": "too-large", "message": f"a result is at most {MAX_RESULT // 2**20} MB"})
+            early = svc.upload_answer(code)
+            if early:
+                self._drain(n)
+                return self._send(*early)
+            try:
+                answer = svc.store_result(code, self.rfile, n)
+            except (ConnectionError, TimeoutError):
+                return self._send(400, {"error": "bad-request", "message": "the upload ended early"})
+            self._unread = False
+            self._send(*answer)
+
+        def _drain(self, n):
+            """Reads a body nobody needs, so the connection stays usable."""
+            while n > 0:
+                chunk = self.rfile.read(min(CHUNK, n))
+                if not chunk:
+                    return
+                n -= len(chunk)
+            self._unread = False
 
     return Handler
 
