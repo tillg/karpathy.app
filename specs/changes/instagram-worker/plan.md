@@ -135,7 +135,7 @@ flowchart LR
 
 ## End to end
 
-- [ ] `e2e/instagram-worker.spec.ts` plays the worker over HTTP with the dev stack's worker token: put an item with an Instagram link into `Input/`, heartbeat, claim it, upload a fixture tar.gz, and see the worker and the counts in Secrets & keys › Instagram; the main-token-only routes refuse the worker token. `e2e/instagram.spec.ts` (server-side Connect, now hidden in dev) is removed
+- [x] `e2e/instagram-worker.spec.ts` plays the worker over HTTP with the dev stack's worker token: put an item with an Instagram link into `Input/`, heartbeat, claim it, upload a fixture tar.gz, and see the worker and the counts in Secrets & keys › Instagram; the main-token-only routes refuse the worker token. `e2e/instagram.spec.ts` (server-side Connect, now hidden in dev) is removed
   - Depends on: 3, 7, 9, 11, 19
   - Test first: `e2e/instagram-worker.spec.ts` › "a worker claims, uploads, and the app shows it" (desktop project only; the fixture is `e2e/fixtures/instagram/<shortcode>.tar.gz` built by the spec from `post.md` + `metadata.json`), "the worker token can't list vaults". Fails today: the routes don't exist and dev is in local mode.
   - Verify: `just dev up && just e2e instagram-worker` → green; `just e2e --grep-invert @llm` → no new failures
