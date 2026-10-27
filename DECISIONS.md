@@ -3917,7 +3917,7 @@ edited: 2026-10-27
 - **Decision:** next patch, `just release 0.0.37` once CI on `main` is green, then `just deploy hetzner 0.0.37` (the README's documented path).
 - **Why:** the project releases in patch steps (`v0.0.34`–`v0.0.36`); the release workflow builds the images, the Ansible deploy is the only documented way to prod.
 - **Alternatives:** `0.1.0` for the new worker feature (no convention for minor bumps so far).
-- **Consequences:** from this deploy on, prod's ingest no longer scrapes Instagram itself: links wait for a worker. Rollback: `just deploy hetzner 0.0.36`.
+- **Consequences:** from this deploy on, prod's ingest no longer scrapes Instagram itself: links wait for a worker. Rollback: `just deploy hetzner 0.0.36`. Result: release workflow green (run 40567950165), deploy `ok=109 changed=13 failed=0` (`tmp/deploy-hetzner-20261027-202659.log`), all 5 containers on `0.0.37` and healthy.
 
 ## 20:25 — Install the worker with pipx from v0.0.37, reuse the existing @tillg session, name it `tillgmac3` {#run-2026-10-27-2016-2}
 
@@ -3927,4 +3927,4 @@ edited: 2026-10-27
 - **Decision:** `brew install pipx`; `pipx install` from tag `v0.0.37`; no new Instagram login (the guide warns that repeated logins are a red flag), `doctor` checks the existing session; worker name = the Tailscale host name `tillgmac3`; server `https://app.karpathy.app`.
 - **Why:** the guide says install from the server's tag; the session already exists, so no password is needed while the user is away.
 - **Alternatives:** a fresh `login` (needs the password and maybe 2FA — impossible unattended).
-- **Consequences:** if `doctor` reports the session as invalid, the worker reports `needs-login` and the user runs `karpathy-instagram-worker login`. Rollback: `karpathy-instagram-worker service uninstall && pipx uninstall karpathy-instagram-worker`.
+- **Consequences:** if `doctor` reports the session as invalid, the worker reports `needs-login` and the user runs `karpathy-instagram-worker login`. Rollback: `karpathy-instagram-worker service uninstall && pipx uninstall karpathy-instagram-worker`. The token went in as `--token "$(deploy/ansible/worker-token.sh hetzner)"` (the hidden prompt needs a TTY; never printed or logged). Result: pipx picked Homebrew's Python 3.15.1; `doctor` all ok (session @tillg valid); `once` → `idle: no job`; LaunchAgent `app.karpathy.instagram-worker` running; prod's ingest log shows its heartbeats and claims. Not checked: the admin page (Secrets & keys › Instagram), because reading prod's bearer token was blocked.
