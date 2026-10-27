@@ -1,5 +1,5 @@
 # Joins the host to the tailnet (specs/system/deployment.md): after the bootstrap, SSH and the app are reachable
-# only over Tailscale. The auth key (tagged tag:server, pre-approved, single-use) is used once.
+# only over Tailscale. The auth key (tagged tailscale_tag, pre-approved, single-use) is used once.
 - name: Tailscale apt repo
   ansible.builtin.deb822_repository:
     name: tailscale
@@ -42,7 +42,7 @@
   ansible.builtin.assert:
     that: tailscale_up is skipped or tailscale_up.rc == 0
     fail_msg: >-
-      tailscale up failed: the auth key is probably used or expired. Create a new one (tag:server,
+      tailscale up failed: the auth key is probably used or expired. Create a new one ({{ tailscale_tag }},
       single-use), put it in with `just secrets {{ target }}` and run again.
 
 # bind_ip (the tailnet IP) comes from the tailscale0 facts, which only exist after `tailscale up`.
@@ -71,4 +71,8 @@
       This server is in the tailnet as {{ (tailscale_self.stdout | from_json).Self.DNSName | default('?') }},
       not {{ tailscale_hostname }}: delete the old '{{ tailscale_hostname }}' device in the Tailscale admin
       console (Machines), then rename this one there to {{ tailscale_hostname }}.
+  when: not ansible_check_mode
+
+- name: Tailnet tag
+  ansible.builtin.include_tasks: tag.yml
   when: not ansible_check_mode

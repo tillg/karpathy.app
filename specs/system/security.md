@@ -412,7 +412,14 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   admin API a prompt-injected AI could reach.
 - **Dev server** (`karpathy-dev`): reachable only over Tailscale after bootstrap, no public ports; its dev stacks
   bind only to its loopback and are reached through SSH forwards. Editing there with VS Code goes through the same SSH
-  connection (Remote-SSH): its VS Code Server listens on no external port, and there is no relay or second login. It holds no prod vaults and no prod secrets: only
+  connection (Remote-SSH): its VS Code Server listens on no external port, and there is no relay or second login.
+  The **browser editor** (code-server, for the iPad) listens on `127.0.0.1:13337` only (outside 8000–8099, so no SSH `LocalForward` of the Mac reaches it), without a password; `tailscale
+  serve` publishes it on the tailnet at `https://karpathy-dev.tailab154c.ts.net/` (Let's Encrypt certificate, so node
+  names appear in Certificate Transparency logs). Whoever reaches that URL has a shell as the developer, so the
+  **tailnet policy** decides who does: explicit grants, own devices (`autogroup:member`) reach everything,
+  `tag:server-dev` reaches `tag:server-prod`, and prod (`tag:server-prod`) starts no connection at all; the policy's
+  `tests` refuse an edit that lets prod reach the dev host, and the `tailscale` role checks each server carries its
+  tag. A shared or stolen own device is the remaining risk. It holds no prod vaults and no prod secrets: only
   the dev OpenRouter/Exa keys (host secrets, mode 600) and a fine-grained GitHub token limited to `karpathy.app`,
   `karpathy_demo_wiki` and `ingest_email`. The developer's login user is uid 1000 with sudo and Docker there,
   accepted because the box is a separate, single-developer dev host.

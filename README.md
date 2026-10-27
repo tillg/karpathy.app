@@ -327,6 +327,22 @@ Inside the window's terminal you're on the server: `code <file>` opens a file in
 `.vscode/`, and they apply to every checkout. Setup details, ports and troubleshooting: [docs/dev-server.md ›
 VS Code](docs/dev-server.md#vs-code).
 
+## Editing on the iPad (browser editor)
+
+The iPad has no VS Code with Remote-SSH. Instead `karpathy-dev` runs **code-server**, VS Code in the browser, at
+https://karpathy-dev.tailab154c.ts.net/: the same checkouts, terminals, git and extensions, in Safari. It is reachable
+only from your own devices in the tailnet, so there is no password.
+
+```sh
+just code-web             # on the server: URL + QR code for the iPad; on the Mac: opens the browser
+just code-web <worktree>  # the same for ~/karpathy.app/.worktrees/<worktree>
+```
+
+**Once, on the iPad:** install the Tailscale app and log in; scan the QR code; Safari › Share › **Add to Home Screen**
+(full screen, and Cmd shortcuts go to the editor); in the first terminal, **Trust Folder & Continue**; install the
+offered extensions and sign in to the Claude Code extension. Long runs (`claude`, `just e2e`) still belong in herdr or
+tmux. Details and troubleshooting: [docs/dev-server.md › iPad](docs/dev-server.md#ipad-the-browser-editor).
+
 ## Tests
 
 ```sh

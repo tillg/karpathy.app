@@ -1,1 +1,3 @@
 tailscale_hostname: karpathy
+# The server's own tag (docs/dev-server.md, "Tailnet policy"): tag:server-prod for prod, tag:server-dev for the dev host.
+tailscale_tag: tag:server-prod

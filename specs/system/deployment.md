@@ -150,7 +150,7 @@ keys, never a release. Connecting and daily use: `docs/dev-server.md`; booking: 
 | Host | Hetzner CAX41 (ARM, 16 vCPU, 32 GB), Ubuntu 24.04, backups on, booked by hand in the console; always on |
 | Reached as | the developer's login user over Tailscale (hostname `karpathy-dev`); no public ports after bootstrap |
 | Set up by | `just devhost [--check] [--bootstrap <ip>]` → `deploy/devhost.sh` → `deploy/ansible/dev.yml` against inventory `dev` (the first run as root on the public IP) |
-| Roles | `base` (dev switch), `tailscale` (hostname variable), `docker`, `devtools`; not `app`, `monitoring`, `vaults_fs` |
+| Roles | `base` (dev switch), `tailscale` (hostname variable, `tag:server-dev`), `docker`, `devtools`, `code_server`; not `app`, `monitoring`, `vaults_fs` |
 | Secrets | `dev` vault (password in Keychain `karpathy-ansible-dev`): OpenRouter and Exa keys → host secrets `~/.config/karpathy/secrets/`; a fine-grained GitHub token (`karpathy.app`, `karpathy_demo_wiki`, `ingest_email`) → the login user's git credential; Tailscale auth key |
 | Monitoring | none; automatic updates come from `base` |
 
@@ -176,6 +176,27 @@ keys, never a release. Connecting and daily use: `docs/dev-server.md`; booking: 
   auto-forward) and keeps `.worktrees/`, `tmp/`, `node_modules/` and the build outputs out of watching and search;
   `.vscode/extensions.json` recommends ESLint, Playwright Test, Vitest, Claude Code, Ansible and `just` syntax. Long
   runs stay in herdr or tmux: a VS Code terminal outlives only a short drop.
+- **Browser editor (iPad):** role `code_server` installs the pinned code-server `.deb` (`code_server_version`, per
+  architecture) and runs `code-server@<user>` (the package's systemd template, as the login user with its `$HOME`).
+  `~/.config/code-server/config.yaml` (mode 600): `bind-addr: 127.0.0.1:13337`, `auth: none`, `cert: false`,
+  telemetry and update check off, `trusted-origins` = the node's tailnet name (`Self.DNSName` without the dot); a
+  change restarts the service. When `code_server_tailnet_serve` (default `tailscale_enabled`), the role runs
+  `deploy/tailnet-serve.sh 443 http://127.0.0.1:13337`: exit 3 while Tailnet HTTPS is off (`CertDomains` empty), so
+  `just devhost` fails with the admin-console step; `unchanged` when `tailscale serve status --json` already proxies
+  that port's `/` to the target, else `tailscale serve --bg --https=443 …` and `changed` (Ansible reports changed only
+  then). Result: `https://karpathy-dev.tailab154c.ts.net/`, no password, reachable only as the tailnet policy allows.
+  `just code-web [worktree]` (`deploy/code.sh --web`) builds `$KARPATHY_DEVHOST_URL/?folder=<checkout>[/.worktrees/<wt>]`
+  and opens it on the Mac, or prints it with a QR code (`qrencode`) on the dev host. Extensions: code-server offers
+  `.vscode/extensions.json` from Open VSX; Ansible installs none. Its user settings are its own
+  (`~/.local/share/code-server`). `code_server_enabled: false` turns the role off. Tested by `dev.test.sh` (version,
+  service, `/healthz`, loopback-only bind, config, the serve call, a second run with `changed=0`) and
+  `deploy/tailnet-serve.test.sh`.
+- **Tailnet policy:** explicit grants, pasted by hand from `docs/dev-server.md` › Tailnet policy (not managed as
+  code): own devices (`autogroup:member`) reach everything, `tag:server-dev` reaches `tag:server-prod`, and
+  `tag:server-prod` gets no grant, so prod starts no connection on the tailnet. The policy's `tests` refuse an edit
+  that lets prod reach the dev host's 22, 443 or 8010. Each server's auth key carries its own tag; the `tailscale`
+  role asserts after `tailscale up` that the node has `tailscale_tag` (`roles/tailscale/tasks/tag.yml`, tested by
+  `deploy/ansible/tailscale-tag.test.sh`; skipped in check mode).
 
 ```mermaid
 flowchart LR
@@ -183,11 +204,14 @@ flowchart LR
     JC["just code [worktree]"] --> VS["VS Code window<br/>(UI only)"]
     B["Browser"]
   end
+  IP["iPad Safari<br/>(own device)"]
   subgraph DH["karpathy-dev"]
     VSS["VS Code Server<br/>extensions · terminals · git"] --> WT["checkout / .worktrees/&lt;name&gt;<br/>(.vscode/ read here)"]
+    TS["tailscale serve :443"] --> CS["code-server<br/>127.0.0.1:13337"] --> WT
     S["dev stack N :80N0<br/>prodtest :80N5"]
   end
   VS -- "ssh karpathy-dev (Tailscale)" --> VSS
+  IP -- "https://karpathy-dev.…ts.net/?folder=" --> TS
   B -- "LocalForward 80N0 (SSH entry)" --> S
   B -. "80N5, 8099: VS Code's own forward" .-> S
 ```
@@ -200,7 +224,7 @@ host.
 | Role | Does |
 |---|---|
 | `base` | Users (below), sshd hardening (no root, no passwords; a marker file forces the restart if an earlier run died before the handler), unattended-upgrades, timezone. |
-| `tailscale` | Apt repo, `tailscale up` with a single-use `tag:server` key, refreshes the facts so `bind_ip` (the tailnet IP) is known; stops with a clear message for a used key or a taken tailnet name. `hetzner` only. |
+| `tailscale` | Apt repo, `tailscale up` with a single-use key tagged `tailscale_tag` (`tag:server-prod` on `hetzner`, `tag:server-dev` on `dev`), refreshes the facts so `bind_ip` (the tailnet IP) is known; stops with a clear message for a used key, a taken tailnet name, or a node without its tag. Runs where `tailscale_enabled` (`hetzner`, `dev`). |
 | `docker` | Docker CE + compose plugin; on Tailscale hosts, Docker starts after `tailscaled` and `net.ipv4.ip_nonlocal_bind=1` lets containers bind the tailnet IP before it exists at boot. |
 | `vaults_fs` | A loop-mounted ext4 file at `/srv/vaults` (5 G local, 20 G hetzner, inside the backed-up disk), `nofail`; Docker requires the mount. |
 | `app` | Downloads the release's `compose.yml` once, renders the target's settings on the controller and writes `shared/` ([Settings on a target](#settings-on-a-target)), sets up the ingest service when the release has its image (`ingest.json`, `Input/` and `Sources/` in each profile vault that is cloned, their mounts in `compose.target.yml`, the generated `gog_keyring_password` and `ingest_token`), pulls the images before switching `current`, `docker compose up` (recreated when a secret, `opencode.env`, `settings.json`, or `ingest.json` changed), smoke check, a ntfy message when the version changed (`karpathy-<target>: vX.Y.Z deployed`, with the previous one), keeps the 5 most recently deployed releases and their images. |
@@ -486,11 +510,15 @@ flowchart LR
 | The worker installed with pipx from a git tag, not a release image | A Docker image is heavy on a Mac and awkward for an interactive Instagram login; launchd and systemd are the native supervisors. |
 | A separate dev server (Hetzner CAX41, always on, Tailscale only), not GitHub Codespaces or dev stacks on prod | No per-core-hour billing, set up like prod; agents with a shell, Docker and a GitHub token stay away from prod's data. ARM like the Mac, so dev images run unchanged; `prodtest` there tests arm64, CI covers amd64. |
 | The dev server is an Ansible target `dev` with its own `just devhost`, not `just deploy dev` | `deploy` keeps meaning "release the app to a target"; same roles as prod, no prod-only steps. |
-| Dev stacks there are opened through an SSH `LocalForward`, not a public dev site | Caddy's dev site and Vite's HMR stay `localhost`-only and unchanged; iPad/phone-only development is out of scope. |
+| Dev stacks there are opened through an SSH `LocalForward`, not a public dev site | Caddy's dev site and Vite's HMR stay `localhost`-only and unchanged. The iPad gets the browser editor, not the stacks (phase 2 of #171, not built). |
 | Editing there with VS Code Remote-SSH over the existing SSH entry, not `code tunnel`, code-server or a mounted file system | Reuses the Tailscale-only SSH and its keys: nothing new listens, no second login. Language servers, ESLint and git run next to the files and `node_modules`. |
 | VS Code ignores exactly the nine forwarded stack ports (8010…8090, one entry each), not the range 8000–8099 | A stack must open at the same number (Caddy answers on `localhost`, Vite's HMR dials `HMR_CLIENT_PORT` = 80N0), and VS Code would move a taken port. A range would also swallow 80N5 and 8099, which only VS Code's own forward brings to the Mac. |
 | Workspace settings committed in `.vscode/`, project rules only | Every checkout and worktree gets them with `git worktree add`, on the Mac too; personal taste stays in user settings. |
 | inotify limits raised by `devtools` (1024 / 1 048 576), the applied values checked by `dev.test.sh` | Ubuntu's 128 instances run out with a few windows; a watch costs at most ~1 KB, and only if used. The privileged test container also raises the test machine's limits (only ever up): accepted. |
+| On the iPad: code-server from its pinned `.deb`, run by the package's systemd template as the login user | openvscode-server; VS Code Remote Tunnels (relay through Microsoft, second login); a container (terminals, `~/.claude` and git credentials would all need mounting). |
+| Browser editor without a password, published by `tailscale serve` on 443 | Only own devices reach it through the tailnet policy; one login fewer on the iPad. A password from the vault was the alternative. 443 gives the shortest URL. |
+| A tailnet policy with explicit grants; prod starts nothing on the tailnet; one tag per server role (`tag:server-prod`, `tag:server-dev`) | With the default allow-all policy and one shared `tag:server`, a compromised prod could open the password-less editor. Tags survive a rebuild, IPs don't. The policy's `tests` keep the prod → dev path shut; it was proven once from prod at rollout instead of a permanent probe. |
+| `just devhost` fails while Tailnet HTTPS is off; `trusted-origins` set up front | A green run means the editor is reachable; no fix-and-rerun loop for websocket origin checks. |
 | VS Code Server installed by VS Code, not by Ansible | It is pinned to the Mac client's commit; an Ansible-installed one would be wrong after every client update. |
 | Website as plain HTML + CSS, no generator | One page; revisit when there are more than ~3 pages or shared markup gets copied. |
 | App tokens copied into `site/style.css`, kept equal by a test | Looks like the app without touching the app's build; drift fails CI. |

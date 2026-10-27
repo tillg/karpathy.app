@@ -34,6 +34,8 @@ check:
     bash deploy/ansible/worker-token.test.sh
     bash deploy/check-preflight.test.sh
     bash deploy/code.test.sh
+    bash deploy/tailnet-serve.test.sh
+    bash deploy/ansible/tailscale-tag.test.sh
     bash deploy/justfile.test.sh
     bash deploy/ingest/run.test.sh
     bash deploy/ingest/compose.test.sh
@@ -124,6 +126,10 @@ devhost *args:
 # On the Mac: a VS Code window on the remote dev host (docs/dev-server.md, "VS Code"): `just code [worktree]`
 code worktree="":
     bash deploy/code.sh {{worktree}}
+
+# The browser editor (code-server) on the dev host, on a checkout (docs/dev-server.md, "iPad"): `just code-web [worktree]`; on the dev host it prints a QR code for the iPad
+code-web worktree="":
+    bash deploy/code.sh --web {{worktree}}
 
 # Copy a target's access token to the clipboard; `--qr` also prints a login QR code for a phone/iPad
 token target *flag:
