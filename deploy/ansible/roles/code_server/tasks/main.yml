@@ -1,0 +1,57 @@
+# code-server (VS Code in the browser) as the login user, so its terminals, ~/.claude, git credentials and just behave
+# as over SSH. The .deb ships the systemd template code-server@<user>.
+# apt's deb: downloads the ~100 MB file before it compares versions, so ask dpkg first (like just in devtools).
+- name: Installed code-server version
+  ansible.builtin.command: dpkg-query -W -f=${Version} code-server
+  register: code_server_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Code-server {{ code_server_version }}
+  ansible.builtin.apt:
+    deb: "{{ code_server_url }}"
+  when: code_server_installed.stdout != code_server_version
+  notify: Restart code-server
+
+- name: Code-server config folder
+  ansible.builtin.file:
+    path: /home/{{ admin_user }}/.config/code-server
+    state: directory
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0700"
+
+# The tailnet name for trusted-origins: code-server refuses WebSockets whose Origin isn't the Host it sees, and
+# tailscale serve's proxy may not pass the original Host on.
+- name: Tailnet name for code-server
+  ansible.builtin.command: tailscale status --json
+  register: code_server_tailnet
+  changed_when: false
+  # A check run on a fresh host has no tailscale yet; the template then leaves trusted-origins out.
+  failed_when: code_server_tailnet.rc != 0 and not ansible_check_mode
+  check_mode: false
+  when: code_server_tailnet_serve | bool
+
+- name: Code-server config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /home/{{ admin_user }}/.config/code-server/config.yaml
+    owner: "{{ admin_user }}"
+    group: "{{ admin_user }}"
+    mode: "0600"
+  notify: Restart code-server
+
+- name: Code-server running and enabled
+  ansible.builtin.systemd_service:
+    name: code-server@{{ admin_user }}
+    state: started
+    enabled: true
+
+# Fails with the instruction while the tailnet's HTTPS certificates are off: a green run means the editor is reachable.
+- name: Code-server on the tailnet (https://<host>.<tailnet>.ts.net/)
+  ansible.builtin.script:
+    cmd: "{{ playbook_dir }}/../tailnet-serve.sh 443 http://127.0.0.1:{{ code_server_port }}"
+  register: code_server_serve
+  changed_when: code_server_serve.stdout | trim == 'changed'
+  when: code_server_tailnet_serve | bool

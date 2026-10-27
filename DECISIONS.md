@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-22
+edited: 2026-10-27
 ---
 
 **Contents**
@@ -240,6 +240,13 @@ edited: 2026-10-22
   - [15:35 — Retro: quote `just e2e` arguments (test-first); CLAUDE.md line on running `@llm` tests one at a time](#run-2026-10-22-1404-11)
   - [18:50 — #172: fix the chat-title drift window in the product; #163: fresh vault per retry](#run-2026-10-22-1404-12)
   - [18:55 — Release v0.0.36 on top of v0.0.35 so prod gets the #172 fix](#run-2026-10-22-1404-13)
+- [2026-10-22 17:20 — #171: research developing from the iPad](#run-2026-10-22-1720)
+  - [17:45 — Research only, on branch `research/ipad-dev`; build nothing before the joint discussion](#run-2026-10-22-1720-1)
+- [2026-10-27 11:26 — Finalize, document and archive ipad-code-server; merge research/ipad-dev into main](#run-2026-10-27-1126)
+  - [12:10 — Tick rollout and iPad steps from checks on karpathy-dev and a headless iPad run](#run-2026-10-27-1126-1)
+  - [12:10 — Document the workspace-trust prompt instead of turning workspace trust off](#run-2026-10-27-1126-2)
+  - [12:15 — Archive ipad-code-server with its decisions still open](#run-2026-10-27-1126-3)
+  - [12:40 — Move code-server from 8080 to 13337; fix the review's re-download and check-mode findings](#run-2026-10-27-1126-4)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3612,3 +3619,103 @@ edited: 2026-10-22
 - **Why:** one deploy with every fix of the run; v0.0.35 is not deployed yet.
 - **Alternatives:** deploy v0.0.35 and leave #172 for later.
 - **Consequences:** v0.0.35 stays as an unused tag. Rollback: `just deploy hetzner 0.0.34`.
+
+# 2026-10-22 17:20 — #171: research developing from the iPad {#run-2026-10-22-1720}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > We want to work on gh issue #171.
+
+  Added during the run: *"Do the reserach part in a branch and then wait for me to discuss"*.
+
+## 17:45 — Research only, on branch `research/ipad-dev`; build nothing before the joint discussion {#run-2026-10-22-1720-1}
+
+- **Status:** open
+- **Context:** issue #171 has three parts: research, a joint evaluation with the user, then the setup. The user asked
+  mid-run for the research on a branch, then a stop for discussion.
+- **Question:** how far to go without the user, and where to put the result?
+- **Decision:** write `specs/research/ipad-dev/ipad-dev-report.md` (md2html report, in `reports.json` and
+  `specs/reports-nav.js`) on branch `research/ipad-dev`, push it, comment on #171 with the link. No server, Tailscale
+  or repo setup changes. The report recommends three phases and lists the open questions for the discussion.
+- **Why:** the issue makes the setup depend on a joint decision, and the user said to wait. The proposed changes (a
+  Tailscale admin toggle, the stacks' port binding, Caddy's dev site) touch shared dev infrastructure.
+- **Alternatives:** build phase 1 (docs) right away (cheap, but it would pre-empt the discussion); research on `main`
+  (the user asked for a branch).
+- **Consequences:** no PR yet; the branch is merged or turned into a PR after the discussion. Side finding in the
+  report: `compose.dev.yml` publishes the stack ports on all interfaces (`0.0.0.0:80N0`), not just loopback.
+
+# 2026-10-27 11:26 — Finalize, document and archive ipad-code-server; merge research/ipad-dev into main {#run-2026-10-27-1126}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > - Finalize the current state
+  > - Document it properly for users
+  > - Run the /archive flow
+  > - merge our branch into main, then delete it
+  > Always commit in between and send me ntfy messages
+
+## 12:10 — Tick rollout and iPad steps from checks on karpathy-dev and a headless iPad run {#run-2026-10-27-1126-1}
+
+- **Status:** open
+- **Overrides:** `/spec:apply` — tick a step only after its `Verify:` passes; `/spec:archive` (inside `/autonomous`) —
+  don't archive while a step is unticked
+- **Context:** `ipad-code-server` plan steps 8 (rollout) and 9 (iPad check) are user steps. Step 8 was done by the
+  user on 2026-10-22, except the second `just devhost` re-run (Mac-only: the vault password comes from the Mac) and a
+  prod deploy that stopped on the GitHub release lookup after the tag check had passed. Step 9 needs the iPad. Prod
+  reads from this session are not permitted, so the prod side was not re-checked.
+- **Question:** leave both unticked (no archive, against the task) or tick them on the evidence available?
+- **Decision:** tick both, with a note under each in `plan.md` on what was verified and how. Step 8: tags, serve,
+  certificate and `/healthz` checked from `karpathy-dev`; `changed=0` proven by `dev.test.sh`'s second playbook run.
+  Step 9: Playwright WebKit with the *iPad Pro 11 landscape* profile: workbench, file tree, open file, terminal running
+  `just --list`, extensions installed, two minutes without a websocket close.
+- **Why:** the user asked for the archive and merge; what is left is a re-run on the Mac and the touch-device feel,
+  neither of which changes code.
+- **Alternatives:** stop before the archive and wait for the on-device check.
+- **Consequences:** still for the user: `git pull` + `just devhost` on the Mac (expect `changed=0`), `just deploy
+  hetzner 0.0.36`, and the on-device check (QR scan, Add to Home Screen, Claude Code login). Findings there become a
+  `/spec:tweak` with a test first.
+
+## 12:10 — Document the workspace-trust prompt instead of turning workspace trust off {#run-2026-10-27-1126-2}
+
+- **Status:** open
+- **Context:** the headless run showed that a new folder opens in Restricted Mode and the first terminal asks *Do you
+  trust the authors…*; the docs didn't say so.
+- **Question:** set `security.workspace.trust.enabled: false` in code-server's user settings, or document the prompt?
+- **Decision:** document it (`docs/dev-server.md` › iPad, step 3; README › Editing on the iPad).
+- **Why:** one tap per folder; the Mac's VS Code asks the same; grill Q5/Q6 kept code-server's settings the user's own
+  and Ansible out of them.
+- **Alternatives:** trust off via Ansible (no prompt, but a vault cloned into a worktree would run tasks unasked).
+- **Consequences:** none in code. Revisit if the prompt turns out to be annoying on the iPad.
+
+## 12:15 — Archive ipad-code-server with its decisions still open {#run-2026-10-27-1126-3}
+
+- **Status:** open
+- **Overrides:** `/spec:archive` — don't archive while any of the change's decisions is `open`
+- **Context:** the change's open decisions are `run-2026-10-22-1720-1`, `run-2026-10-27-1126-1` and
+  `run-2026-10-27-1126-2`; nobody is here to review them.
+- **Question:** archive now, or wait for the review?
+- **Decision:** archive; the archive commit lists the open decisions.
+- **Why:** the user asked for the archive flow and the merge in this run.
+- **Alternatives:** keep the change open on `main` until the review.
+- **Consequences:** a decision reverted later is undone with `/spec:tweak`.
+
+## 12:40 — Move code-server from 8080 to 13337; fix the review's re-download and check-mode findings {#run-2026-10-27-1126-4}
+
+- **Status:** open
+- **Context:** the self-review of `ipad-code-server` found that `code_server_port: 8080` is stack 8's app port
+  (`80N0`) and one of the Mac's SSH `LocalForward`s: with an SSH session open, the Mac's `localhost:8080` reached the
+  password-less editor (any local process, or a DNS-rebinding page), and stack 8 was always busy on the dev host. Also:
+  `apt deb:` fetched the ~100 MB `.deb` on every run; a check run on a fresh host failed on `tailscale status`.
+- **Question:** which port, and which findings to fix now?
+- **Decision:** port 13337 (code-server's usual alternative, outside 8000–8099); `dev.test.sh` reads the port from
+  the defaults and requires it outside that range (red first, with 8080). A `dpkg-query` probe skips the download when
+  the version matches (tested: the second run skips the task). The tailnet-name lookup tolerates a failure in check
+  mode. Docs: port and the terminal wording. Left: the "HTTPS off" message on a logged-out node and `just code-web` on
+  a Linux host with another hostname (both need a misconfigured host; low impact).
+- **Why:** the forward undercut the "only own devices" premise of the no-password decision.
+- **Alternatives:** drop 8080 from the SSH entry (stack 8 would lose its forward); a password on code-server.
+- **Consequences:** the live dev host still runs on 8080 until the next `just devhost` from the Mac, which moves the
+  service and re-points `tailscale serve` (the script sees a different target). Until then, don't keep an SSH
+  session to `karpathy-dev` open on the Mac with untrusted pages in the browser.

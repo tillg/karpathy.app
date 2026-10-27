@@ -26,5 +26,7 @@ beszel_password: "{{ vault_beszel_password }}"
 beszel_hub_key: "{{ vault_beszel_hub_key }}"
 beszel_hub_pubkey: "{{ vault_beszel_hub_pubkey }}"
 beszel_token: "{{ vault_beszel_token }}"
-# Single-use, tagged tag:server, pre-approved; only used when the host joins the tailnet.
+# The server's own tag; the tailscale role checks the node carries it (docs/dev-server.md, "Tailnet policy").
+tailscale_tag: tag:server-prod
+# Single-use, tagged tag:server-prod, pre-approved; only used when the host joins the tailnet.
 tailscale_authkey: "{{ vault_tailscale_authkey }}"
