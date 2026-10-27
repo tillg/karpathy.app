@@ -41,15 +41,15 @@ flowchart LR
 
 ## ingest-email
 
-- [ ] `Outcome.wait(reason)`: the link stays unresolved with its `attempts` unchanged; `resolve_source` rewrites `index.md` only when the links or the body changed (in `tillg/ingest_email`)
+- [x] `Outcome.wait(reason)`: the link stays unresolved with its `attempts` unchanged; `resolve_source` rewrites `index.md` only when the links or the body changed (in `tillg/ingest_email`)
   - Depends on: none
   - Test first: ingest-email `tests/test_resolve.py` › "a wait outcome keeps attempts and sets the reason", "ten waits never move a link to failed_links", "a round in which every link only waits leaves index.md byte-identical and its mtime unchanged", "a retry still rewrites (attempts + 1)". Fail today: `Outcome` has no `wait`, and every round rewrites `updated`.
   - Verify: `cd tmp/ingest_email-src && pytest -q` → all green
-- [ ] Instagram resolver in worker mode: result dir → `map_output` → resolved; permanent marker → `give_up(reason)`; non-permanent marker → `wait(reason)`; nothing → `wait("worker")`; never imports instascraper; new profile settings `instagram_source` (default `local`) and `instagram_results_dir`
+- [x] Instagram resolver in worker mode: result dir → `map_output` → resolved; permanent marker → `give_up(reason)`; non-permanent marker → `wait(reason)`; nothing → `wait("worker")`; never imports instascraper; new profile settings `instagram_source` (default `local`) and `instagram_results_dir`
   - Depends on: 1
   - Test first: ingest-email `tests/test_resolvers_instagram.py` › "worker mode maps a dropbox result like a local scrape (folder from taken_at and owner, media copied, hashtags not tags)", "worker mode leaves the result dir in place", "permanent marker gives up with its reason", "non-permanent marker waits with its reason", "no result waits with 'worker'", "worker mode never calls _scrape (it raises in the test)", "local mode is unchanged"; `tests/test_config.py` › "instagram_source defaults to local". Fail today: no worker mode, no settings.
   - Verify: `cd tmp/ingest_email-src && pytest -q` → all green
-- [ ] Release the ingest-email tag, bump `deploy/ingest/ingest-email.ref`; `run.sh`'s `render()` sets `instagram_results_dir` to `$STATE/instagram/results` for every profile
+- [x] Release the ingest-email tag, bump `deploy/ingest/ingest-email.ref`; `run.sh`'s `render()` sets `instagram_results_dir` to `$STATE/instagram/results` for every profile
   - Depends on: 2
   - Test first: `deploy/ingest/run.test.sh` › "every rendered profile carries instagram_results_dir under INGEST_STATE"; existing `run.test.sh` and `server.test.sh` cases pass before and after. Fails today: `render()` doesn't set it.
   - Verify: `bash deploy/ingest/fetch-source.sh && bash deploy/ingest/run.test.sh && bash deploy/ingest/server.test.sh` → ok
