@@ -3,7 +3,7 @@ the job API of the Instagram workers (via the backend's worker routes).
 
 Routes (every request needs `Authorization: Bearer <ingest_token>`):
 
-    GET  /instagram/status      {state, account?, via?, waitingLinks}
+    GET  /instagram/status      {state, account?, via?, waitingLinks, source, workers?, queue?}
     POST /instagram/login       {username, password} → {state: "connected", account} | {state: "code", via}
     POST /instagram/code        {code}               → {state: "connected", account}
     POST /instagram/disconnect                       → status
@@ -11,6 +11,7 @@ Routes (every request needs `Authorization: Bearer <ingest_token>`):
     POST /instagram/jobs/<id>/release                → 204
     POST /instagram/jobs/<id>/failure {reason, permanent} → 204 | 404 unknown-job
     PUT  /instagram/jobs/<id>/result  tar.gz         → 204 | 404 unknown-job | 411 | 413 too-large | 422 invalid-result
+    POST /instagram/worker/heartbeat  {name, version, state, message?} → 204
 
 States: not-connected, waiting-for-code, connected, expired. The status never logs in (a login is a flag-risk event):
 `expired` means a session exists but the resolver still reports `no-session` for Instagram links in a vault's Input/.
@@ -28,7 +29,8 @@ scrapes on the server and a claim answers 409. A worker uploads a scraped post a
 the dropbox `<state>/instagram/results/<shortcode>/`, where ingest-email's resolver maps it into the vault (it stays
 the only writer of `Input/`). An upload is idempotent and needs no live lease. A failed scrape leaves a marker
 `<shortcode>.failed.json` {reason, permanent, at, count} next to the results, which backs the post off or, once
-permanent, makes the resolver give it up.
+permanent, makes the resolver give it up. Workers report their state by heartbeat (kept in `workers.json`, so the app
+still shows them after a restart); the status then also lists the workers and the queue by job state.
 """
 
 import gzip
@@ -74,7 +76,12 @@ MAX_BACKOFF_H = 24
 REASON_MAX = 200
 KEEP_S = 7 * 24 * 3600
 PRUNE_EVERY_S = 3600
-ISO = "%Y-%m-%dT%H:%M:%SZ"
+# Heartbeats: the last one per worker, written to workers.json on a state change and at most every SAVE_EVERY_S;
+# a worker not seen for WORKER_KEEP_S is forgotten.
+WORKER_STATES = ("idle", "scraping", "night", "resting", "needs-login", "rate-limited", "error")
+SAVE_EVERY_S = 60
+WORKER_KEEP_S = 30 * 24 * 3600
+ISO ="%Y-%m-%dT%H:%M:%SZ"
 
 
 def _iso(t):
@@ -237,6 +244,9 @@ class Service:
         self.incoming_dir = self.state_dir / "instagram" / "incoming"
         for d in (self.state_dir / "instagram", self.results_dir, self.incoming_dir):
             d.mkdir(exist_ok=True, mode=0o700)
+        self.workers_file = self.state_dir / "instagram" / "workers.json"
+        self.workers = self._load_workers()  # name → last heartbeat
+        self._saved_at: dict[str, float] = {}
 
     # ---- state ----
     def account(self):
@@ -326,12 +336,17 @@ class Service:
         return code in self.jobs()
 
     def prune(self, now):
-        """Results and markers not changed for KEEP_S, and upload leftovers older than a day; at most every
-        PRUNE_EVERY_S."""
+        """Results and markers not changed for KEEP_S, upload leftovers older than a day and workers not seen for
+        WORKER_KEEP_S; at most every PRUNE_EVERY_S."""
         with self.lock:
             if self._pruned_at is not None and now - self._pruned_at < PRUNE_EVERY_S:
                 return
             self._pruned_at = now
+            gone = [n for n, w in self.workers.items() if now - _epoch(w.get("lastSeen")) > WORKER_KEEP_S]
+            for name in gone:
+                del self.workers[name]
+            if gone:
+                _write_json(self.workers_file, self.workers)
         for d, keep in ((self.results_dir, KEEP_S), (self.incoming_dir, 24 * 3600)):
             for p in d.iterdir():
                 try:
@@ -345,18 +360,67 @@ class Service:
                     continue
 
     def status(self):
-        waiting = self.waiting_links()
+        """Local mode: the server's Instagram session and the links waiting for one. Worker mode adds the workers and
+        the job queue; every unresolved Instagram link waits (for a worker), and `expired` doesn't apply."""
+        worker = self.source == "worker"
+        if worker:
+            waiting = sum(1 for _, link in self._unresolved() if SHORTCODE_IN_URL.search(str(link.get("url", ""))))
+            extra = {"source": "worker", "workers": self.recent_workers(), "queue": self.queue()}
+        else:
+            waiting = self.waiting_links()
+            extra = {"source": "local"}
         with self.lock:
             p = self.pending
             if p and p.thread.is_alive() and p.via:
-                return {"state": "waiting-for-code", "via": p.via, "waitingLinks": waiting}
+                return {"state": "waiting-for-code", "via": p.via, "waitingLinks": waiting, **extra}
         account = self.account()
         if not account:
-            return {"state": "not-connected", "waitingLinks": waiting}
+            return {"state": "not-connected", "waitingLinks": waiting, **extra}
         # Expired: the resolver tried after this session was put in place and still had none.
         since = (self.session_dir / f"session-{account}.json").stat().st_mtime
-        rejected = waiting and self.waiting_links(since) > 0
-        return {"state": "expired" if rejected else "connected", "account": account, "waitingLinks": waiting}
+        rejected = not worker and waiting and self.waiting_links(since) > 0
+        return {"state": "expired" if rejected else "connected", "account": account, "waitingLinks": waiting, **extra}
+
+    def queue(self):
+        """The wanted shortcodes by job state."""
+        now = self.clock()
+        jobs = self.jobs()
+        counts = dict.fromkeys(("waiting", "leased", "backingOff", "ready", "failed"), 0)
+        with self.lock:
+            for code in jobs:
+                counts[self._job_state(code, now)] += 1
+        return counts
+
+    # ---- worker mode: heartbeats ----
+    def _load_workers(self):
+        try:
+            saved = json.loads(self.workers_file.read_text())
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(saved, dict):
+            return {}
+        return {name: w for name, w in saved.items()
+                if isinstance(w, dict) and WORKER_NAME.match(name) and w.get("name") == name and w.get("state") in WORKER_STATES}
+
+    def heartbeat(self, name, version, state, message):
+        now = self.clock()
+        entry = {"name": name, "version": version, "state": state, "lastSeen": _iso(now)}
+        if message:
+            entry["message"] = message
+        with self.lock:
+            old = self.workers.get(name)
+            self.workers[name] = entry
+            if not old or old.get("state") != state or now - self._saved_at.get(name, 0) >= SAVE_EVERY_S:
+                self._saved_at[name] = now
+                _write_json(self.workers_file, self.workers)
+        return 204, None
+
+    def recent_workers(self):
+        """Workers seen in the last WORKER_KEEP_S, newest first."""
+        now = self.clock()
+        with self.lock:
+            seen = [dict(w) for w in self.workers.values() if now - _epoch(w.get("lastSeen")) <= WORKER_KEEP_S]
+        return sorted(seen, key=lambda w: _epoch(w["lastSeen"]), reverse=True)
 
     # ---- actions: (http status, body) ----
     def _answer(self, login: _Login):
@@ -600,6 +664,15 @@ def _handler(svc: Service):
                 if not isinstance(name, str) or not WORKER_NAME.match(name):
                     return self._send(400, {"error": "bad-request", "message": "name must match [A-Za-z0-9._-]{1,64}"})
                 return self._send(*svc.claim(name))
+            if self.path == "/instagram/worker/heartbeat":
+                name, version, state, message = (body.get(k) for k in ("name", "version", "state", "message"))
+                if not isinstance(name, str) or not WORKER_NAME.match(name):
+                    return self._send(400, {"error": "bad-request", "message": "name must match [A-Za-z0-9._-]{1,64}"})
+                if state not in WORKER_STATES:
+                    return self._send(400, {"error": "bad-request", "message": f"state must be one of {', '.join(WORKER_STATES)}"})
+                if not isinstance(version, str) or not 0 < len(version) <= 64 or not isinstance(message, (str, type(None))):
+                    return self._send(400, {"error": "bad-request", "message": "version (text) is required, message is text"})
+                return self._send(*svc.heartbeat(name, version, state, " ".join((message or "").split())[:REASON_MAX]))
             job = JOB_ROUTE.match(self.path)
             if job and job.group(2) != "result":
                 code = job.group(1)

@@ -68,7 +68,7 @@ flowchart LR
   - Depends on: 4
   - Test first: `deploy/ingest/test_server.py` › "a permanent failure is never claimed again", "a non-permanent failure is skipped for count hours, then claimable", "the 5th non-permanent failure turns permanent", "a later successful upload removes a non-permanent marker", "an 8-day-old result dir and marker are pruned, a 6-day-old one isn't", "reason is cut at 200 chars, a non-bool permanent is 400". Fail today: no route.
   - Verify: `bash deploy/ingest/server.test.sh` → all green
-- [ ] `POST /instagram/worker/heartbeat` (persisted to `/state/instagram/workers.json`) and the worker-mode status: `source`, `waitingLinks` by URL, `workers`, `queue {waiting, leased, backingOff, ready, failed}`; `expired` only in local mode
+- [x] `POST /instagram/worker/heartbeat` (persisted to `/state/instagram/workers.json`) and the worker-mode status: `source`, `waitingLinks` by URL, `workers`, `queue {waiting, leased, backingOff, ready, failed}`; `expired` only in local mode
   - Depends on: 5, 6
   - Test first: `deploy/ingest/test_server.py` › "heartbeat records name, version, state, message, lastSeen", "an unknown state or a bad name is 400", "workers survive a restart (new Service on the same state dir)", "worker-mode status counts waiting, leased, backing off, ready, failed by shortcode", "waitingLinks counts Instagram links whatever their reason", "local-mode status is unchanged plus source local". Fail today: no route, no fields.
   - Verify: `bash deploy/ingest/server.test.sh` → all green

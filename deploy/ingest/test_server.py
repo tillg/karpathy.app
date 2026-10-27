@@ -129,7 +129,7 @@ def test_requests_need_the_token(svc):
 
 
 def test_not_connected_at_first_and_status_never_logs_in(svc):
-    assert svc.call("GET", "/instagram/status") == (200, {"state": "not-connected", "waitingLinks": 0})
+    assert svc.call("GET", "/instagram/status") == (200, {"state": "not-connected", "waitingLinks": 0, "source": "local"})
     svc.call("GET", "/instagram/status")
     assert svc.fake.calls == 0
 
@@ -143,7 +143,7 @@ def test_login_without_code_connects(svc):
 def test_login_code_connected_session_0600_and_no_password_on_disk(svc):
     status, body = svc.call("POST", "/instagram/login", {"username": "twofa", "password": PASSWORD})
     assert (status, body) == (200, {"state": "code", "via": "SMS"})
-    assert svc.call("GET", "/instagram/status")[1] == {"state": "waiting-for-code", "via": "SMS", "waitingLinks": 0}
+    assert svc.call("GET", "/instagram/status")[1] == {"state": "waiting-for-code", "via": "SMS", "waitingLinks": 0, "source": "local"}
     # While the login waits, no session file of that account is in place: the resolver sees no session.
     assert not (svc.home / ".config" / "instascraper" / "session-twofa.json").exists()
     assert svc.call("POST", "/instagram/code", {"code": "123456"}) == (200, {"state": "connected", "account": "twofa"})
@@ -201,15 +201,15 @@ def test_waiting_links_and_expired(svc):
         ("https://www.instagram.com/reel/def/", "night-block"),
         ("https://example.com/x", "no-session"),
     ])
-    assert svc.call("GET", "/instagram/status")[1] == {"state": "not-connected", "waitingLinks": 1}
+    assert svc.call("GET", "/instagram/status")[1] == {"state": "not-connected", "waitingLinks": 1, "source": "local"}
     svc.call("POST", "/instagram/login", {"username": "tillg", "password": PASSWORD})
     # The no-session reason is older than the new session: the resolver hasn't tried it yet.
-    assert svc.call("GET", "/instagram/status")[1] == {"state": "connected", "account": "tillg", "waitingLinks": 1}
+    assert svc.call("GET", "/instagram/status")[1] == {"state": "connected", "account": "tillg", "waitingLinks": 1, "source": "local"}
     # The resolver tried again after the connect and still had no session: Instagram rejected it.
     index = write_item(svc, "mail-a", [("https://www.instagram.com/p/abc/", "no-session")])
     later = time.time() + 5
     os.utime(index, (later, later))
-    assert svc.call("GET", "/instagram/status")[1] == {"state": "expired", "account": "tillg", "waitingLinks": 1}
+    assert svc.call("GET", "/instagram/status")[1] == {"state": "expired", "account": "tillg", "waitingLinks": 1, "source": "local"}
 
 
 def test_the_resolver_finds_the_account(svc):
@@ -244,7 +244,7 @@ def test_a_negative_content_length_is_refused(svc):
 
 def test_disconnect(svc):
     svc.call("POST", "/instagram/login", {"username": "tillg", "password": PASSWORD})
-    assert svc.call("POST", "/instagram/disconnect") == (200, {"state": "not-connected", "waitingLinks": 0})
+    assert svc.call("POST", "/instagram/disconnect") == (200, {"state": "not-connected", "waitingLinks": 0, "source": "local"})
     assert not list((svc.home / ".config" / "instascraper").glob("session-*.json"))
 
 
@@ -266,7 +266,7 @@ def ig_item(svc, name, urls, *, vault="mylife", age=0, reason="worker", key="unr
     """An Input/ item whose `key` lists `urls`; its mtime is `age` seconds before the server's clock."""
     item = svc.vaults / vault / "Input" / name
     item.mkdir(parents=True, exist_ok=True)
-    links = "".join(f"- url: {url}\n  attempts: 0\n  reason: {reason}\n" for url in urls)
+    links = "".join(f"- url: {url}\n  attempts: 0\n  reason: {json.dumps(reason)}\n" for url in urls)
     index = item / "index.md"
     index.write_text(f"---\ntitle: {name}\n{key}:\n{links}---\n# {name}\n")
     t = svc.clock() - age
@@ -635,3 +635,96 @@ def test_a_failure_for_an_id_nobody_wants_is_404(wsvc):
 def test_a_result_with_a_bad_id_is_400(wsvc):
     assert put(wsvc, "a%2F..", tarball(result_files("AAAAA1")))[0] == 400
     assert put(wsvc, "abc", tarball(result_files("AAAAA1")))[0] == 400
+
+
+# ---- worker mode: heartbeat and status ----
+
+def heartbeat(svc, name="mac", state="idle", message=None, version="0.1.0"):
+    body = {"name": name, "version": version, "state": state}
+    if message is not None:
+        body["message"] = message
+    return svc.call("POST", "/instagram/worker/heartbeat", body)
+
+
+def status(svc):
+    s, body = svc.call("GET", "/instagram/status")
+    assert s == 200
+    return body
+
+
+def test_heartbeat_records_name_version_state_message_last_seen(wsvc):
+    assert heartbeat(wsvc, "mac", "needs-login", "run karpathy-instagram-worker login") == (204, {})
+    assert status(wsvc)["workers"] == [{"name": "mac", "version": "0.1.0", "state": "needs-login",
+                                        "message": "run karpathy-instagram-worker login",
+                                        "lastSeen": server._iso(wsvc.clock())}]
+    wsvc.clock.advance(60)
+    assert heartbeat(wsvc, "pi", "idle") == (204, {})
+    # Newest first; no message, no key.
+    assert [w["name"] for w in status(wsvc)["workers"]] == ["pi", "mac"]
+    assert "message" not in status(wsvc)["workers"][0]
+    # A worker seen more than 30 days ago is gone.
+    wsvc.clock.advance(31 * 24 * HOUR)
+    heartbeat(wsvc, "pi", "idle")
+    assert [w["name"] for w in status(wsvc)["workers"]] == ["pi"]
+
+
+def test_an_unknown_state_or_a_bad_name_is_400(wsvc):
+    for body in ({"name": "mac", "version": "1", "state": "sleeping"}, {"name": "a b", "version": "1", "state": "idle"},
+                 {"name": "../x", "version": "1", "state": "idle"}, {"name": "x" * 65, "version": "1", "state": "idle"},
+                 {"version": "1", "state": "idle"}, {"name": "mac", "state": "idle"},
+                 {"name": "mac", "version": "1", "state": "idle", "message": 3}):
+        assert wsvc.call("POST", "/instagram/worker/heartbeat", body)[0] == 400, body
+    assert status(wsvc)["workers"] == []
+
+
+def test_a_heartbeat_in_local_mode_is_fine(svc):
+    assert heartbeat(svc) == (204, {})
+
+
+def test_workers_survive_a_restart(start):
+    first = start("worker")
+    assert heartbeat(first, "mac", "scraping") == (204, {})
+    assert (first.state / "instagram" / "workers.json").exists()
+    second = start("worker")
+    assert [(w["name"], w["state"]) for w in status(second)["workers"]] == [("mac", "scraping")]
+
+
+def test_worker_mode_status_counts_waiting_leased_backing_off_ready_failed_by_shortcode(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/LEASE1/", "https://www.instagram.com/p/WAIT01/"], age=300)
+    ig_item(wsvc, "mail-b", ["https://www.instagram.com/p/BACK01/", "https://www.instagram.com/p/READY1/",
+                             "https://www.instagram.com/p/FAIL01/"], age=100)
+    # The same post in another vault counts once.
+    ig_item(wsvc, "mail-c", ["https://www.instagram.com/reel/WAIT01/"], vault="work")
+    assert claim(wsvc)[1]["id"] == "LEASE1"
+    assert fail(wsvc, "BACK01") == (204, {})
+    assert fail(wsvc, "FAIL01", permanent=True) == (204, {})
+    assert put(wsvc, "READY1", tarball(result_files("READY1"))) == (204, {})
+    body = status(wsvc)
+    assert body["source"] == "worker"
+    assert body["queue"] == {"waiting": 1, "leased": 1, "backingOff": 1, "ready": 1, "failed": 1}
+    assert body["waitingLinks"] == 6
+    assert "expired" != body["state"]
+
+
+def test_waiting_links_counts_instagram_links_whatever_their_reason(wsvc, svc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"], reason="worker")
+    ig_item(wsvc, "mail-b", ["https://www.instagram.com/p/BBBBB2/"], reason="ValueError: boom")
+    ig_item(wsvc, "mail-c", ["https://www.instagram.com/p/CCCCC3/", "https://example.com/x"], reason="no-session")
+    assert status(wsvc)["waitingLinks"] == 3
+    # Local mode keeps counting only the links that wait for a session.
+    assert status(svc)["waitingLinks"] == 1
+
+
+def test_worker_mode_status_never_says_expired(wsvc):
+    wsvc.call("POST", "/instagram/login", {"username": "tillg", "password": PASSWORD})
+    index = ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"], reason="no-session")
+    later = time.time() + 5
+    os.utime(index, (later, later))
+    body = status(wsvc)
+    assert body["state"] == "connected" and body["account"] == "tillg"
+
+
+def test_local_mode_status_is_unchanged_plus_source_local(svc):
+    ig_item(svc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"], reason="no-session")
+    heartbeat(svc)
+    assert status(svc) == {"state": "not-connected", "waitingLinks": 1, "source": "local"}
