@@ -10,6 +10,7 @@ import type { GitHubToken } from './github-token.js';
 import { BaseError } from './bases.js';
 import { normalizeRel, PathError } from './paths.js';
 import { callIngest, type IngestEndpoint } from './ingest.js';
+import { ingestWorkerRouter } from './ingest-worker.js';
 import type { MetricsSampler } from './metrics.js';
 import type { UsageService } from './usage.js';
 import { HttpError, type Vaults } from './vaults.js';
@@ -38,6 +39,8 @@ export interface AppDeps {
   deployed?: string;
   /** The ingest service's internal endpoint (Admin › Instagram); unset = not running. */
   ingest?: IngestEndpoint;
+  /** The Instagram worker's token (settings.json `ingest.worker_token`): its job routes only; unset = main token only. */
+  workerToken?: string;
 }
 
 // Branch names reach git as arguments: only plain ref names (git check-ref-format rules),
@@ -462,6 +465,8 @@ export function createApp(d: AppDeps) {
     res.status(500).json({ error: (err as Error).message ?? 'internal error' });
   });
 
+  // Before the main router: the worker's job routes also take the worker token; everything else falls through.
+  app.use('/api/ingest/instagram', ingestWorkerRouter(d));
   app.use('/api', api);
   return app;
 }

@@ -165,7 +165,7 @@ describe('P1/§2.5 compose topology (deploy/compose.yml)', () => {
 
   it('each secret goes only to the service that needs it; opencode gets no GitHub or bearer token', () => {
     const secrets = (s: string) => (svc[s]!.secrets ?? []).map((x) => x.source).sort();
-    expect(secrets('backend')).toEqual(['bearer_token', 'github_token', 'ingest_token', 'opencode_password']);
+    expect(secrets('backend')).toEqual(['bearer_token', 'github_token', 'ingest_token', 'ingest_worker_token', 'opencode_password']);
     expect(secrets('proxy')).toEqual(['dns_api_token']);
     expect(secrets('opencode')).toEqual(['opencode_password']);
     expect(secrets('ingest')).toEqual(['gog_keyring_password', 'ingest_token']);

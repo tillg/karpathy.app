@@ -86,11 +86,11 @@ flowchart LR
 
 ## Backend
 
-- [ ] Worker router mounted before the main `/api` router: `POST jobs/claim`, `jobs/:id/failure`, `jobs/:id/release`, `worker/heartbeat` accept the worker or the main token (`bearerAuthAny`), 16 kB JSON, status and body passed through (204 included); every other route still needs the main token
+- [x] Worker router mounted before the main `/api` router: `POST jobs/claim`, `jobs/:id/failure`, `jobs/:id/release`, `worker/heartbeat` accept the worker or the main token (`bearerAuthAny`), 10 kB JSON (the ingest service's limit), status and body passed through (204 included); every other route still needs the main token
   - Depends on: 8
   - Test first: new `apps/backend/test/ingest-worker-routes.test.ts` (a local HTTP server as the ingest service, as `ingest-routes.test.ts` does) › "the worker token claims a job (200 body passed through)", "204 and 409 pass through", "the main token works on the worker routes", "the worker token gets 401 on /api/vaults, /api/ingest/instagram, /api/ingest/instagram/login and /api/settings/secrets", "without a configured worker token only the main token works", "the ingest service gets the ingest token, never the worker token", "a 20 kB heartbeat is 413", "ingest down → 503 ingest-down". Fail today: the routes are 404 and the worker token is 401 everywhere.
   - Verify: `npm test -w apps/backend -- ingest-worker-routes ingest-routes` → green; `npm test -w apps/backend` → all green
-- [ ] `PUT jobs/:id/result` streams the body to the ingest service (`duplex: 'half'`, Content-Length passed on, no body parser), 411 without Content-Length, the answer passed through
+- [x] `PUT jobs/:id/result` streams the body to the ingest service (`duplex: 'half'`, Content-Length passed on, no body parser), 411 without Content-Length, the answer passed through
   - Depends on: 10
   - Test first: `apps/backend/test/ingest-worker-routes.test.ts` › "a 60 MB body arrives byte-identical with its Content-Length", "the fake ingest service sees the first chunk before the client has sent the last (streamed, not buffered)", "no Content-Length → 411 and nothing reaches the ingest service", "413 and 422 with their messages pass through", "the worker token is accepted, a wrong one is 401 before any byte is forwarded". Fail today: no route.
   - Verify: `npm test -w apps/backend -- ingest-worker-routes` → green; `npm test -w apps/backend` → all green
