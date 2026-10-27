@@ -159,9 +159,17 @@ class Worker:
                 self.beat("idle")
                 return Step("idle", pace, f"{job.id}: {exc} (reported as permanent)")
             except ApiError as exc:
-                log.info("%s: the server no longer wants it (%s)", job.id, exc)
-                self.beat("idle")
-                return Step("idle", pace, f"{job.id}: not wanted any more")
+                if exc.status == 404 and exc.error == "unknown-job":
+                    log.info("%s: the server no longer wants it (%s)", job.id, exc)
+                    self.beat("idle")
+                    return Step("idle", pace, f"{job.id}: not wanted any more")
+                # Any other refusal (an upload cut short, 408, 411, …) says nothing about the post: a non-permanent
+                # failure, so the server's backoff applies instead of the post being claimed again at once.
+                reason = f"upload refused: {exc}"[:200]
+                log.error("%s: %s", job.id, reason)
+                self._verdict(job.id, reason, permanent=False)
+                self.beat("error", reason)
+                return Step("error", pace, f"{job.id}: {reason} (the server retries it later)")
         log.info("uploaded %s", job.id)
         self.beat("idle")
         return Step("idle", pace, f"uploaded {job.id}")

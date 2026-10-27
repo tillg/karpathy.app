@@ -78,6 +78,8 @@ part is new (the worker). The vault-writing path, ingest-email's `map_output`, s
   | `LoginRequired`, `ClientLoginRequired`, `ChallengeRequired`, `SystemExit` from `get_client` | `release`, sleep 10 min | `needs-login` (message: "run karpathy-instagram-worker login") |
   | `PleaseWaitFewMinutes`, `ClientThrottledError`, HTTP 429 | `release`, sleep 30 min | `rate-limited` |
   | upload answered 413 or 422 | `failure {permanent: true, reason: <server message>}` | `idle` |
+  | upload answered `404 unknown-job` (nobody wants the post any more) | nothing | `idle` |
+  | upload answered any other 4xx (400 cut short, 408, 411, a 404 without `unknown-job`) | `failure {permanent: false, reason: "upload refused: …"}` | `error` |
   | any other exception | `failure {permanent: false, reason: "<Type>: <message>"[:200]}` | `error`, then `idle` |
   | server unreachable / 5xx | keep the job, retry the call with backoff (1, 2, 5 min); the lease may lapse, which is fine | `error` (local log only) |
   | 401 from the server | stop the loop with "worker token rejected: run configure" (the service manager restarts it later) | — |

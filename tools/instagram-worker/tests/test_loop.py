@@ -200,6 +200,27 @@ def test_an_upload_for_a_job_nobody_wants_any_more_is_just_logged(server):
     assert server.calls("POST", f"/jobs/{CODE}/failure") == []
 
 
+@pytest.mark.parametrize(
+    "answer",
+    [
+        (400, {"error": "upload-ended-early"}),
+        (408, None),
+        (411, {"error": "length-required"}),
+        (404, {"error": "not-found"}),
+    ],
+)
+def test_any_other_upload_refusal_is_a_non_permanent_failure(server, answer):
+    # Only 404 unknown-job means "not wanted"; anything else must reach the server's backoff (permanent after 5),
+    # or the post would be claimed again and again.
+    server.script("POST", "/jobs/claim", JOB)
+    server.script("PUT", f"/jobs/{CODE}/result", answer)
+    w, _ = worker(server)
+    step = w.step()
+    [f] = server.json_bodies("POST", f"/jobs/{CODE}/failure")
+    assert f["permanent"] is False and f"HTTP {answer[0]}" in f["reason"]
+    assert step.state == "error" and states(server)[-1] == "error"
+
+
 def test_token_rejected_propagates_from_step(server):
     server.script("POST", "/jobs/claim", (401, None))
     w, _ = worker(server)
