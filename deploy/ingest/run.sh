@@ -18,9 +18,9 @@ log() { echo "$(date -u +%FT%TZ) $*"; }
 
 # Writes $RENDERED with the profiles whose vault is cloned; prints their names.
 render() {
-  python3 - "$CONFIG" "$VAULTS" "$RENDERED" <<'PY'
+  python3 - "$CONFIG" "$VAULTS" "$RENDERED" "$STATE" <<'PY'
 import json, os, sys, time
-config, vaults, out = sys.argv[1:]
+config, vaults, out, state = sys.argv[1:]
 raw = json.load(open(config))
 profiles = {}
 for name, p in (raw.get("profiles") or {}).items():
@@ -36,7 +36,9 @@ for name, p in (raw.get("profiles") or {}).items():
     os.makedirs(os.path.join(root, "Input"), exist_ok=True)
     p.update(target_dir=os.path.join(root, "Input"), archive_dirs=[os.path.join(root, "Sources")],
              label_incoming=label, label_processed=f"{label}/processed",
-             label_failed=f"{label}/failed", label_rejected=f"{label}/rejected")
+             label_failed=f"{label}/failed", label_rejected=f"{label}/rejected",
+             # The Instagram worker's uploads (server.py's dropbox), read in worker mode.
+             instagram_results_dir=os.path.join(state, "instagram", "results"))
     profiles[name] = p
 tmp = out + ".tmp"
 with open(tmp, "w") as f:
