@@ -10,6 +10,7 @@ import getpass
 import logging
 import os
 import sys
+import threading
 
 from . import __version__, config
 from .client import ApiError, JobClient, ServerUnavailable, TokenRejected
@@ -108,6 +109,51 @@ def cmd_configure(args) -> int:
     return 0
 
 
+def _instascraper_missing(exc: ImportError) -> UsageError:
+    return UsageError(
+        f"instascraper can't be imported ({exc}). Reinstall the worker: "
+        "pipx install --force \"git+https://github.com/tillg/karpathy.app@<tag>#subdirectory=tools/instagram-worker\""
+    )
+
+
+def _worker():
+    from . import loop, scrape
+
+    cfg = config.load()
+    try:
+        username = scrape.ig_username()
+    except ImportError as exc:
+        raise _instascraper_missing(exc) from None
+    client = JobClient(cfg.server, cfg.token, cfg.name)
+    return loop.Worker(cfg, client, username=username)
+
+
+def cmd_once(args) -> int:
+    worker = _worker()
+    step = worker.step()
+    print(f"{step.state}: {step.note}")
+    return 1 if step.state in ("needs-login", "rate-limited", "error") else 0
+
+
+def cmd_run(args) -> int:
+    from . import loop
+
+    worker = _worker()
+    log.info(
+        "%s %s started: server %s, worker %s, Instagram account %s",
+        PROG, __version__, worker.cfg.server, worker.cfg.name,
+        f"@{worker.username}" if worker.username else "(none: run login)",
+    )
+    stop = threading.Event()
+    worker.client.sleep = stop.wait  # a SIGTERM cuts short the server-retry backoff, not the job's own pacing
+    previous = loop.install_stop_handlers(stop)
+    try:
+        worker.run(stop)
+    finally:
+        loop.restore_handlers(previous)
+    return 0
+
+
 def cmd_version(args) -> int:
     print(f"{PROG} {__version__}")
     return 0
@@ -135,6 +181,20 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--poll-interval", type=int, metavar="SECONDS", help="how often to ask for a job when idle (default 60)")
     c.set_defaults(func=cmd_configure)
 
+    o = sub.add_parser(
+        "once", help="do one step (claim and scrape one job, or find none) and exit",
+        description="One step of the loop, then exit: 0 when it went fine (also with no job), 1 when Instagram "
+        "needs a login, rate-limits, or the job failed.",
+    )
+    o.set_defaults(func=cmd_once)
+
+    r = sub.add_parser(
+        "run", help="work until stopped (what the service runs)",
+        description="Claim and scrape jobs until SIGTERM or Ctrl-C; the job in progress finishes first. Logs go "
+        "to stdout with timestamps.",
+    )
+    r.set_defaults(func=cmd_run)
+
     v = sub.add_parser("version", help="print the version")
     v.set_defaults(func=cmd_version)
     return p
@@ -150,6 +210,12 @@ def main(argv: list[str] | None = None) -> int:
     except (config.ConfigError, UsageError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    except TokenRejected:
+        print(token_rejected_text(config.load_raw().get("server", "the server")), file=sys.stderr)
+        return 1
+    except ServerUnavailable as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
         print("interrupted", file=sys.stderr)
         return 130
