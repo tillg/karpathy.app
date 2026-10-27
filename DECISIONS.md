@@ -262,6 +262,9 @@ edited: 2026-10-27
   - [14:10 — Retro: run the ingest test image by ID; eslint ignores agent worktrees; ignore `__pycache__`](#run-2026-10-27-1145-12)
   - [14:10 — Count the remaining full-e2e failures as pre-existing or flaky, not as regressions](#run-2026-10-27-1145-13)
   - [14:10 — Merge the branch into `main`, push `main` and delete the branch, as the task says](#run-2026-10-27-1145-14)
+- [2026-10-27 20:16 — Release main as 0.0.37, deploy it to prod, run the Instagram worker on this Mac](#run-2026-10-27-2016)
+  - [20:25 — Release main as v0.0.37 and deploy it to prod with `just deploy hetzner 0.0.37`](#run-2026-10-27-2016-1)
+  - [20:25 — Install the worker with pipx from v0.0.37, reuse the existing @tillg session, name it `tillgmac3`](#run-2026-10-27-2016-2)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3895,3 +3898,33 @@ edited: 2026-10-27
 - **Why:** the user asked for exactly this; the `Closes #168` / `Closes #137` in the archive commit close both issues when `main` is pushed.
 - **Alternatives:** a PR (the user asked for a direct merge).
 - **Consequences:** prod still runs the previous release; on the next release `hetzner.yaml`'s `instagram_source: worker` takes effect and Instagram links wait for a worker (setup: `docs/instagram-worker.md`). The ingest-email pin points at a commit on its branch `instagram-worker`: don't delete that branch before merging it into ingest_email's `main`. Rollback: revert the merge commit on `main`.
+
+# 2026-10-27 20:16 — Release main as 0.0.37, deploy it to prod, run the Instagram worker on this Mac {#run-2026-10-27-2016}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > Our new main branch has what ittakes to run instagram scraper on our local machine. Pls
+  > - Deploy the new main as new version to PROD
+  > - Install the instagram scraper locally on this mac, so it runs as service "serving" PROD
+  > Always notify me about new steps via ntfy
+
+## 20:25 — Release main as v0.0.37 and deploy it to prod with `just deploy hetzner 0.0.37` {#run-2026-10-27-2016-1}
+
+- **Status:** open
+- **Context:** prod runs v0.0.36; `main` (`92e2e8b`) has the worker API and `instagram_source: worker` in `hetzner.yaml`. The task says "new version" but no number.
+- **Question:** which version, and how to ship it?
+- **Decision:** next patch, `just release 0.0.37` once CI on `main` is green, then `just deploy hetzner 0.0.37` (the README's documented path).
+- **Why:** the project releases in patch steps (`v0.0.34`–`v0.0.36`); the release workflow builds the images, the Ansible deploy is the only documented way to prod.
+- **Alternatives:** `0.1.0` for the new worker feature (no convention for minor bumps so far).
+- **Consequences:** from this deploy on, prod's ingest no longer scrapes Instagram itself: links wait for a worker. Rollback: `just deploy hetzner 0.0.36`.
+
+## 20:25 — Install the worker with pipx from v0.0.37, reuse the existing @tillg session, name it `tillgmac3` {#run-2026-10-27-2016-2}
+
+- **Status:** open
+- **Context:** `docs/instagram-worker.md`. This Mac had no pipx; it already has an instascraper session for `@tillg` (`~/.config/instascraper/session-tillg.json`, `IG_USERNAME=tillg`), and the old ingest-email agent is already in `~/Library/LaunchAgents/disabled/`.
+- **Question:** which install source, Instagram login and worker name?
+- **Decision:** `brew install pipx`; `pipx install` from tag `v0.0.37`; no new Instagram login (the guide warns that repeated logins are a red flag), `doctor` checks the existing session; worker name = the Tailscale host name `tillgmac3`; server `https://app.karpathy.app`.
+- **Why:** the guide says install from the server's tag; the session already exists, so no password is needed while the user is away.
+- **Alternatives:** a fresh `login` (needs the password and maybe 2FA — impossible unattended).
+- **Consequences:** if `doctor` reports the session as invalid, the worker reports `needs-login` and the user runs `karpathy-instagram-worker login`. Rollback: `karpathy-instagram-worker service uninstall && pipx uninstall karpathy-instagram-worker`.
