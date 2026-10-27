@@ -267,6 +267,7 @@ edited: 2026-10-27
   - [20:25 — Install the worker with pipx from v0.0.37, reuse the existing @tillg session, name it `tillgmac3`](#run-2026-10-27-2016-2)
   - [20:45 — Retro: document passing the worker token from the command; update the run book's Instagram line](#run-2026-10-27-2016-3)
   - [20:50 — Re-queue mylife's 118 Instagram links stuck as login-wall web stubs (prepared, not applied)](#run-2026-10-27-2016-4)
+  - [21:10 — Fix the missing ingest routes in deploy/settings, release 0.0.38, deploy, then re-queue again](#run-2026-10-27-2016-5)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3950,3 +3951,13 @@ edited: 2026-10-27
 - **Why:** the stubs have no content worth keeping (they're also in the vault's git history), and the worker then scrapes the real posts into `insta-…` folders.
 - **Alternatives:** keep the stubs and only edit the mails (the URL index would resolve them to the stubs again at once).
 - **Consequences:** not applied: auto mode blocked the write to the prod vault, so it waits for the user. Afterwards, the vault shows 118 modified mails and 118 deleted stub folders as uncommitted changes. The worker paces itself at about 50 posts a day, so the backlog takes about 3 days. Rollback: untar the backup into `/vaults/mylife/Input`.
+
+## 21:10 — Fix the missing ingest routes in deploy/settings, release 0.0.38, deploy, then re-queue again {#run-2026-10-27-2016-5}
+
+- **Status:** open
+- **Context:** the user approved applying decision 4. Applied at 20:47: 118 mails, 118 links, 118 stubs removed. Within a minute the ingest loop resolved all 118 again as `web-2026-10-27-instagram-1…118` stubs. Cause: `renderIngestConfig` (`packages/settings/src/render.ts`) wrote only `defaults` and `profiles`; ingest-email has no built-in routes, so `router.route` sends every URL (Instagram, YouTube, GitHub) to `web`. That's been the case since the ingest service went live (first stubs 2026-10-09). One job (`DdZBrNOlKY8`) slipped through to the worker before the re-stub; its result waits in the dropbox `/state/instagram/results/`.
+- **Question:** where to fix it, and how to get the links to the worker?
+- **Decision:** a new `ingest.routes` setting (schema + `settings.yaml`, the table from ingest-email's `config.example.json`), rendered at the top level of the ingest config, test-first (`render.test.ts`, `repo-settings.test.ts`); checked against the real router of the pinned ingest-email `395db52`. Commit `6d07a88`, release v0.0.38, `just deploy hetzner 0.0.38`, check the router on prod, then a fresh backup and the same re-queue script again (the user's go-ahead covers the re-apply).
+- **Why:** every component setting lives in `deploy/settings/` (#133); the image has all resolvers' dependencies, so the full table is safe.
+- **Alternatives:** default routes in ingest-email itself (another repo, and it would hide the config's role).
+- **Consequences:** from 0.0.38 on, YouTube and GitHub links also go to their own resolvers, not to `web`. Override kind: a second prod deploy in the run. Rollback: `just deploy hetzner 0.0.37` (stubs again).
