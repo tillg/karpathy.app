@@ -9,6 +9,7 @@ Routes (every request needs `Authorization: Bearer <ingest_token>`):
     POST /instagram/disconnect                       → status
     POST /instagram/jobs/claim  {name}               → {id, url, leaseUntil} | 204 no job | 409 not-worker-mode
     POST /instagram/jobs/<id>/release                → 204
+    POST /instagram/jobs/<id>/failure {reason, permanent} → 204 | 404 unknown-job
     PUT  /instagram/jobs/<id>/result  tar.gz         → 204 | 404 unknown-job | 411 | 413 too-large | 422 invalid-result
 
 States: not-connected, waiting-for-code, connected, expired. The status never logs in (a login is a flag-risk event):
@@ -25,7 +26,9 @@ same post in two vaults is one job. A claim leases the oldest wanted job (by the
 `LEASE_S`. Leases live in memory: a restart frees them, which is harmless. In local mode (the default) ingest-email
 scrapes on the server and a claim answers 409. A worker uploads a scraped post as a tar.gz; once checked, it lands in
 the dropbox `<state>/instagram/results/<shortcode>/`, where ingest-email's resolver maps it into the vault (it stays
-the only writer of `Input/`). An upload is idempotent and needs no live lease.
+the only writer of `Input/`). An upload is idempotent and needs no live lease. A failed scrape leaves a marker
+`<shortcode>.failed.json` {reason, permanent, at, count} next to the results, which backs the post off or, once
+permanent, makes the resolver give it up.
 """
 
 import gzip
@@ -64,10 +67,36 @@ MAX_METADATA = 1024 * 1024
 MAX_FILES = 40
 FILE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 CHUNK = 1024 * 1024
+# Failure markers: a non-permanent failure blocks a post for min(count, MAX_BACKOFF_H) hours; the PERMANENT_AFTER-th
+# makes it permanent. Results and markers are pruned KEEP_S after their last change, at most every PRUNE_EVERY_S.
+PERMANENT_AFTER = 5
+MAX_BACKOFF_H = 24
+REASON_MAX = 200
+KEEP_S = 7 * 24 * 3600
+PRUNE_EVERY_S = 3600
+ISO = "%Y-%m-%dT%H:%M:%SZ"
 
 
 def _iso(t):
-    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.fromtimestamp(t, timezone.utc).strftime(ISO)
+
+
+def _epoch(text):
+    try:
+        return datetime.strptime(str(text), ISO).replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _write_json(path: Path, data):
+    """Atomically: readers see the old file or the new one, never half of one."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, path)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
 
 
 def _unpack(tarball: Path, staging: Path, code):
@@ -202,6 +231,7 @@ class Service:
         self.pending: _Login | None = None
         self.last_error: str | None = None
         self.leases: dict[str, tuple[str, float]] = {}  # shortcode → (worker name, lease end)
+        self._pruned_at: float | None = None
         # The dropbox ingest-email reads in worker mode, and the uploads on their way into it (same filesystem).
         self.results_dir = self.state_dir / "instagram" / "results"
         self.incoming_dir = self.state_dir / "instagram" / "incoming"
@@ -263,11 +293,56 @@ class Service:
         """Caller holds the lock."""
         if (self.results_dir / code).is_dir():
             return "ready"
+        marker = self._marker(code)
+        if marker and marker.get("permanent") is True:
+            return "failed"
         lease = self.leases.get(code)
         if lease and lease[1] > now:
             return "leased"
         self.leases.pop(code, None)
+        if marker and now < _epoch(marker.get("at")) + min(self._count(marker), MAX_BACKOFF_H) * 3600:
+            return "backingOff"
         return "waiting"
+
+    def _marker(self, code):
+        try:
+            marker = json.loads((self.results_dir / f"{code}.failed.json").read_text())
+        except (OSError, ValueError):
+            return None
+        return marker if isinstance(marker, dict) else None
+
+    @staticmethod
+    def _count(marker):
+        count = marker.get("count")
+        return count if isinstance(count, int) and count > 0 else 1
+
+    def _wanted(self, code):
+        """A worker may report on a job that some item still wants, or that it holds (worker mode only)."""
+        if self.source != "worker":
+            return False
+        with self.lock:
+            if code in self.leases:
+                return True
+        return code in self.jobs()
+
+    def prune(self, now):
+        """Results and markers not changed for KEEP_S, and upload leftovers older than a day; at most every
+        PRUNE_EVERY_S."""
+        with self.lock:
+            if self._pruned_at is not None and now - self._pruned_at < PRUNE_EVERY_S:
+                return
+            self._pruned_at = now
+        for d, keep in ((self.results_dir, KEEP_S), (self.incoming_dir, 24 * 3600)):
+            for p in d.iterdir():
+                try:
+                    if now - p.lstat().st_mtime <= keep:
+                        continue
+                    if p.is_dir() and not p.is_symlink():
+                        shutil.rmtree(p)
+                    else:
+                        p.unlink()
+                except OSError:
+                    continue
 
     def status(self):
         waiting = self.waiting_links()
@@ -364,6 +439,7 @@ class Service:
         if self.source != "worker":
             return 409, {"error": "not-worker-mode", "message": "This server scrapes Instagram itself (local mode)"}
         now = self.clock()
+        self.prune(now)
         jobs = self.jobs()
         with self.lock:
             for code in sorted(jobs, key=lambda c: (jobs[c], c)):
@@ -381,12 +457,8 @@ class Service:
         """What a result upload gets before its body is read: None (go ahead), or the final (status, body)."""
         if (self.results_dir / code).is_dir():
             return 204, None  # idempotent: a result is already there
-        if self.source != "worker":
-            return 404, {"error": "unknown-job"}
-        with self.lock:
-            leased = code in self.leases
-        # Wanted, or leased: a late upload after a lapsed lease still counts while some item wants the post.
-        if not leased and code not in self.jobs():
+        # No live lease needed: a late upload after a lapsed lease still counts while some item wants the post.
+        if not self._wanted(code):
             return 404, {"error": "unknown-job"}
         return None
 
@@ -414,11 +486,30 @@ class Service:
                     os.replace(staging, target)
                     staging = None
                 self.leases.pop(code, None)
+                marker = self._marker(code)
+                if marker and marker.get("permanent") is not True:
+                    (self.results_dir / f"{code}.failed.json").unlink(missing_ok=True)
             return 204, None
         finally:
             Path(tmp).unlink(missing_ok=True)
             if staging:
                 shutil.rmtree(staging, ignore_errors=True)
+
+    def fail(self, code, reason, permanent):
+        """A worker couldn't scrape the post: count it in the post's failure marker and end the lease."""
+        if not self._wanted(code):
+            return 404, {"error": "unknown-job"}
+        with self.lock:
+            old = self._marker(code)
+            count = self._count(old) + 1 if old else 1
+            _write_json(self.results_dir / f"{code}.failed.json", {
+                "reason": reason[:REASON_MAX],
+                "permanent": permanent or (old or {}).get("permanent") is True or count >= PERMANENT_AFTER,
+                "at": _iso(self.clock()),
+                "count": count,
+            })
+            self.leases.pop(code, None)
+        return 204, None
 
 
 def _handler(svc: Service):
@@ -516,6 +607,10 @@ def _handler(svc: Service):
                     return self._send(400, {"error": "bad-id"})
                 if job.group(2) == "release":
                     return self._send(*svc.release(code))
+                reason, permanent = body.get("reason"), body.get("permanent")
+                if not isinstance(reason, str) or not isinstance(permanent, bool):
+                    return self._send(400, {"error": "bad-request", "message": "reason (text) and permanent (true/false) are required"})
+                return self._send(*svc.fail(code, " ".join(reason.split()), permanent))
             self._send(404, {"error": "not-found"})
 
         def do_PUT(self):

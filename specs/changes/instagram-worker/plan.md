@@ -64,7 +64,7 @@ flowchart LR
   - Depends on: 4
   - Test first: `deploy/ingest/test_server.py` › "a valid tarball lands in `results/<id>/` and the lease ends", "a second upload of the same id is 204 and changes nothing", "an upload after the lease lapsed still counts while the id is wanted", "no Content-Length → 411", "Content-Length 600 MB → 413 and the body isn't read", "absolute path, `..`, a symlink, a device file, 41 files, a name with a space, missing post.md, metadata shortcode ≠ id, not gzip → 422 and nothing in results/ or incoming/", "an id nobody wants → 404". Fail today: no route.
   - Verify: `bash deploy/ingest/server.test.sh` → all green
-- [ ] `POST /instagram/jobs/:id/failure` writes `<id>.failed.json` `{reason, permanent, at, count}`; non-permanent backs off `min(count, 24)` h; the 5th failure is permanent; results and markers older than 7 days are pruned (at most hourly, on claim)
+- [x] `POST /instagram/jobs/:id/failure` writes `<id>.failed.json` `{reason, permanent, at, count}`; non-permanent backs off `min(count, 24)` h; the 5th failure is permanent; results and markers older than 7 days are pruned (at most hourly, on claim)
   - Depends on: 4
   - Test first: `deploy/ingest/test_server.py` › "a permanent failure is never claimed again", "a non-permanent failure is skipped for count hours, then claimable", "the 5th non-permanent failure turns permanent", "a later successful upload removes a non-permanent marker", "an 8-day-old result dir and marker are pruned, a 6-day-old one isn't", "reason is cut at 200 chars, a non-bool permanent is 400". Fail today: no route.
   - Verify: `bash deploy/ingest/server.test.sh` → all green

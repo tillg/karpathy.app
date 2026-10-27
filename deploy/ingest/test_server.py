@@ -527,6 +527,111 @@ def test_an_id_nobody_wants_is_404(wsvc, svc):
     assert put(svc, "AAAAA1", tarball(result_files("AAAAA1")))[0] == 404
 
 
+def fail(svc, code, reason="ValueError: boom", permanent=False):
+    return svc.call("POST", f"/instagram/jobs/{code}/failure", {"reason": reason, "permanent": permanent})
+
+
+def marker(svc, code):
+    return json.loads((results(svc) / f"{code}.failed.json").read_text())
+
+
+HOUR = 3600
+
+
+def test_a_permanent_failure_is_never_claimed_again(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert claim(wsvc)[1]["id"] == "AAAAA1"
+    assert fail(wsvc, "AAAAA1", "MediaNotFound: gone", permanent=True) == (204, {})
+    m = marker(wsvc, "AAAAA1")
+    assert (m["reason"], m["permanent"], m["count"]) == ("MediaNotFound: gone", True, 1) and m["at"]
+    for _ in range(3):
+        wsvc.clock.advance(48 * HOUR)
+        assert claim(wsvc)[0] == 204
+
+
+def test_a_non_permanent_failure_is_skipped_for_count_hours_then_claimable(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert claim(wsvc)[1]["id"] == "AAAAA1"
+    assert fail(wsvc, "AAAAA1") == (204, {})
+    # The failure ends the lease, and the backoff (1 h after the first failure) starts.
+    assert claim(wsvc)[0] == 204
+    wsvc.clock.advance(HOUR - 60)
+    assert claim(wsvc)[0] == 204
+    wsvc.clock.advance(120)
+    assert claim(wsvc)[1]["id"] == "AAAAA1"
+    assert fail(wsvc, "AAAAA1") == (204, {})
+    assert marker(wsvc, "AAAAA1")["count"] == 2
+    wsvc.clock.advance(2 * HOUR - 60)
+    assert claim(wsvc)[0] == 204
+    wsvc.clock.advance(120)
+    assert claim(wsvc)[1]["id"] == "AAAAA1"
+
+
+def test_the_5th_non_permanent_failure_turns_permanent(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    for n in range(1, 6):
+        assert claim(wsvc)[1]["id"] == "AAAAA1", n
+        assert fail(wsvc, "AAAAA1", f"try {n}") == (204, {})
+        assert marker(wsvc, "AAAAA1")["permanent"] is (n == 5)
+        wsvc.clock.advance(25 * HOUR)
+    assert marker(wsvc, "AAAAA1")["reason"] == "try 5"
+    assert claim(wsvc)[0] == 204
+    # Permanent stays permanent.
+    assert fail(wsvc, "AAAAA1", "later", permanent=False) == (204, {})
+    assert marker(wsvc, "AAAAA1")["permanent"] is True
+
+
+def test_a_later_successful_upload_removes_a_non_permanent_marker(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert fail(wsvc, "AAAAA1") == (204, {})
+    assert put(wsvc, "AAAAA1", tarball(result_files("AAAAA1"))) == (204, {})
+    assert not (results(wsvc) / "AAAAA1.failed.json").exists()
+    assert (results(wsvc) / "AAAAA1" / "post.md").exists()
+
+
+def test_an_8_day_old_result_dir_and_marker_are_pruned_a_6_day_old_one_isnt(wsvc):
+    def aged(path, days):
+        t = wsvc.clock() - days * 24 * HOUR
+        os.utime(path, (t, t))
+
+    for code, days in (("OLD001", 8), ("NEW001", 6)):
+        d = results(wsvc) / code
+        d.mkdir()
+        (d / "post.md").write_text("x")
+        aged(d, days)
+        f = results(wsvc) / f"{code[:3]}002.failed.json"
+        f.write_text(json.dumps({"reason": "x", "permanent": True, "at": "2026-01-01T00:00:00Z", "count": 1}))
+        aged(f, days)
+    claim(wsvc)
+    assert sorted(p.name for p in results(wsvc).iterdir()) == ["NEW001", "NEW002.failed.json"]
+    # At most once an hour.
+    late = results(wsvc) / "LATE01"
+    late.mkdir()
+    aged(late, 9)
+    claim(wsvc)
+    assert late.exists()
+    wsvc.clock.advance(HOUR + 1)
+    claim(wsvc)
+    assert not late.exists()
+
+
+def test_reason_is_cut_at_200_chars_a_non_bool_permanent_is_400(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    assert fail(wsvc, "AAAAA1", "x" * 500) == (204, {})
+    assert marker(wsvc, "AAAAA1")["reason"] == "x" * 200
+    for body in ({"reason": "r", "permanent": "yes"}, {"reason": "r", "permanent": 1}, {"reason": "r"},
+                 {"reason": 3, "permanent": False}, {"permanent": False}):
+        assert wsvc.call("POST", "/instagram/jobs/AAAAA1/failure", body)[0] == 400, body
+    assert marker(wsvc, "AAAAA1")["count"] == 1
+
+
+def test_a_failure_for_an_id_nobody_wants_is_404(wsvc):
+    status, body = fail(wsvc, "AAAAA1")
+    assert (status, body["error"]) == (404, "unknown-job")
+    assert fail(wsvc, "abc")[0] == 400
+    assert not (results(wsvc) / "AAAAA1.failed.json").exists()
+
+
 def test_a_result_with_a_bad_id_is_400(wsvc):
     assert put(wsvc, "a%2F..", tarball(result_files("AAAAA1")))[0] == 400
     assert put(wsvc, "abc", tarball(result_files("AAAAA1")))[0] == 400
