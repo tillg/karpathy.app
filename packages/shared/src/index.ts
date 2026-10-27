@@ -84,15 +84,41 @@ export interface TokenTest {
 
 export type Busy = 'none' | 'turn' | 'sync';
 
+/** What an Instagram worker last reported by heartbeat (deploy/ingest/server.py `WORKER_STATES`). */
+export type InstagramWorkerState = 'idle' | 'scraping' | 'night' | 'resting' | 'needs-login' | 'rate-limited' | 'error';
+
+/** One Instagram worker as the ingest service last heard from it; `lastSeen` is an ISO time. */
+export interface InstagramWorker {
+  name: string;
+  version: string;
+  state: InstagramWorkerState;
+  message?: string;
+  lastSeen: string;
+}
+
+/** Worker mode: the wanted shortcodes by job state (`ready` = scraped, the resolver picks it up next). */
+export interface InstagramQueue {
+  waiting: number;
+  leased: number;
+  backingOff: number;
+  ready: number;
+  failed: number;
+}
+
 /**
  * Admin › Instagram (`GET /ingest/instagram`, disconnect): the ingest service's Instagram session. `waitingLinks`
- * counts Instagram links in the vaults' Input/ that wait for a session; `via` says where a pending login's code went.
+ * counts Instagram links in the vaults' Input/ that wait for a session (worker mode: for a worker); `via` says where
+ * a pending login's code went. `source` says who scrapes: the server itself (`local`) or workers on the user's
+ * machines (`worker`, which adds `workers`, seen in the last 30 days, newest first, and the job `queue`).
  */
 export interface InstagramStatus {
   state: 'not-connected' | 'waiting-for-code' | 'connected' | 'expired';
   account?: string;
   via?: string;
   waitingLinks?: number;
+  source?: 'local' | 'worker';
+  workers?: InstagramWorker[];
+  queue?: InstagramQueue;
 }
 
 /** The answer to a login or a code: connected, or Instagram wants a 2FA/challenge code (`via`: "SMS", "email", …). */

@@ -261,7 +261,8 @@
   no_log: true
 
 # The ingest service's secrets, generated once on the target like opencode_password: the gog token store's
-# keyring password (only the ingest container reads it) and the token of its internal endpoint (backend + ingest).
+# keyring password (only the ingest container reads it), the token of its internal endpoint (backend + ingest) and
+# the Instagram worker's token (backend only; `just instagram-worker-token hetzner` prints it).
 - name: Ingest secrets
   ansible.builtin.copy:
     dest: "{{ app_root }}/shared/secrets/{{ item }}"
@@ -270,7 +271,7 @@
     owner: "{{ deploy_uid }}"
     group: "{{ deploy_gid }}"
     mode: "0600"
-  loop: [gog_keyring_password, ingest_token]
+  loop: [gog_keyring_password, ingest_token, ingest_worker_token]
   register: app_ingest_secrets
   no_log: true
 

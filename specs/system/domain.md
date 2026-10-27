@@ -199,13 +199,24 @@ Terms for getting mails, links and Instagram posts into a wiki ([Ingest an input
 | **Input item** | One direct sub-folder of `Input/`: an `index.md` (frontmatter + body) and its files (`original.eml`, attachments, images, video, PDF and its text). Named `<kind>-YYYY-MM-DD-<slug>` (`mail-…`, `insta-…`, `web-…`, `youtube-…`, `gh-…`). Loose files directly in `Input/` are not items. | folder |
 | **Input count** | The number of direct sub-folders of `Input/` (with or without `index.md`; hidden folders such as `.tmp-*` and loose files don't count), shown as the red badge on `Input`. It is the queue length, not the processing state: items whose links are still being fetched count too. | web `inputCount(tree)` |
 | **Open link** | A URL in an item's `index.md` the ingest service hasn't fetched yet (frontmatter `unresolved_links`). It becomes a `resolved_links` entry `{url, source}`, whose source is a **sibling item** in `Input/`, or a `failed_links` entry `{url, attempts, reason}`. An item with open links is still being processed. | ingest-email frontmatter |
-| **Waiting link** | An Instagram link that couldn't be fetched because there is no live Instagram session (reason `no-session`). Shown as "N links waiting" in Secrets & keys › Instagram. | `waitingLinks` |
+| **Waiting link** | An Instagram link that can't be fetched yet for a reason outside the post. Local mode: no live Instagram session (reason `no-session`). Worker mode: every unresolved Instagram link (reason `worker`, no result yet, or the reason of a failure that is backing off). Shown as "N links waiting" in Secrets & keys › Instagram. In worker mode a waiting link keeps its `attempts`: **waiting is not trying.** | `waitingLinks`; ingest-email `Outcome.wait(reason)` |
+| **Attempt** | One try at resolving an open link, counted in its `attempts`; at `resolve_max_attempts` it moves to `failed_links`. In worker mode Instagram links never count attempts: the post's **failure marker** counts instead, once per post across vaults. | `attempts` in `unresolved_links` |
 | **Ingest service** | The compose service `ingest`: fetches mail into `Input/` every 15 minutes and resolves open links every minute. Deterministic, no LLM, never commits, never touches an item that has no open links. *Avoid:* pipeline (that's the whole path from mail to wiki). | `deploy/ingest/` |
 | **Ingest profile** | One Gmail label → one vault: the label (with its sub-labels `/processed`, `/failed`, `/rejected`), the gog account, the allowed senders, ingest-email options and the vault id (plus its root) whose `Input/` it fills. A setting per environment; only production may have any. | `ingest.profiles` (`deploy/settings/`) |
 | **Ingest** | The AI step: the vault's `ingest` skill turns ready input items into wiki pages and moves each finished item to `Sources/`. It never fetches anything. *Avoid:* import. | vault skill `.agents/skills/ingest/` |
 | **Ingest button** | The button next to the input count: a new chat that sends `/ingest` in one tap. Shown only when the vault has an `ingest` command. | web `ingestNow()` |
 | **Move to sources** | One call of the AI's `move_to_sources` tool: `Input/<name>` becomes `Sources/<name>` in one rename. Never overwrites, never deletes, refuses an item with open links. | `move_to_sources` tool |
-| **Instagram connection** | The ingest service's logged-in Instagram session, one account per deployment. States `not-connected`, `waiting-for-code` (Instagram asked for a 2FA or challenge code, at most 5 min), `connected` (as `@account`), `expired` (a session exists, but the resolver still reported `no-session` for an Instagram link after it was made). Made and renewed in admin mode › Secrets & keys › Instagram; the password is used once and never kept. | ingest service `/instagram/*`, `InstagramStatus` |
+| **Instagram source** | Who scrapes Instagram for a deployment: `local` (the ingest service itself, with the Instagram connection) or `worker` (Instagram workers; the server holds no session). One value per target, for all profiles: production and dev `worker`, prodtest and tests `local`. | `ingest.defaults.instagram_source` (`deploy/settings/`), `INGEST_INSTAGRAM_SOURCE`, `InstagramStatus.source` |
+| **Instagram connection** | Local mode: the ingest service's logged-in Instagram session, one account per deployment. States `not-connected`, `waiting-for-code` (Instagram asked for a 2FA or challenge code, at most 5 min), `connected` (as `@account`), `expired` (a session exists, but the resolver still reported `no-session` for an Instagram link after it was made). Made and renewed in admin mode › Secrets & keys › Instagram; the password is used once and never kept. Worker mode: no server session; the panel lists the workers instead of Connect. | ingest service `/instagram/*`, `InstagramStatus` (`source`, `workers`, `queue`) |
+| **Instagram worker** | A service on a user's machine (macOS or Linux, home IP) that scrapes Instagram posts for the server, one at a time, with instascraper and its own Instagram session; it talks to the server only as an HTTPS client. Has a **name** (default: the short host name) and exactly one Instagram account. | `tools/instagram-worker/`, command `karpathy-instagram-worker`, LaunchAgent `app.karpathy.instagram-worker`, systemd user unit `karpathy-instagram-worker.service` |
+| **Job** | "Scrape this post": a shortcode some item still wants. Derived on every claim from the vaults' `Input/*/index.md` `unresolved_links`, never stored; the same post in two vaults is one job. The worker sees only `{id, url}` with a URL rebuilt from the shortcode (`https://www.instagram.com/p/<id>/`); the mail's own URL never leaves the server. | `server.py` `jobs()`; `{id, url, leaseUntil}` |
+| **Wanted** | A shortcode is wanted while some item has it in `unresolved_links`, or a worker holds its lease. Its job state: `waiting`, `leased`, `backingOff`, `ready` (a result is in the dropbox) or `failed` (permanent marker). | `server.py` `_job_state` |
+| **Lease** | A claimed job belongs to one worker for 30 minutes; it ends with a result, a failure, a release or the timeout. Leases live in memory: a restart frees them, which is harmless. | `server.py` `leases` |
+| **Release** | The worker hands a claimed job back without a verdict on the post (needs a login, rate-limited). Counts nothing. | `POST …/jobs/:id/release` |
+| **Result** / **dropbox** | A scraped post: instascraper's files (`post.md`, `metadata.json`, media), uploaded as a tar.gz and kept flat in the dropbox for 7 days, so another vault's mail with the same link reuses it. ingest-email maps it into `Input/insta-…/` like a local scrape. | `/state/instagram/results/<shortcode>/` (ingest volume) |
+| **Failure marker** | What the server knows about a post a worker couldn't scrape: `{reason, permanent, at, count}`. A non-permanent one blocks the job for `min(count, 24)` hours (**backoff**); the 5th failure makes it permanent, and ingest-email then gives the link up into `failed_links`. Pruned after 7 days. | `/state/instagram/results/<shortcode>.failed.json` |
+| **Heartbeat** / **worker state** | What a worker reports on every poll and state change: `{name, version, state, message}`. States `idle`, `scraping`, `night` (outside its active hours), `resting` (a day ceiling or pacing), `needs-login`, `rate-limited`, `error`. The server keeps the last one per name (persisted; dropped after 30 days unseen). Not the ingest service's healthchecks.io heartbeat. | `POST …/worker/heartbeat`; `/state/instagram/workers.json` |
+| **Worker token** | The deploy secret a worker authenticates with. Valid only on the five job and heartbeat routes; it can't read or write a vault, chat or change settings. One per deployment, for all its workers. | secret `ingest_worker_token`, settings `ingest.worker_token`; `just instagram-worker-token <target>` |
 | **Last-run file** | `/state/last-run` in the ingest container, touched around every ingest-email call; the container is unhealthy when it is older than 20 minutes. Not the **heartbeat** (the healthchecks.io ping). | compose healthcheck |
 
 ### Operations
@@ -483,9 +494,10 @@ more.
 | **User** (single person, holds the bearer token) | Switch between vaults; as admin (same person today) manage vaults and settings in admin mode, watch usage and server, connect Instagram, start an ingest with one tap, drop folders into `Input/` or delete them, read and edit notes, upload photos and PDFs (button or drop; the first upload to a flat page moves it into its own folder), attach them to prompts, search, chat with the AI, review diffs, discard, commit and push, resolve conflicts. Uses the app as a PWA on phone, iPad and desktop. |
 | **AI** (opencode agent, on the user's behalf) | Inside one vault root only: read notes; write notes unless the vault is in conflict (then read-only); open one note in the user's editor when the user asks to see it (also in conflict). Receives attached images and PDFs as message content when its model reads them. With Web access on: web search, and web fetch of known URLs (also in conflict); outside a conflict also save a known URL's image, video, audio or PDF as a new vault file (media download). Follows a command's instructions; in a research plan turn it scouts only a little and stops for the user's reply. Offers a known URL to the user as an Open chip when asked to show a page (also with Web access off and in conflict). Outside a conflict, moves a ready input item from `Input/` to `Sources/` (`move_to_sources`). It can't run shell commands (a skill's shell snippets are never run), fetch or offer URLs it built itself, reach internal hosts, read `.env` files, edit `.git` or harness config, create other binary files, overwrite a media file, commit or push. |
 | **Vault author** (whoever pushes to the repo) | Adds commands by adding skills to `.agents/skills/` (or to `.claude/`, which the agents move picks up on the next pull). A skill is instructions for the AI, not code. Owns the vault's `ingest` skill; the app ships none. |
-| **Ingest service** (compose service `ingest`) | Fetches the mails of each ingest profile's Gmail label into the vault's `Input/` and resolves their links (web pages, PDFs with OCR, YouTube, GitHub, Instagram) into sibling items. Touches an item only while it has open links; never commits, never moves anything to `Sources/`. Sees only `Input/` and `Sources/` of the configured vaults on a target. |
+| **Ingest service** (compose service `ingest`) | Fetches the mails of each ingest profile's Gmail label into the vault's `Input/` and resolves their links (web pages, PDFs with OCR, YouTube, GitHub, Instagram) into sibling items. Touches an item only while it has open links; never commits, never moves anything to `Sources/`. Sees only `Input/` and `Sources/` of the configured vaults on a target. In worker mode it hands Instagram jobs to workers, keeps their results and failure markers, and maps a result into `Input/` (ingest-email stays the only writer there). |
 | **Gmail** | Holds the ingest profiles' labels; the ingest service reads the top label and moves each mail once, to `/processed`, `/rejected` (sender not allowed) or `/failed`. Never touched by the AI's ingest. |
-| **Instagram** | Serves posts and Reels to the ingest service with the session made in admin mode › Secrets & keys › Instagram; may ask for a 2FA or challenge code, or reject a session. |
+| **Instagram** | Serves posts and Reels to the Instagram worker (worker mode) or to the ingest service with the session made in admin mode › Secrets & keys › Instagram (local mode); may ask for a 2FA or challenge code, reject a session, rate-limit, or block a data-centre IP. |
+| **Instagram worker** (on the user's Mac or Linux machine) | Claims one Instagram job at a time from the server with the worker token, scrapes it with its own Instagram session (paced by instascraper: active hours, day ceilings), uploads the result or reports a failure, and reports its state. Never sees a vault; its session never leaves its machine. Installed, logged in and kept awake by the user. |
 | **User's browser** | Loads a page the user opened from an Open chip, with the user's own cookies and network. |
 | **Device (iOS)** | Converts HEIC photos to JPEG when the picker's accepted types are an explicit list without HEIC. |
 | **Search backend (Exa)** | Receives the AI's web search queries; returns results. |
@@ -886,7 +898,9 @@ flowchart TB
     BE[Backend] -->|watch, list| IN
   end
   GM[Gmail label] --> IS
-  WEB[Websites, Instagram,<br/>YouTube, GitHub] --> IS
+  WEB[Websites, YouTube, GitHub,<br/>Instagram in local mode] --> IS
+  IW[Instagram worker<br/>user's machine] -->|results, via backend| IS
+  IG[Instagram] --> IW
   U[User] -->|tap Ingest| AI
   U -->|commit + push| GH[(GitHub)]
   GH -->|pull| MAC[Mac: Obsidian,<br/>Claude Code]
@@ -896,8 +910,32 @@ flowchart TB
 - **AI (the vault's `ingest` skill):** interprets; owns an item once it is ready; the only one that moves items to
   `Sources/` (in Claude Code on the Mac the skill uses `mv` instead of the tool).
 - **User:** taps Ingest, reviews and commits; may drop items into `Input/` or delete them.
-- **Mac:** fetches nothing; a git clone like any other. It may still feed the queue (a folder in `Input/`, pushed) and
-  run the vault's `ingest` skill in Claude Code.
+- **Mac:** fetches nothing into a vault; a git clone like any other. It may still feed the queue (a folder in
+  `Input/`, pushed) and run the vault's `ingest` skill in Claude Code. It may run an **Instagram worker**, which
+  scrapes for the server and uploads to it, never into a clone.
+
+**An Instagram link in worker mode:**
+
+```mermaid
+stateDiagram-v2
+    [*] --> Waiting: item arrives with an Instagram URL
+    Waiting --> Leased: a worker claims the shortcode
+    Leased --> Waiting: release, or the lease times out
+    Leased --> ResultInDropbox: worker uploads the result
+    Leased --> BackingOff: non-permanent failure (count + 1)
+    BackingOff --> Waiting: min(count, 24) h passed
+    Leased --> FailedPermanently: permanent failure, or the 5th failure
+    ResultInDropbox --> Resolved: next resolve round maps it into Input/insta-…
+    FailedPermanently --> Failed: next resolve round gives up (failed_links)
+    Resolved --> [*]
+    Failed --> [*]
+```
+
+`Waiting`, `Leased`, `BackingOff` and `ResultInDropbox` are all the same in the mail's frontmatter: an entry in
+`unresolved_links` with unchanged `attempts`, its `reason` `worker` or the failure's reason while backing off. A
+resolve round that only waits leaves `index.md` byte-identical. The server tells the states apart in its queue counts.
+A worker checks its pacing (active hours, day ceilings, instascraper's activity ledger) **before** it claims, so a
+sleeping or resting worker holds no lease.
 
 **Gmail labels** (`MyLife` as the example; each profile has its own). Only the top label is read; each mail leaves it
 in the same fetch run, once:
@@ -1139,6 +1177,13 @@ turn. A success toasts "Pulled N changes from GitHub"; changed files reload thro
   the user deleting or discarding it. The input count at zero means "all ingested", not "all resolved".
 - **Two writers in `Input/`, kept apart:** the ingest service writes an item only while it has open links (link state
   rewritten through a temp file and a rename); once ready, the item belongs to the AI and the user.
+- **Instagram in worker mode** (ADR 0006): ingest-email is the only writer of `Input/`; the Instagram worker never sees
+  a vault, and the ingest service's job API only reads `Input/` and writes under `/state/instagram/`. The server
+  never scrapes Instagram itself in worker mode: with no worker, links wait (a session that alternates between a home
+  and a data-centre IP is what Instagram flags). A worker's session lives on its machine; one Instagram account per
+  worker (warned, not enforced). Waits never count an attempt; only the failure marker counts, once per post.
+  Uploads are untrusted: checked for size, file count, names, types, the shortcode and the two required files before
+  they reach the dropbox, never partly kept.
 - **The pull never moves `Input/`:** its dirty check and stash leave `Input/` out, so waiting items stay where they are
   (the ingest service bind-mounts the folder) while the pull fast-forwards around them.
 - **Only production reads real mail:** dev stacks, prodtest and tests have no ingest profiles (the service

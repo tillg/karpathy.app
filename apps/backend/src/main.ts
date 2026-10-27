@@ -6,6 +6,7 @@ import { ConfigStore } from './config-store.js';
 import { GitHubToken } from './github-token.js';
 import { OpencodeHarness } from './harness/opencode.js';
 import { MetricsSampler } from './metrics.js';
+import { serve } from './serve.js';
 import { loadBackendSettings } from './settings.js';
 import { UsageService } from './usage.js';
 import { syncVisionModel } from './vision-model.js';
@@ -49,10 +50,10 @@ const metrics = new MetricsSampler({ dir: env.configDir, vaultsDir: env.vaultsDi
 await metrics.start();
 const commitMessages = new OpencodeCommitMessages(vaults, store, harness, (id) => chat.dir(id));
 
-const app = createApp({ token: settings.token, vaults, store, githubToken, secrets: settings.secrets, chat, usage, metrics, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), visionGateway: settings.visionGateway, version: env.version, built: env.built, deployed: env.deployed,
+const app = createApp({ token: settings.token, vaults, store, githubToken, secrets: settings.secrets, chat, usage, metrics, commitMessages, opencodeHealthy: () => harness.health(), availableModels: () => harness.models(), visionGateway: settings.visionGateway, workerToken: settings.workerToken, version: env.version, built: env.built, deployed: env.deployed,
   // The ingest service's internal endpoint (Admin › Instagram): container wiring, the token a compose secret.
   ...(process.env.INGEST_URL && process.env.INGEST_TOKEN_FILE ? { ingest: { url: process.env.INGEST_URL, token: readFileSync(process.env.INGEST_TOKEN_FILE, 'utf8').trim() } } : {}) });
-const server = app.listen(env.port, () => console.log(`backend listening on :${env.port}`));
+const server = serve(app, env.port, undefined, () => console.log(`backend listening on :${env.port}`));
 
 const shutdown = () => {
   server.close();

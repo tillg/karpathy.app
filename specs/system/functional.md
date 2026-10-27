@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-21
+edited: 2026-10-27
 ---
 
 # Functional: karpathy.app
@@ -122,7 +122,10 @@ Three views, switched inside the section. Details and Add vault have an "All vau
   "Edit vault" in the note pane and the changes panel (vault not cloned) opens that vault's details directly (only that
   once: later visits to Vaults start at the list).
   While the Instagram connection is `expired`, the list shows "Instagram disconnected — N links waiting.
-  **Reconnect in Secrets & keys**", which opens that section.
+  **Reconnect in Secrets & keys**", which opens that section. In worker mode (see
+  [Instagram connection](#instagram-connection)) it shows "Instagram needs a login on *name*. **Details in Secrets &
+  keys**" while a worker reports `needs-login`, else "N Instagram links wait for a worker — none was seen in the last
+  hour. **Workers in Secrets & keys**" while links wait and no worker reported for an hour.
 - **Vault details:** the edit fields, **Retry** and **Remove** for one vault.
   - **Edit vault:** name any time; repo, branch or root only when the vault has no uncommitted changes and no unpushed
     commits.
@@ -137,7 +140,7 @@ Three views, switched inside the section. Details and Add vault have an "All vau
 
 - **General:** the commit reminder threshold, and **Version**: server and PWA version, Built and Deployed ([Access](#access)).
 - **Secrets & keys**, three blocks: **GitHub** (the server-wide token, [GitHub token](#github-token)), **Instagram** (the
-  ingest service's Instagram login, [Instagram connection](#instagram-connection)) and **Deployment secrets**
+  ingest service's Instagram login, or the Instagram workers in worker mode, [Instagram connection](#instagram-connection)) and **Deployment secrets**
   ([below](#deployment-secrets)).
 - **AI:**
   - The model (`provider/model`, server-wide) and the **Web access** switch (on by default, for all vaults: "Lets
@@ -190,8 +193,36 @@ applies to the next git operation. The deployment's `github_token` secret (setti
 
 #### Instagram connection
 
-The ingest service fetches Instagram posts with one logged-in account per deployment. Admin mode › Secrets & keys › Instagram makes and
-renews that login from any device; no Mac step.
+Who scrapes Instagram is a deploy setting, the **Instagram source** (`ingest.defaults.instagram_source`): `worker` in
+production and dev, `local` elsewhere (#168, #137; [ADR 0006](../../docs/adr/0006-instagram-scraped-by-a-worker.md)).
+
+**Worker mode.** Instagram blocks the server's data-centre IP, so the server doesn't scrape Instagram at all. An
+**Instagram worker** on the user's own Mac or Linux machine (home IP) asks the server for one post at a time, scrapes
+it there with instascraper and its own Instagram session, and uploads the result; the ingest service turns it into the
+usual `Input/insta-…/` item. Setup: [`docs/instagram-worker.md`](../../docs/instagram-worker.md) (Tailscale on the
+worker host, `pipx install`, `karpathy-instagram-worker configure` with the token from
+`just instagram-worker-token <target>`, `login`, `doctor`, `once`, `service install`). Admin mode › Secrets & keys ›
+Instagram then shows, instead of the Connect form:
+
+- **Status line:** "Scraped by your worker(s)", followed by "— N links waiting" while Instagram links in the vaults'
+  `Input/` wait.
+- **One row per worker** seen in the last 30 days (newest first): its name, "last seen 3 min ago" and its last message,
+  and a state pill: Idle, Scraping, Night (outside its active hours), Resting (a day ceiling or pacing), Needs login,
+  Rate-limited, Error. "No worker has reported yet." when there is none.
+- For each worker in `needs-login`: "Run `karpathy-instagram-worker login` on *name*."
+- **Counts:** "N waiting · N in progress · N backing off · N failed" (posts, not links: the same post in two vaults is
+  one job).
+- A warning when two or more workers were active in the last hour: "Use one Instagram account per worker, or Instagram
+  may block them."
+- **Set up a worker:** a link to the setup guide on GitHub. The worker token's own row is in Deployment secrets.
+
+Links **wait** while no worker runs: a waiting link never spends an attempt. A post a worker couldn't scrape is retried
+after a backoff of 1 h, 2 h, … (at most 24 h); a post that doesn't exist, or the 5th failure, ends in the mail's
+`failed_links`. A worker never scrapes while its account rests (outside the active hours, past a day ceiling), and it
+holds no job meanwhile.
+
+**Local mode.** The ingest service fetches Instagram posts with one logged-in account per deployment. Admin mode ›
+Secrets & keys › Instagram makes and renews that login from any device; no Mac step.
 
 - **Status line:** "Connected as @x", "Expired: Instagram rejected the session of @x", "Waiting for the code" or "Not
   connected", each followed by "— N links waiting" when Instagram links in the vaults' `Input/` wait for a session.
@@ -206,6 +237,7 @@ renews that login from any device; no Mac step.
   within 90 s), "Instagram login failed: <error type>". Without a running ingest service the section shows only "Ingest
   service not running".
 - The Vaults list carries the "Instagram disconnected" notice while the status is `expired` (see Vault list above).
+- A worker pointed at a server in local mode gets no jobs: it reports Idle with "the server is in local mode".
 
 #### Deployment secrets
 
@@ -700,11 +732,13 @@ flowchart LR
   merge by hand"); the turn goes on.
 - **The ingest service** (on the server): every 15 minutes it fetches the mails of each configured Gmail label into the
   vault's `Input/` (sender allowlist; each mail moves to the label's `/processed`, `/rejected` or `/failed`), every minute
-  it resolves the links in waiting items (web pages, PDFs with OCR, YouTube, GitHub, Instagram) into sibling items. A
+  it resolves the links in waiting items (web pages, PDFs with OCR, YouTube, GitHub, Instagram; in worker mode
+  Instagram posts come from the user's Instagram worker) into sibling items. A
   folder the user drops into `Input/` (Obsidian, or pushed from the Mac and pulled) is picked up within a minute. Nothing
   is committed: items, moves and pages are uncommitted changes until **Commit & Push**.
-- **Gmail access** is set up by the operator (`just ingest-auth <target> <email>`), **Instagram** by the user in
-  admin mode › Secrets & keys ([Instagram connection](#instagram-connection)).
+- **Gmail access** is set up by the operator (`just ingest-auth <target> <email>`), **Instagram** by the user: in
+  worker mode an Instagram worker on the user's machine, in local mode a login in admin mode › Secrets & keys
+  ([Instagram connection](#instagram-connection)).
 
 ### Skills
 
@@ -862,7 +896,8 @@ sequenceDiagram
 | "Add a picture of X from <URL>" (AI) | A new media file or PDF in the vault (changed chip) and an embed in the note |
 | Mail to an ingest profile's Gmail label; a folder dropped into `Input/` | Input items (and sibling items for its links) in `Input/`, the input count |
 | Tap on Ingest | A new chat running `/ingest`: wiki pages, items moved to `Sources/` (uncommitted) |
-| Instagram username, password, maybe a code (Secrets & keys › Instagram) | The Instagram connection's status; the password is not stored |
+| Instagram username, password, maybe a code (Secrets & keys › Instagram, local mode) | The Instagram connection's status; the password is not stored |
+| An Instagram worker on the user's machine (worker mode): server URL, worker token, Instagram login there | Scraped posts as `Input/insta-…/` items; the workers and job counts in Secrets & keys › Instagram |
 | Admin mode: gear, Manage vaults…, Edit vault; a range (7 / 30 days, 1 h / 24 h / 7 d) | The six sections; the secret status table, token usage, server charts |
 
 No pasting of images, no video or audio uploads by the user (the AI may save them from a URL), no exports, no outgoing
@@ -986,11 +1021,21 @@ both; a later change can restrict admin mode, taking nothing away from users. Th
     not configurable in the app.
   - The ingest service runs ingest-email at a pinned commit that still lacks: atomic item creation (a mail folder is
     written in place), a duplicate lookup in `Sources/` (an item already moved there can be fetched again), completing
-    hand-made items (URLs in a dropped folder without `unresolved_links` aren't resolved), Reel re-encoding, and
-    waiting for an Instagram session (a `no-session` link is given up after 5 polls, about 75 minutes, and "N links
-    waiting" then drops although nothing was fetched).
-  - The real Instagram login is tested only against a fake; the first real connect happens in production. Instagram
-    may challenge or block logins and fetches from the server's datacenter IP; a failed post ends in `failed_links`.
+    hand-made items (URLs in a dropped folder without `unresolved_links` aren't resolved) and Reel re-encoding. That
+    commit sits on ingest_email's feature branch `instagram-worker`, not on its `main` and untagged: deleting the branch
+    before merging would orphan the pin.
+  - **Local mode** (not used in production any more): Instagram may challenge or block logins and fetches from the
+    server's data-centre IP (#137), and a link waiting for a session still spends attempts (a `no-session` link is
+    given up after `resolve_max_attempts` polls, and "N links waiting" then drops although nothing was fetched). The
+    real server-side login is tested only against a fake.
+  - **Worker mode:** links wait for as long as no worker runs (a laptop asleep, a worker that needs a login); the app
+    shows a notice after an hour, nothing else nags. One Instagram account per worker is a rule in the guide and a
+    warning in the app, not enforced. The worker token is one per deployment: rotating it means a redeploy and
+    `configure` on every worker. A worker asks for a fresh Instagram login only after three failed session checks in
+    a row (a network error or a rate limit look the same to instascraper), so an expired session shows as
+    Rate-limited for up to an hour first. The worker and its Instagram access are tested against a stubbed
+    instascraper only; the macOS log file isn't rotated (about 150 kB a day). Results stay in the dropbox for 7 days
+    (up to about 20 GB at the day ceiling).
   - **Cancel** in the Instagram code step only resets the form: the server's pending login waits for a code until its
     5-minute timeout, and reopening Secrets & keys shows the code field again (#135).
   - A new item arriving between the review and the commit makes the commit refuse with the changed list ("changes

@@ -24,4 +24,15 @@ eq "e2e keeps a quoted argument whole" "$(cat "$tmp/args" 2>/dev/null)" "$(print
 PATH="$tmp/bin:$PATH" just --justfile "$root/justfile" --working-directory "$root" e2e >/dev/null 2>&1
 eq "e2e without arguments" "$(cat "$tmp/args" 2>/dev/null)" "$(printf '%s\n' playwright test)"
 
+# instagram-worker-token runs deploy/ansible/worker-token.sh with the target: hetzner → ssh (stubbed).
+cat >"$tmp/bin/ssh" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" >"$tmp/ssh-args"
+echo wt-from-ssh
+EOF
+chmod +x "$tmp/bin/ssh"
+out=$(PATH="$tmp/bin:$PATH" just --justfile "$root/justfile" --working-directory "$root" instagram-worker-token hetzner 2>&1)
+eq "instagram-worker-token passes the target on" "$(head -1 "$tmp/ssh-args" 2>/dev/null)" "ops@karpathy"
+eq "… and prints the token" "$out" "wt-from-ssh"
+
 [ "$fails" -eq 0 ] || { echo "$fails failed"; exit 1; }

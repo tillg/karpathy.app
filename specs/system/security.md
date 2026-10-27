@@ -25,8 +25,11 @@ flowchart LR
   E -- "web fetch of known URLs" --> WEB[public web]
   B -- "internal network only,<br/>ingest token" --> I[ingest service]
   I -. "Input/ rw, Sources/ ro<br/>of configured vaults" .-> V
-  I -- "mail, links, Instagram" --> E
+  I -- "mail, links, Instagram (local mode)" --> E
   E -- "Gmail API, linked pages" --> MW[Gmail, Instagram,<br/>public web]
+  W[Instagram worker:<br/>user's machine, home IP] -- "Tailscale, then worker token<br/>over HTTPS: job routes only" --> P
+  W -- "own session" --> IG[Instagram]
+  B -- "job routes, ingest token;<br/>result tarball streamed" --> I
 ```
 
 ## Authentication
@@ -34,6 +37,13 @@ flowchart LR
 - One **bearer token** guards every `/api` route; it is compared hashed and in constant time, and the backend refuses
   to start without one (`apps/backend/src/auth.ts`). `/healthz` carries no data and is reachable only inside the
   stack (Caddy proxies only `/api/*`).
+- A second, narrower token, the **Instagram worker token** (`ingest_worker_token`), is accepted only on the five
+  Instagram job routes (`POST /api/ingest/instagram/jobs/claim`, `jobs/:id/failure`, `jobs/:id/release`,
+  `worker/heartbeat`, `PUT jobs/:id/result`). Their router (`ingest-worker.ts`, case-sensitive and strict) is mounted
+  before the main `/api` router and checks it with `bearerAuthAny([workerToken, token])` (same hashed, constant-time
+  compare); every other path falls through to the main router, which knows only the bearer token. So a stolen worker
+  token can claim Instagram job URLs, report failures and upload results, nothing else: no vault, chat, setting,
+  status or Instagram login. Without a configured worker token only the main token works there.
 - The web app keeps the token in localStorage; a 401 clears it together with the offline cache of note contents.
   The one way it travels in a URL is the login link `#token=…` (QR code): the fragment never reaches the server,
   and the app removes it from the address bar and the history at once. The QR code is a credential.
@@ -51,7 +61,8 @@ flowchart LR
 | Ingest token | backend, ingest | compose secret `ingest_token`, generated once per target; the backend reads it from `INGEST_TOKEN_FILE` and sends it as a bearer token to the ingest endpoint | Not listed |
 | gog keyring password | ingest | compose secret `gog_keyring_password`, generated once per target; `run.sh` exports it as `GOG_KEYRING_PASSWORD` | Not listed |
 | Gmail OAuth client + refresh token | ingest | gog's file keyring in the `ingest-state` volume, encrypted with the keyring password; piped in from the Mac's Keychain by `just ingest-auth`, never printed or written to disk on the way | No |
-| Instagram session (cookies, device ids) | ingest | `session-<user>.json` (0600) in the `ingest-state` volume; the password is never stored | Connection state only |
+| Instagram worker token | backend; the Instagram workers | compose secret `ingest_worker_token`, generated once per target like the ingest token; the backend only (the ingest container never gets it), via `settings.json` `ingest.worker_token`. Printed by `just instagram-worker-token <target>` (stdout, for pasting into `configure`); on a worker in `~/.config/karpathy-instagram-worker/config.toml` (0600, written atomically). One per deployment | Name, set ("Instagram worker token") |
+| Instagram session (cookies, device ids) | ingest (local mode); the worker (worker mode) | local mode: `session-<user>.json` (0600) in the `ingest-state` volume; worker mode: in instascraper's `~/.config/instascraper/` on the worker's machine, never sent to the server. The password is never stored | Connection state, or the workers' states |
 | Ingest profile account and allowed senders (personal data) | ingest | secret references resolved into `ingest.json` (0600) | Name, set |
 | `INGEST_EMAIL_DEPLOY_KEY` | CI and the release workflow | GitHub repo secret: the private half of a read-only deploy key on `tillg/ingest_email` only | No |
 
@@ -74,7 +85,8 @@ references, never values; the renderer never logs a value; the legacy check in `
 `deploy/.env` / `opencode.env`, not their values. `settings.json` holds no credential: only `/run/secrets/…` paths, plus the `secrets` manifest (names, purpose,
 component, optional and set flags; no value).
 opencode never receives the GitHub or bearer token; the ingest service receives none of the app's secrets (bearer,
-GitHub, opencode password, provider keys), only its own two.
+GitHub, opencode password, provider keys, worker token), only its own two. The backend forwards a worker's requests
+with the ingest token, never the worker token.
 
 ## Secret scan before a push
 
@@ -279,6 +291,8 @@ and holds nothing of the app's:
 | The Instagram password leaks | It crosses browser → proxy (TLS) → backend → ingest once, inside the request: never stored or logged (the backend logs no bodies, `server.py` logs request lines only; `test_server.py` checks that no password lands under `/state`); the session file holds cookies and device ids only | The password is in process memory while the login runs |
 | A crafted username escapes the session dir | Instagram username format `^[A-Za-z0-9._]{1,30}$`, not only dots, checked by the backend's zod schema and again in the service, because it becomes part of file names; each attempt gets its own `mkdtemp` staging dir; a session is installed under the service lock, so a superseded login never installs | — |
 | An ingest-side 401 logs the user out | A 401/403 from the service (token mismatch) becomes `502 ingest-auth`; the web app logs out only on the backend's own 401 | — |
+| A stolen worker token, or a worker's machine taken over, uploads a crafted result | The worker token reaches only the job routes (see [Authentication](#authentication)). A result is untrusted: the backend streams it without parsing (Content-Length required, 10 min), `server.py` refuses > 500 MB before reading the body, copies it to a temp file and checks every tar member **before extracting anything**: all flat or in one `<shortcode>/` directory, ≤ 40 files, path parts `^[A-Za-z0-9._-]+$` (no absolute paths, no `..`), regular files only (no symlinks, hard links, devices, contiguous or sparse files), ≤ 1 GiB unpacked, no duplicate names, `metadata.json` ≤ 1 MiB naming the job's shortcode, `post.md` present. The decompressed stream is capped too (1 GiB + slack, 1 MiB of headers while scanning: a gzip bomb or a giant pax header stops early). `extractall(filter='data')` then writes only the checked members, flat, into a fresh staging dir under `/state/instagram/incoming/`; what landed must be exactly those files; an atomic rename puts it into `results/<id>/`. Anything else → 422, nothing kept. Only a wanted shortcode is accepted, ids are `^[A-Za-z0-9_-]{5,40}$` (checked in the backend and again in `server.py` before any path is built), JSON bodies ≤ 10 kB on both hops | The content itself (text, images, video) reaches the vault as an Instagram item that the user reviews in `/ingest` and the diff before committing; the token holder can fill the dropbox (≤ 500 MB per wanted post, pruned after 7 days) and mark wanted posts as failed |
+| A worker leaks more than it needs | A job is `{id, url}` with a URL rebuilt from the shortcode: the mail's own URL (tracking parameters, share links) never leaves the server. The worker never sees a vault. Its Instagram session stays on its machine; `configure` takes the token with `getpass`, `login` the password with `getpass` (never echoed, logged or written); the worker's config is 0600 | The worker host holds the worker token and an Instagram session: whoever controls that machine has both |
 | Dev conveniences reach production | The fake Instagram login (`INGEST_FAKE_INSTAGRAM_LOGIN=1`) is set only in `compose.dev.yml`; `compose.test.sh` asserts prod and prodtest don't have it. Only `hetzner` may have ingest profiles (a settings test) | — |
 | The build leaks a credential | ingest-email comes in as a named build context; CI checks it out with a read-only deploy key on that one repo (`INGEST_EMAIL_DEPLOY_KEY`, `persist-credentials: false`), never a personal token; the image holds no git credentials | Revoke with `gh repo deploy-key delete <id> -R tillg/ingest_email` |
 
@@ -470,8 +484,15 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   - The Gmail refresh token and the Instagram session sit in the `ingest-state` volume (the keyring encrypted with a
     password stored next to it as a compose secret): root on the host can read both. Gmail access is the account's
     full Gmail scope that gog was granted, not only the label.
-  - Instagram logins and fetches come from a datacenter IP, which Instagram flags more often; a flagged account is the
-    user's own.
+  - In local mode Instagram logins and fetches come from a datacenter IP, which Instagram flags more often; a flagged
+    account is the user's own. Worker mode (production) avoids that, but the account can still be flagged from the
+    worker's IP; instascraper's pacing stays on.
+  - The worker token is one per deployment, shared by all workers, with no per-worker revocation: rotating it means
+    deleting the secret file, redeploying and running `configure` on every worker. Worker names in heartbeats are not
+    authenticated (any token holder can report as any name).
+  - The Instagram worker's dropbox (`/state/instagram/results/`, up to ~20 GB at the day ceiling) and its tarball
+    parsing live in the ingest container: a `tarfile`/`gzip` bug there has the same blast radius as any parser bug in
+    that container (above).
   - The ingest image is public on GHCR like the others (targets pull anonymously), so the code of the private
     ingest-email repo inside it can be read by anyone who pulls it (checked 2026-10-08: `karpathy.app-ingest:0.0.17`
     pulls without a login). It holds no secret.

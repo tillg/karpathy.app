@@ -56,7 +56,7 @@ describe('settings CLI', () => {
     expect(r.code).toBe(0);
     expect(r.out.trim().split('\n').sort()).toEqual(
       ['bearer_token', 'dns_api_token', 'exa_api_key', 'git_author_email', 'git_author_name', 'github_token',
-        'ingest_allowed_senders', 'ingest_gmail_account', 'opencode_password', 'openrouter_api_key'],
+        'ingest_allowed_senders', 'ingest_gmail_account', 'ingest_worker_token', 'opencode_password', 'openrouter_api_key'],
     );
   });
 });

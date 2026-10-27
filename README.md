@@ -115,7 +115,8 @@ Claude Code plugin aren't in the vault and don't show; copy them into the vault.
 
 ## Ingest
 
-New sources (mails, links, Instagram posts) are fetched on the server, no Mac needed:
+New sources (mails, links, Instagram posts) are fetched on the server, no Mac needed (Instagram posts by a worker on a
+home machine, see below):
 
 - **`Input/`** in a vault is the **ingest queue**: one folder per source not yet turned into wiki pages. The file
   tree shows a red count on `Input` (and on the phone's Files tab). Anything you drop into `Input/` (Obsidian,
@@ -131,9 +132,15 @@ New sources (mails, links, Instagram posts) are fetched on the server, no Mac ne
   feeds which vault is `ingest.profiles` in [`deploy/settings/`](deploy/settings/) (empty = idle; only the
   production settings may have profiles, dev and test stacks never read a real label).
 - **Gmail access**: `just ingest-auth <target> <email>` copies this Mac's gog OAuth client and the account's refresh
-  token into the target's ingest service. **Instagram**: admin mode › Secrets & keys › Instagram, username and password (plus a
-  2FA code if Instagram asks); the server logs in and keeps only the session. "Expired — Reconnect" there, and a notice
-  in the Vaults section, when Instagram rejected it.
+  token into the target's ingest service.
+- **Instagram** blocks the server's data-centre IP, so in worker mode (`ingest.defaults.instagram_source: worker`)
+  an **Instagram worker** scrapes the posts: `karpathy-instagram-worker` ([`tools/instagram-worker/`](tools/instagram-worker/)),
+  a background service on a Mac or Linux box with a home IP and Tailscale. It pulls one post at a time from the server,
+  scrapes it with your Instagram session and uploads the result; links wait until it does. Setup:
+  **[docs/instagram-worker.md](docs/instagram-worker.md)** (token: `just instagram-worker-token <target>`). Admin mode ›
+  Secrets & keys › Instagram shows the workers and the queue. In local mode the server logs in itself: username and
+  password there (plus a 2FA code if Instagram asks); "Expired — Reconnect" and a notice in the Vaults section when
+  Instagram rejected it.
 
 ## Status
 

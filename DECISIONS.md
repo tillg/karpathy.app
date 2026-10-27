@@ -247,6 +247,21 @@ edited: 2026-10-27
   - [12:10 — Document the workspace-trust prompt instead of turning workspace trust off](#run-2026-10-27-1126-2)
   - [12:15 — Archive ipad-code-server with its decisions still open](#run-2026-10-27-1126-3)
   - [12:40 — Move code-server from 8080 to 13337; fix the review's re-download and check-mode findings](#run-2026-10-27-1126-4)
+- [2026-10-27 11:45 — Instagram scraper worker: pull jobs from the server, scrape on the user's machines](#run-2026-10-27-1145)
+  - [11:56 — Work on `autonomous/issue-168-instagram`; mark #137 and #168 with `in-progress`, reopen #168](#run-2026-10-27-1145-1)
+  - [11:56 — Replace the `instagram-mac-relay` change with a new change `instagram-worker`](#run-2026-10-27-1145-2)
+  - [12:20 — Grill the change unattended: a Fable agent grills, I decide](#run-2026-10-27-1145-3)
+  - [12:20 — ingest-email stays the only writer of the vault; the worker's results land in a dropbox it reads](#run-2026-10-27-1145-4)
+  - [12:20 — Uploads stream through the backend to the ingest service as a tar.gz, capped at 500 MB](#run-2026-10-27-1145-5)
+  - [12:20 — The worker token is a deploy secret `ingest_worker_token`, valid only on the job routes](#run-2026-10-27-1145-6)
+  - [12:20 — In worker mode the ingest service counts failures and backs off; waits never count an attempt](#run-2026-10-27-1145-7)
+  - [12:20 — The worker is a Python package in this repo, installed with pipx, run by launchd or systemd --user](#run-2026-10-27-1145-8)
+  - [13:40 — Pin ingest-email to a commit on its pushed feature branch `instagram-worker`, no tag](#run-2026-10-27-1145-9)
+  - [13:40 — Implementation details the plan left open (limits, ledger window, no claim without a session)](#run-2026-10-27-1145-10)
+  - [13:25 — Archive `instagram-worker` with its decisions still open](#run-2026-10-27-1145-11)
+  - [14:10 — Retro: run the ingest test image by ID; eslint ignores agent worktrees; ignore `__pycache__`](#run-2026-10-27-1145-12)
+  - [14:10 — Count the remaining full-e2e failures as pre-existing or flaky, not as regressions](#run-2026-10-27-1145-13)
+  - [14:10 — Merge the branch into `main`, push `main` and delete the branch, as the task says](#run-2026-10-27-1145-14)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3719,3 +3734,164 @@ edited: 2026-10-27
 - **Consequences:** the live dev host still runs on 8080 until the next `just devhost` from the Mac, which moves the
   service and re-points `tailscale serve` (the script sees a different target). Until then, don't keep an SSH
   session to `karpathy-dev` open on the Mac with untrusted pages in the browser.
+
+# 2026-10-27 11:45 — Instagram scraper worker: pull jobs from the server, scrape on the user's machines {#run-2026-10-27-1145}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > There is a branch (I think) and at least one ticket that deal with the problem of instagram scraping that doesn't work from the datacenter.
+  > - Checkout the brnach
+  > - Merge main into it
+  > - Set the related github tickets to wip
+  > - grill the specs, take decisions as good as you can. Maybe ask fable to help
+  > - The architecture I want: On my mac or some other machines (all *nix OS) I can install a service and configure it. This service calls our karpathy server and request instagram posts / reels (one by one) or their ID. then the service scrapes the posts and sends the result back to the karpathy server.
+  > - The service uses the existing instagram scraper software
+  > Use agents a lot to save your context space
+  > Commit and push often
+  > Send me ntfy messages in between
+  > At the end merge main into our branch, then our branch onto main, then delete the branch. Make sure we have a good documentation of how to setup a instagram scraper service.
+
+## 11:56 — Work on `autonomous/issue-168-instagram`; mark #137 and #168 with `in-progress`, reopen #168 {#run-2026-10-27-1145-1}
+
+- **Status:** open
+- **Context:** the only Instagram branch is the local `autonomous/issue-168-instagram`; it had no commits beyond `main` (its spec change `instagram-mac-relay` was already merged) and no remote. The tracker has no `wip` label; it has `in-progress`. #168 (the research ticket) was closed, #137 (the prod 429 bug) open.
+- **Question:** which branch, and how to mark the tickets "wip"?
+- **Decision:** check out that branch, merge `main` (a fast-forward), push it; label #137 and #168 `in-progress`, reopen #168 and comment the new direction on both.
+- **Why:** it is the branch the user means; `in-progress` is the tracker's existing "wip" label; #168 is where the implementation follows from.
+- **Alternatives:** a fresh branch (loses the name the user knows); a new `wip` label (duplicates `in-progress`).
+- **Consequences:** both issues get closed by the final merge to `main`.
+
+## 11:56 — Replace the `instagram-mac-relay` change with a new change `instagram-worker` {#run-2026-10-27-1145-2}
+
+- **Status:** open
+- **Context:** `specs/changes/instagram-mac-relay/` proposes a forward proxy on the Mac and explicitly rejects "(a) Mac helper runs the scraper". The user now asks for exactly that: a service on any *nix machine that pulls jobs from the server, scrapes with instascraper and uploads the result.
+- **Question:** grill and amend the relay change, or start a new one?
+- **Decision:** a new change `specs/changes/instagram-worker/`; delete `instagram-mac-relay` (its research — why the browser can't do it, the options table — moves into the new proposal's "Options considered").
+- **Why:** the architecture is the opposite of the relay's; amending would rewrite every file anyway, and the user's words override the earlier recommendation.
+- **Alternatives:** keep the relay change as a fallback (two open changes for one problem confuse `/spec:overview`).
+- **Consequences:** the relay design stays in git history (commit `930384b` and earlier).
+
+## 12:20 — Grill the change unattended: a Fable agent grills, I decide {#run-2026-10-27-1145-3}
+
+- **Status:** open
+- **Overrides:** `/spec:grill` — "If running unattended (no user to answer), say that grilling needs a user, and stop."
+- **Context:** the user asked to "grill the specs, take decisions as good as you can. Maybe ask fable to help".
+- **Question:** how to grill without the user?
+- **Decision:** a Fable agent grilled the draft design against the code (ingest service, backend, ingest-email, instascraper v1.1.0) and returned 17 findings; I decided each one and folded the answers into the change. The decisions that matter most are the next five entries.
+- **Why:** the user asked for exactly this; an independent reader found three real blockers (body size on the backend→ingest hop, no non-counting wait in ingest-email, the single-token `bearerAuth`).
+- **Alternatives:** stop and wait for the user (the skill's rule), against the user's explicit instruction.
+- **Consequences:** every grill answer is open for review here and in `specs/changes/instagram-worker/architecture.md` › Key decisions.
+
+## 12:20 — ingest-email stays the only writer of the vault; the worker's results land in a dropbox it reads {#run-2026-10-27-1145-4}
+
+- **Status:** open
+- **Context:** `instagram-worker`. The user wants a service that scrapes and "sends the result back". Someone has to turn a result into an `Input/insta-…/` item and mark the mail's link resolved.
+- **Question:** who writes the vault: the ingest service's HTTP endpoint (`server.py`), the backend, or ingest-email?
+- **Decision:** the ingest service stores an uploaded result in `/state/instagram/results/<shortcode>/` (a dropbox). ingest-email's Instagram resolver gets `instagram_source: worker`: it maps a result from the dropbox with the same `map_output` as today, and otherwise answers a new `wait` outcome. Jobs are derived by scanning `Input/*/index.md` for unresolved Instagram links; job id = shortcode.
+- **Why:** folder naming, tags, dedup, the `## Resolved links` bookkeeping and the per-profile lock all stay in one place; `server.py` never edits vault files, so no race with the 60-second resolve loop.
+- **Alternatives:** `server.py` writes the item and edits the mail's frontmatter (duplicates ingest-email's mapping and races its resolve loop); the backend writes it (a second writer of `Input/`).
+- **Consequences:** needs a change and a new pinned ref in the private repo `tillg/ingest_email`; up to one minute of extra latency between upload and the item appearing.
+
+## 12:20 — Uploads stream through the backend to the ingest service as a tar.gz, capped at 500 MB {#run-2026-10-27-1145-5}
+
+- **Status:** open
+- **Context:** `instagram-worker`. `callIngest` buffers JSON; `server.py` reads at most 10 KB of JSON over HTTP/1.0. Reels are 10–60 MB, carousels with videos more.
+- **Question:** how does a large result get from the worker to the ingest service?
+- **Decision:** `PUT /api/ingest/instagram/jobs/:id/result` with a gzip tarball; the backend pipes the request body to the ingest service with its `Content-Length` (no buffering); `server.py` speaks HTTP/1.1, writes it in chunks to a temp file, extracts with `tarfile` `filter='data'`, validates names and size (500 MB, 40 files) and renames it into place. Invalid or oversize → 413/422, which the worker reports as a permanent failure.
+- **Why:** the backend stays thin and never touches the ingest service's volume; parsing stays in the ingest sandbox.
+- **Alternatives:** `express.raw` (holds 500 MB in RAM); multipart (more parsing, no benefit); mounting the ingest state into the backend (a second container with write access to it).
+- **Consequences:** Caddy has no body limit today; if one is added later it must leave room for this route.
+
+## 12:20 — The worker token is a deploy secret `ingest_worker_token`, valid only on the job routes {#run-2026-10-27-1145-6}
+
+- **Status:** open
+- **Context:** `instagram-worker`. The worker runs on laptops and other machines; the app's main bearer token can do everything.
+- **Question:** how does the worker authenticate?
+- **Decision:** a new secret `ingest_worker_token`, generated like `ingest_token`; a separate router for exactly `/api/ingest/instagram/jobs/*` and `/api/ingest/instagram/worker/*`, mounted before the main `bearerAuth`, accepts it or the main token. `just instagram-worker-token <target>` prints it for the setup.
+- **Why:** a stolen worker token can only fetch Instagram job URLs and upload results; a deploy secret reuses the existing secret manifest, status row and Ansible flow, with no hashed-token code in the config store.
+- **Alternatives:** a token created in the admin UI and stored hashed (nicer rotation, much more code); the main token (too powerful for a laptop service).
+- **Consequences:** rotation means redeploy and re-configuring the workers; one token for all workers.
+
+## 12:20 — In worker mode the ingest service counts failures and backs off; waits never count an attempt {#run-2026-10-27-1145-7}
+
+- **Status:** open
+- **Context:** `instagram-worker`. Today every failed try counts an attempt in the mail's frontmatter; prod allows 75. A link waiting for a sleeping Mac must not burn attempts, and a flaky post must not be scraped 75 times.
+- **Question:** where are attempts counted in worker mode?
+- **Decision:** the worker reports a failure with `permanent` true/false; `server.py` keeps `<shortcode>.failed.json` with a count, excludes the shortcode from claims for `min(count, 24)` hours, and makes it permanent after 5 failures. ingest-email gives a permanent marker up (`failed_links`) and otherwise waits (no attempt). It also stops rewriting `index.md` when nothing changed.
+- **Why:** one counter per post across vaults, a backoff that protects the Instagram account, and no churn of `updated` while links wait for days.
+- **Alternatives:** count attempts in the frontmatter as today (retry storm, needs per-marker bookkeeping).
+- **Consequences:** `resolve_max_attempts` no longer applies to Instagram links in worker mode.
+
+## 12:20 — The worker is a Python package in this repo, installed with pipx, run by launchd or systemd --user {#run-2026-10-27-1145-8}
+
+- **Status:** open
+- **Context:** `instagram-worker`. "Uses the existing instagram scraper software": instascraper is a Python library; the repo is public.
+- **Question:** what is the worker and how is it installed on a Mac or Linux box?
+- **Decision:** `tools/instagram-worker/` (package `karpathy_instagram_worker`, command `karpathy-instagram-worker`), depending on instascraper at the same tag as the ingest image, stdlib HTTP only; installed with `pipx install "git+https://github.com/tillg/karpathy.app@<tag>#subdirectory=tools/instagram-worker"`. Commands `configure`, `login`, `doctor`, `once`, `run`, `service install|uninstall|status`. One `Humanizer` with instascraper's activity ledger per job, gate checked before claiming. Errors mapped like instascraper's CLI (not found → permanent; login/challenge → `needs-login`, job released; rate limit → released, sleep).
+- **Why:** calls the scraper as a library like ingest-email does; pipx gives an isolated venv on macOS and Linux; launchd/systemd are the native supervisors.
+- **Alternatives:** a Docker image (heavy on a Mac, awkward for an interactive Instagram login); shelling out to the `instascrape` CLI (loses typed errors).
+- **Consequences:** every worker host needs Tailscale (prod's proxy listens on the tailnet only); one Instagram account per worker, the UI warns when more than one worker is active.
+
+## 13:40 — Pin ingest-email to a commit on its pushed feature branch `instagram-worker`, no tag {#run-2026-10-27-1145-9}
+
+- **Status:** open
+- **Overrides:** plan step 3 of `instagram-worker` — "Release the ingest-email tag"
+- **Context:** `instagram-worker` steps 1–3 change the private repo `tillg/ingest_email`. The permission check refused an agent that was to push its default branch and a tag.
+- **Question:** how does karpathy.app get the new ingest-email?
+- **Decision:** commits on a branch `instagram-worker` in `tillg/ingest_email` (from the old pin, which is also its `main`), pushed; `deploy/ingest/ingest-email.ref` = `395db52`. No tag, `main` there untouched.
+- **Why:** `fetch-source.sh` pins by commit and fetches from origin, so a pushed branch commit is enough; it stays within what the permission check allows.
+- **Alternatives:** merge into ingest_email's `main` and tag (refused; the user's call).
+- **Consequences:** for the user: merge `instagram-worker` into ingest_email's `main` (a fast-forward) and tag it when convenient; the pin stays valid either way. Deleting that branch before merging would orphan the pinned commit.
+
+## 13:40 — Implementation details the plan left open (limits, ledger window, no claim without a session) {#run-2026-10-27-1145-10}
+
+- **Status:** open
+- **Context:** `instagram-worker` steps 4–18, reported by the implementing agents.
+- **Question:** several small choices the architecture didn't fix.
+- **Decision:** ingest service: tar members checked before extraction (absolute paths refused, not stripped), results stored flat, 1 GiB unpacked and 1 MiB `metadata.json` caps, duplicate names refused, ISO UTC timestamps, workers not seen for 30 days and `incoming/` leftovers older than a day pruned, name/version required on claim and heartbeat (400). ingest-email: a result wins over a marker; a broken marker counts as none; worker mode without `instagram_results_dir` waits with that reason. Worker: `ActivityLedger` gets `profile.window_seconds` (the real constructor needs it); no claim without a session file (straight to `needs-login`); `get_client` runs with stdin on `/dev/null`; a 409 (server in local mode) = idle with a message; `configure` sends a heartbeat and refuses to save a rejected token; the services stop gracefully (up to 5 minutes) and restart at most once a minute; the backend's JSON limit on the worker routes is 10 kB like the ingest service's.
+- **Why:** each is the safer or simpler reading of `architecture.md`; none changes the API contract.
+- **Alternatives:** per item, the obvious opposite (e.g. strip absolute paths, claim and release when logged out every 10 minutes).
+- **Consequences:** `architecture.md` is updated at archive time from these. macOS worker logs aren't rotated (≈ 150 kB/day); instascraper v1.1.0 doesn't use ffmpeg, so doctor's ffmpeg check is informational only.
+
+## 13:25 — Archive `instagram-worker` with its decisions still open {#run-2026-10-27-1145-11}
+
+- **Status:** open
+- **Overrides:** `/spec:archive` — "don't archive while any of the change's decisions is still `open`"
+- **Context:** `specs/changes/instagram-worker/` is fully applied (every plan step ticked); this run's decisions 1–10 are all `open` and nobody is there to review them.
+- **Question:** archive now, or leave the change open until the user has reviewed the decisions?
+- **Decision:** archive (as `/autonomous` allows): fold the change into `specs/system/` and delete it; decisions 1–11 of this run stay `open` and are listed in the archive commit's body. Before folding, `architecture.md` was brought in line with the code and decisions 9–10 (ingest-email pinned to a branch commit, `hetzner` in worker mode from the release on, the `SystemExit` session-check handling, the 10 kB JSON limit, the tar checks).
+- **Why:** the coordinator merges the branch to `main` right after; leaving the change open would strand the system description behind the code.
+- **Alternatives:** keep the change open until the review (the system docs would describe the old Instagram path on `main`).
+- **Consequences:** a decision the user reverts later is undone with `/spec:tweak`; the archived change is in git history (the archive commit).
+
+## 14:10 — Retro: run the ingest test image by ID; eslint ignores agent worktrees; ignore `__pycache__` {#run-2026-10-27-1145-12}
+
+- **Status:** open
+- **Context:** the run's retro. Three things went wrong in the environment: (1) `deploy/ingest/server.test.sh` built and ran one shared tag `kai-test-ingest-stage`, so parallel agent worktrees tested each other's `server.py` (one agent saw 16 tests where there were 69); (2) `npm run lint` failed with 2537 parsing errors while Claude Code's agent worktrees existed under `.claude/worktrees/`; (3) a test run left an untracked `deploy/ingest/__pycache__/`. Also seen, not fixed here: every agent worktree started from `main`, not from the branch being worked on, so each agent first had to fast-forward; one agent reported a green typecheck but committed a type error afterwards (CI runs `npm run typecheck`, so it would have been caught there).
+- **Question:** which mechanical fixes to apply?
+- **Decision:** (1) `server.test.sh` runs the image by the ID `docker build -q` prints, untagged, with the test `deploy/ingest/server-test-image.test.sh` (stub `docker`, seen failing first) in `just check`; (2) `eslint.config.js` ignores `.claude/worktrees/**` (reproduced with a probe worktree, green after); (3) `__pycache__/` in `.gitignore`. The worktree base is a harness matter; drafted for the user in the run's report, not filed.
+- **Why:** each is the smallest change that makes the failure impossible rather than documented.
+- **Alternatives:** a per-checkout hashed tag like `apps/backend/test/opencode-container.ts` (fine too, but leaves dangling tags); a CLAUDE.md line telling agents not to run tests in parallel.
+- **Consequences:** the retro commit's trailer says `Decision: run-2026-10-27-1145-11` by mistake (the archive took that number in parallel); it belongs to this decision.
+
+## 14:10 — Count the remaining full-e2e failures as pre-existing or flaky, not as regressions {#run-2026-10-27-1145-13}
+
+- **Status:** open
+- **Context:** `just e2e --grep-invert @llm` on dev stack 1: 527 passed, 13 failed; after `--last-failed` and a serial re-run 6 still failed. Three fail on `main` too (webkit attach "photo preparation", media "Open shows a pdf", token-scan); the other three (commands chip, attach in chat, fix-10) moved between browser projects across runs and involve chat turns, which this branch doesn't touch.
+- **Question:** do these block the merge?
+- **Decision:** no: the suite was already red before this change with no new failures from it, which is the `/autonomous` commit rule.
+- **Why:** this branch changes no chat or attachment code; the new `instagram-worker` spec is green.
+- **Alternatives:** chase the flaky chat specs now (out of scope, costs OpenRouter credit on `@llm` siblings).
+- **Consequences:** the three `main` failures are worth an issue of their own if they persist on a quiet machine.
+
+## 14:10 — Merge the branch into `main`, push `main` and delete the branch, as the task says {#run-2026-10-27-1145-14}
+
+- **Status:** open
+- **Overrides:** `/autonomous` — "Push the current branch"; pushing the default branch is normally a bent rule
+- **Context:** the task: "At the end merge main into our branch, then our branch onto main, then delete the branch."
+- **Question:** do it, given that `main` is the default branch?
+- **Decision:** merge `main` into the branch, run the unit suites, merge the branch into `main` with a merge commit, push `main`, delete `autonomous/issue-168-instagram` locally and on origin. No release, no deploy.
+- **Why:** the user asked for exactly this; the `Closes #168` / `Closes #137` in the archive commit close both issues when `main` is pushed.
+- **Alternatives:** a PR (the user asked for a direct merge).
+- **Consequences:** prod still runs the previous release; on the next release `hetzner.yaml`'s `instagram_source: worker` takes effect and Instagram links wait for a worker (setup: `docs/instagram-worker.md`). The ingest-email pin points at a commit on its branch `instagram-worker`: don't delete that branch before merging it into ingest_email's `main`. Rollback: revert the merge commit on `main`.

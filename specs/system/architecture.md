@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-21
+edited: 2026-10-27
 ---
 
 # Architecture: karpathy.app
@@ -28,16 +28,22 @@ flowchart LR
     V[(volume vaults:<br/>git clones)]
     C[(volume config:<br/>config.json)]
     OD[(volume opencode-data)]
-    IST[(volume ingest-state:<br/>Gmail token, Instagram session)]
+    IST[(volume ingest-state:<br/>Gmail token, Instagram session,<br/>worker results)]
+  end
+  subgraph Home["User's Mac / Linux box (home IP)"]
+    W[Instagram worker<br/>karpathy-instagram-worker]
   end
   GH[(GitHub)]
   LLM[LLM provider]
   WEB[(Exa, public web)]
   GI[(Gmail API, Instagram,<br/>linked pages)]
+  IGH[(Instagram)]
   PWA -- "HTTPS, Bearer token,<br/>JSON + NDJSON" --> P
+  W -- "HTTPS (tailnet), worker token,<br/>job routes only" --> P
+  W --> IGH
   P -- "/api/*" --> B
   B -- "@opencode-ai/sdk (HTTP + SSE),<br/>Basic auth" --> O
-  B -- "/instagram/* :8090,<br/>ingest token" --> I
+  B -- "/instagram/* :8090,<br/>ingest token (jobs streamed)" --> I
   B -- "git, ripgrep" --> V
   B --> C
   O -- "file tools" --> V
@@ -63,7 +69,8 @@ flowchart LR
 | Shared | `packages/shared`: TypeScript types for the API (no runtime schemas). |
 | Settings | `packages/settings`: zod schema, loader, secret resolution and renderer for `deploy/settings/` (YAML), run with `tsx` as `just settings …` ([Settings](#settings)). |
 | Ingest | Python 3.13 image running [ingest-email](https://github.com/tillg/ingest_email) (private repo, pinned commit) with instascraper 1.1.0, the `gog` Gmail CLI 0.43.0 (checksum-verified), tesseract (deu, eng), poppler and ffmpeg; a stdlib `http.server` endpoint ([Ingest service](#ingest-service-deployingest)). |
-| Tests | Vitest (backend projects `default`, `github`, `llm`; web unit tests for `lib/` and component tests with `@testing-library/react` in jsdom), pytest (the ingest endpoint, in the image's test stage), shell tests (`*.test.sh`), Playwright e2e (desktop, iPad, iPhone in Chromium and WebKit), axe-core. |
+| Instagram worker | Python ≥ 3.11 package `karpathy_instagram_worker` in `tools/instagram-worker/` (not a release image): instascraper v1.1.0 as a library, stdlib HTTP (`urllib`, `http.client`), config TOML; installed with pipx from a git tag, run by launchd (macOS) or a systemd user unit (Linux) ([Instagram worker](#instagram-worker-toolsinstagram-worker)). |
+| Tests | Vitest (backend projects `default`, `github`, `llm`; web unit tests for `lib/` and component tests with `@testing-library/react` in jsdom), pytest (the ingest endpoint, in the image's test stage; the Instagram worker in a `python:3.11-slim` container with instascraper stubbed, `tools/instagram-worker/test.sh`), shell tests (`*.test.sh`), Playwright e2e (desktop, iPad, iPhone in Chromium and WebKit), axe-core. |
 | Website | Plain HTML + CSS in `site/`, no framework or dependencies; tests with `node:test`; GitHub Pages. |
 | Tooling | npm workspaces (`apps/*`, `packages/*`, `site`), ESLint flat config, `just`, GitHub Actions CI. |
 
@@ -206,7 +213,7 @@ once per note, so a note made since gets its local graph); the `3d-force-graph` 
 
   `Shell` renders `AdminMode` while `admin !== null` and keeps the user-mode `#app` mounted but `hidden`. The vault
   list, vault details, help `Modal` and confirm `Modal` (missing folders) are unchanged. `InstagramNotice` ("Reconnect
-  in Secrets & keys") switches the section.
+  in Secrets & keys", or in worker mode "Details" / "Workers in Secrets & keys") switches the section.
 - **Service worker**: precaches the app shell; `vault-api` NetworkFirst cache (5 s timeout) for the vault list, file
   tree and opened notes; auto-update with a re-check whenever the app becomes visible.
 
@@ -239,12 +246,14 @@ flowchart TB
 | `main.ts` | Loads the settings (`SETTINGS_FILE`, default `/etc/karpathy/settings.json`), reads the container wiring from env (`PORT`, `VAULTS_DIR`, `CONFIG_DIR`, `OPENCODE_URL`, `OPENCODE_VAULTS_DIR`; `INGEST_URL` and `INGEST_TOKEN_FILE` for the ingest endpoint, both or none) and the build/deploy facts (`APP_VERSION`, `BUILT_AT`, `DEPLOYED_AT`), wires the services (the `UsageService` over the harness, the `MetricsSampler`, started with `await metrics.start()`, `settings.secrets` into `createApp`), graceful shutdown (stops the sampler). |
 | `settings.ts` | `loadBackendSettings(path)`: parses the rendered `settings.json` with the backend's own zod schema and reads each `{ file }` secret; a missing or invalid file stops the start with the path and the failing key. The schema also accepts `secrets`, the rendered secret manifest (`SecretStatus` without the GitHub extras; defaults to `[]`, so an older `settings.json` still loads) and exposes it as `BackendSettings.secrets`. |
 | `app.ts` | Express routes under `/api`, error mapping, NDJSON writer (15 s keepalive). `/healthz` outside auth; `/api/health` also reports the release version (`APP_VERSION`, `dev` for local builds), which admin mode › General shows next to the PWA's own. New in #150: `GET /api/settings/secrets`, `GET /api/usage` and `GET /api/metrics` ([Admin mode](#admin-mode)). |
-| `auth.ts` | Bearer token check (hashed, constant-time compare). |
+| `auth.ts` | Bearer token check (hashed, constant-time compare); `bearerAuthAny(tokens)`, the same check against each of several tokens (the Instagram worker routes). |
 | `vaults.ts` | Vault lifecycle (add with preflight, clone, patch, remove), file API, search, status (incl. `inputChangedCount`), events, commit/push/discard, conflict resolution; per-vault runtime state; per-vault token access check (`checkAccess`). Reads the GitHub token through a getter per git operation. Runs the agents move after clone, pull and open (`agentsMove`), keeps the last result (`lastAgentsMove`) and counts running commit-message proposals (`proposing`, `isProposing`). |
 | `agents-standard.ts` | The agents move: `scanLegacy`, `migrateToAgents`, `restageSkillLink` ([The agents move](#the-agents-move)); also `readFrontmatter`. |
 | `preflight.ts` | `preflight()`: the attach check ([Attach preflight](#attach-preflight)); `REQUIRED_FOLDERS`. |
 | `github-token.ts` | `GitHubToken`: the server-wide token (stored over secret), its source, `GET /user` identity check, redaction of every value seen. |
-| `ingest.ts` | `callIngest`: proxies the Instagram routes to the ingest service's endpoint ([Ingest](#ingest)). |
+| `ingest.ts` | `callIngest`: proxies the Instagram routes to the ingest service's endpoint ([Ingest](#ingest)); `forwardIngest`: passes a job-route request (JSON, or a streamed body with its `Content-Length`) through and returns the service's status, type and body as they are. |
+| `ingest-worker.ts` | `ingestWorkerRouter`: the Instagram worker's five job routes, mounted at `/api/ingest/instagram` before the main router, on the worker or the main token ([Instagram worker and job API](#instagram-worker-and-job-api)). `UPLOAD_TIMEOUT_MS` (10 min). |
+| `serve.ts` | `serve(app, port)`: starts the HTTP server with `requestTimeout` = the upload timeout + 1 min (Node's 300 s default would cut a slow result upload); `headersTimeout` and `keepAliveTimeout` keep Node's defaults. |
 | `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure (its dirty check and stash leave `<root>/Input` out), commit, push, conflict sides and resolution; hardened `runGit`. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
 | `search.ts` | The vault search (#138): `SearchIndex` per vault root, text analysis (`fold`, `detectLanguage`, `wordTerms`), ranking and hit lines ([Vault search](#vault-search)). |
 | `files.ts`, `paths.ts` | Tree listing, versions (content hash), `filesMentioning` (ripgrep, for the move's link scan), the note graph (`graph`: notes + links via the shared `noteLinks`, for `GET /vaults/:id/graph`); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
@@ -468,18 +477,86 @@ fetching is not AI work). Deterministic, no LLM, never commits.
   resolve with Instagram pacing is not a stuck loop); the healthcheck fails when it is older than 20 min. With no
   profiles the loop idles and the file stays fresh.
 - **Why a poll loop, not a watcher:** "within a minute" is enough, `resolve` is a cheap scan of `Input/*/index.md`, and
-  inotify on a bind or volume mount adds a failure mode. Instagram pacing (1–3 min per post, 08:00–23:00, daily caps)
-  stays inside ingest-email and only delays the next round; it never holds an app lock.
-- **Endpoint** (`deploy/ingest/server.py`, stdlib `ThreadingHTTPServer` on `:8090`, `internal` network only): the
-  Instagram connection ([Ingest](#ingest)). Every request needs `Authorization: Bearer <ingest_token>` (compose
-  secret, compared with `hmac.compare_digest`); only request lines are logged, never bodies.
+  inotify on a bind or volume mount adds a failure mode. In local mode Instagram pacing (1–3 min per post,
+  08:00–23:00, daily caps) stays inside ingest-email and only delays the next round; it never holds an app lock. In
+  worker mode the pacing runs on the worker, and the resolver only reads the dropbox.
+- **Endpoint** (`deploy/ingest/server.py`, stdlib `ThreadingHTTPServer` on `:8090`, HTTP/1.1 keep-alive, `internal`
+  network only): the Instagram connection and the Instagram workers' job API ([Ingest](#ingest)). Every request needs
+  `Authorization: Bearer <ingest_token>` (compose secret, compared with `hmac.compare_digest`); only request lines are
+  logged, never bodies. The mode comes from `INGEST_INSTAGRAM_SOURCE` (`local` default | `worker`), rendered from
+  `ingest.defaults.instagram_source`; `run.sh` sets every profile's `instagram_results_dir` to
+  `$INGEST_STATE/instagram/results`, and the profile settings carry `instagram_source` to ingest-email.
 - **Compose:** `user` = the app uid, `cap_drop: [ALL]`, `no-new-privileges`, bounded logs; network `internal` only
   with `HTTP(S)_PROXY=http://egress:3128` (httpx, `gog` and instagrapi all honour it); `GOG_HOME=/state/gog`,
-  `GOG_KEYRING_BACKEND=file`, `HOME=/state/home` (instascraper's session and activity ledger); secrets
-  `gog_keyring_password` and `ingest_token`; volume `ingest-state` at `/state`; `ingest.json` (rendered from
+  `GOG_KEYRING_BACKEND=file`, `HOME=/state/home` (instascraper's session and activity ledger),
+  `INGEST_INSTAGRAM_SOURCE`; secrets `gog_keyring_password` and `ingest_token` (never `ingest_worker_token`: the
+  service doesn't see the worker token); volume `ingest-state` at `/state` (worker mode adds `/state/instagram/`,
+  mode 0700: `results/`, `incoming/`, `workers.json`); `ingest.json` (rendered from
   `deploy/settings/`) bind-mounted read-only at `/etc/ingest/config.json` (`create_host_path: false`); depends on a
   healthy `egress`. The base `compose.yml` mounts no vault: a target adds one `Input/` (rw) and `Sources/` (ro) bind
   mount per profile vault in `compose.target.yml`; dev and prodtest mount the whole `vaults` volume.
+
+### Instagram worker (`tools/instagram-worker`)
+
+Runs on the user's machine, not in the stack (#168, [ADR 0006](../../docs/adr/0006-instagram-scraped-by-a-worker.md)):
+Instagram blocks the server's data-centre IP, a home IP works. It talks to the server only as an HTTPS client, so it
+needs Tailscale where prod's proxy listens on the tailnet only. Setup guide: `docs/instagram-worker.md`.
+
+- **Package:** `pyproject.toml`, src layout, package `karpathy_instagram_worker`, console script
+  `karpathy-instagram-worker`, `requires-python >= 3.11`. Its only dependency is
+  `instascraper @ git+https://github.com/tillg/instascraper@v1.1.0`, the ingest image's `INSTASCRAPER_REF`; HTTP is
+  the stdlib. Installed with `pipx install "git+https://github.com/tillg/karpathy.app@<tag>#subdirectory=tools/instagram-worker"`.
+- **Config** `~/.config/karpathy-instagram-worker/config.toml` (atomic, mode 0600; `KARPATHY_WORKER_CONFIG`
+  overrides the path): `server` (`https://`, `http://` only for localhost), `token`, `name` (default: the short host
+  name, `^[A-Za-z0-9._-]{1,64}$`), `poll_interval_s` (60, at least 5).
+- **Modules:** `config.py`, `client.py` (the job API over `urllib`; 204 → no job, 409 → `NotWorkerMode`, 401 →
+  `TokenRejected`, unreachable or 5xx → retried after 1, 2, 5 min, then `ServerUnavailable`), `upload.py`, `scrape.py`
+  (instascraper calls and error mapping), `loop.py` (`Worker.step()` and the loop), `service.py` (launchd / systemd,
+  `templates/`), `cli.py` (argparse).
+- **Commands:** `configure` (asks for what is missing, the token with `getpass`; one heartbeat checks it and a
+  rejected token isn't saved), `login` (instascraper's `login_interactive_free` with the password from `getpass` and
+  the 2FA/challenge code read from stdin, so it works over SSH; `--browser <name>` (safari, chrome, firefox, …) takes
+  a browser's session instead; remembers `IG_USERNAME` in instascraper's own `~/.config/instascraper/.env`), `doctor` (Python,
+  instascraper, config 0600, server and token, session file, `ffmpeg` as a warning only, the service; exit 1 if a
+  required check fails), `once` (one step), `run` (the loop until SIGTERM), `service install|uninstall|status`,
+  `version`.
+- **One step** (sleeps and clocks injected for tests; a step returns how long to wait, `run` waits on an event SIGTERM
+  sets, so the job in progress always finishes):
+  1. No remembered account or no session file → heartbeat `needs-login`, 10 min, no claim.
+  2. Open the account's `ActivityLedger(activity_path(user), window_seconds=…)` (busy → `resting`) and build one
+     `Humanizer(BehaviorProfile(), ledger=…)`, as instascraper's CLI does per run. `gate("post")`: `STOP` → `night`
+     (outside the active hours) or `resting` (a day ceiling), 30 min; `WAIT` → `resting` for the gate's seconds. No
+     claim either way.
+  3. Claim. 204 → `idle`, `poll_interval_s`; 409 → `idle` with "the server is in local mode".
+  4. Heartbeat `scraping`; `get_client` with stdin on `/dev/null` (it then ends with `SystemExit` instead of prompting:
+     a worker never logs in by itself), `scrape`, `write_result` into a temp dir; upload; then wait
+     `humanizer.sample_delay("post")`.
+- **Error mapping** (like instascraper's `cli.py`):
+
+  | Raised | Worker does | State |
+  |---|---|---|
+  | `MediaNotFound`, `ClientNotFoundError`, a shortcode mismatch | `failure {permanent: true}` | `idle` |
+  | `LoginRequired`, `ClientLoginRequired`, `ChallengeRequired` | `release`, 10 min | `needs-login` |
+  | `SystemExit` from `get_client` (any failed session check: network error, 429, expired session) | `release`, 30 min; the 3rd in a row (a working `get_client` resets the count) → as `needs-login` | `rate-limited` ("… (n of 3 before asking for a login)"), then `needs-login` |
+  | `PleaseWaitFewMinutes`, `ClientThrottledError`, HTTP 429 | `release`, 30 min | `rate-limited` |
+  | upload answered 413 or 422, or refused locally | `failure {permanent: true, reason: <message>}` | `idle` |
+  | upload answered `404 unknown-job` | nothing (nobody wants the post any more) | `idle` |
+  | upload answered another 4xx | `failure {permanent: false, reason: "upload refused: …"}` | `error` |
+  | any other exception | `failure {permanent: false, reason: "<Type>: <message>"[:200]}` | `error` |
+  | 401 | the loop stops, exit 1 ("worker token rejected: run configure"); the service manager restarts it | — |
+
+  A heartbeat, failure or release call that fails is logged and never ends the step: the lease lapses instead.
+- **Upload:** a gzip tarball of the regular files directly inside `<shortcode>/` (flat, no directories, no links) in a
+  temp file, then a streamed `PUT` with `Content-Type: application/gzip` and `Content-Length` in 1 MiB chunks; over
+  40 files or 500 MB it is refused locally, so it never sends what the server would refuse.
+- **Service:** macOS LaunchAgent `~/Library/LaunchAgents/app.karpathy.instagram-worker.plist` (the absolute command +
+  `run`; `RunAtLoad`, `KeepAlive`, `ThrottleInterval` 60, `ExitTimeOut` 300, `ProcessType` Background; log
+  `~/Library/Logs/karpathy-instagram-worker/worker.log`, not rotated), loaded with `launchctl bootstrap gui/<uid>`,
+  removed with `bootout`; it runs while the user is logged in. Linux: systemd user unit
+  `~/.config/systemd/user/karpathy-instagram-worker.service` (`ExecStart=<abs> run`, `Restart=always`,
+  `RestartSec=60`, `TimeoutStopSec=300`), `daemon-reload` + `enable --now`, logs in the journal; a headless box needs
+  `loginctl enable-linger`. Both carry a non-default `KARPATHY_WORKER_CONFIG` into the service. `status` shows the
+  state and the last 20 log lines.
 
 ### Egress proxy (`deploy/egress`)
 
@@ -895,7 +972,8 @@ sequenceDiagram
 ## Ingest
 
 Five pieces, mostly independent (#131): the ingest service ([above](#ingest-service-deployingest)), the input count,
-the Ingest button, `move_to_sources` ([opencode](#opencode-deployopencode)) and the Instagram connection. **The app
+the Ingest button, `move_to_sources` ([opencode](#opencode-deployopencode)) and Instagram: the Instagram connection
+(local mode) or the Instagram worker and its job API (worker mode, #168). **The app
 contains no ingest logic:** its only coupling to the vault's skill is the name `ingest` and the generic
 `move_to_sources` tool.
 
@@ -965,6 +1043,9 @@ keeps to operations that are safe next to git and editor work:
 
 ### Instagram connection
 
+Local mode only (`instagram_source: local`: prodtest and tests); in worker mode the server holds no Instagram session
+([Instagram worker and job API](#instagram-worker-and-job-api)).
+
 ```mermaid
 sequenceDiagram
   participant U as Secrets & keys › Instagram
@@ -1022,6 +1103,99 @@ then sees in use.
   `packages/shared`.
 - **Dev and e2e:** `compose.dev.yml` sets `INGEST_FAKE_INSTAGRAM_LOGIN=1`, a built-in fake login (password `wrong`
   fails, a user `twofa…` asks for code `000000` by SMS). Prod and prodtest never set it (`compose.test.sh` asserts it).
+  Dev runs in worker mode, so the fake login is no longer reachable from the UI; local mode is covered by
+  `test_server.py` and the component tests.
+
+### Instagram worker and job API
+
+Worker mode (`instagram_source: worker`: production and dev). The server never scrapes Instagram; an
+[Instagram worker](#instagram-worker-toolsinstagram-worker) on the user's machine pulls one post at a time.
+[ADR 0006](../../docs/adr/0006-instagram-scraped-by-a-worker.md) has the why.
+
+```mermaid
+sequenceDiagram
+  participant W as Instagram worker (user's machine)
+  participant B as backend /api/ingest/instagram/*
+  participant S as ingest server.py :8090
+  participant R as ingest-email resolve loop
+  participant V as /vaults/*/Input
+  W->>W: humanizer gate (night? day ceiling?) → else wait, heartbeat night/resting
+  W->>B: POST jobs/claim (worker token)
+  B->>S: POST /instagram/jobs/claim (ingest token)
+  S->>V: scan unresolved_links for Instagram shortcodes
+  S-->>W: 200 {id, url, leaseUntil} | 204
+  W->>W: instascraper: get_client, scrape, write_result → <shortcode>/
+  W->>B: PUT jobs/<id>/result (tar.gz, Content-Length)
+  B->>S: same body, streamed
+  S->>S: temp file → check members → extract (filter='data') → rename into results/<id>/
+  S-->>W: 204
+  R->>S: (filesystem) results/<id>/ exists
+  R->>V: map_output → Input/insta-<date>-<owner>-<id>/, link resolved
+```
+
+| Public route (backend) | Internal route (`server.py`) | Request | Answers |
+|---|---|---|---|
+| `POST /api/ingest/instagram/jobs/claim` | `POST /instagram/jobs/claim` | `{name}` | `200 {id, url, leaseUntil}` · `204` no job · `400` bad name · `409 not-worker-mode` |
+| `PUT /api/ingest/instagram/jobs/:id/result` | `PUT /instagram/jobs/:id/result` | `application/gzip`, `Content-Length` required | `204` stored or already there · `400 bad-id` / upload ended early · `404 unknown-job` · `411 length-required` (also for `Transfer-Encoding`) · `413 too-large` (> 500 MB, body not read) · `422 invalid-result {message}` |
+| `POST /api/ingest/instagram/jobs/:id/failure` | `POST /instagram/jobs/:id/failure` | `{reason, permanent: bool}` (reason cut at 200) | `204` · `400` · `404 unknown-job` |
+| `POST /api/ingest/instagram/jobs/:id/release` | `POST /instagram/jobs/:id/release` | — | `204` (also without a lease) |
+| `POST /api/ingest/instagram/worker/heartbeat` | `POST /instagram/worker/heartbeat` | `{name, version (≤ 64), state, message?}` | `204` · `400` (unknown state, bad name, no version) |
+| `GET /api/ingest/instagram` (main token only) | `GET /instagram/status` | — | adds `source`, `workers`, `queue` |
+
+- **Ids and names:** `:id` is a shortcode, `^[A-Za-z0-9_-]{5,40}$`, checked in the backend (after the token) and again
+  in `server.py` before it touches a path (`400 bad-id`). A job's `url` is always `https://www.instagram.com/p/<id>/`
+  (it serves Reels too). Worker names `^[A-Za-z0-9._-]{1,64}$`. JSON bodies at most 10 kB on both hops.
+- **Backend** (`ingest-worker.ts`): an `express.Router` (case-sensitive, strict) mounted with
+  `app.use('/api/ingest/instagram', …)` **before** `app.use('/api', api)`. It handles exactly the five job routes with
+  `bearerAuthAny([workerToken, token])`; every other path falls through to the main router and its `bearerAuth`, so the
+  worker token is refused everywhere else. JSON routes: `express.json({ limit: 10_000 })` and `forwardIngest` (status,
+  type and body passed through, 204 included; unreachable → `503 ingest-down`, an ingest 401/403 → `502
+  ingest-auth`). The result route has no body parser: `fetch` with `body: req`, `duplex: 'half'` and the request's
+  `Content-Length`, 10-minute timeout; no `Content-Length` → `411` from the backend itself (no chunked uploads). The
+  ingest service always gets the ingest token, never the worker token. Without a configured worker token
+  (`settings.json` `ingest.worker_token` absent or its file missing) only the main token works on these routes.
+- **Jobs** (`server.py`, under `svc.lock`): every claim walks `Input/*/index.md` and collects the shortcodes in
+  `unresolved_links` URLs (ingest-email's regex `instagram\.com/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)`). A shortcode is
+  **wanted** while some item has it or a worker holds its lease. Its state: `ready` (a result dir exists), `failed`
+  (permanent marker), `leased` (a live lease), `backingOff` (a non-permanent marker younger than `min(count, 24)` h),
+  else `waiting`. A claim leases the oldest waiting shortcode (by its oldest item's mtime) for 30 min to the claimer's
+  name. Leases live in memory; a restart frees them.
+- **Result upload:** results already there → `204` at once (idempotent); not wanted → `404 unknown-job` (the body
+  drained); a live lease is not required, so a late upload still counts. The body goes in 1 MiB chunks to a temp file
+  in `/state/instagram/incoming/`, then the tar members are checked **before anything is extracted**: all flat or all
+  in one `<shortcode>/` directory, at most 40 files, every path part `^[A-Za-z0-9._-]+$` and not `.`/`..` (absolute
+  paths refused, not stripped), regular files only (type `0`: no links, devices, contiguous or sparse files), at most
+  1 GiB unpacked, no name twice, `post.md` and `metadata.json` (≤ 1 MiB) present. The decompressed stream is bounded
+  as well (1 GiB + 1 MiB slack, and 1 MiB of headers while the members are scanned, since tarfile reads GNU long-name
+  and pax headers whole). `extractall(filter='data')` writes the checked files flat into a staging dir; what landed
+  must be exactly those files, and `metadata.json` must be JSON naming this shortcode. Then `os.replace` into
+  `results/<id>/`. Any failure → `422` naming the rule, nothing kept. Success ends the lease and removes a
+  non-permanent marker.
+- **Failure:** `<id>.failed.json` `{reason, permanent, at, count}`, `count + 1`, permanent when reported so, already
+  permanent, or at the 5th failure; written atomically; ends the lease.
+- **Heartbeat:** the last `{name, version, state, message, lastSeen}` per worker in memory, written to
+  `/state/instagram/workers.json` (atomic) on every state change and at most once a minute otherwise; loaded at start.
+- **Pruning,** on a claim, at most hourly: results and markers unchanged for 7 days, `incoming/` leftovers older than a
+  day, workers not seen for 30 days.
+- **Status** in worker mode: `source: "worker"`, `waitingLinks` = unresolved links with an Instagram shortcode (any
+  reason), `workers` (seen in the last 30 days, newest first), `queue {waiting, leased, backingOff, ready, failed}` by
+  shortcode; `expired` is computed only in local mode. Local mode answers as before plus `source: "local"`; there a
+  claim is `409` and result/failure are `404 unknown-job`.
+- **ingest-email** (pinned commit on its branch `instagram-worker`): `Outcome.wait(reason)` keeps a link in
+  `unresolved_links` with its `attempts` unchanged, and `resolve_source` rewrites `index.md` only when the links or the
+  body changed. Its Instagram resolver in worker mode never imports instascraper: `<results_dir>/<code>/` →
+  `map_output` into a new `insta-…` item, as a local scrape (the result dir stays for other vaults; `server.py` prunes
+  it); a permanent marker → `give_up(reason)`; a non-permanent one → `wait(reason)`; nothing → `wait("worker")`. A
+  result wins over a marker; an unreadable marker counts as none; no `instagram_results_dir` → `wait` with that reason.
+- **Web** (`InstagramSettings.tsx` `WorkerPanel`): in worker mode the worker rows (name, last seen, message, state
+  pill), a `needs-login` hint per worker, the counts, the two-workers warning (two seen within an hour), and the link
+  to `docs/instagram-worker.md` on GitHub, instead of the Connect form; `InstagramNotice` for `needs-login` and for
+  waiting links with no worker seen for an hour. `InstagramStatus` in `packages/shared` has `source`, `workers?`,
+  `queue?`.
+- **Tests:** `test_server.py` (job API, uploads, markers, status), `ingest-worker-routes.test.ts` (auth scope,
+  streaming, pass-through), `InstagramSettings.test.tsx`, the worker's pytest suite (fake server, stubbed instascraper),
+  and `e2e/instagram-worker.spec.ts`, which plays the worker over HTTP with the dev stack's worker token. Instagram
+  itself is never called in tests.
 
 ## The agents move
 

@@ -31,6 +31,7 @@ check:
     just settings check
     bash deploy/stack.test.sh
     bash deploy/ansible/dev.test.sh
+    bash deploy/ansible/worker-token.test.sh
     bash deploy/check-preflight.test.sh
     bash deploy/code.test.sh
     bash deploy/tailnet-serve.test.sh
@@ -39,6 +40,8 @@ check:
     bash deploy/ingest/run.test.sh
     bash deploy/ingest/compose.test.sh
     bash deploy/ingest/server.test.sh
+    bash deploy/ingest/server-test-image.test.sh
+    bash tools/instagram-worker/test.sh
     node --experimental-strip-types --test e2e/stack.unit.ts
 
 # App settings (deploy/settings/): `just settings show <env>|check|render <env> --out <dir> --secrets <dir>`
@@ -74,6 +77,7 @@ prodtest action="up" *args:
         [ -s tmp/prodtest/secrets/opencode_password ] || openssl rand -hex 24 > tmp/prodtest/secrets/opencode_password
         [ -s tmp/prodtest/secrets/gog_keyring_password ] || openssl rand -hex 24 > tmp/prodtest/secrets/gog_keyring_password
         [ -s tmp/prodtest/secrets/ingest_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/ingest_token
+        [ -s tmp/prodtest/secrets/ingest_worker_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/ingest_worker_token
         touch tmp/prodtest/secrets/github_token tmp/prodtest/secrets/dns_api_token
         # Provider keys of a hosted gateway (deploy/settings/prodtest.local.yaml) come from the dev secrets.
         for k in deploy/secrets/*_api_key; do [ -e "$k" ] && cp "$k" tmp/prodtest/secrets/; done
@@ -130,6 +134,10 @@ code-web worktree="":
 # Copy a target's access token to the clipboard; `--qr` also prints a login QR code for a phone/iPad
 token target *flag:
     deploy/ansible/token.sh {{target}} {{flag}}
+
+# Print a target's Instagram worker token (`dev`/`prodtest` = this checkout's stack), for `karpathy-instagram-worker configure`
+instagram-worker-token target:
+    @deploy/ansible/worker-token.sh {{target}}
 
 # Give a target's ingest service Gmail access: this Mac's gog OAuth client + the account's refresh token (`dev` = this checkout's dev stack)
 ingest-auth target email:

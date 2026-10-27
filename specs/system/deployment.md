@@ -100,8 +100,13 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
   through `egress:3128`; the backend talks to opencode with the `opencode_password` (HTTP Basic, also in opencode's
   healthcheck) and to the ingest endpoint (`ingest:8090`) with the `ingest_token`.
 - **Ingest service** ([architecture.md](architecture.md#ingest-service-deployingest)): volume `ingest-state` (Gmail
-  keyring, Instagram session; backed up with the server), `shared/ingest.json` read-only at `/etc/ingest/config.json`,
-  healthy while its last-run file is younger than 20 min. Without profiles it idles, healthy.
+  keyring, Instagram session, Instagram worker results and markers; backed up with the server), `shared/ingest.json`
+  read-only at `/etc/ingest/config.json`, `INGEST_INSTAGRAM_SOURCE` from `shared/.env`, healthy while its last-run
+  file is younger than 20 min. Without profiles it idles, healthy.
+- **Instagram worker** (worker mode, [architecture.md](architecture.md#instagram-worker-toolsinstagram-worker)): not
+  part of the stack and not a release image. It runs on the user's machine, installed with pipx from a release tag
+  of this repo (setup: `docs/instagram-worker.md`), and reaches the target through the proxy like the PWA (prod: the
+  tailnet), with the `ingest_worker_token`.
 
 A target adds `shared/compose.target.yml` (rendered by Ansible): the `vaults` volume as a bind mount
 of `/srv/vaults`, and the ingest service's vault mounts: per ingest profile whose vault is already cloned,
@@ -315,8 +320,9 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
 | Commit author (`hetzner`: secret references, no personal data in the public repo) | backend | resolved into `shared/settings.json` (uid 1000, 0600) and `shared/.env` (0600); vault: `vault_git_author_name` / `_email` |
 | opencode server password | backend, opencode | `shared/secrets/opencode_password` (uid 1000, 0600); generated once on the target by role `app` (`force: false`), no vault entry; a change recreates the stack |
 | Ingest token, gog keyring password | backend + ingest; ingest | `shared/secrets/ingest_token`, `shared/secrets/gog_keyring_password` (uid 1000, 0600); generated once on the target by role `app` like the opencode password, no vault entry; a change recreates the stack |
+| Instagram worker token | backend (not ingest); every Instagram worker | `shared/secrets/ingest_worker_token` (uid 1000, 0600); generated once on the target by role `app` › "Ingest secrets" like the ingest token (dev: `deploy/dev.sh`, prodtest: `just prodtest up`), no vault entry. `just instagram-worker-token <target>` prints it for `karpathy-instagram-worker configure`; on the worker it sits in `~/.config/karpathy-instagram-worker/config.toml` (0600). Rotating it = delete the file, redeploy, `configure` every worker |
 | Gmail OAuth client + refresh token | ingest | gog's file keyring in the `ingest-state` volume; put there by `just ingest-auth <target> <email>` from the Mac's Keychain, not by the playbook |
-| Instagram session | ingest | `ingest-state` volume; made in the app (Secrets & keys › Instagram), not by the playbook |
+| Instagram session | ingest (local mode); the worker (worker mode) | local mode: `ingest-state` volume, made in the app (Secrets & keys › Instagram); worker mode: on the worker's machine (instascraper's `~/.config/instascraper/`), made by `karpathy-instagram-worker login`, never on the server. Not by the playbook |
 | Ingest profile account and allowed senders (`hetzner`: secret references) | ingest | resolved into `shared/ingest.json` (0600); vault entries and their mapping in `roles/app/vars/main.yml` still to be added with the first profile |
 | `INGEST_EMAIL_DEPLOY_KEY` | CI, release workflow | GitHub repo secret (read-only deploy key on `tillg/ingest_email`); not on any host |
 | Tailscale auth key | `tailscale up` | not stored; single-use |
@@ -343,7 +349,11 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
   `token:default:<email>`, from `gog auth add <email>` once) into the target's `ingest` container (`gog auth credentials
   set`, `gog auth import --refresh-token-stdin`) and checks `gog auth list`. Nothing is printed or written to disk on the
   way. Checked against a dev stack with a throwaway account.
-- **Instagram:** admin mode › Secrets & keys › Instagram in the app, by the user ([functional.md](functional.md#instagram-connection)).
+- **Instagram** ([functional.md](functional.md#instagram-connection)): `ingest.defaults.instagram_source` per target
+  (`hetzner` and `dev`: `worker`; prodtest and tests: `local`). Worker mode: an Instagram worker on the user's Mac or
+  Linux box, set up with `docs/instagram-worker.md` (`just instagram-worker-token <target>`, `pipx install …`,
+  `configure`, `login`, `doctor`, `once`, `service install`); the app shows it in Secrets & keys › Instagram. Local
+  mode: admin mode › Secrets & keys › Instagram › Connect, by the user.
 - **Profiles:** `ingest.profiles` in `deploy/settings/hetzner.yaml`, then a redeploy. Dev stacks, prodtest
   and the tests never get profiles; a real end-to-end mail test uses a separate test label (e.g. `MyLifeTest`), never a
   real one.
@@ -355,29 +365,35 @@ mail into the vaults' `Sources/` as before. The remaining steps, by the operator
 ```mermaid
 flowchart LR
   Z[Mac: run the old /ingest once<br/>per vault to drain Sources/] --> A
-  A[just ingest-auth hetzner email<br/>Secrets & keys › Instagram › Connect] --> B[Mac: launchctl bootout<br/>com.tillg.ingest-email.all,<br/>move the plist away]
+  A[just ingest-auth hetzner email<br/>Instagram worker on the Mac:<br/>docs/instagram-worker.md] --> B[Mac: launchctl bootout<br/>com.tillg.ingest-email.all,<br/>move the plist away]
   B --> C[profiles in hetzner.yaml,<br/>their secrets in the vault,<br/>redeploy]
   C --> D[test mail → Input · 1<br/>on the phone ≤ 15 min, tap Ingest]
-  D --> E[watch Instagram a week:<br/>failed_links reasons]
+  D --> E[watch Instagram a week:<br/>workers and counts in Secrets & keys]
 ```
 
 0. On the Mac, per vault: run the old llm-wiki `/ingest` once so every source it already fetched is ingested; what's
    left stays in `Sources/` (nothing is migrated into `Input/`). Each vault needs its own `ingest` skill in
    `.agents/skills/ingest/` (reads `Input/`, uses `move_to_sources`) and a real `Schema/methodology.md` instead of the
    symlink into `llm_wiki` before it can ingest on the server.
-1. `just ingest-auth hetzner <email>`, then Secrets & keys › Instagram › Connect (the first real login from the server).
+1. `just ingest-auth hetzner <email>`. Instagram: production is in worker mode (`hetzner.yaml`), so instead of a
+   server login set up the Instagram worker on the Mac (`docs/instagram-worker.md`: `just instagram-worker-token
+   hetzner`, `pipx install …`, `configure`, `login`, `doctor`, `once`, `service install`). The server's own Instagram
+   session, if one was connected, is no longer used: Disconnect it.
 2. On the Mac: `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.tillg.ingest-email.all.plist` and move the
-   plist away. Stopping it first avoids two pollers on one Gmail label.
+   plist away. Stopping it first avoids two pollers on one Gmail label, and two scrapers on one Instagram account.
 3. Add the profiles to `deploy/settings/hetzner.yaml` (account and allowed senders as secret references, their values in
    the `hetzner` vault, mapped in `roles/app/vars/main.yml`), `just deploy hetzner`; send a test mail → `Input · 1` on
    the phone within 15 min; tap Ingest.
-4. Watch Instagram for a week (`failed_links` reasons). If Hetzner's IP is blocked, decide on the fallback: only the
-   Instagram resolver on the Mac against the server's `Input/`.
+4. Watch Instagram for a week: the workers and the counts in Secrets & keys › Instagram, and `failed_links` reasons.
+   The fallback for a blocked data-centre IP is now the worker itself (#168); if one worker is too often asleep, add a
+   second one on an always-on home device (Raspberry Pi, NAS) with its own Instagram account.
 5. Push the demo vault (run book chapter "Ingest from the inbox") now that the feature is released.
 
 The ingest-email prerequisites (atomic item creation, `archive_dirs` duplicate lookup, hand-made items, Reel
-re-encoding, `no-session` waits) are open in its own repo; they matter as soon as a profile is enabled, and bumping
-`deploy/ingest/ingest-email.ref` to a tag that has them is part of the cutover.
+re-encoding) are open in its own repo; they matter as soon as a profile is enabled, and bumping
+`deploy/ingest/ingest-email.ref` to a tag that has them is part of the cutover. Waiting without spending attempts is
+done for worker mode (ingest-email's branch `instagram-worker`, pinned as a commit, not yet merged into its `main` or
+tagged: merge and tag it there, and never delete the branch before that).
 
 ## Monitoring {#monitoring}
 
@@ -490,6 +506,8 @@ flowchart LR
 | Website on GitHub Pages, deployed by Actions (no `gh-pages` branch) | Free, no server, source next to the code; generated files stay out of git history. |
 | A read-only deploy key for the private ingest-email, not a personal token | Least privilege: one repo, read only; the developer's token can write every repo. Making the repo public was the other option. |
 | Ingest profiles only on `hetzner`, enabled by the operator after the Mac agent is stopped | Two pollers on one Gmail label would fetch twice; any other stack with a real label would take mails before production. |
+| Instagram scraped by a worker on the user's machine, not on the server (`instagram_source: worker` on `hetzner` from the release on; [ADR 0006](../../docs/adr/0006-instagram-scraped-by-a-worker.md)) | Instagram blocks the data-centre IP (#137); a home IP works. The worker pulls jobs over HTTPS, so nothing on the user's network has to accept connections. |
+| The worker installed with pipx from a git tag, not a release image | A Docker image is heavy on a Mac and awkward for an interactive Instagram login; launchd and systemd are the native supervisors. |
 | A separate dev server (Hetzner CAX41, always on, Tailscale only), not GitHub Codespaces or dev stacks on prod | No per-core-hour billing, set up like prod; agents with a shell, Docker and a GitHub token stay away from prod's data. ARM like the Mac, so dev images run unchanged; `prodtest` there tests arm64, CI covers amd64. |
 | The dev server is an Ansible target `dev` with its own `just devhost`, not `just deploy dev` | `deploy` keeps meaning "release the app to a target"; same roles as prod, no prod-only steps. |
 | Dev stacks there are opened through an SSH `LocalForward`, not a public dev site | Caddy's dev site and Vite's HMR stay `localhost`-only and unchanged. The iPad gets the browser editor, not the stacks (phase 2 of #171, not built). |
@@ -524,4 +542,6 @@ flowchart LR
 - CI on fork and Dependabot PRs has no `INGEST_EMAIL_DEPLOY_KEY`, so the ingest checkout and the jobs after it fail
   there (#135).
 - Only vaults already cloned get ingest mounts: a profile for a vault added later needs a redeploy.
+- The Instagram worker has no auto-update: a new release means `pipx install --force …@<tag>` and `service install`
+  on every worker by hand. `ingest-email.ref` pins a commit on ingest_email's unmerged branch `instagram-worker`.
 - The ingest image is public on GHCR, with the private ingest-email's code inside ([security.md](security.md#gaps-known-not-built)).

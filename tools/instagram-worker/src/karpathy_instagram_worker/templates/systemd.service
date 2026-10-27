@@ -1,0 +1,17 @@
+# Written by `karpathy-instagram-worker service install`; replaced on every install.
+[Unit]
+Description=karpathy.app Instagram worker
+Documentation=https://github.com/tillg/karpathy.app/blob/main/docs/instagram-worker.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=$exec_start
+$environment
+Restart=always
+RestartSec=60
+# SIGTERM lets the job in progress finish; SIGKILL only after 5 minutes.
+TimeoutStopSec=300
+
+[Install]
+WantedBy=default.target

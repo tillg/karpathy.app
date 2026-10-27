@@ -55,6 +55,9 @@ sub = c["profiles"]["sub"]
 assert sub["target_dir"] == f"{t}/vaults/sub/wiki/Input" and sub["archive_dirs"] == [f"{t}/vaults/sub/wiki/Sources"], sub
 assert "gone" not in c["profiles"], c
 assert c["defaults"]["max_per_poll"] == 20, c
+# Every rendered profile carries the Instagram worker's results dir under INGEST_STATE (container wiring).
+for name, prof in c["profiles"].items():
+    assert prof["instagram_results_dir"] == f"{t}/state/instagram/results", (name, prof)
 PY
 
 # 2. A long ingest-email call (Instagram pacing) keeps the heartbeat fresh: it is touched around every call.
