@@ -163,7 +163,7 @@ function WorkerPanel({ status }: { status: InstagramStatus }) {
       </div>
       {needLogin.map((w) => (
         <div className="banner warn" key={w.name} data-testid="ig-login-hint">
-          Run <code>karpathy-instagram-worker login</code> on {w.name}.
+          Run <code>karpathy-instagram-worker login</code> on <span className="nowrap">{w.name}</span>.
         </div>
       ))}
       {q && (

@@ -140,6 +140,13 @@ describe('Admin › Instagram in worker mode', () => {
     expect(screen.getByTestId('ig-worker').textContent).toMatch(/Needs login/);
   });
 
+  it('the login hint keeps a hyphenated worker name on one line (phone width)', async () => {
+    fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([worker('till-mbp', 2, 'needs-login')]) } });
+    renderApp(<InstagramSettings />);
+    const name = (await screen.findByTestId('ig-login-hint')).querySelector('.nowrap');
+    expect(name?.textContent).toBe('till-mbp');
+  });
+
   it('two workers seen within an hour show the one-account warning', async () => {
     fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([worker('mac', 5), worker('pi', 50)]) } });
     renderApp(<InstagramSettings />);
