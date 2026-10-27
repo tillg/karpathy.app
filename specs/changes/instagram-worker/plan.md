@@ -105,7 +105,7 @@ flowchart LR
   - Depends on: 12
   - Test first: `tools/instagram-worker/tests/test_client.py` (a `http.server` fake on localhost) › "claim returns {id, url, leaseUntil}", "204 is None", "every call sends `Authorization: Bearer <token>`", "401 raises TokenRejected", "a 503 then a 200 retries once after the first backoff", "heartbeat sends name, version, state, message". Fail today: no client.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
-- [ ] `upload.py`: a flat tar.gz of `<shortcode>/` (regular files only), streamed `PUT` with `Content-Length` in 1 MiB chunks; local refusal over 500 MB or 40 files; 413/422 → `ResultRejected(message)`
+- [x] `upload.py`: a flat tar.gz of `<shortcode>/` (regular files only), streamed `PUT` with `Content-Length` in 1 MiB chunks; local refusal over 500 MB or 40 files; 413/422 → `ResultRejected(message)`
   - Depends on: 13
   - Test first: `tools/instagram-worker/tests/test_upload.py` › "the tarball holds exactly the dir's files, flat, no links", "the fake server receives Content-Length and the full body", "41 files → ResultRejected before any request", "a 422 with a message → ResultRejected carrying it", "a symlink in the dir is left out". Fail today: no module.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
