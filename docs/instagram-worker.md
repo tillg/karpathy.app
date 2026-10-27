@@ -198,7 +198,8 @@ karpathy-instagram-worker service install
 ```
 
 It runs `karpathy-instagram-worker run` (the absolute path of the pipx-installed command) in the background and
-restarts it when it exits (at most once a minute). Installing again replaces the service.
+restarts it when it exits (at most once a minute). Installing again replaces the service; on macOS it first waits
+for the running worker to finish its job (up to 5 minutes).
 
 **macOS** – a LaunchAgent:
 

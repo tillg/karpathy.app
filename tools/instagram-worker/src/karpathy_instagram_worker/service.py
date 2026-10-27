@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from importlib import resources
 from pathlib import Path
 from string import Template
@@ -29,6 +30,10 @@ LINGER_DIR = Path("/var/lib/systemd/linger")
 LOG_LINES = 20
 # launchd starts agents with a bare PATH; ffmpeg (for Reels) usually comes from Homebrew.
 MAC_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+# launchctl bootout returns before launchd lets go of the agent (the job in progress finishes first, up to 5 min);
+# a bootstrap before that fails with "Bootstrap failed: 5: Input/output error".
+STOP_WAIT_S = 330
+STOP_POLL_S = 1
 
 
 class ServiceError(Exception):
@@ -111,6 +116,11 @@ class Launchd:
         replaced = self.plist.exists()
         if self.loaded():
             _run("launchctl", "bootout", self.target, check=False)
+            deadline = time.monotonic() + STOP_WAIT_S
+            while self.loaded():
+                if time.monotonic() >= deadline:
+                    raise ServiceError(f"the old worker is still stopping after {STOP_WAIT_S} s; run `{PROG} service install` again")
+                time.sleep(STOP_POLL_S)
         self.plist.write_text(self.render(exe), encoding="utf-8")
         _run("launchctl", "enable", self.target, check=False)
         _run("launchctl", "bootstrap", self.domain, str(self.plist))

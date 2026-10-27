@@ -12,7 +12,8 @@ EXE = "/Users/till/.local/bin/karpathy-instagram-worker"
 @pytest.fixture
 def stubs(tmp_path, monkeypatch):
     """launchctl, systemctl and journalctl on PATH: each records its argv in calls.log; STUB_<TOOL>_<SUBCOMMAND>_RC
-    sets an exit code and STUB_<TOOL>_<SUBCOMMAND>_OUT what it prints."""
+    sets an exit code, STUB_<TOOL>_<SUBCOMMAND>_RCS one per call (the last one repeats) and
+    STUB_<TOOL>_<SUBCOMMAND>_OUT what it prints."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     log = tmp_path / "calls.log"
@@ -27,11 +28,21 @@ def stubs(tmp_path, monkeypatch):
             + f'key=$(echo "{tool}_$sub" | tr "a-z-" "A-Z_")\n'
             'eval "out=\\${STUB_${key}_OUT:-}"\n'
             'eval "rc=\\${STUB_${key}_RC:-0}"\n'
+            'eval "rcs=\\${STUB_${key}_RCS:-}"\n'
+            f'if [ -n "$rcs" ]; then n=$(cat "{log}.$key" 2>/dev/null || echo 0); n=$((n+1)); echo "$n" > "{log}.$key"; '
+            'set -- $rcs; [ "$n" -gt "$#" ] && n=$#; eval "rc=\\${$n}"; fi\n'
+            # Like launchd: after a bootout the agent is gone (print fails) until the next bootstrap, unless set.
+            f'case "$sub" in bootout) : > "{log}.gone";; bootstrap) rm -f "{log}.gone";; esac\n'
+            'eval "explicit=\\${STUB_${key}_RC+x}"\n'
+            f'[ "$sub" = print ] && [ -z "$explicit$rcs" ] && [ -e "{log}.gone" ] && rc=113\n'
             '[ -n "$out" ] && printf "%b\\n" "$out"\n'
             'exit "$rc"\n'
         )
         script.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    # No test waits for an old worker to stop.
+    monkeypatch.setattr(service, "STOP_POLL_S", 0)
+    monkeypatch.setattr(service, "STOP_WAIT_S", 2)
     monkeypatch.delenv("KARPATHY_WORKER_CONFIG", raising=False)
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
 
@@ -79,7 +90,7 @@ def test_macos_install_twice_replaces_not_duplicates(stubs, fresh_home, monkeypa
     svc = mac(fresh_home)
     monkeypatch.setenv("STUB_LAUNCHCTL_PRINT_RC", "113")  # not loaded yet
     svc.install()
-    monkeypatch.setenv("STUB_LAUNCHCTL_PRINT_RC", "0")  # loaded now
+    monkeypatch.setenv("STUB_LAUNCHCTL_PRINT_RCS", "0 113")  # loaded now, gone after the bootout
     svc.install()
     assert len(list((fresh_home / "Library/LaunchAgents").iterdir())) == 1
     lines = stubs.lines()
@@ -89,6 +100,25 @@ def test_macos_install_twice_replaces_not_duplicates(stubs, fresh_home, monkeypa
     # the second bootstrap comes after the bootout
     assert lines.index(f"launchctl bootout gui/{uid}/app.karpathy.instagram-worker") < max(
         i for i, line in enumerate(lines) if line.startswith("launchctl bootstrap"))
+
+
+def test_macos_reinstall_waits_until_launchd_let_go_of_the_old_worker(stubs, fresh_home, monkeypatch):
+    # bootout returns while the old worker still finishes its step; a bootstrap before launchd let go of it fails
+    # with "Bootstrap failed: 5: Input/output error".
+    monkeypatch.setenv("STUB_LAUNCHCTL_PRINT_RCS", "0 0 0 113")  # loaded, still stopping twice, gone
+    mac(fresh_home).install()
+    lines = stubs.lines()
+    prints = [i for i, line in enumerate(lines) if line.startswith("launchctl print")]
+    bootstrap = next(i for i, line in enumerate(lines) if line.startswith("launchctl bootstrap"))
+    assert len(prints) == 4 and bootstrap > prints[-1]
+
+
+def test_macos_reinstall_gives_up_on_an_old_worker_that_does_not_stop(stubs, fresh_home, monkeypatch):
+    monkeypatch.setattr(service, "STOP_WAIT_S", 0)
+    monkeypatch.setenv("STUB_LAUNCHCTL_PRINT_RC", "0")  # never goes away
+    with pytest.raises(service.ServiceError, match="still stopping"):
+        mac(fresh_home).install()
+    assert not any(line.startswith("launchctl bootstrap") for line in stubs.lines())
 
 
 def test_macos_a_failing_bootstrap_is_a_clear_error(stubs, fresh_home, monkeypatch):
