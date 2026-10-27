@@ -9,6 +9,8 @@ import argparse
 import getpass
 import logging
 import os
+import shutil
+import stat
 import sys
 import threading
 
@@ -16,6 +18,8 @@ from . import __version__, config
 from .client import ApiError, JobClient, ServerUnavailable, TokenRejected
 
 PROG = "karpathy-instagram-worker"
+# instascraper's auth.SUPPORTED_BROWSERS (v1.1.0)
+BROWSERS = ("safari", "chrome", "brave", "edge", "firefox", "chromium", "opera", "vivaldi")
 
 _DESCRIPTION = """\
 Scrapes Instagram posts for your karpathy.app server, from this machine and with
@@ -42,13 +46,15 @@ class UsageError(Exception):
     """A wrong argument or answer; exit 2."""
 
 
+TOKEN_HINT = (
+    "Get the current token where the server is deployed: `just instagram-worker-token <target>` in the\n"
+    f"  karpathy.app checkout (dev, prodtest or hetzner), then run: {PROG} configure --token <token>\n"
+    f"  (or `{PROG} configure` and paste it at the prompt)."
+)
+
+
 def token_rejected_text(server: str) -> str:
-    return (
-        f"error: {server} rejected the worker token (HTTP 401).\n"
-        "  Get the current token where the server is deployed: `just instagram-worker-token <target>` in the\n"
-        f"  karpathy.app checkout (dev, prodtest or hetzner), then run: {PROG} configure --token <token>\n"
-        f"  (or `{PROG} configure` and paste it at the prompt)."
-    )
+    return f"error: {server} rejected the worker token (HTTP 401).\n  {TOKEN_HINT}"
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -170,6 +176,161 @@ def cmd_service(args) -> int:
     return 0
 
 
+def _clean_username(name: str | None) -> str:
+    return (name or "").strip().lstrip("@").strip()
+
+
+def cmd_login(args) -> int:
+    try:
+        from instascraper import auth
+        from instascraper import config as iconfig
+
+        from . import scrape
+    except ImportError as exc:
+        raise _instascraper_missing(exc) from None
+
+    username = _clean_username(args.username) or _clean_username(scrape.ig_username())
+    if not username:
+        username = _clean_username(_ask("Instagram username: "))
+    if not username:
+        raise UsageError("no Instagram username given")
+
+    if args.browser:
+        try:
+            _client, account = auth.get_client(username=username, browser=args.browser, progress=scrape.LogProgress())
+        except SystemExit as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        except Exception as exc:
+            print(f"error: login failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 1
+        username = _clean_username(account) or username
+    else:
+        password = getpass.getpass(f"Instagram password for @{username} (input hidden, not stored): ")
+        if not password:
+            raise UsageError("no password given")
+
+        def code(via: str) -> str:
+            print(f"Instagram sent a verification code ({via}) for @{username}. Enter it: ", end="", flush=True)
+            line = sys.stdin.readline()
+            if not line:
+                raise TimeoutError("no code on stdin")
+            return line.strip()
+
+        try:
+            username = _clean_username(auth.login_interactive_free(username, password, code)) or username
+        except auth.BadPassword:
+            print(f"error: Instagram rejected the username or password for @{username}.", file=sys.stderr)
+            return 1
+        except auth.CodeTimeout:
+            print("error: no verification code was entered; nothing changed. Run login again.", file=sys.stderr)
+            return 1
+        except auth.LoginError as exc:
+            print(f"error: login failed: {str(exc).replace(password, '***')}", file=sys.stderr)
+            return 1
+        finally:
+            password = ""
+
+    iconfig.save_config({"IG_USERNAME": username}, path=iconfig.CONFIG_PATH)
+    print(f"Logged in to Instagram as @{username}. The session is saved in {scrape.session_path(username).parent} "
+          "(mode 0600) and never leaves this machine.")
+    print(f"A running service picks it up within 10 minutes. Check everything with: {PROG} doctor")
+    return 0
+
+
+def cmd_doctor(args) -> int:
+    failed = 0
+
+    def line(level: str, text: str, hint: str | None = None) -> None:
+        nonlocal failed
+        if level == "FAIL":
+            failed += 1
+        print(f"{level:<5} {text}")
+        if hint:
+            print(f"      → {hint}")
+
+    v = sys.version_info
+    if v >= (3, 11):
+        line("ok", f"Python {v.major}.{v.minor}.{v.micro}")
+    else:
+        line("FAIL", f"Python {v.major}.{v.minor} is too old", "install Python 3.11 or newer and reinstall the worker")
+
+    instascraper_ok = False
+    try:
+        import instascraper
+
+        line("ok", f"instascraper {getattr(instascraper, '__version__', '?')}")
+        instascraper_ok = True
+    except ImportError as exc:
+        line("FAIL", f"instascraper can't be imported ({exc})", str(_instascraper_missing(exc)))
+
+    cfg = None
+    cfg_path = config.path()
+    if not cfg_path.exists():
+        line("FAIL", f"no config at {cfg_path}", f"run: {PROG} configure")
+    else:
+        mode = stat.S_IMODE(cfg_path.stat().st_mode)
+        try:
+            cfg = config.load(cfg_path)
+        except config.ConfigError as exc:
+            line("FAIL", f"config: {exc}")
+        else:
+            if mode & 0o077:
+                line("FAIL", f"config {cfg_path} has mode {mode:04o}: it holds the token", f"chmod 600 {cfg_path}")
+            else:
+                line("ok", f"config {cfg_path} (mode 0600), worker name {cfg.name}")
+
+    if cfg is None:
+        line("skip", "server + token: not checked without a valid config")
+    else:
+        try:
+            JobClient(cfg.server, cfg.token, cfg.name, backoff=()).heartbeat("idle", "doctor")
+        except TokenRejected:
+            line("FAIL", f"server {cfg.server} rejected the worker token (HTTP 401)", TOKEN_HINT)
+        except ServerUnavailable as exc:
+            line("FAIL", f"server not reachable: {exc}",
+                 "is the URL right, and is this machine on the tailnet (tailscale status)?")
+        except ApiError as exc:
+            line("FAIL", f"server {cfg.server} answered {exc}", "is the server's karpathy.app new enough for workers?")
+        else:
+            line("ok", f"server {cfg.server} accepts the worker token")
+
+    if instascraper_ok:
+        from . import scrape
+
+        username = scrape.ig_username()
+        if not username:
+            line("FAIL", "no Instagram account set", f"run: {PROG} login")
+        elif not scrape.session_path(username).exists():
+            line("FAIL", f"no Instagram session for @{username} ({scrape.session_path(username)})", f"run: {PROG} login")
+        else:
+            line("ok", f"Instagram session for @{username}")
+    else:
+        line("skip", "Instagram session: not checked without instascraper")
+
+    if shutil.which("ffmpeg"):
+        line("ok", "ffmpeg on PATH")
+    else:
+        line("warn", "ffmpeg not on PATH (optional)", "e.g. brew install ffmpeg / apt install ffmpeg")
+
+    from . import service
+
+    try:
+        svc = service.for_platform()
+        if not svc.installed():
+            line("warn", "service not installed (optional; `once` works without it)", f"run: {PROG} service install")
+        elif svc.running():
+            line("ok", "service installed and running")
+        else:
+            line("warn", "service installed but not running", f"see: {PROG} service status")
+    except service.ServiceError as exc:
+        line("warn", f"service: {exc}")
+
+    print()
+    print("All required checks passed." if not failed else f"{failed} required check(s) failed.")
+    return 1 if failed else 0
+
+
 def cmd_version(args) -> int:
     print(f"{PROG} {__version__}")
     return 0
@@ -196,6 +357,24 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--name", metavar="NAME", help="this worker's name in the app (default: the short host name)")
     c.add_argument("--poll-interval", type=int, metavar="SECONDS", help="how often to ask for a job when idle (default 60)")
     c.set_defaults(func=cmd_configure)
+
+    lg = sub.add_parser(
+        "login", help="log in to Instagram (once; the session stays on this machine)",
+        description="Log in to Instagram and save the session where instascraper finds it "
+        "(~/.config/instascraper/). Without --browser: asks for the password (hidden, never stored) and, when "
+        "Instagram wants one, a 2FA or challenge code on stdin; works over SSH. With --browser: imports the "
+        "session of a browser you are logged in with. Remembers the username (IG_USERNAME) for the worker.",
+    )
+    lg.add_argument("--username", metavar="NAME", help="Instagram account (default: the remembered one, else asked)")
+    lg.add_argument("--browser", choices=BROWSERS, metavar="BROWSER",
+                    help="import the session from a logged-in browser: " + ", ".join(BROWSERS))
+    lg.set_defaults(func=cmd_login)
+
+    d = sub.add_parser(
+        "doctor", help="check Python, instascraper, config, server + token, Instagram session, ffmpeg, service",
+        description="One line per check (ok, warn, FAIL); exits 1 if a required check fails. Sends one heartbeat.",
+    )
+    d.set_defaults(func=cmd_doctor)
 
     o = sub.add_parser(
         "once", help="do one step (claim and scrape one job, or find none) and exit",

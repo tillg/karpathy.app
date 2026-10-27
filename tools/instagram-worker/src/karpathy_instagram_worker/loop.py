@@ -87,6 +87,10 @@ class Worker:
         if not username:
             self.beat("needs-login", f"no Instagram account set: {LOGIN_MESSAGE}")
             return Step("needs-login", SLEEP_NEEDS_LOGIN_S, f"no Instagram account set: {LOGIN_MESSAGE}")
+        if not scrape_mod.session_path(username).exists():
+            # Without a session get_client can't log in by itself; claiming would only churn a lease.
+            self.beat("needs-login", LOGIN_MESSAGE)
+            return Step("needs-login", SLEEP_NEEDS_LOGIN_S, f"no Instagram session for @{username}: {LOGIN_MESSAGE}")
         profile = BehaviorProfile()
         ledger = ActivityLedger(activity_path(username), window_seconds=profile.window_seconds)
         try:

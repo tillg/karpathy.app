@@ -117,7 +117,7 @@ flowchart LR
   - Depends on: 13, 14, 15
   - Test first: `tools/instagram-worker/tests/test_loop.py` (fake server, stub instascraper, fake clock and sleep) › "a closed gate claims nothing and reports night", "no job → idle heartbeat and a poll_interval_s sleep", "success uploads and reports idle", "Permanent and ResultRejected → failure permanent true", "Transient → failure permanent false, state error then idle", "NeedsLogin → release, needs-login, 10-minute sleep", "RateLimited → release, rate-limited, 30-minute sleep", "TokenRejected stops run with exit 1", "once exits 0 after one step". Fail today: no loop.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
-- [ ] `login` (password from getpass, 2FA/challenge code from stdin via `login_interactive_free`'s `code` callback; `--browser`) remembering `IG_USERNAME`; `doctor` (Python, instascraper, config 0600, server + token, session, ffmpeg optional, service)
+- [x] `login` (password from getpass, 2FA/challenge code from stdin via `login_interactive_free`'s `code` callback; `--browser`) remembering `IG_USERNAME`; `doctor` (Python, instascraper, config 0600, server + token, session, ffmpeg optional, service)
   - Depends on: 15
   - Test first: `tools/instagram-worker/tests/test_cli.py` › "login passes username, password and a code callback that reads stdin", "login writes IG_USERNAME to instascraper's .env", "the password never reaches stdout, stderr or any file", "doctor prints one line per check and exits 1 on a rejected token", "doctor treats a missing ffmpeg as a warning". Fail today: no commands.
   - Verify: `bash tools/instagram-worker/test.sh` → all green

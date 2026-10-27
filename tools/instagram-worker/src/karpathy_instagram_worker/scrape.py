@@ -128,7 +128,7 @@ def scrape_post(job_id: str, url: str, workdir: Path, *, humanizer, username: st
         with _no_terminal():
             client, account = auth.get_client(username=username, progress=progress, humanizer=humanizer)
     except SystemExit as exc:
-        log.info("instascraper: %s", exc)
+        log.debug("instascraper: %s", exc)  # its advice is for its own CLI; the worker's is `login`
         raise NeedsLogin(f"no usable Instagram session: {LOGIN_HINT}") from None
     except Exception as exc:
         raise classify(exc) from None

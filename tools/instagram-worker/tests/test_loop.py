@@ -23,7 +23,15 @@ class Sleeps(list):
         self.append(seconds)
 
 
-def worker(server, username="tills"):
+def session_file(username="tills"):
+    path = auth.DEFAULT_SESSION_DIR / f"session-{username}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def worker(server, username="tills", session=True):
+    if session and username:
+        session_file(username).write_text("{}")
     sleeps = Sleeps()
     cfg = config.Config(server=server.url, token="tok", name="mbp", poll_interval_s=60)
     client = JobClient(server.url, "tok", "mbp", sleep=sleeps)
@@ -37,6 +45,7 @@ def states(server):
 def configure_cli(server):
     config.save(config.Config(server=server.url, token="tok", name="mbp", poll_interval_s=60))
     iconfig.save_config({"IG_USERNAME": "tills"}, path=iconfig.CONFIG_PATH)
+    session_file().write_text("{}")
 
 
 def test_each_step_builds_one_humanizer_on_the_accounts_ledger(server):
@@ -162,6 +171,15 @@ def test_no_instagram_account_is_needs_login_before_claiming(server):
     step = w.step()
     assert step.state == "needs-login"
     assert server.calls("POST", "/jobs/claim") == []
+
+
+def test_no_session_file_is_needs_login_before_claiming(server):
+    w, _ = worker(server, session=False)
+    step = w.step()
+    assert step.state == "needs-login" and step.sleep_s == 10 * 60
+    assert server.calls("POST", "/jobs/claim") == []
+    hb = server.json_bodies("POST", "/worker/heartbeat")[-1]
+    assert hb["state"] == "needs-login" and "karpathy-instagram-worker login" in hb["message"]
 
 
 def test_rate_limited_releases_reports_rate_limited_and_sleeps_30_minutes(server, monkeypatch):
