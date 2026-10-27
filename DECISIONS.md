@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-22
+edited: 2026-10-27
 ---
 
 **Contents**
@@ -240,6 +240,9 @@ edited: 2026-10-22
   - [15:35 — Retro: quote `just e2e` arguments (test-first); CLAUDE.md line on running `@llm` tests one at a time](#run-2026-10-22-1404-11)
   - [18:50 — #172: fix the chat-title drift window in the product; #163: fresh vault per retry](#run-2026-10-22-1404-12)
   - [18:55 — Release v0.0.36 on top of v0.0.35 so prod gets the #172 fix](#run-2026-10-22-1404-13)
+- [2026-10-27 11:45 — Instagram scraper worker: pull jobs from the server, scrape on the user's machines](#run-2026-10-27-1145)
+  - [11:56 — Work on `autonomous/issue-168-instagram`; mark #137 and #168 with `in-progress`, reopen #168](#run-2026-10-27-1145-1)
+  - [11:56 — Replace the `instagram-mac-relay` change with a new change `instagram-worker`](#run-2026-10-27-1145-2)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3612,3 +3615,40 @@ edited: 2026-10-22
 - **Why:** one deploy with every fix of the run; v0.0.35 is not deployed yet.
 - **Alternatives:** deploy v0.0.35 and leave #172 for later.
 - **Consequences:** v0.0.35 stays as an unused tag. Rollback: `just deploy hetzner 0.0.34`.
+
+# 2026-10-27 11:45 — Instagram scraper worker: pull jobs from the server, scrape on the user's machines {#run-2026-10-27-1145}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > There is a branch (I think) and at least one ticket that deal with the problem of instagram scraping that doesn't work from the datacenter.
+  > - Checkout the brnach
+  > - Merge main into it
+  > - Set the related github tickets to wip
+  > - grill the specs, take decisions as good as you can. Maybe ask fable to help
+  > - The architecture I want: On my mac or some other machines (all *nix OS) I can install a service and configure it. This service calls our karpathy server and request instagram posts / reels (one by one) or their ID. then the service scrapes the posts and sends the result back to the karpathy server.
+  > - The service uses the existing instagram scraper software
+  > Use agents a lot to save your context space
+  > Commit and push often
+  > Send me ntfy messages in between
+  > At the end merge main into our branch, then our branch onto main, then delete the branch. Make sure we have a good documentation of how to setup a instagram scraper service.
+
+## 11:56 — Work on `autonomous/issue-168-instagram`; mark #137 and #168 with `in-progress`, reopen #168 {#run-2026-10-27-1145-1}
+
+- **Status:** open
+- **Context:** the only Instagram branch is the local `autonomous/issue-168-instagram`; it had no commits beyond `main` (its spec change `instagram-mac-relay` was already merged) and no remote. The tracker has no `wip` label; it has `in-progress`. #168 (the research ticket) was closed, #137 (the prod 429 bug) open.
+- **Question:** which branch, and how to mark the tickets "wip"?
+- **Decision:** check out that branch, merge `main` (a fast-forward), push it; label #137 and #168 `in-progress`, reopen #168 and comment the new direction on both.
+- **Why:** it is the branch the user means; `in-progress` is the tracker's existing "wip" label; #168 is where the implementation follows from.
+- **Alternatives:** a fresh branch (loses the name the user knows); a new `wip` label (duplicates `in-progress`).
+- **Consequences:** both issues get closed by the final merge to `main`.
+
+## 11:56 — Replace the `instagram-mac-relay` change with a new change `instagram-worker` {#run-2026-10-27-1145-2}
+
+- **Status:** open
+- **Context:** `specs/changes/instagram-mac-relay/` proposes a forward proxy on the Mac and explicitly rejects "(a) Mac helper runs the scraper". The user now asks for exactly that: a service on any *nix machine that pulls jobs from the server, scrapes with instascraper and uploads the result.
+- **Question:** grill and amend the relay change, or start a new one?
+- **Decision:** a new change `specs/changes/instagram-worker/`; delete `instagram-mac-relay` (its research — why the browser can't do it, the options table — moves into the new proposal's "Options considered").
+- **Why:** the architecture is the opposite of the relay's; amending would rewrite every file anyway, and the user's words override the earlier recommendation.
+- **Alternatives:** keep the relay change as a fallback (two open changes for one problem confuse `/spec:overview`).
+- **Consequences:** the relay design stays in git history (commit `930384b` and earlier).
