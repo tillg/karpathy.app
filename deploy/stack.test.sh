@@ -218,6 +218,9 @@ grep -q 'secrets_from_host secrets' "$here/dev.sh" && ok "dev.sh up fills missin
   grep -q '^OPENROUTER_API_KEY=or-SECRET$' "$out/opencode.env" && ok "… the key reaches opencode.env" || bad "… the key reaches opencode.env" "no"
   grep -q '^GIT_AUTHOR_NAME=Jane$' "$out/.env" && ok "… the vault's author reaches .env" || bad "… the vault's author reaches .env" "no"
   grep -q '"b@x"' "$out/ingest.json" && ok "… the vault's ingest senders reach ingest.json" || bad "… the vault's ingest senders reach ingest.json" "no"
+  # The worker token is generated on the host: the placeholder makes the manifest show it as set.
+  node -e 'const s=require(process.argv[1]); process.exit(s.secrets.find((x)=>x.name==="ingest_worker_token")?.set ? 0 : 1)' "$out/settings.json" \
+    && ok "… the manifest shows the host-made worker token as set" || bad "… the manifest shows the host-made worker token as set" "not set"
   ! grep -q SECRET "$out.log" && ok "… prints no secret" || bad "… prints no secret" "leaked"
   [ -z "$(ls -A "$out" | grep -v -e '^\.env$' -e '^opencode.env$' -e '^settings.json$' -e '^ingest.json$')" ] \
     && ok "… leaves no secret store behind" || bad "… leaves no secret store behind" "$(ls -A "$out")"
@@ -229,10 +232,11 @@ grep -q 'secrets_from_host secrets' "$here/dev.sh" && ok "dev.sh up fills missin
 ) || fails=$((fails + 1))
 
 # Every secret a target's settings use has a source in role app: named in roles/app/vars/main.yml, a provider
-# key from vault_opencode_env (<NAME>_API_KEY → <name>_api_key), or the opencode password made on the host.
+# key from vault_opencode_env (<NAME>_API_KEY → <name>_api_key), or the opencode password and the Instagram worker
+# token made on the host.
 for t in hetzner; do
   missing=$("$here/../node_modules/.bin/tsx" "$here/../packages/settings/src/cli.ts" --no-local --list-secrets "$t" | while read -r name; do
-    case "$name" in (opencode_password|*_api_key) continue ;; esac
+    case "$name" in (opencode_password|ingest_worker_token|*_api_key) continue ;; esac
     grep -q "'$name'" "$here/ansible/roles/app/vars/main.yml" || echo "$name"
   done)
   eq "$t: every secret in the settings has a source in role app" "$missing" ""

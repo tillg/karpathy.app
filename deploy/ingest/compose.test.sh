@@ -37,6 +37,13 @@ check "prod: no fake Instagram login" py "$prod" "'INGEST_FAKE_INSTAGRAM_LOGIN' 
 check "prodtest: no fake Instagram login" py "$prodtest" "'INGEST_FAKE_INSTAGRAM_LOGIN' not in s['environment']"
 check "dev: the fake Instagram login (e2e)" py "$dev" "s['environment'].get('INGEST_FAKE_INSTAGRAM_LOGIN') == '1'"
 check "prod: the backend reaches the ingest endpoint with the token" py "$prod" "c['services']['backend']['environment']['INGEST_URL'] == 'http://ingest:8090' and 'ingest_token' in [x['source'] for x in c['services']['backend']['secrets']]"
+for v in prod dev prodtest; do
+  j=${!v}
+  # The Instagram worker's token: the backend checks it on the worker routes; ingest never sees it (#168).
+  check "$v: the backend has ingest_worker_token, ingest does not" py "$j" "'ingest_worker_token' in [x['source'] for x in c['services']['backend']['secrets']] and 'ingest_worker_token' not in [x['source'] for x in s['secrets']]"
+  check "$v: ingest's environment has INGEST_INSTAGRAM_SOURCE" py "$j" "s['environment'].get('INGEST_INSTAGRAM_SOURCE') in ('local', 'worker')"
+done
+check "prodtest: ingest_worker_token comes from tmp/prodtest/secrets" py "$prodtest" "c['secrets']['ingest_worker_token']['file'].endswith('tmp/prodtest/secrets/ingest_worker_token')"
 check "prod: the whole vaults volume is not mounted (the deploy adds per-vault Input/ and Sources/)" py "$prod" "not any(m['target'] == '/vaults' for m in s['volumes'])"
 check "the ingest config comes from the rendered settings (SETTINGS_DIR/ingest.json)" py "$prod" "any(m['target'] == '/etc/ingest/config.json' and m['source'].endswith('/ingest.json') and m.get('read_only') for m in s['volumes'])"
 

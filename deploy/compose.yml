@@ -57,7 +57,8 @@ services:
       TZ: ${TZ:-Etc/UTC}
       # When the running release was deployed, reported by /api/health (role app writes it to .env).
       DEPLOYED_AT: ${DEPLOYED_AT:-}
-    secrets: [bearer_token, github_token, opencode_password, ingest_token]
+    # ingest_worker_token: the Instagram worker's token, accepted on its job routes only (ingest never sees it).
+    secrets: [bearer_token, github_token, opencode_password, ingest_token, ingest_worker_token]
     volumes:
       - vaults:/vaults
       - config:/config
@@ -126,6 +127,8 @@ services:
       GOG_KEYRING_BACKEND: file
       # instascraper keeps its session and activity ledger under ~/.config/instascraper.
       HOME: /state/home
+      # Who scrapes Instagram: this service (local) or a worker on the user's machine (deploy/settings/).
+      INGEST_INSTAGRAM_SOURCE: ${INGEST_INSTAGRAM_SOURCE:-local}
     secrets: [gog_keyring_password, ingest_token]
     volumes:
       - ingest-state:/state
@@ -180,3 +183,4 @@ secrets:
   dns_api_token: { file: ./secrets/dns_api_token }
   gog_keyring_password: { file: ./secrets/gog_keyring_password }
   ingest_token: { file: ./secrets/ingest_token }
+  ingest_worker_token: { file: ./secrets/ingest_worker_token }
