@@ -111,6 +111,14 @@ describe('renderComposeEnv', () => {
   });
 });
 
+describe('renderComposeEnv Instagram source', () => {
+  it('.env carries INGEST_INSTAGRAM_SOURCE (local by default)', () => {
+    expect(env(renderComposeEnv(compat(), {})).INGEST_INSTAGRAM_SOURCE).toBe('local');
+    const dir = tempDir({ 'settings.yaml': CENTRAL, 'x.yaml': 'ingest: { defaults: { instagram_source: worker }, profiles: {} }\n' });
+    expect(env(renderComposeEnv(loadSettings('x', { dir }), {})).INGEST_INSTAGRAM_SOURCE).toBe('worker');
+  });
+});
+
 describe('no model upstream', () => {
   it('the compose .env names no relay to a model server: every model is on OpenRouter', () => {
     for (const e of ['dev', 'prodtest', 'test', 'hetzner'])
@@ -141,6 +149,22 @@ describe('renderBackendSettings', () => {
       expect(() => backendSettingsSchema.parse(JSON.parse(renderBackendSettings(loadSettings(e, { overlay: false }), SECRETS))), e).not.toThrow();
     for (const name of ['bearer_token', 'opencode_password', 'github_token', 'dns_api_token', 'openrouter_api_key'])
       expect(json).not.toContain(SECRETS[name as keyof typeof SECRETS]);
+  });
+});
+
+describe('renderBackendSettings worker token', () => {
+  it('settings.json has ingest.worker_token as /run/secrets/ingest_worker_token', () => {
+    const s = JSON.parse(renderBackendSettings(loadSettings('hetzner', { overlay: false }), { ...SECRETS, ingest_worker_token: 'wt-SECRET' }));
+    expect(s.ingest).toEqual({ worker_token: { file: '/run/secrets/ingest_worker_token' } });
+    // Without the setting (an older settings.yaml), settings.json has no ingest block.
+    expect(JSON.parse(renderBackendSettings(compat(), SECRETS)).ingest).toBeUndefined();
+  });
+
+  it('the manifest names it Instagram worker token, component backend', () => {
+    const { secrets } = JSON.parse(renderBackendSettings(loadSettings('dev', { overlay: false }), { ...SECRETS, ingest_worker_token: 'wt-SECRET' }));
+    expect(secrets.find((x: { name: string }) => x.name === 'ingest_worker_token')).toEqual({
+      name: 'ingest_worker_token', component: 'backend', purpose: 'Instagram worker token', optional: true, set: true,
+    });
   });
 });
 
@@ -182,7 +206,7 @@ describe('renderBackendSettings secrets manifest', () => {
 describe('renderIngestConfig', () => {
   it('no profiles: an idle ingest loop', () => {
     expect(JSON.parse(renderIngestConfig(loadSettings('dev', { overlay: false }), SECRETS))).toEqual({
-      defaults: { max_per_poll: 20, resolve_max_urls_per_mail: 5, run_interval_s: 900 },
+      defaults: { max_per_poll: 20, resolve_max_urls_per_mail: 5, run_interval_s: 900, instagram_source: 'worker' },
       profiles: {},
     });
   });

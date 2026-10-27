@@ -19,4 +19,6 @@ node -e '
   }' "$store"
 # The opencode password is generated on the host (role app), not in the vault; settings.json only names its file.
 [ -e "$store/opencode_password" ] || printf 'generated-on-the-host' > "$store/opencode_password"
+# So is the Instagram worker's token (role app › Ingest secrets): the placeholder makes the manifest show it as set.
+[ -e "$store/ingest_worker_token" ] || printf 'generated-on-the-host' > "$store/ingest_worker_token"
 "$repo/node_modules/.bin/tsx" "$repo/packages/settings/src/cli.ts" render "$target" --no-local --out "$out" --secrets "$store"

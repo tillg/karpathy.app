@@ -124,7 +124,7 @@ backend adds auth and streaming, nothing else.
   and falls through to the main router and its `bearerAuth`, so the worker token is refused everywhere else.
 - **Auth:** `bearerAuthAny([workerToken, mainToken])` in `auth.ts`: the same constant-time comparison as
   `bearerAuth`, against each token. Without a configured worker token, only the main token works on these routes.
-- **JSON routes** use `express.json({ limit: '16kb' })` and a small `forwardIngest(ep, req, res, path)` that passes
+- **JSON routes** use `express.json({ limit: 10_000 })` and a small `forwardIngest(ep, req, res, path)` that passes
   the ingest service's status and body through (204 included). `callIngest`'s rules stay: unreachable → `503
   ingest-down`, an ingest 401/403 → `502 ingest-auth`.
 - **Result route** streams: `fetch(\`${ep.url}/instagram/jobs/${id}/result\`, { method: 'PUT', body: req, duplex:

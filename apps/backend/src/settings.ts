@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { z } from 'zod';
 
 /** A secret as a file, e.g. a compose secret at /run/secrets/<name>. */
@@ -27,6 +27,8 @@ export const backendSettingsSchema = z.strictObject({
   files: z.strictObject({
     visible_dot_dirs: z.array(z.string().regex(/^\.[^/]+$/, 'a dot-dir name starts with "."').refine((d) => d !== '.git', '.git is never shown')),
   }),
+  /** The Instagram worker's token (#168); absent in an older settings.json. */
+  ingest: z.strictObject({ worker_token: file.optional() }).optional(),
   /** The secret manifest (names and booleans only), as of the render; absent in an older settings.json. */
   secrets: z
     .array(z.strictObject({ name: z.string(), component: z.string(), purpose: z.string(), optional: z.boolean(), set: z.boolean() }))
@@ -49,6 +51,8 @@ export interface BackendSettings {
   commitReminderThreshold: number;
   visibleDotDirs: string[];
   secrets: z.infer<typeof backendSettingsSchema>['secrets'];
+  /** Accepted on the Instagram worker routes only; undefined = only the main token works there. */
+  workerToken: string | undefined;
 }
 
 const secret = (f: { file: string } | undefined) => (f ? readFileSync(f.file, 'utf8').trim() || undefined : undefined);
@@ -76,5 +80,7 @@ export function loadBackendSettings(path: string): BackendSettings {
     commitReminderThreshold: s.commit_reminder_threshold,
     visibleDotDirs: s.files.visible_dot_dirs,
     secrets: s.secrets,
+    // Optional: a stack without the secret file still starts, with the worker routes on the main token only.
+    workerToken: s.ingest?.worker_token && existsSync(s.ingest.worker_token.file) ? secret(s.ingest.worker_token) : undefined,
   };
 }

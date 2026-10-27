@@ -21,6 +21,14 @@ describe('deploy/settings', () => {
     for (const env of ['dev', 'prodtest', 'test']) expect(loadSettings(env, { overlay: false }).ingest?.profiles, env).toEqual({});
   });
 
+  it('hetzner and dev use worker, prodtest local', () => {
+    const source = (env: string) => loadSettings(env, { overlay: false }).ingest?.defaults?.instagram_source;
+    expect(source('hetzner')).toBe('worker');
+    expect(source('dev')).toBe('worker');
+    expect(source('prodtest')).toBe('local');
+    for (const env of environments()) expect(loadSettings(env, { overlay: false }).ingest?.worker_token, env).toEqual({ secret: 'ingest_worker_token', optional: true });
+  });
+
   it('has the four environments', () => {
     expect(environments()).toEqual(['dev', 'hetzner', 'prodtest', 'test']);
   });

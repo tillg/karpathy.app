@@ -64,5 +64,8 @@ gateways:
 #   mylife: { vault: mylife, label: MyLife, account: { secret: ingest_mylife_account },
 #             allowed_senders: [{ secret: ingest_mylife_sender }], settings: { max_per_poll: 20 } }
 ingest:
-  defaults: { max_per_poll: 20, resolve_max_urls_per_mail: 5, run_interval_s: 900 }
+  # The Instagram worker's token (generated on the host like ingest_token): job routes only (#168).
+  worker_token: { secret: ingest_worker_token, optional: true }
+  # instagram_source: who scrapes Instagram, the ingest service itself (local) or a worker on the user's machine.
+  defaults: { max_per_poll: 20, resolve_max_urls_per_mail: 5, run_interval_s: 900, instagram_source: local }
   profiles: {}

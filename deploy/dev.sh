@@ -32,6 +32,7 @@ case "${1:-up}" in
     [ -s secrets/opencode_password ] || openssl rand -hex 24 > secrets/opencode_password
     [ -s secrets/gog_keyring_password ] || openssl rand -hex 24 > secrets/gog_keyring_password
     [ -s secrets/ingest_token ] || openssl rand -hex 24 > secrets/ingest_token
+    [ -s secrets/ingest_worker_token ] || openssl rand -hex 24 > secrets/ingest_worker_token
     touch secrets/github_token secrets/dns_api_token
     secrets_from_host secrets || exit 1
     # deploy/settings/ (dev.yaml, your dev.local.yaml) → tmp/settings/dev/, which compose reads.

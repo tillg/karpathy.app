@@ -10,7 +10,9 @@ timezone: Europe/Berlin
 
 # The ingest service (deploy/ingest): Gmail labels → the vaults' Input/. Account and senders are in the vault.
 # resolve_max_attempts 75: links are resolved every minute here (every 15 min on the Mac before: 5 attempts).
+# Instagram is scraped by a worker on the user's machine (docs/instagram-worker.md), not from the server's IP.
 ingest:
+  defaults: { instagram_source: worker }
   profiles:
     mylife:
       vault: mylife

@@ -46,4 +46,15 @@ describe('schema', () => {
     expect(load('dev', { 'dev.yaml': 'gateways: { anthropic: { kind: anthropic, api_key: { secret: anthropic_api_key } } }\nai: { gateway: anthropic, model: anthropic/claude-x, vision_model: anthropic/claude-x }\n' })).toThrow(/ai\.vision_model: .*OpenAI-compatible/);
     expect(load('dev', { 'dev.yaml': 'proxy: { tls: dns, dns: { api_token: null } }\n' })).toThrow(/proxy\.dns\.api_token/);
   });
+
+  it('instagram_source must be local or worker', () => {
+    for (const v of ['local', 'worker'])
+      expect(load('dev', { 'dev.yaml': `ingest: { defaults: { instagram_source: ${v} }, profiles: {} }\n` }), v).not.toThrow();
+    expect(load('dev', { 'dev.yaml': 'ingest: { defaults: { instagram_source: mac }, profiles: {} }\n' })).toThrow(/ingest\.defaults\.instagram_source: .*local or worker/);
+  });
+
+  it('a profile setting instagram_source is an error naming the profile', () => {
+    const profile = 'p1: { vault: v, label: L, account: a@b.c, allowed_senders: [], settings: { instagram_source: worker } }';
+    expect(load('dev', { 'dev.yaml': `ingest: { profiles: { ${profile} } }\n` })).toThrow(/ingest\.profiles\.p1\.settings\.instagram_source: .*ingest\.defaults/);
+  });
 });

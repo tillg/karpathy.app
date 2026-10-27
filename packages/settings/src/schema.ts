@@ -74,6 +74,9 @@ export const settingsSchema = z.strictObject({
   gateways: z.record(z.string(), gateway),
   /** The ingest service: which Gmail label fills which vault's Input/. No profiles = the loop idles. */
   ingest: z.strictObject({
+    /** The Instagram worker's token (#168): it may only claim jobs and upload results, via the backend. */
+    worker_token: secretRef.optional(),
+    /** ingest-email options for every profile; `instagram_source` (`local` | `worker`) is set only here. */
     defaults: z.record(z.string(), z.unknown()).optional(),
     profiles: z.record(z.string(), ingestProfile),
   }).optional(),
@@ -125,5 +128,12 @@ export function crossFieldErrors(s: Settings): string[] {
   if (s.gateways[visionGateway]?.kind === 'anthropic')
     errors.push(`ai.vision_model: gateway ${visionGateway} (anthropic) is not OpenAI-compatible, which the vision tool needs`);
   if (s.proxy.tls === 'dns' && !s.proxy.dns.api_token) errors.push('proxy.dns.api_token: required when proxy.tls is dns');
+  // Who scrapes Instagram is a fact of the ingest service (one mode per service), so no profile overrides it.
+  const source = s.ingest?.defaults?.instagram_source;
+  if (source !== undefined && source !== 'local' && source !== 'worker')
+    errors.push(`ingest.defaults.instagram_source: ${JSON.stringify(source)} is not local or worker`);
+  for (const [name, p] of Object.entries(s.ingest?.profiles ?? {}))
+    if (p.settings && 'instagram_source' in p.settings)
+      errors.push(`ingest.profiles.${name}.settings.instagram_source: set it in ingest.defaults (one mode for the service)`);
   return errors;
 }
