@@ -75,7 +75,8 @@ part is new (the worker). The vault-writing path, ingest-email's `map_output`, s
   | Raised | Worker does | State |
   |---|---|---|
   | `MediaNotFound`, `ClientNotFoundError`, unknown shortcode | `failure {permanent: true}` | `idle` |
-  | `LoginRequired`, `ClientLoginRequired`, `ChallengeRequired`, `SystemExit` from `get_client` | `release`, sleep 10 min | `needs-login` (message: "run karpathy-instagram-worker login") |
+  | `LoginRequired`, `ClientLoginRequired`, `ChallengeRequired`; no session file at all (before claiming) | `release`, sleep 10 min | `needs-login` (message: "run karpathy-instagram-worker login") |
+  | `SystemExit` from `get_client` (without a TTY it ends any failed session check that way: network error, 429, `PleaseWaitFewMinutes`, expired session) | `release`, sleep 30 min; the 3rd in a row (a working `get_client` resets the count) → as `needs-login` | `rate-limited` (message: "the Instagram session check failed: … (n of 3 before asking for a login)"), then `needs-login` |
   | `PleaseWaitFewMinutes`, `ClientThrottledError`, HTTP 429 | `release`, sleep 30 min | `rate-limited` |
   | upload answered 413 or 422 | `failure {permanent: true, reason: <server message>}` | `idle` |
   | upload answered `404 unknown-job` (nobody wants the post any more) | nothing | `idle` |

@@ -20,12 +20,15 @@ from typing import Callable
 from . import scrape as scrape_mod
 from .client import ApiError, JobClient, NotWorkerMode, ServerUnavailable, TokenRejected
 from .config import Config
-from .scrape import NeedsLogin, Permanent, RateLimited, Transient
+from .scrape import NeedsLogin, Permanent, RateLimited, SessionCheckFailed, Transient
 from .upload import ResultRejected, upload
 
 SLEEP_GATE_MAX_S = 30 * 60
 SLEEP_NEEDS_LOGIN_S = 10 * 60
 SLEEP_RATE_LIMITED_S = 30 * 60
+# get_client's SystemExit covers network errors and rate limits too; a re-login (a flag-risk event) is asked for only
+# after this many in a row.
+SESSION_CHECKS_BEFORE_LOGIN = 3
 LOGIN_MESSAGE = "run karpathy-instagram-worker login"
 
 log = logging.getLogger("karpathy_instagram_worker.loop")
@@ -55,6 +58,7 @@ class Worker:
         self.client = client
         self.username = username
         self.sleep = sleep
+        self.failed_session_checks = 0  # in a row; a working get_client resets it
 
     # --- reporting ------------------------------------------------------------
 
@@ -70,6 +74,9 @@ class Worker:
             self.client.failure(job_id, reason, permanent=permanent)
         except (ServerUnavailable, ApiError) as exc:
             log.warning("could not report the failure of %s (%s); its lease will lapse", job_id, exc)
+
+    def _session_ok(self) -> None:
+        self.failed_session_checks = 0
 
     def _release(self, job_id: str) -> None:
         try:
@@ -129,7 +136,22 @@ class Worker:
         pace = humanizer.sample_delay("post")
         with tempfile.TemporaryDirectory(prefix="karpathy-worker-") as tmp:
             try:
-                out = scrape_mod.scrape_post(job.id, job.url, Path(tmp), humanizer=humanizer, username=username)
+                out = scrape_mod.scrape_post(
+                    job.id, job.url, Path(tmp), humanizer=humanizer, username=username, on_client=self._session_ok
+                )
+            except SessionCheckFailed as exc:
+                self._release(job.id)
+                self.failed_session_checks += 1
+                n = self.failed_session_checks
+                if n >= SESSION_CHECKS_BEFORE_LOGIN:
+                    log.error("%s: %s (%d times in a row)", job.id, exc.reason, n)
+                    self.beat("needs-login", LOGIN_MESSAGE)
+                    note = f"{exc.reason}, {n} times in a row (job {job.id} released)"
+                    return Step("needs-login", SLEEP_NEEDS_LOGIN_S, note)
+                note = f"{exc.reason} ({n} of {SESSION_CHECKS_BEFORE_LOGIN} before asking for a login)"
+                log.warning("%s: %s", job.id, note)
+                self.beat("rate-limited", note)
+                return Step("rate-limited", SLEEP_RATE_LIMITED_S, f"{note} (job {job.id} released)")
             except NeedsLogin as exc:
                 log.error("%s: %s", job.id, exc.reason)
                 self._release(job.id)

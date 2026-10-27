@@ -182,6 +182,38 @@ def test_no_session_file_is_needs_login_before_claiming(server):
     assert hb["state"] == "needs-login" and "karpathy-instagram-worker login" in hb["message"]
 
 
+def test_a_failed_session_check_releases_and_rests_30_minutes_as_rate_limited(server, monkeypatch):
+    server.script("POST", "/jobs/claim", JOB)
+    monkeypatch.setattr(auth, "GET_CLIENT_RAISES", SystemExit("no usable session"))
+    w, _ = worker(server)
+    step = w.step()
+    assert len(server.calls("POST", f"/jobs/{CODE}/release")) == 1
+    assert server.calls("POST", f"/jobs/{CODE}/failure") == []
+    hb = server.json_bodies("POST", "/worker/heartbeat")[-1]
+    assert hb["state"] == "rate-limited" and "session check" in hb["message"]
+    assert step.state == "rate-limited" and step.sleep_s == 30 * 60
+
+
+def test_the_third_failed_session_check_in_a_row_needs_login(server, monkeypatch):
+    server.script("POST", "/jobs/claim", JOB, JOB, JOB)
+    monkeypatch.setattr(auth, "GET_CLIENT_RAISES", SystemExit("no usable session"))
+    w, _ = worker(server)
+    assert [w.step().state for _ in range(3)] == ["rate-limited", "rate-limited", "needs-login"]
+    hb = server.json_bodies("POST", "/worker/heartbeat")[-1]
+    assert hb["state"] == "needs-login" and "karpathy-instagram-worker login" in hb["message"]
+    assert len(server.calls("POST", f"/jobs/{CODE}/release")) == 3
+
+
+def test_a_working_session_resets_the_failed_session_checks(server, monkeypatch):
+    server.script("POST", "/jobs/claim", *[JOB] * 5)
+    w, _ = worker(server)
+    seen = []
+    for fails in (True, True, False, True, True):
+        monkeypatch.setattr(auth, "GET_CLIENT_RAISES", SystemExit("no usable session") if fails else None)
+        seen.append(w.step().state)
+    assert seen == ["rate-limited", "rate-limited", "idle", "rate-limited", "rate-limited"]
+
+
 def test_rate_limited_releases_reports_rate_limited_and_sleeps_30_minutes(server, monkeypatch):
     server.script("POST", "/jobs/claim", JOB)
     monkeypatch.setattr(scraper, "SCRAPE_RAISES", igex.PleaseWaitFewMinutes("slow down"))
@@ -246,7 +278,7 @@ def test_once_exits_0_after_one_step(server):
 def test_once_exits_1_when_instagram_needs_a_login(server, monkeypatch, capsys):
     configure_cli(server)
     server.script("POST", "/jobs/claim", JOB)
-    monkeypatch.setattr(auth, "GET_CLIENT_RAISES", SystemExit("no session"))
+    monkeypatch.setattr(auth, "GET_CLIENT_RAISES", igex.LoginRequired("dead"))
     assert cli.main(["once"]) == 1
     assert "karpathy-instagram-worker login" in capsys.readouterr().out
 

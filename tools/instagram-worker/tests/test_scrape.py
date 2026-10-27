@@ -8,7 +8,7 @@ import pytest
 from instascraper.behavior import Humanizer
 
 from karpathy_instagram_worker import scrape
-from karpathy_instagram_worker.scrape import NeedsLogin, Permanent, RateLimited, Transient
+from karpathy_instagram_worker.scrape import NeedsLogin, Permanent, RateLimited, SessionCheckFailed, Transient
 
 CODE = "C0deAbc12"
 URL = f"https://www.instagram.com/p/{CODE}/"
@@ -25,13 +25,32 @@ def test_not_found_is_permanent(tmp_path, monkeypatch, exc):
         run(tmp_path)
 
 
-@pytest.mark.parametrize("exc", [igex.LoginRequired("x"), igex.ChallengeRequired("x"), igex.ClientLoginRequired("x"),
-                                 SystemExit("@tills needs to log in (no usable session)")])
+@pytest.mark.parametrize("exc", [igex.LoginRequired("x"), igex.ChallengeRequired("x"), igex.ClientLoginRequired("x")])
 def test_login_problems_from_get_client_need_login(tmp_path, monkeypatch, exc):
     monkeypatch.setattr(auth, "GET_CLIENT_RAISES", exc)
     with pytest.raises(NeedsLogin, match="karpathy-instagram-worker login"):
         run(tmp_path)
     assert scraper.CALLS == []
+
+
+def test_a_system_exit_from_get_client_is_a_failed_session_check_not_a_login(tmp_path, monkeypatch):
+    # Without a TTY, instascraper turns any failed session check (network error, 429, PleaseWaitFewMinutes) into
+    # SystemExit: it says nothing for sure about the session, so it is not needs-login (yet).
+    monkeypatch.setattr(auth, "GET_CLIENT_RAISES", SystemExit("@tills needs to log in (no usable session)"))
+    with pytest.raises(SessionCheckFailed) as err:
+        run(tmp_path)
+    assert not isinstance(err.value, NeedsLogin)
+    assert scraper.CALLS == []
+
+
+def test_on_client_is_called_once_get_client_succeeded(tmp_path, monkeypatch):
+    calls = []
+    scrape.scrape_post(CODE, URL, tmp_path / "work", humanizer=Humanizer(), username="tills", on_client=lambda: calls.append(1))
+    assert calls == [1]
+    monkeypatch.setattr(auth, "GET_CLIENT_RAISES", SystemExit("no session"))
+    with pytest.raises(SessionCheckFailed):
+        scrape.scrape_post(CODE, URL, tmp_path / "work2", humanizer=Humanizer(), username="tills", on_client=lambda: calls.append(2))
+    assert calls == [1]
 
 
 @pytest.mark.parametrize("exc", [igex.LoginRequired("x"), igex.ChallengeRequired("x")])

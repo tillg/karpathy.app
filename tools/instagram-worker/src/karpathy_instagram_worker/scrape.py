@@ -1,8 +1,9 @@
 """One post through instascraper: `get_client`, `scrape`, `write_result`, and what its errors mean for the job.
 
-The mapping follows instascraper's own `cli.py`: not found → the post is the problem (permanent); login, challenge
-or a missing session → the worker is the problem (needs-login); Instagram's rate limit → rate-limited; anything
-else → a non-permanent failure. instascraper is imported lazily, so `--help`, `version` and `doctor` work even when
+The mapping follows instascraper's own `cli.py`: not found → the post is the problem (permanent); login or
+challenge → the worker is the problem (needs-login); Instagram's rate limit → rate-limited; a SystemExit from
+`get_client` → a failed session check (the loop decides when that means needs-login); anything else → a
+non-permanent failure. instascraper is imported lazily, so `--help`, `version` and `doctor` work even when
 it is broken.
 """
 
@@ -13,6 +14,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Callable
 
 REASON_MAX = 200
 LOGIN_HINT = "run karpathy-instagram-worker login"
@@ -32,6 +34,11 @@ class Permanent(ScrapeError):
 
 class NeedsLogin(ScrapeError):
     """The worker's Instagram session is missing, expired or challenged."""
+
+
+class SessionCheckFailed(ScrapeError):
+    """get_client gave up (SystemExit): without a TTY it does so on any failed session check, a network error or a
+    rate limit as much as an expired session."""
 
 
 class RateLimited(ScrapeError):
@@ -111,8 +118,17 @@ def classify(exc: BaseException) -> ScrapeError:
     return Transient(detail)
 
 
-def scrape_post(job_id: str, url: str, workdir: Path, *, humanizer, username: str | None) -> Path:
-    """Scrape `url` into `workdir/<job_id>/` and return that directory. Raises a ScrapeError subclass."""
+def scrape_post(
+    job_id: str,
+    url: str,
+    workdir: Path,
+    *,
+    humanizer,
+    username: str | None,
+    on_client: Callable[[], None] | None = None,
+) -> Path:
+    """Scrape `url` into `workdir/<job_id>/` and return that directory. Raises a ScrapeError subclass. `on_client` is
+    called once get_client has succeeded (the session works)."""
     from instascraper import auth, scraper, writer
     from instascraper.url import parse_shortcode
 
@@ -129,9 +145,11 @@ def scrape_post(job_id: str, url: str, workdir: Path, *, humanizer, username: st
             client, account = auth.get_client(username=username, progress=progress, humanizer=humanizer)
     except SystemExit as exc:
         log.debug("instascraper: %s", exc)  # its advice is for its own CLI; the worker's is `login`
-        raise NeedsLogin(f"no usable Instagram session: {LOGIN_HINT}") from None
+        raise SessionCheckFailed(f"the Instagram session check failed: {exc}") from None
     except Exception as exc:
         raise classify(exc) from None
+    if on_client:
+        on_client()
 
     humanizer.record("post")
     try:
