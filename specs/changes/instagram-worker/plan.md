@@ -97,31 +97,31 @@ flowchart LR
 
 ## Worker package (`tools/instagram-worker/`)
 
-- [ ] Package skeleton: `pyproject.toml` (src layout, `karpathy_instagram_worker`, script `karpathy-instagram-worker`, Python ≥ 3.11, instascraper @ v1.1.0), `config.py` (TOML at `~/.config/karpathy-instagram-worker/config.toml`, 0600, `KARPATHY_WORKER_CONFIG`), `configure` and `version`; test harness `tests/` with a stub `instascraper` package and `test.sh`, added to `just check`
+- [x] Package skeleton: `pyproject.toml` (src layout, `karpathy_instagram_worker`, script `karpathy-instagram-worker`, Python ≥ 3.11, instascraper @ v1.1.0), `config.py` (TOML at `~/.config/karpathy-instagram-worker/config.toml`, 0600, `KARPATHY_WORKER_CONFIG`), `configure` and `version`; test harness `tests/` with a stub `instascraper` package and `test.sh`, added to `just check`
   - Depends on: none
   - Test first: `tools/instagram-worker/tests/test_config.py` › "configure writes server, token, name, poll_interval_s with mode 0600", "a missing token is asked with getpass, never echoed", "server must be https:// (http only for localhost)", "name defaults to the short host name", "version prints the package version". Fail today: no package.
   - Verify: `bash tools/instagram-worker/test.sh` → all green; `grep -q instagram-worker/test.sh justfile` → exit 0
-- [ ] `client.py`: claim, failure, release and heartbeat over stdlib `urllib` with the bearer token; 204 → no job; 401 → `TokenRejected`; unreachable or 5xx → retried with backoff (1, 2, 5 min, sleeps injected)
+- [x] `client.py`: claim, failure, release and heartbeat over stdlib `urllib` with the bearer token; 204 → no job; 401 → `TokenRejected`; unreachable or 5xx → retried with backoff (1, 2, 5 min, sleeps injected)
   - Depends on: 12
   - Test first: `tools/instagram-worker/tests/test_client.py` (a `http.server` fake on localhost) › "claim returns {id, url, leaseUntil}", "204 is None", "every call sends `Authorization: Bearer <token>`", "401 raises TokenRejected", "a 503 then a 200 retries once after the first backoff", "heartbeat sends name, version, state, message". Fail today: no client.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
-- [ ] `upload.py`: a flat tar.gz of `<shortcode>/` (regular files only), streamed `PUT` with `Content-Length` in 1 MiB chunks; local refusal over 500 MB or 40 files; 413/422 → `ResultRejected(message)`
+- [x] `upload.py`: a flat tar.gz of `<shortcode>/` (regular files only), streamed `PUT` with `Content-Length` in 1 MiB chunks; local refusal over 500 MB or 40 files; 413/422 → `ResultRejected(message)`
   - Depends on: 13
   - Test first: `tools/instagram-worker/tests/test_upload.py` › "the tarball holds exactly the dir's files, flat, no links", "the fake server receives Content-Length and the full body", "41 files → ResultRejected before any request", "a 422 with a message → ResultRejected carrying it", "a symlink in the dir is left out". Fail today: no module.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
-- [ ] `scrape.py`: instascraper's `get_client`, `scrape`, `write_result` into a temp dir; error mapping (not found → permanent failure; login/challenge/`SystemExit` → needs-login; `PleaseWaitFewMinutes`/throttled/429 → rate-limited; other → non-permanent failure)
+- [x] `scrape.py`: instascraper's `get_client`, `scrape`, `write_result` into a temp dir; error mapping (not found → permanent failure; login/challenge/`SystemExit` → needs-login; `PleaseWaitFewMinutes`/throttled/429 → rate-limited; other → non-permanent failure)
   - Depends on: 12
   - Test first: `tools/instagram-worker/tests/test_scrape.py` (stub instascraper raising each instagrapi-named exception) › "MediaNotFound and ClientNotFoundError → Permanent", "LoginRequired, ChallengeRequired and SystemExit from get_client → NeedsLogin", "PleaseWaitFewMinutes → RateLimited", "ValueError → Transient with 'ValueError: …' cut at 200", "success returns the `<shortcode>/` dir with post.md and metadata.json". Fail today: no module.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
-- [ ] `loop.py` + `once`/`run`: per job one `Humanizer(BehaviorProfile(), ledger=ActivityLedger(activity_path(user)))`, gate before claiming (STOP → heartbeat `night`/`resting`, sleep, no claim); claim → heartbeat `scraping` → scrape → upload or failure or release; pace between jobs; idle poll; SIGTERM ends after the current job
+- [x] `loop.py` + `once`/`run`: per job one `Humanizer(BehaviorProfile(), ledger=ActivityLedger(activity_path(user)))`, gate before claiming (STOP → heartbeat `night`/`resting`, sleep, no claim); claim → heartbeat `scraping` → scrape → upload or failure or release; pace between jobs; idle poll; SIGTERM ends after the current job
   - Depends on: 13, 14, 15
   - Test first: `tools/instagram-worker/tests/test_loop.py` (fake server, stub instascraper, fake clock and sleep) › "a closed gate claims nothing and reports night", "no job → idle heartbeat and a poll_interval_s sleep", "success uploads and reports idle", "Permanent and ResultRejected → failure permanent true", "Transient → failure permanent false, state error then idle", "NeedsLogin → release, needs-login, 10-minute sleep", "RateLimited → release, rate-limited, 30-minute sleep", "TokenRejected stops run with exit 1", "once exits 0 after one step". Fail today: no loop.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
-- [ ] `login` (password from getpass, 2FA/challenge code from stdin via `login_interactive_free`'s `code` callback; `--browser`) remembering `IG_USERNAME`; `doctor` (Python, instascraper, config 0600, server + token, session, ffmpeg optional, service)
+- [x] `login` (password from getpass, 2FA/challenge code from stdin via `login_interactive_free`'s `code` callback; `--browser`) remembering `IG_USERNAME`; `doctor` (Python, instascraper, config 0600, server + token, session, ffmpeg optional, service)
   - Depends on: 15
   - Test first: `tools/instagram-worker/tests/test_cli.py` › "login passes username, password and a code callback that reads stdin", "login writes IG_USERNAME to instascraper's .env", "the password never reaches stdout, stderr or any file", "doctor prints one line per check and exits 1 on a rejected token", "doctor treats a missing ffmpeg as a warning". Fail today: no commands.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
-- [ ] `service install|uninstall|status`: launchd LaunchAgent `app.karpathy.instagram-worker` on macOS, systemd user unit `karpathy-instagram-worker.service` on Linux, with the absolute path of the installed command
+- [x] `service install|uninstall|status`: launchd LaunchAgent `app.karpathy.instagram-worker` on macOS, systemd user unit `karpathy-instagram-worker.service` on Linux, with the absolute path of the installed command
   - Depends on: 12
   - Test first: `tools/instagram-worker/tests/test_service.py` (stub `launchctl`, `systemctl`, `journalctl` on `PATH`, `HOME` in a temp dir, platform injected) › "macOS: the plist has RunAtLoad, KeepAlive, the absolute command + run, logs in ~/Library/Logs/karpathy-instagram-worker/, and `launchctl bootstrap gui/<uid>` is called", "uninstall calls bootout and removes the plist", "Linux: the unit has `ExecStart=<abs> run` and Restart=always; daemon-reload and enable --now are called", "install twice replaces, not duplicates", "status shows the last log lines". Fail today: no module.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
