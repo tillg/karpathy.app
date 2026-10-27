@@ -100,7 +100,10 @@ karpathy-instagram-worker configure --server https://app.karpathy.app --name mac
 ```
 
 It asks for the token with hidden input (paste it there rather than passing `--token`, which ends up in your shell
-history). Before saving, it sends one heartbeat to check the URL and the token:
+history). On the machine that can SSH to the server, or in a script without a terminal, pass it from the command
+instead; it never reaches your history or the screen:
+`--token "$(just instagram-worker-token hetzner)"`. Before saving, it sends one heartbeat to check the URL and the
+token:
 
 - `The server accepted the worker token.` – done.
 - `error: https://app.karpathy.app rejected the worker token (HTTP 401).` – nothing was saved; get the token again.

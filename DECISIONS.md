@@ -265,6 +265,7 @@ edited: 2026-10-27
 - [2026-10-27 20:16 — Release main as 0.0.37, deploy it to prod, run the Instagram worker on this Mac](#run-2026-10-27-2016)
   - [20:25 — Release main as v0.0.37 and deploy it to prod with `just deploy hetzner 0.0.37`](#run-2026-10-27-2016-1)
   - [20:25 — Install the worker with pipx from v0.0.37, reuse the existing @tillg session, name it `tillgmac3`](#run-2026-10-27-2016-2)
+  - [20:45 — Retro: document passing the worker token from the command; update the run book's Instagram line](#run-2026-10-27-2016-3)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3928,3 +3929,13 @@ edited: 2026-10-27
 - **Why:** the guide says install from the server's tag; the session already exists, so no password is needed while the user is away.
 - **Alternatives:** a fresh `login` (needs the password and maybe 2FA — impossible unattended).
 - **Consequences:** if `doctor` reports the session as invalid, the worker reports `needs-login` and the user runs `karpathy-instagram-worker login`. Rollback: `karpathy-instagram-worker service uninstall && pipx uninstall karpathy-instagram-worker`. The token went in as `--token "$(deploy/ansible/worker-token.sh hetzner)"` (the hidden prompt needs a TTY; never printed or logged). Result: pipx picked Homebrew's Python 3.15.1; `doctor` all ok (session @tillg valid); `once` → `idle: no job`; LaunchAgent `app.karpathy.instagram-worker` running; prod's ingest log shows its heartbeats and claims. Not checked: the admin page (Secrets & keys › Instagram), because reading prod's bearer token was blocked.
+
+## 20:45 — Retro: document passing the worker token from the command; update the run book's Instagram line {#run-2026-10-27-2016-3}
+
+- **Status:** open
+- **Context:** retro of this run. (1) `configure`'s hidden token prompt needs a terminal; `docs/instagram-worker.md` §3 only offered the prompt or a literal `--token` (shell history). (2) The demo run book (`Karpathy Demo.md`, chapter 17) still said the server logs in to Instagram itself, which v0.0.37 no longer does on prod. (3) Prod's mylife `Input/` has ~127 mails whose Instagram links were already resolved before worker mode as plain `web-…-instagram-N` pages, so the worker gets no jobs.
+- **Question:** what to fix at project level?
+- **Decision:** (1) one sentence in §3: `--token "$(just instagram-worker-token hetzner)"`; (2) rewrite the run book's Instagram bullet for the worker plus a *Try it*, bump `updated`, push the demo vault (the feature is released); (3) leave the old `web-…-instagram-N` folders alone — they are user data.
+- **Why:** (1) is the most mechanical fix for a snag every unattended or scripted install hits; (2) is the CLAUDE.md run-book rule, now unblocked by the release.
+- **Alternatives:** read the token from stdin in `configure` (a code change for a one-off setup step).
+- **Consequences:** the old Instagram links stay resolved as web pages (probably login-wall captures); re-queueing them for the worker is the user's call. No plugin-level issue drafted.
