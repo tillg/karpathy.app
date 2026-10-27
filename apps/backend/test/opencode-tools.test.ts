@@ -172,10 +172,10 @@ describe('move_to_sources tool', () => {
     await mkdir(join(vaultsDir, 'move/Input/mail-2026-10-08-a'), { recursive: true });
     await writeFile(join(vaultsDir, 'move/Input/mail-2026-10-08-a/index.md'), '---\ntitle: a\n---\n');
     expect(JSON.parse(await runMove('mail-2026-10-08-a'))).toEqual({
-      output: 'Moved to Sources/mail-2026-10-08-a',
-      metadata: { files: [{ filePath: 'Input/mail-2026-10-08-a/index.md', movePath: 'Sources/mail-2026-10-08-a/index.md' }] },
+      output: 'Moved to Sources/mail-2026-10-08-a (index.md is now mail-2026-10-08-a.md)',
+      metadata: { files: [{ filePath: 'Input/mail-2026-10-08-a/index.md', movePath: 'Sources/mail-2026-10-08-a/mail-2026-10-08-a.md' }] },
     });
-    expect(await readFile(join(vaultsDir, 'move/Sources/mail-2026-10-08-a/index.md'), 'utf8')).toContain('title: a');
+    expect(await readFile(join(vaultsDir, 'move/Sources/mail-2026-10-08-a/mail-2026-10-08-a.md'), 'utf8')).toContain('title: a');
     expect(await runMove('../x')).toMatch(/^ERR not an input item name/);
   });
 

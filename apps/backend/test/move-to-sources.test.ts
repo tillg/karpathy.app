@@ -26,20 +26,31 @@ describe('moveToSources', () => {
     await item('mail-2026-10-08-a');
     await writeFile(join(vault, 'Input/mail-2026-10-08-a/photo.jpg'), 'jpg');
     const r = await moveToSources(vault, 'mail-2026-10-08-a');
-    expect(r.output).toBe('Moved to Sources/mail-2026-10-08-a');
+    expect(r.output).toBe('Moved to Sources/mail-2026-10-08-a (index.md is now mail-2026-10-08-a.md)');
     expect(r.files.sort((a, b) => a.filePath.localeCompare(b.filePath))).toEqual([
-      { filePath: 'Input/mail-2026-10-08-a/index.md', movePath: 'Sources/mail-2026-10-08-a/index.md' },
+      { filePath: 'Input/mail-2026-10-08-a/index.md', movePath: 'Sources/mail-2026-10-08-a/mail-2026-10-08-a.md' },
       { filePath: 'Input/mail-2026-10-08-a/photo.jpg', movePath: 'Sources/mail-2026-10-08-a/photo.jpg' },
     ]);
     expect(await exists('Input/mail-2026-10-08-a')).toBe(false);
     expect(await readFile(join(vault, 'Sources/mail-2026-10-08-a/photo.jpg'), 'utf8')).toBe('jpg');
-    expect(await readFile(join(vault, 'Sources/mail-2026-10-08-a/index.md'), 'utf8')).toContain('# mail-2026-10-08-a');
+    // The folder note: links to Sources/<name>/<name>.md resolve, no index.md copy next to it.
+    expect(await readFile(join(vault, 'Sources/mail-2026-10-08-a/mail-2026-10-08-a.md'), 'utf8')).toContain('# mail-2026-10-08-a');
+    expect(await exists('Sources/mail-2026-10-08-a/index.md')).toBe(false);
+  });
+
+  it('keeps index.md when the item already has its folder note', async () => {
+    await item('web-c');
+    await writeFile(join(vault, 'Input/web-c/web-c.md'), 'note');
+    const r = await moveToSources(vault, 'web-c');
+    expect(r.output).toBe('Moved to Sources/web-c');
+    expect(await readFile(join(vault, 'Sources/web-c/web-c.md'), 'utf8')).toBe('note');
+    expect(await exists('Sources/web-c/index.md')).toBe(true);
   });
 
   it('moves an item whose links are all resolved or failed', async () => {
     await item('web-a', 'unresolved_links: []\nresolved_links:\n  - url: https://x.example\n    source: web-b');
     await moveToSources(vault, 'web-a');
-    expect(await exists('Sources/web-a/index.md')).toBe(true);
+    expect(await exists('Sources/web-a/web-a.md')).toBe(true);
   });
 
   it('never overwrites an existing Sources/<name>, not even an empty folder', async () => {

@@ -205,7 +205,7 @@ Terms for getting mails, links and Instagram posts into a wiki ([Ingest an input
 | **Ingest profile** | One Gmail label → one vault: the label (with its sub-labels `/processed`, `/failed`, `/rejected`), the gog account, the allowed senders, ingest-email options and the vault id (plus its root) whose `Input/` it fills. A setting per environment; only production may have any. | `ingest.profiles` (`deploy/settings/`) |
 | **Ingest** | The AI step: the vault's `ingest` skill turns ready input items into wiki pages and moves each finished item to `Sources/`. It never fetches anything. *Avoid:* import. | vault skill `.agents/skills/ingest/` |
 | **Ingest button** | The button next to the input count: a new chat that sends `/ingest` in one tap. Shown only when the vault has an `ingest` command. | web `ingestNow()` |
-| **Move to sources** | One call of the AI's `move_to_sources` tool: `Input/<name>` becomes `Sources/<name>` in one rename. Never overwrites, never deletes, refuses an item with open links. | `move_to_sources` tool |
+| **Move to sources** | One call of the AI's `move_to_sources` tool: `Input/<name>` becomes `Sources/<name>` in one rename, its `index.md` the folder note `<name>.md`. Never overwrites, never deletes, refuses an item with open links. | `move_to_sources` tool |
 | **Instagram source** | Who scrapes Instagram for a deployment: `local` (the ingest service itself, with the Instagram connection) or `worker` (Instagram workers; the server holds no session). One value per target, for all profiles: production and dev `worker`, prodtest and tests `local`. | `ingest.defaults.instagram_source` (`deploy/settings/`), `INGEST_INSTAGRAM_SOURCE`, `InstagramStatus.source` |
 | **Instagram connection** | Local mode: the ingest service's logged-in Instagram session, one account per deployment. States `not-connected`, `waiting-for-code` (Instagram asked for a 2FA or challenge code, at most 5 min), `connected` (as `@account`), `expired` (a session exists, but the resolver still reported `no-session` for an Instagram link after it was made). Made and renewed in admin mode › Secrets & keys › Instagram; the password is used once and never kept. Worker mode: no server session; the panel lists the workers instead of Connect. | ingest service `/instagram/*`, `InstagramStatus` (`source`, `workers`, `queue`) |
 | **Instagram worker** | A service on a user's machine (macOS or Linux, home IP) that scrapes Instagram posts for the server, one at a time, with instascraper and its own Instagram session; it talks to the server only as an HTTPS client. Has a **name** (default: the short host name) and exactly one Instagram account. | `tools/instagram-worker/`, command `karpathy-instagram-worker`, LaunchAgent `app.karpathy.instagram-worker`, systemd user unit `karpathy-instagram-worker.service` |
@@ -882,7 +882,7 @@ stateDiagram-v2
   `unresolved_links`, says so and leaves them for the next run.
 - A resolved link becomes a **sibling item** (`insta-…/` next to `mail-…/`), ingested on its own; the mail's
   `resolved_links` names it by folder name, so the reference survives the move to `Sources/`.
-- The skill cites the final path `Sources/<name>/index.md` in the pages it writes, then moves the item, and finishes
+- The skill cites the final path `Sources/<name>/<name>.md` in the pages it writes, then moves the item, and finishes
   one item (pages, then move) before the next, so **Stop** leaves finished items in `Sources/` and the rest untouched in
   `Input/`.
 

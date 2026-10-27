@@ -3,8 +3,8 @@ import { join, relative } from 'node:path';
 
 /**
  * The move_to_sources move (import-free, so the backend tests load it): one ingested item `Input/<name>`
- * becomes `Sources/<name>`. Never overwrites, never copies. Throws on any refusal, which the AI sees as a
- * tool error.
+ * becomes `Sources/<name>`, its `index.md` the folder note `<name>.md`. Never overwrites, never copies. Throws on
+ * any refusal, which the AI sees as a tool error.
  */
 
 /** A real directory, not a symlink; `null` when nothing is there. */
@@ -40,7 +40,7 @@ function hasOpenLinks(index: string): boolean {
 export interface MovedFile { filePath: string; movePath: string }
 
 /**
- * Moves `Input/<name>` to `Sources/<name>`. Returns the tool output and every moved file, so the backend marks
+ * Moves `Input/<name>` to `Sources/<name>` and renames its `index.md` to `<name>.md` (kept when `<name>.md` exists). Returns the tool output and every moved file, so the backend marks
  * each one as changed by the AI.
  */
 export async function moveToSources(dir: string, name: string): Promise<{ output: string; files: MovedFile[] }> {
@@ -60,6 +60,15 @@ export async function moveToSources(dir: string, name: string): Promise<{ output
   const rels = (await readdir(from, { recursive: true, withFileTypes: true }))
     .filter((e) => !e.isDirectory())
     .map((e) => relative(from, join(e.parentPath, e.name)));
-  await rename(from, join(dir, 'Sources', name));
-  return { output: `Moved to Sources/${name}`, files: rels.map((r) => ({ filePath: `Input/${name}/${r}`, movePath: `Sources/${name}/${r}` })) };
+  const to = join(dir, 'Sources', name);
+  await rename(from, to);
+  // The item's text becomes its folder note `<name>.md` (the vault's links point there), unless that exists already.
+  const note = `${name}.md`;
+  const renamed = rels.includes('index.md') && !rels.includes(note)
+    && await rename(join(to, 'index.md'), join(to, note)).then(() => true);
+  const moved = (r: string) => (renamed && r === 'index.md' ? note : r);
+  return {
+    output: `Moved to Sources/${name}${renamed ? ` (index.md is now ${note})` : ''}`,
+    files: rels.map((r) => ({ filePath: `Input/${name}/${r}`, movePath: `Sources/${name}/${moved(r)}` })),
+  };
 }

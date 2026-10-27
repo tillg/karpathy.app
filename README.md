@@ -124,7 +124,8 @@ home machine, see below):
   commit reminder.
 - **Ingest** next to the count opens a new chat and sends `/ingest`: the vault's own `ingest` skill
   (`.agents/skills/ingest/SKILL.md`, maintained in the vault) writes the wiki pages and moves each finished folder to
-  `Sources/` with the AI tool `move_to_sources`. Without that skill there is no button.
+  `Sources/` with the AI tool `move_to_sources`, which renames the folder's `index.md` to `<folder>.md` (the folder
+  note the source links point to). Without that skill there is no button.
 - The **ingest service** (compose service `ingest`, [`deploy/ingest/`](deploy/ingest/)) runs
   [ingest-email](https://github.com/tillg/ingest_email): every 15 minutes it fetches the mails of a Gmail label into
   the vault's `Input/`, every minute it resolves the links in them (web pages, PDFs with OCR, YouTube, GitHub,

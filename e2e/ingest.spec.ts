@@ -73,9 +73,9 @@ test('@llm Ingest moves the item to Sources/: badge gone, the moved file in Chan
   await expect(treeItem(page, 'Input').getByTestId('input-badge')).toHaveText('1');
   await page.getByTestId('ingest-now').click();
   await expect(treeItem(page, 'Input').getByTestId('input-badge')).toHaveCount(0, { timeout: 240_000 });
-  expect(backendExec('sh', '-c', `test -f /vaults/${vault.id}/Sources/mail-2026-10-08-llm/index.md && echo yes`).trim()).toBe('yes');
+  expect(backendExec('sh', '-c', `test -f /vaults/${vault.id}/Sources/mail-2026-10-08-llm/mail-2026-10-08-llm.md && echo yes`).trim()).toBe('yes');
   // Never committed in Input/, so the move shows as the new file in Sources/ only.
-  expect((await api.changes(vault.id)).map((c) => c.path)).toContain('Sources/mail-2026-10-08-llm/index.md');
+  expect((await api.changes(vault.id)).map((c) => c.path)).toContain('Sources/mail-2026-10-08-llm/mail-2026-10-08-llm.md');
 });
 
 test('a pull keeps the waiting items: badge unchanged, no conflict, Obsidian\'s change arrives', async ({ page, api, vault }) => {

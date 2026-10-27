@@ -376,9 +376,11 @@ refused ("internal host refused") ("No egress proxy configured"). Baked like `op
 
 **Custom tool `move_to_sources`** (`deploy/opencode/tools/move_to_sources.ts`, logic in
 `deploy/opencode/lib/move-to-sources.ts`, import-free so the backend tests load it): args `{ name }`, one input item
-folder name. Moves `Input/<name>` to `Sources/<name>` with one `rename` (atomic, no copy of media) and returns `Moved to
-Sources/<name>` plus `metadata.files: [{ filePath: "Input/<name>/<f>", movePath: "Sources/<name>/<f>" }]` for every
-moved file (the shape `apply_patch` reports; opencode passes a custom tool's metadata into the tool part). Refuses a
+folder name. Moves `Input/<name>` to `Sources/<name>` with one `rename` (atomic, no copy of media), then renames its
+`index.md` to the folder note `<name>.md` (the vault's source links point there; skipped when `<name>.md` exists, so
+nothing is overwritten or duplicated), and returns `Moved to Sources/<name>` (plus ` (index.md is now <name>.md)`) and
+`metadata.files: [{ filePath: "Input/<name>/<f>", movePath: "Sources/<name>/<f>" }]` for every moved file (`index.md`'s
+`movePath` is `Sources/<name>/<name>.md`) (the shape `apply_patch` reports; opencode passes a custom tool's metadata into the tool part). Refuses a
 name that is empty, `.`/`..`, hidden or has a `/` or `\`; `Input`, `Input/<name>` or `Sources` that is a symlink (`lstat`)
 or not a directory; an item whose `index.md` frontmatter still has `unresolved_links` (a small reader for that one key:
 inline value or block list, quoted key, blank and comment lines skipped); and an existing target, which it claims first
@@ -1016,7 +1018,7 @@ sequenceDiagram
   other. Unlike a command chip it sends.
 - **The vault's skill** (`.agents/skills/ingest/SKILL.md`, owned by the vault, also used by Claude Code on the Mac): the
   app relies on, but can't enforce, that it handles any queue size in one call, skips items with `unresolved_links`,
-  cites `Sources/<name>/index.md`, and finishes one item (pages, then `move_to_sources`, or `mv` without the tool)
+  cites `Sources/<name>/<name>.md`, and finishes one item (pages, then `move_to_sources`, or `mv` without the tool)
   before the next. Everything it reads must lie in the vault. No app skill named `ingest` ships.
 
 ### Writing into a live vault without the backend's lock

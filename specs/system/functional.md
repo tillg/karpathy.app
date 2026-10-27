@@ -723,9 +723,10 @@ flowchart LR
   never fetches mail: mail arrives only through the ingest service.
 - **What the vault's `ingest` skill does** (the vault's own instructions, not the app's): reads the items in `Input/`
   that have no open links (it skips the others and says so), writes or updates the wiki pages citing
-  `Sources/<name>/index.md`, then moves the item with **`move_to_sources`**; one item completely before the next, so
+  `Sources/<name>/<name>.md`, then moves the item with **`move_to_sources`**; one item completely before the next, so
   **Stop** leaves a consistent state. Questions go wherever the vault's rules say.
-- **`move_to_sources`** (AI tool, not in a read-only conflict turn): moves `Input/<name>` to `Sources/<name>`. It shows as
+- **`move_to_sources`** (AI tool, not in a read-only conflict turn): moves `Input/<name>` to `Sources/<name>`; its
+  `index.md` becomes the folder note `Sources/<name>/<name>.md` (unless that exists already). It shows as
   a changed chip `Sources/<name>`; every moved file counts as an AI change (old and new path) in Changes and the commit.
   It refuses a name with `/` or `..` or a leading dot, a symlink, an item that is still being processed ("still being
   processed (unresolved_links): leave it for the next ingest") and an existing target ("Sources/<name> exists: rename or

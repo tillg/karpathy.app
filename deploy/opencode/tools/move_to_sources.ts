@@ -6,7 +6,7 @@ import { moveToSources } from '../lib/move-to-sources.ts';
 // so a read-only turn can't move.
 export default tool({
   description:
-    'Move one ingested source folder from Input/ to Sources/ (the ingest skill calls it after writing the wiki pages for that item). Pass the folder name only, e.g. mail-2026-10-08-xyz. It refuses an item that is still being processed (unresolved_links) and never overwrites an existing Sources/ folder.',
+    'Move one ingested source folder from Input/ to Sources/ (the ingest skill calls it after writing the wiki pages for that item); its index.md becomes the folder note Sources/<name>/<name>.md. Pass the folder name only, e.g. mail-2026-10-08-xyz. It refuses an item that is still being processed (unresolved_links) and never overwrites an existing Sources/ folder.',
   args: {
     name: tool.schema.string().describe('The item folder name inside Input/, e.g. mail-2026-10-08-xyz (no slashes)'),
   },
