@@ -97,7 +97,7 @@ flowchart LR
 
 ## Worker package (`tools/instagram-worker/`)
 
-- [ ] Package skeleton: `pyproject.toml` (src layout, `karpathy_instagram_worker`, script `karpathy-instagram-worker`, Python ≥ 3.11, instascraper @ v1.1.0), `config.py` (TOML at `~/.config/karpathy-instagram-worker/config.toml`, 0600, `KARPATHY_WORKER_CONFIG`), `configure` and `version`; test harness `tests/` with a stub `instascraper` package and `test.sh`, added to `just check`
+- [x] Package skeleton: `pyproject.toml` (src layout, `karpathy_instagram_worker`, script `karpathy-instagram-worker`, Python ≥ 3.11, instascraper @ v1.1.0), `config.py` (TOML at `~/.config/karpathy-instagram-worker/config.toml`, 0600, `KARPATHY_WORKER_CONFIG`), `configure` and `version`; test harness `tests/` with a stub `instascraper` package and `test.sh`, added to `just check`
   - Depends on: none
   - Test first: `tools/instagram-worker/tests/test_config.py` › "configure writes server, token, name, poll_interval_s with mode 0600", "a missing token is asked with getpass, never echoed", "server must be https:// (http only for localhost)", "name defaults to the short host name", "version prints the package version". Fail today: no package.
   - Verify: `bash tools/instagram-worker/test.sh` → all green; `grep -q instagram-worker/test.sh justfile` → exit 0

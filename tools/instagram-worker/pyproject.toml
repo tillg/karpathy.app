@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "karpathy-instagram-worker"
+dynamic = ["version"]
+description = "Scrapes Instagram posts for a karpathy.app server from your own machine, with instascraper."
+requires-python = ">=3.11"
+# The same tag as deploy/ingest/Dockerfile's INSTASCRAPER_REF. HTTP uses the standard library only.
+dependencies = ["instascraper @ git+https://github.com/tillg/instascraper@v1.1.0"]
+
+[project.scripts]
+karpathy-instagram-worker = "karpathy_instagram_worker.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "karpathy_instagram_worker.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+karpathy_instagram_worker = ["templates/*"]
