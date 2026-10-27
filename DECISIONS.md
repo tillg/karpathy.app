@@ -252,6 +252,9 @@ edited: 2026-10-27
   - [13:40 — Pin ingest-email to a commit on its pushed feature branch `instagram-worker`, no tag](#run-2026-10-27-1145-9)
   - [13:40 — Implementation details the plan left open (limits, ledger window, no claim without a session)](#run-2026-10-27-1145-10)
   - [13:25 — Archive `instagram-worker` with its decisions still open](#run-2026-10-27-1145-11)
+  - [14:10 — Retro: run the ingest test image by ID; eslint ignores agent worktrees; ignore `__pycache__`](#run-2026-10-27-1145-12)
+  - [14:10 — Count the remaining full-e2e failures as pre-existing or flaky, not as regressions](#run-2026-10-27-1145-13)
+  - [14:10 — Merge the branch into `main`, push `main` and delete the branch, as the task says](#run-2026-10-27-1145-14)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3754,3 +3757,34 @@ edited: 2026-10-27
 - **Why:** the coordinator merges the branch to `main` right after; leaving the change open would strand the system description behind the code.
 - **Alternatives:** keep the change open until the review (the system docs would describe the old Instagram path on `main`).
 - **Consequences:** a decision the user reverts later is undone with `/spec:tweak`; the archived change is in git history (the archive commit).
+
+## 14:10 — Retro: run the ingest test image by ID; eslint ignores agent worktrees; ignore `__pycache__` {#run-2026-10-27-1145-12}
+
+- **Status:** open
+- **Context:** the run's retro. Three things went wrong in the environment: (1) `deploy/ingest/server.test.sh` built and ran one shared tag `kai-test-ingest-stage`, so parallel agent worktrees tested each other's `server.py` (one agent saw 16 tests where there were 69); (2) `npm run lint` failed with 2537 parsing errors while Claude Code's agent worktrees existed under `.claude/worktrees/`; (3) a test run left an untracked `deploy/ingest/__pycache__/`. Also seen, not fixed here: every agent worktree started from `main`, not from the branch being worked on, so each agent first had to fast-forward; one agent reported a green typecheck but committed a type error afterwards (CI runs `npm run typecheck`, so it would have been caught there).
+- **Question:** which mechanical fixes to apply?
+- **Decision:** (1) `server.test.sh` runs the image by the ID `docker build -q` prints, untagged, with the test `deploy/ingest/server-test-image.test.sh` (stub `docker`, seen failing first) in `just check`; (2) `eslint.config.js` ignores `.claude/worktrees/**` (reproduced with a probe worktree, green after); (3) `__pycache__/` in `.gitignore`. The worktree base is a harness matter; drafted for the user in the run's report, not filed.
+- **Why:** each is the smallest change that makes the failure impossible rather than documented.
+- **Alternatives:** a per-checkout hashed tag like `apps/backend/test/opencode-container.ts` (fine too, but leaves dangling tags); a CLAUDE.md line telling agents not to run tests in parallel.
+- **Consequences:** the retro commit's trailer says `Decision: run-2026-10-27-1145-11` by mistake (the archive took that number in parallel); it belongs to this decision.
+
+## 14:10 — Count the remaining full-e2e failures as pre-existing or flaky, not as regressions {#run-2026-10-27-1145-13}
+
+- **Status:** open
+- **Context:** `just e2e --grep-invert @llm` on dev stack 1: 527 passed, 13 failed; after `--last-failed` and a serial re-run 6 still failed. Three fail on `main` too (webkit attach "photo preparation", media "Open shows a pdf", token-scan); the other three (commands chip, attach in chat, fix-10) moved between browser projects across runs and involve chat turns, which this branch doesn't touch.
+- **Question:** do these block the merge?
+- **Decision:** no: the suite was already red before this change with no new failures from it, which is the `/autonomous` commit rule.
+- **Why:** this branch changes no chat or attachment code; the new `instagram-worker` spec is green.
+- **Alternatives:** chase the flaky chat specs now (out of scope, costs OpenRouter credit on `@llm` siblings).
+- **Consequences:** the three `main` failures are worth an issue of their own if they persist on a quiet machine.
+
+## 14:10 — Merge the branch into `main`, push `main` and delete the branch, as the task says {#run-2026-10-27-1145-14}
+
+- **Status:** open
+- **Overrides:** `/autonomous` — "Push the current branch"; pushing the default branch is normally a bent rule
+- **Context:** the task: "At the end merge main into our branch, then our branch onto main, then delete the branch."
+- **Question:** do it, given that `main` is the default branch?
+- **Decision:** merge `main` into the branch, run the unit suites, merge the branch into `main` with a merge commit, push `main`, delete `autonomous/issue-168-instagram` locally and on origin. No release, no deploy.
+- **Why:** the user asked for exactly this; the `Closes #168` / `Closes #137` in the archive commit close both issues when `main` is pushed.
+- **Alternatives:** a PR (the user asked for a direct merge).
+- **Consequences:** prod still runs the previous release; on the next release `hetzner.yaml`'s `instagram_source: worker` takes effect and Instagram links wait for a worker (setup: `docs/instagram-worker.md`). The ingest-email pin points at a commit on its branch `instagram-worker`: don't delete that branch before merging it into ingest_email's `main`. Rollback: revert the merge commit on `main`.
