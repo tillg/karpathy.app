@@ -38,6 +38,7 @@ check:
     bash deploy/ingest/run.test.sh
     bash deploy/ingest/compose.test.sh
     bash deploy/ingest/server.test.sh
+    bash deploy/ingest/server-test-image.test.sh
     bash tools/instagram-worker/test.sh
     node --experimental-strip-types --test e2e/stack.unit.ts
 

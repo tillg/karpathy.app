@@ -37,3 +37,6 @@ _site/
 
 # Git worktrees of parallel agents (CLAUDE.md: worktrees go in .worktrees/)
 .worktrees/
+
+# Python bytecode left by test runs
+__pycache__/
