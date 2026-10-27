@@ -142,7 +142,7 @@ flowchart LR
 
 ## Docs
 
-- [ ] Setup guide `docs/instagram-worker.md` (prerequisites incl. Tailscale, stop `com.tillg.ingest-email.all`, pipx install from the tag, configure with `just instagram-worker-token`, login, doctor, once, service, status/logs, troubleshooting, upgrade, uninstall, one account per worker); README › Ingest links to it
+- [x] Setup guide `docs/instagram-worker.md` (prerequisites incl. Tailscale, stop `com.tillg.ingest-email.all`, pipx install from the tag, configure with `just instagram-worker-token`, login, doctor, once, service, status/logs, troubleshooting, upgrade, uninstall, one account per worker); README › Ingest links to it
   - Depends on: 9, 16, 17, 18
   - Test first: none — documentation
   - Verify: `test -f docs/instagram-worker.md && grep -q "docs/instagram-worker.md" README.md && grep -q "loginctl enable-linger" docs/instagram-worker.md && grep -q "com.tillg.ingest-email.all" docs/instagram-worker.md` → exit 0; every command the guide names exists in `karpathy-instagram-worker --help` (`bash tools/instagram-worker/test.sh` › test_cli "help lists configure, login, doctor, once, run, service, version")
