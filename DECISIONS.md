@@ -266,6 +266,7 @@ edited: 2026-10-27
   - [20:25 — Release main as v0.0.37 and deploy it to prod with `just deploy hetzner 0.0.37`](#run-2026-10-27-2016-1)
   - [20:25 — Install the worker with pipx from v0.0.37, reuse the existing @tillg session, name it `tillgmac3`](#run-2026-10-27-2016-2)
   - [20:45 — Retro: document passing the worker token from the command; update the run book's Instagram line](#run-2026-10-27-2016-3)
+  - [20:50 — Re-queue mylife's 118 Instagram links stuck as login-wall web stubs (prepared, not applied)](#run-2026-10-27-2016-4)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3939,3 +3940,13 @@ edited: 2026-10-27
 - **Why:** (1) is the most mechanical fix for a snag every unattended or scripted install hits; (2) is the CLAUDE.md run-book rule, now unblocked by the release.
 - **Alternatives:** read the token from stdin in `configure` (a code change for a one-off setup step).
 - **Consequences:** the old Instagram links stay resolved as web pages (probably login-wall captures); re-queueing them for the worker is the user's call. No plugin-level issue drafted.
+
+## 20:50 — Re-queue mylife's 118 Instagram links stuck as login-wall web stubs (prepared, not applied) {#run-2026-10-27-2016-4}
+
+- **Status:** open
+- **Context:** the user saw many unresolved Instagram mails in prod's mylife `Input/`. 118 mails (2026-09-08 … 2026-10-27, all before the 0.0.37 deploy) carry their Instagram link in `resolved_links`, pointing at a `web-…-instagram-N` folder of < 1 KB: Instagram's login wall (a language list) or nothing. The worker never sees them: ingest-email only hands out links in `unresolved_links`, and its URL index (`Input/` only) maps the URL to the stub.
+- **Question:** how to get them to the worker?
+- **Decision:** per mail move the stub entry back to `unresolved_links` (`attempts: 0`), drop its line under `## Resolved links` (and the header if empty), then remove the 118 stub folders. The script is `tmp/requeue_instagram.py` and runs in the ingest container with ingest-email's own `frontmatter` module. It was tested locally on copies of prod files against the pinned commit `395db52`. Prod backup: `ops@karpathy:~/backups/mylife-instagram-requeue-20261027.tgz` (354 entries). Prod dry run: 118 mails, 118 links, 118 stubs.
+- **Why:** the stubs have no content worth keeping (they're also in the vault's git history), and the worker then scrapes the real posts into `insta-…` folders.
+- **Alternatives:** keep the stubs and only edit the mails (the URL index would resolve them to the stubs again at once).
+- **Consequences:** not applied: auto mode blocked the write to the prod vault, so it waits for the user. Afterwards, the vault shows 118 modified mails and 118 deleted stub folders as uncommitted changes. The worker paces itself at about 50 posts a day, so the backlog takes about 3 days. Rollback: untar the backup into `/vaults/mylife/Input`.
