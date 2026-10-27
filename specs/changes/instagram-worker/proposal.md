@@ -1,7 +1,7 @@
 ---
 feature: instagram-worker
 title: "Proposal: Instagram scraper worker"
-status: proposed
+status: applied
 order: 1
 created: 2026-10-27
 edited: 2026-10-27

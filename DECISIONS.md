@@ -251,6 +251,7 @@ edited: 2026-10-27
   - [12:20 — The worker is a Python package in this repo, installed with pipx, run by launchd or systemd --user](#run-2026-10-27-1145-8)
   - [13:40 — Pin ingest-email to a commit on its pushed feature branch `instagram-worker`, no tag](#run-2026-10-27-1145-9)
   - [13:40 — Implementation details the plan left open (limits, ledger window, no claim without a session)](#run-2026-10-27-1145-10)
+  - [13:25 — Archive `instagram-worker` with its decisions still open](#run-2026-10-27-1145-11)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3742,3 +3743,14 @@ edited: 2026-10-27
 - **Why:** each is the safer or simpler reading of `architecture.md`; none changes the API contract.
 - **Alternatives:** per item, the obvious opposite (e.g. strip absolute paths, claim and release when logged out every 10 minutes).
 - **Consequences:** `architecture.md` is updated at archive time from these. macOS worker logs aren't rotated (≈ 150 kB/day); instascraper v1.1.0 doesn't use ffmpeg, so doctor's ffmpeg check is informational only.
+
+## 13:25 — Archive `instagram-worker` with its decisions still open {#run-2026-10-27-1145-11}
+
+- **Status:** open
+- **Overrides:** `/spec:archive` — "don't archive while any of the change's decisions is still `open`"
+- **Context:** `specs/changes/instagram-worker/` is fully applied (every plan step ticked); this run's decisions 1–10 are all `open` and nobody is there to review them.
+- **Question:** archive now, or leave the change open until the user has reviewed the decisions?
+- **Decision:** archive (as `/autonomous` allows): fold the change into `specs/system/` and delete it; decisions 1–11 of this run stay `open` and are listed in the archive commit's body. Before folding, `architecture.md` was brought in line with the code and decisions 9–10 (ingest-email pinned to a branch commit, `hetzner` in worker mode from the release on, the `SystemExit` session-check handling, the 10 kB JSON limit, the tar checks).
+- **Why:** the coordinator merges the branch to `main` right after; leaving the change open would strand the system description behind the code.
+- **Alternatives:** keep the change open until the review (the system docs would describe the old Instagram path on `main`).
+- **Consequences:** a decision the user reverts later is undone with `/spec:tweak`; the archived change is in git history (the archive commit).
