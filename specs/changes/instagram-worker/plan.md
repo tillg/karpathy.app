@@ -146,7 +146,7 @@ flowchart LR
   - Depends on: 9, 16, 17, 18
   - Test first: none — documentation
   - Verify: `test -f docs/instagram-worker.md && grep -q "docs/instagram-worker.md" README.md && grep -q "loginctl enable-linger" docs/instagram-worker.md && grep -q "com.tillg.ingest-email.all" docs/instagram-worker.md` → exit 0; every command the guide names exists in `karpathy-instagram-worker --help` (`bash tools/instagram-worker/test.sh` › test_cli "help lists configure, login, doctor, once, run, service, version")
-- [ ] ADR `docs/adr/0006-instagram-scraped-by-a-worker.md` (the worker pulls jobs, ingest-email stays the only writer, the scoped token, why not the relay); demo run book chapter 17 "Ingest from the inbox" in `~/git/karpathy_demo_wiki/Karpathy Demo.md` gets the worker line and a *Try it* step, `updated` bumped (pushed only after the release)
+- [x] ADR `docs/adr/0006-instagram-scraped-by-a-worker.md` (the worker pulls jobs, ingest-email stays the only writer, the scoped token, why not the relay); demo run book chapter 17 "Ingest from the inbox" in `~/git/karpathy_demo_wiki/Karpathy Demo.md` gets the worker line and a *Try it* step, `updated` bumped (pushed only after the release)
   - Depends on: 20, 21
   - Test first: none — documentation
   - Verify: `test -f docs/adr/0006-instagram-scraped-by-a-worker.md && grep -q "Instagram worker" ~/git/karpathy_demo_wiki/"Karpathy Demo.md"` → exit 0; `just check` → green
