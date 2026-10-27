@@ -109,7 +109,7 @@ flowchart LR
   - Depends on: 13
   - Test first: `tools/instagram-worker/tests/test_upload.py` › "the tarball holds exactly the dir's files, flat, no links", "the fake server receives Content-Length and the full body", "41 files → ResultRejected before any request", "a 422 with a message → ResultRejected carrying it", "a symlink in the dir is left out". Fail today: no module.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
-- [ ] `scrape.py`: instascraper's `get_client`, `scrape`, `write_result` into a temp dir; error mapping (not found → permanent failure; login/challenge/`SystemExit` → needs-login; `PleaseWaitFewMinutes`/throttled/429 → rate-limited; other → non-permanent failure)
+- [x] `scrape.py`: instascraper's `get_client`, `scrape`, `write_result` into a temp dir; error mapping (not found → permanent failure; login/challenge/`SystemExit` → needs-login; `PleaseWaitFewMinutes`/throttled/429 → rate-limited; other → non-permanent failure)
   - Depends on: 12
   - Test first: `tools/instagram-worker/tests/test_scrape.py` (stub instascraper raising each instagrapi-named exception) › "MediaNotFound and ClientNotFoundError → Permanent", "LoginRequired, ChallengeRequired and SystemExit from get_client → NeedsLogin", "PleaseWaitFewMinutes → RateLimited", "ValueError → Transient with 'ValueError: …' cut at 200", "success returns the `<shortcode>/` dir with post.md and metadata.json". Fail today: no module.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
