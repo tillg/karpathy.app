@@ -128,7 +128,7 @@ flowchart LR
 
 ## Web
 
-- [ ] `InstagramStatus` gains `source`, `workers`, `queue`; Secrets & keys › Instagram in worker mode shows the workers (last seen, state, needs-login hint), the counts, the two-workers warning and the setup-guide link, and hides Connect; the Vaults-list notice covers "no worker for an hour" and `needs-login`
+- [x] `InstagramStatus` gains `source`, `workers`, `queue`; Secrets & keys › Instagram in worker mode shows the workers (last seen, state, needs-login hint), the counts, the two-workers warning and the setup-guide link, and hides Connect; the Vaults-list notice covers "no worker for an hour" and `needs-login`
   - Depends on: 7
   - Test first: `apps/web/src/components/InstagramSettings.test.tsx` › "worker mode lists each worker with last seen and state", "worker mode hides the Connect form", "needs-login names the worker and the login command", "two workers seen within an hour show the one-account warning", "the counts line", "the guide link points at docs/instagram-worker.md", "local mode is unchanged"; the notice cases › "links waiting and no worker for an hour → notice", "a worker seen 10 min ago → no notice", "needs-login → notice naming the worker". Fail today: no worker mode.
   - Verify: `npm test -w apps/web -- InstagramSettings` → green; `npm test -w apps/web` → all green; `npm run typecheck` → ok

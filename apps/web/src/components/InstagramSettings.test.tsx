@@ -85,4 +85,119 @@ describe('Admin › Instagram', () => {
     fireEvent.click(screen.getByTestId('ig-notice-open'));
     expect(await screen.findByTestId('admin-section-secrets')).toBeTruthy();
   });
+
+  it('local mode is unchanged', async () => {
+    fakeApi({ routes: { 'GET /api/ingest/instagram': { state: 'not-connected', waitingLinks: 2, source: 'local' } } });
+    renderApp(<InstagramSettings />);
+    expect((await screen.findByTestId('ig-status')).textContent).toBe('Not connected — 2 links waiting');
+    expect(screen.getByTestId('ig-connect')).toBeTruthy();
+    expect(screen.queryByTestId('ig-workers')).toBeNull();
+    expect(screen.queryByTestId('ig-guide')).toBeNull();
+  });
+});
+
+const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+const worker = (name: string, min: number, state = 'idle', message?: string) =>
+  ({ name, version: '0.1.0', state, lastSeen: ago(min), ...(message ? { message } : {}) });
+const queue = { waiting: 3, leased: 1, backingOff: 2, ready: 0, failed: 1 };
+const workerStatus = (workers: object[], waitingLinks = 4) =>
+  ({ state: 'not-connected', waitingLinks, source: 'worker', workers, queue });
+
+describe('Admin › Instagram in worker mode', () => {
+  it('worker mode lists each worker with last seen and state', async () => {
+    fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([worker('mac', 3, 'scraping'), worker('pi', 180, 'rate-limited', 'Instagram says wait')]) } });
+    renderApp(<InstagramSettings />);
+    expect((await screen.findByTestId('ig-status')).textContent).toMatch(/Scraped by your workers — 4 links waiting/);
+    const [mac, pi] = screen.getAllByTestId('ig-worker');
+    expect([mac, pi].map((r) => r!.dataset.name)).toEqual(['mac', 'pi']);
+    expect(mac!.textContent).toMatch(/mac.*last seen 3 min ago/);
+    expect(mac!.textContent).toMatch(/Scraping/);
+    expect(pi!.textContent).toMatch(/last seen 3 h ago/);
+    expect(pi!.textContent).toMatch(/Rate-limited/);
+    expect(pi!.textContent).toMatch(/Instagram says wait/);
+  });
+
+  it('worker mode hides the Connect form', async () => {
+    fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([worker('mac', 1)]) } });
+    renderApp(<InstagramSettings />);
+    await screen.findByTestId('ig-workers');
+    expect(screen.queryByTestId('ig-connect')).toBeNull();
+    expect(screen.queryByTestId('ig-username')).toBeNull();
+    expect(screen.queryByTestId('ig-disconnect')).toBeNull();
+  });
+
+  it('no worker seen yet says so', async () => {
+    fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([]) } });
+    renderApp(<InstagramSettings />);
+    expect((await screen.findByTestId('ig-workers')).textContent).toMatch(/No worker has reported yet/);
+  });
+
+  it('needs-login names the worker and the login command', async () => {
+    fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([worker('mac', 2, 'needs-login')]) } });
+    renderApp(<InstagramSettings />);
+    const hint = await screen.findByTestId('ig-login-hint');
+    expect(hint.textContent).toBe('Run karpathy-instagram-worker login on mac.');
+    expect(screen.getByTestId('ig-worker').textContent).toMatch(/Needs login/);
+  });
+
+  it('two workers seen within an hour show the one-account warning', async () => {
+    fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([worker('mac', 5), worker('pi', 50)]) } });
+    renderApp(<InstagramSettings />);
+    expect((await screen.findByTestId('ig-two-workers')).textContent).toMatch(/one Instagram account per worker/);
+    cleanup();
+
+    fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([worker('mac', 5), worker('pi', 90)]) } });
+    renderApp(<InstagramSettings />);
+    await screen.findByTestId('ig-workers');
+    expect(screen.queryByTestId('ig-two-workers')).toBeNull();
+  });
+
+  it('the counts line', async () => {
+    fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([worker('mac', 1)]) } });
+    renderApp(<InstagramSettings />);
+    expect((await screen.findByTestId('ig-queue')).textContent).toBe('3 waiting · 1 in progress · 2 backing off · 1 failed');
+  });
+
+  it('the guide link points at docs/instagram-worker.md', async () => {
+    fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([]) } });
+    renderApp(<InstagramSettings />);
+    const link = await screen.findByTestId('ig-guide');
+    expect(link.getAttribute('href')).toBe('https://github.com/tillg/karpathy.app/blob/main/docs/instagram-worker.md');
+    expect(link.textContent).toMatch(/Set up a worker/);
+  });
+});
+
+describe('Vaults list › Instagram notice in worker mode', () => {
+  const vaults = (status: object) => {
+    fakeApi({ routes: { 'GET /api/ingest/instagram': status } });
+    history.replaceState(null, '', '#admin/vaults');
+    renderApp(<Shell />);
+  };
+
+  it('links waiting and no worker for an hour → notice', async () => {
+    vaults(workerStatus([worker('mac', 61)], 2));
+    const notice = await screen.findByTestId('ig-notice');
+    expect(notice.textContent).toMatch(/2 Instagram links wait for a worker/);
+    fireEvent.click(screen.getByTestId('ig-notice-open'));
+    expect(await screen.findByTestId('admin-section-secrets')).toBeTruthy();
+  });
+
+  it('links waiting and no worker ever → notice', async () => {
+    vaults(workerStatus([], 1));
+    expect((await screen.findByTestId('ig-notice')).textContent).toMatch(/1 Instagram link waits for a worker/);
+  });
+
+  it('a worker seen 10 min ago → no notice', async () => {
+    const api = fakeApi({ routes: { 'GET /api/ingest/instagram': workerStatus([worker('mac', 10)], 2) } });
+    history.replaceState(null, '', '#admin/vaults');
+    renderApp(<Shell />);
+    await waitFor(() => expect(api.calls.some((c) => c.call === 'GET /api/ingest/instagram')).toBe(true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByTestId('ig-notice')).toBeNull();
+  });
+
+  it('needs-login → notice naming the worker', async () => {
+    vaults(workerStatus([worker('mac', 2, 'needs-login')], 0));
+    expect((await screen.findByTestId('ig-notice')).textContent).toMatch(/Instagram needs a login on mac/);
+  });
 });
