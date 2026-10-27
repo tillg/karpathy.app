@@ -4,6 +4,6 @@ auth: none
 cert: false
 disable-telemetry: true
 disable-update-check: true
-{% if code_server_tailnet_serve | bool %}
+{% if code_server_tailnet_serve | bool and code_server_tailnet.rc | default(1) == 0 %}
 trusted-origins: [{{ (code_server_tailnet.stdout | from_json).Self.DNSName | regex_replace('\\.$', '') }}]
 {% endif %}

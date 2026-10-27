@@ -134,7 +134,7 @@ inotify limits (`fs.inotify.max_user_instances` = 1024, `fs.inotify.max_user_wat
 
 The iPad has no VS Code with Remote-SSH. Instead the server runs **code-server**, VS Code in the browser: the same
 checkouts, terminals, git and extensions as a VS Code window, in Safari. It listens only on the server's loopback
-(`127.0.0.1:8080`); `tailscale serve` publishes it to the tailnet with a real certificate at
+(`127.0.0.1:13337`); `tailscale serve` publishes it to the tailnet with a real certificate at
 **https://karpathy-dev.tailab154c.ts.net/**. There is no password: only your own tailnet devices get through
 ([Tailnet policy](#tailnet-policy)). Background: [the iPad research](../specs/research/ipad-dev/ipad-dev-report.md).
 
@@ -156,9 +156,11 @@ tailnet).
 1. The Tailscale app, logged in with your account (the iPad is then an *own device*).
 2. Open the editor, then Safari › Share › **Add to Home Screen**. Started from the home screen it runs full screen, and
    shortcuts like Cmd+W and Cmd+P go to the editor instead of Safari.
-3. Install the extensions it offers (`.vscode/extensions.json`, from Open VSX) and sign in to the Claude Code
+3. A new folder opens in **Restricted Mode**. The first terminal asks *Do you trust the authors of the files in this
+   folder?*: **Trust Folder & Continue**. Trust is remembered per folder, so each new worktree asks once.
+4. Install the extensions it offers (`.vscode/extensions.json`, from Open VSX) and sign in to the Claude Code
    extension once.
-4. Keyboard: Claude Code interrupts with **Esc**. Older Magic Keyboards for iPad have none: Settings › General ›
+5. Keyboard: Claude Code interrupts with **Esc**. Older Magic Keyboards for iPad have none: Settings › General ›
    Keyboard › Hardware Keyboard › Modifier Keys › Caps Lock → Escape.
 
 **Good to know:**
@@ -168,7 +170,7 @@ tailnet).
   both.
 - The Mac's VS Code window and the browser editor may be open on the same checkout at once. Both reload files that
   change on disk.
-- Long runs (`claude`, `just e2e`) still belong in herdr or tmux: an editor terminal ends when Safari drops the page.
+- Long runs (`claude`, `just e2e`) still belong in herdr or tmux: an editor terminal survives only a short drop, not an iPad that slept overnight.
 - Updates: bump `code_server_version` in `deploy/ansible/roles/code_server/defaults/main.yml`, then `just devhost`.
   `code_server_enabled: false` in the dev inventory turns it off.
 

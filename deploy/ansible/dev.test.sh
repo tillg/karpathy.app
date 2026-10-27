@@ -128,22 +128,28 @@ out=$(as_user 'code-server --version' | head -1)
 [[ -n "$want" && "$out" == "$want "* ]] && ok "code-server is $want" || bad "code-server is the pinned version ($want)" "$out"
 eq "code-server@$user is active" "$(run systemctl is-active "code-server@$user")" active
 eq "code-server@$user is enabled" "$(run systemctl is-enabled "code-server@$user")" enabled
+port=$(sed -n 's/^code_server_port: *//p' "$here/roles/code_server/defaults/main.yml" 2>/dev/null)
+# 8000–8099 are the stacks' ports and the Mac's SSH LocalForwards (8010…8090): there the Mac's localhost would reach the
+# password-less editor, and stack 8 (8080) would lose its port.
+[[ "$port" =~ ^[0-9]+$ ]] && { [ "$port" -lt 8000 ] || [ "$port" -gt 8099 ]; } \
+  && ok "code-server port $port is outside 8000–8099" || bad "code-server port is outside 8000–8099" "$port"
 out=
-for _ in $(seq 30); do out=$(run curl -sf http://127.0.0.1:8080/healthz) && break; sleep 1; done
-[[ "$out" == *'"status"'* ]] && ok "code-server answers /healthz on 127.0.0.1:8080" \
-  || bad "code-server answers /healthz on 127.0.0.1:8080" "$out"
-# Listening sockets (state 0A) on port 8080 (1F90), IPv4 and IPv6; the image has no ss. 0100007F = 127.0.0.1.
-out=$(run cat /proc/net/tcp /proc/net/tcp6 | awk '$4 == "0A" && $2 ~ /:1F90$/ {print $2}' | paste -sd' ')
-eq "code-server listens on loopback only" "$out" 0100007F:1F90
+for _ in $(seq 30); do out=$(run curl -sf "http://127.0.0.1:$port/healthz") && break; sleep 1; done
+[[ "$out" == *'"status"'* ]] && ok "code-server answers /healthz on 127.0.0.1:$port" \
+  || bad "code-server answers /healthz on 127.0.0.1:$port" "$out"
+# Listening sockets (state 0A) on the port, IPv4 and IPv6; the image has no ss. 0100007F = 127.0.0.1.
+hex=$(printf '%04X' "$port")
+out=$(run cat /proc/net/tcp /proc/net/tcp6 | awk -v p=":$hex" '$4 == "0A" && substr($2, length($2) - 4) == p {print $2}' | paste -sd' ')
+eq "code-server listens on loopback only" "$out" "0100007F:$hex"
 conf="/home/$user/.config/code-server/config.yaml"
 eq "code-server config: mode 600, owner $user" "$(run stat -c '%a %U' "$conf")" "600 $user"
 run grep -qx 'auth: none' "$conf" && ok "code-server config: auth none" || bad "code-server config: auth none" "$(run cat "$conf")"
-run grep -qx 'bind-addr: 127.0.0.1:8080' "$conf" && ok "code-server config: bind-addr 127.0.0.1:8080" \
-  || bad "code-server config: bind-addr 127.0.0.1:8080" "$(run cat "$conf")"
+run grep -qx "bind-addr: 127.0.0.1:$port" "$conf" && ok "code-server config: bind-addr 127.0.0.1:$port" \
+  || bad "code-server config: bind-addr 127.0.0.1:$port" "$(run cat "$conf")"
 run grep -qx 'trusted-origins: \[devtest.example.ts.net\]' "$conf" && ok "code-server config: trusted-origins is the node's name" \
   || bad "code-server config: trusted-origins is the node's name" "$(run cat "$conf")"
 out=$(run grep '^serve --bg' /tmp/tailscale-calls)
-eq "the role published code-server on the tailnet" "$out" "serve --bg --https=443 http://127.0.0.1:8080"
+eq "the role published code-server on the tailnet" "$out" "serve --bg --https=443 http://127.0.0.1:$port"
 
 # Idempotent: a second run changes nothing (`just devhost` reports changed=0), also with the serve entry in place.
 log2="${log%.log}-second.log"
@@ -152,5 +158,8 @@ out=$(grep -o 'changed=[0-9]*' "$log2" | tail -1)
 eq "second run: changed=0" "$out" changed=0 \
   || grep -B1 '^changed:' "$log2" | grep '^TASK' | sed 's/^/     changed: /'
 eq "second run: no second serve call" "$(run grep -c '^serve --bg' /tmp/tailscale-calls)" 1
+# The ~100 MB .deb is fetched only when the installed version differs (apt's deb: downloads before it compares).
+out=$(awk '/^TASK \[code_server : Code-server [0-9]/ {t=1; next} t && NF {print $1; exit}' "$log2")
+eq "second run: the code-server .deb is not fetched again" "$out" "skipping:"
 
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
