@@ -29,6 +29,17 @@ describe('deploy/settings', () => {
     for (const env of environments()) expect(loadSettings(env, { overlay: false }).ingest?.worker_token, env).toEqual({ secret: 'ingest_worker_token', optional: true });
   });
 
+  it('every environment routes links to their resolvers: ingest-email has no built-in routes, without them all go to web', () => {
+    for (const env of environments()) {
+      const routes = Object.fromEntries((loadSettings(env, { overlay: false }).ingest?.routes ?? []).map((r) => [r.pattern, r.resolver]));
+      expect(routes, env).toMatchObject({
+        'instagram.com/p/{id}': 'instagram', 'instagram.com/reel/{id}': 'instagram', 'instagram.com/reels/{id}': 'instagram',
+        'instagram.com/tv/{id}': 'instagram', 'github.com/{owner}/{repo}': 'github', 'youtube.com/watch': 'youtube',
+        'youtu.be/{id}': 'youtube', '*.pdf': 'pdf', '*.jpg': 'image',
+      });
+    }
+  });
+
   it('has the four environments', () => {
     expect(environments()).toEqual(['dev', 'hetzner', 'prodtest', 'test']);
   });

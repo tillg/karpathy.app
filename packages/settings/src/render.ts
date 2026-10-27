@@ -168,5 +168,6 @@ export function renderIngestConfig(s: Settings, secrets: Secrets): string {
       : p.allowed_senders.map((a) => text(a, secrets)),
     ...p.settings,
   }]));
-  return JSON.stringify({ defaults: s.ingest?.defaults ?? {}, profiles }, null, 2) + '\n';
+  const routes = s.ingest?.routes;
+  return JSON.stringify({ defaults: s.ingest?.defaults ?? {}, ...(routes ? { routes } : {}), profiles }, null, 2) + '\n';
 }

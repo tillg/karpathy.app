@@ -78,6 +78,8 @@ export const settingsSchema = z.strictObject({
     worker_token: secretRef.optional(),
     /** ingest-email options for every profile; `instagram_source` (`local` | `worker`) is set only here. */
     defaults: z.record(z.string(), z.unknown()).optional(),
+    /** ingest-email's URL router (first match wins); it has no built-in routes: an unrouted link goes to `web`. */
+    routes: z.array(z.strictObject({ name: z.string().optional(), pattern: z.string(), resolver: z.string() })).optional(),
     profiles: z.record(z.string(), ingestProfile),
   }).optional(),
 });

@@ -68,4 +68,22 @@ ingest:
   worker_token: { secret: ingest_worker_token, optional: true }
   # instagram_source: who scrapes Instagram, the ingest service itself (local) or a worker on the user's machine.
   defaults: { max_per_poll: 20, resolve_max_urls_per_mail: 5, run_interval_s: 900, instagram_source: local }
+  # ingest-email's URL router, first match wins (its config.example.json). It has no built-in routes: an unrouted link
+  # goes to `web`, which turned Instagram posts into login-wall pages.
+  routes:
+    - { name: Instagram post, pattern: "instagram.com/p/{id}", resolver: instagram }
+    - { name: Instagram reel, pattern: "instagram.com/reel/{id}", resolver: instagram }
+    - { name: Instagram reels, pattern: "instagram.com/reels/{id}", resolver: instagram }
+    - { name: Instagram TV, pattern: "instagram.com/tv/{id}", resolver: instagram }
+    - { name: GitHub repo, pattern: "github.com/{owner}/{repo}", resolver: github }
+    - { name: YouTube watch, pattern: youtube.com/watch, resolver: youtube }
+    - { name: YouTube shorts, pattern: "youtube.com/shorts/{id}", resolver: youtube }
+    - { name: YouTube short, pattern: "youtu.be/{id}", resolver: youtube }
+    - { name: PDF link, pattern: "*.pdf", resolver: pdf }
+    - { name: Image link jpg, pattern: "*.jpg", resolver: image }
+    - { name: Image link jpeg, pattern: "*.jpeg", resolver: image }
+    - { name: Image link png, pattern: "*.png", resolver: image }
+    - { name: Image link webp, pattern: "*.webp", resolver: image }
+    - { name: Image link gif, pattern: "*.gif", resolver: image }
+    - { name: Image link heic, pattern: "*.heic", resolver: image }
   profiles: {}

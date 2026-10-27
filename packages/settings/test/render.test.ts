@@ -205,10 +205,17 @@ describe('renderBackendSettings secrets manifest', () => {
 
 describe('renderIngestConfig', () => {
   it('no profiles: an idle ingest loop', () => {
-    expect(JSON.parse(renderIngestConfig(loadSettings('dev', { overlay: false }), SECRETS))).toEqual({
+    const s = loadSettings('dev', { overlay: false });
+    expect(JSON.parse(renderIngestConfig(s, SECRETS))).toEqual({
       defaults: { max_per_poll: 20, resolve_max_urls_per_mail: 5, run_interval_s: 900, instagram_source: 'worker' },
+      routes: s.ingest!.routes,
       profiles: {},
     });
+  });
+
+  it('the routes go to the top level, where ingest-email reads them', () => {
+    const config = JSON.parse(renderIngestConfig(loadSettings('hetzner', { overlay: false }), SECRETS));
+    expect(config.routes).toContainEqual({ name: 'Instagram reel', pattern: 'instagram.com/reel/{id}', resolver: 'instagram' });
   });
 
   it("profiles with their secrets resolved, in ingest-email's shape plus vault, root and label", () => {
