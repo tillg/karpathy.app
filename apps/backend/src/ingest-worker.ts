@@ -12,7 +12,7 @@ import { HttpError } from './vaults.js';
 export function ingestWorkerRouter(d: { token: string; workerToken?: string; ingest?: IngestEndpoint }) {
   const router = express.Router({ caseSensitive: true, strict: true });
   const auth = bearerAuthAny([d.workerToken, d.token]);
-  const json = express.json({ limit: '10kb' });
+  const json = express.json({ limit: 10_000 });
 
   // A shortcode, checked (after the token) before it becomes part of the ingest service's URL: no `..`, `?` or `/`
   // smuggled in.
