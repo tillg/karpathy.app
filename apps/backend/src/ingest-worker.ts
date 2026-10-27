@@ -3,6 +3,9 @@ import { bearerAuthAny } from './auth.js';
 import { forwardIngest, type IngestAnswer, type IngestEndpoint } from './ingest.js';
 import { HttpError } from './vaults.js';
 
+/** How long the result upload may take end to end (the HTTP server's requestTimeout allows for it, see serve.ts). */
+export const UPLOAD_TIMEOUT_MS = 10 * 60_000;
+
 /**
  * The Instagram worker's job routes (#168), mounted at /api/ingest/instagram before the main /api router. They take
  * the worker token or the main one and forward to the ingest service's job API one to one. Only these exact routes
@@ -41,7 +44,7 @@ export function ingestWorkerRouter(d: { token: string; workerToken?: string; ing
     const length = req.headers['content-length'];
     if (!length) throw new HttpError(411, 'The upload needs a Content-Length', 'length-required');
     const path = `/instagram/jobs/${req.params.id}/result`;
-    send(res, await forwardIngest(d.ingest, 'PUT', path, { stream: { body: req, length }, timeoutMs: 10 * 60_000 }));
+    send(res, await forwardIngest(d.ingest, 'PUT', path, { stream: { body: req, length }, timeoutMs: UPLOAD_TIMEOUT_MS }));
   });
 
   router.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {

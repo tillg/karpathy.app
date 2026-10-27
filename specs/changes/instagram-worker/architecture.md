@@ -130,7 +130,9 @@ backend adds auth and streaming, nothing else.
 - **Result route** streams: `fetch(\`${ep.url}/instagram/jobs/${id}/result\`, { method: 'PUT', body: req, duplex:
   'half', headers: { Authorization, 'Content-Type': 'application/gzip', 'Content-Length': req.headers['content-length'] } })`.
   No body parser, no buffering, a 10-minute timeout. A request without `Content-Length` gets `411` from the backend
-  itself (chunked uploads are not supported). The answer is passed through.
+  itself (chunked uploads are not supported). The answer is passed through. The backend's HTTP server
+  (`serve.ts`) sets `requestTimeout` to that timeout + 1 min (Node's default 300 s would cut off a slow upload);
+  `headersTimeout` keeps its 60 s.
 - **Settings:** `settings.json` gains `ingest: { worker_token: { file: /run/secrets/ingest_worker_token } }`
   (optional). `loadBackendSettings` reads it into `workerToken`; `main.ts` passes it to `createApp`.
 - **Status type:** `InstagramStatus` in `packages/shared` gains `source: 'local' | 'worker'`,
