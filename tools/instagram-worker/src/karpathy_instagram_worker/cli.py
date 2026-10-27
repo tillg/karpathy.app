@@ -154,6 +154,22 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_service(args) -> int:
+    from . import service
+
+    try:
+        svc = service.for_platform(exe=service.command_path() if args.action == "install" else None)
+        if args.action == "status":
+            print(svc.status())
+        else:
+            for line in getattr(svc, args.action)():
+                print(line)
+    except service.ServiceError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_version(args) -> int:
     print(f"{PROG} {__version__}")
     return 0
@@ -194,6 +210,15 @@ def build_parser() -> argparse.ArgumentParser:
         "to stdout with timestamps.",
     )
     r.set_defaults(func=cmd_run)
+
+    s = sub.add_parser(
+        "service", help="install, remove or show the background service (launchd on macOS, systemd on Linux)",
+        description="install: a LaunchAgent (macOS) or systemd user unit (Linux) that runs `run` at login and "
+        "restarts it; installing again replaces it (do that after an upgrade). uninstall: stop and remove it. "
+        "status: whether it runs, and the last log lines.",
+    )
+    s.add_argument("action", choices=["install", "uninstall", "status"])
+    s.set_defaults(func=cmd_service)
 
     v = sub.add_parser("version", help="print the version")
     v.set_defaults(func=cmd_version)

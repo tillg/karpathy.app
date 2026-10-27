@@ -121,7 +121,7 @@ flowchart LR
   - Depends on: 15
   - Test first: `tools/instagram-worker/tests/test_cli.py` › "login passes username, password and a code callback that reads stdin", "login writes IG_USERNAME to instascraper's .env", "the password never reaches stdout, stderr or any file", "doctor prints one line per check and exits 1 on a rejected token", "doctor treats a missing ffmpeg as a warning". Fail today: no commands.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
-- [ ] `service install|uninstall|status`: launchd LaunchAgent `app.karpathy.instagram-worker` on macOS, systemd user unit `karpathy-instagram-worker.service` on Linux, with the absolute path of the installed command
+- [x] `service install|uninstall|status`: launchd LaunchAgent `app.karpathy.instagram-worker` on macOS, systemd user unit `karpathy-instagram-worker.service` on Linux, with the absolute path of the installed command
   - Depends on: 12
   - Test first: `tools/instagram-worker/tests/test_service.py` (stub `launchctl`, `systemctl`, `journalctl` on `PATH`, `HOME` in a temp dir, platform injected) › "macOS: the plist has RunAtLoad, KeepAlive, the absolute command + run, logs in ~/Library/Logs/karpathy-instagram-worker/, and `launchctl bootstrap gui/<uid>` is called", "uninstall calls bootout and removes the plist", "Linux: the unit has `ExecStart=<abs> run` and Restart=always; daemon-reload and enable --now are called", "install twice replaces, not duplicates", "status shows the last log lines". Fail today: no module.
   - Verify: `bash tools/instagram-worker/test.sh` → all green
