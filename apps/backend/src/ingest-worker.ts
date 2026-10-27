@@ -18,7 +18,7 @@ export function ingestWorkerRouter(d: { token: string; workerToken?: string; ing
   // smuggled in.
   const id = (req: Request, _res: Response, next: NextFunction) => {
     const v = req.params.id;
-    next(v === undefined || /^[A-Za-z0-9_-]{5,40}$/.test(v) ? undefined : new HttpError(400, 'Not a job id', 'bad-id'));
+    next(v === undefined || (typeof v === 'string' && /^[A-Za-z0-9_-]{5,40}$/.test(v)) ? undefined : new HttpError(400, 'Not a job id', 'bad-id'));
   };
 
   const send = (res: Response, a: IngestAnswer) => {
