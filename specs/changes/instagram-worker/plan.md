@@ -101,7 +101,7 @@ flowchart LR
   - Depends on: none
   - Test first: `tools/instagram-worker/tests/test_config.py` › "configure writes server, token, name, poll_interval_s with mode 0600", "a missing token is asked with getpass, never echoed", "server must be https:// (http only for localhost)", "name defaults to the short host name", "version prints the package version". Fail today: no package.
   - Verify: `bash tools/instagram-worker/test.sh` → all green; `grep -q instagram-worker/test.sh justfile` → exit 0
-- [ ] `client.py`: claim, failure, release and heartbeat over stdlib `urllib` with the bearer token; 204 → no job; 401 → `TokenRejected`; unreachable or 5xx → retried with backoff (1, 2, 5 min, sleeps injected)
+- [x] `client.py`: claim, failure, release and heartbeat over stdlib `urllib` with the bearer token; 204 → no job; 401 → `TokenRejected`; unreachable or 5xx → retried with backoff (1, 2, 5 min, sleeps injected)
   - Depends on: 12
   - Test first: `tools/instagram-worker/tests/test_client.py` (a `http.server` fake on localhost) › "claim returns {id, url, leaseUntil}", "204 is None", "every call sends `Authorization: Bearer <token>`", "401 raises TokenRejected", "a 503 then a 200 retries once after the first backoff", "heartbeat sends name, version, state, message". Fail today: no client.
   - Verify: `bash tools/instagram-worker/test.sh` → all green

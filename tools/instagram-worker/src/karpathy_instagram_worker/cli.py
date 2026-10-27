@@ -12,6 +12,7 @@ import os
 import sys
 
 from . import __version__, config
+from .client import ApiError, JobClient, ServerUnavailable, TokenRejected
 
 PROG = "karpathy-instagram-worker"
 
@@ -38,6 +39,15 @@ log = logging.getLogger("karpathy_instagram_worker")
 
 class UsageError(Exception):
     """A wrong argument or answer; exit 2."""
+
+
+def token_rejected_text(server: str) -> str:
+    return (
+        f"error: {server} rejected the worker token (HTTP 401).\n"
+        "  Get the current token where the server is deployed: `just instagram-worker-token <target>` in the\n"
+        f"  karpathy.app checkout (dev, prodtest or hetzner), then run: {PROG} configure --token <token>\n"
+        f"  (or `{PROG} configure` and paste it at the prompt)."
+    )
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -75,8 +85,25 @@ def cmd_configure(args) -> int:
             poll_interval_s=args.poll_interval or raw.get("poll_interval_s", config.DEFAULT_POLL_INTERVAL_S),
         )
     )
+    # One heartbeat checks URL and token before anything is saved; no retries, so a typo answers at once.
+    client = JobClient(cfg.server, cfg.token, cfg.name, backoff=())
+    warning = None
+    try:
+        client.heartbeat("idle", "configured")
+    except TokenRejected:
+        print(token_rejected_text(cfg.server), file=sys.stderr)
+        print("Nothing was saved.", file=sys.stderr)
+        return 1
+    except ServerUnavailable as exc:
+        warning = f"Could not reach the server ({exc}). Saved anyway; check later with: {PROG} doctor"
+    except ApiError as exc:
+        warning = f"The server answered the check with {exc}. Saved anyway; check with: {PROG} doctor"
     p = config.save(cfg)
     print(f"Saved {p} (mode 0600): server {cfg.server}, worker name {cfg.name}.")
+    if warning:
+        print(warning)
+    else:
+        print("The server accepted the worker token.")
     print(f"Next: {PROG} login   (then {PROG} doctor)")
     return 0
 

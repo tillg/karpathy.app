@@ -94,7 +94,7 @@ class FakeServer:
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread = threading.Thread(target=self.httpd.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True)
         self.thread.start()
 
     def script(self, method: str, path: str, *answers) -> None:
@@ -107,8 +107,11 @@ class FakeServer:
         return [json.loads(r["body"]) for r in self.calls(method, path)]
 
     def close(self) -> None:
+        if self.httpd is None:
+            return
         self.httpd.shutdown()
         self.httpd.server_close()
+        self.httpd = None
 
 
 @pytest.fixture
