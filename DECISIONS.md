@@ -243,6 +243,12 @@ edited: 2026-10-27
 - [2026-10-27 11:45 — Instagram scraper worker: pull jobs from the server, scrape on the user's machines](#run-2026-10-27-1145)
   - [11:56 — Work on `autonomous/issue-168-instagram`; mark #137 and #168 with `in-progress`, reopen #168](#run-2026-10-27-1145-1)
   - [11:56 — Replace the `instagram-mac-relay` change with a new change `instagram-worker`](#run-2026-10-27-1145-2)
+  - [12:20 — Grill the change unattended: a Fable agent grills, I decide](#run-2026-10-27-1145-3)
+  - [12:20 — ingest-email stays the only writer of the vault; the worker's results land in a dropbox it reads](#run-2026-10-27-1145-4)
+  - [12:20 — Uploads stream through the backend to the ingest service as a tar.gz, capped at 500 MB](#run-2026-10-27-1145-5)
+  - [12:20 — The worker token is a deploy secret `ingest_worker_token`, valid only on the job routes](#run-2026-10-27-1145-6)
+  - [12:20 — In worker mode the ingest service counts failures and backs off; waits never count an attempt](#run-2026-10-27-1145-7)
+  - [12:20 — The worker is a Python package in this repo, installed with pipx, run by launchd or systemd --user](#run-2026-10-27-1145-8)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3652,3 +3658,64 @@ edited: 2026-10-27
 - **Why:** the architecture is the opposite of the relay's; amending would rewrite every file anyway, and the user's words override the earlier recommendation.
 - **Alternatives:** keep the relay change as a fallback (two open changes for one problem confuse `/spec:overview`).
 - **Consequences:** the relay design stays in git history (commit `930384b` and earlier).
+
+## 12:20 — Grill the change unattended: a Fable agent grills, I decide {#run-2026-10-27-1145-3}
+
+- **Status:** open
+- **Overrides:** `/spec:grill` — "If running unattended (no user to answer), say that grilling needs a user, and stop."
+- **Context:** the user asked to "grill the specs, take decisions as good as you can. Maybe ask fable to help".
+- **Question:** how to grill without the user?
+- **Decision:** a Fable agent grilled the draft design against the code (ingest service, backend, ingest-email, instascraper v1.1.0) and returned 17 findings; I decided each one and folded the answers into the change. The decisions that matter most are the next five entries.
+- **Why:** the user asked for exactly this; an independent reader found three real blockers (body size on the backend→ingest hop, no non-counting wait in ingest-email, the single-token `bearerAuth`).
+- **Alternatives:** stop and wait for the user (the skill's rule), against the user's explicit instruction.
+- **Consequences:** every grill answer is open for review here and in `specs/changes/instagram-worker/architecture.md` › Key decisions.
+
+## 12:20 — ingest-email stays the only writer of the vault; the worker's results land in a dropbox it reads {#run-2026-10-27-1145-4}
+
+- **Status:** open
+- **Context:** `instagram-worker`. The user wants a service that scrapes and "sends the result back". Someone has to turn a result into an `Input/insta-…/` item and mark the mail's link resolved.
+- **Question:** who writes the vault: the ingest service's HTTP endpoint (`server.py`), the backend, or ingest-email?
+- **Decision:** the ingest service stores an uploaded result in `/state/instagram/results/<shortcode>/` (a dropbox). ingest-email's Instagram resolver gets `instagram_source: worker`: it maps a result from the dropbox with the same `map_output` as today, and otherwise answers a new `wait` outcome. Jobs are derived by scanning `Input/*/index.md` for unresolved Instagram links; job id = shortcode.
+- **Why:** folder naming, tags, dedup, the `## Resolved links` bookkeeping and the per-profile lock all stay in one place; `server.py` never edits vault files, so no race with the 60-second resolve loop.
+- **Alternatives:** `server.py` writes the item and edits the mail's frontmatter (duplicates ingest-email's mapping and races its resolve loop); the backend writes it (a second writer of `Input/`).
+- **Consequences:** needs a change and a new pinned ref in the private repo `tillg/ingest_email`; up to one minute of extra latency between upload and the item appearing.
+
+## 12:20 — Uploads stream through the backend to the ingest service as a tar.gz, capped at 500 MB {#run-2026-10-27-1145-5}
+
+- **Status:** open
+- **Context:** `instagram-worker`. `callIngest` buffers JSON; `server.py` reads at most 10 KB of JSON over HTTP/1.0. Reels are 10–60 MB, carousels with videos more.
+- **Question:** how does a large result get from the worker to the ingest service?
+- **Decision:** `PUT /api/ingest/instagram/jobs/:id/result` with a gzip tarball; the backend pipes the request body to the ingest service with its `Content-Length` (no buffering); `server.py` speaks HTTP/1.1, writes it in chunks to a temp file, extracts with `tarfile` `filter='data'`, validates names and size (500 MB, 40 files) and renames it into place. Invalid or oversize → 413/422, which the worker reports as a permanent failure.
+- **Why:** the backend stays thin and never touches the ingest service's volume; parsing stays in the ingest sandbox.
+- **Alternatives:** `express.raw` (holds 500 MB in RAM); multipart (more parsing, no benefit); mounting the ingest state into the backend (a second container with write access to it).
+- **Consequences:** Caddy has no body limit today; if one is added later it must leave room for this route.
+
+## 12:20 — The worker token is a deploy secret `ingest_worker_token`, valid only on the job routes {#run-2026-10-27-1145-6}
+
+- **Status:** open
+- **Context:** `instagram-worker`. The worker runs on laptops and other machines; the app's main bearer token can do everything.
+- **Question:** how does the worker authenticate?
+- **Decision:** a new secret `ingest_worker_token`, generated like `ingest_token`; a separate router for exactly `/api/ingest/instagram/jobs/*` and `/api/ingest/instagram/worker/*`, mounted before the main `bearerAuth`, accepts it or the main token. `just instagram-worker-token <target>` prints it for the setup.
+- **Why:** a stolen worker token can only fetch Instagram job URLs and upload results; a deploy secret reuses the existing secret manifest, status row and Ansible flow, with no hashed-token code in the config store.
+- **Alternatives:** a token created in the admin UI and stored hashed (nicer rotation, much more code); the main token (too powerful for a laptop service).
+- **Consequences:** rotation means redeploy and re-configuring the workers; one token for all workers.
+
+## 12:20 — In worker mode the ingest service counts failures and backs off; waits never count an attempt {#run-2026-10-27-1145-7}
+
+- **Status:** open
+- **Context:** `instagram-worker`. Today every failed try counts an attempt in the mail's frontmatter; prod allows 75. A link waiting for a sleeping Mac must not burn attempts, and a flaky post must not be scraped 75 times.
+- **Question:** where are attempts counted in worker mode?
+- **Decision:** the worker reports a failure with `permanent` true/false; `server.py` keeps `<shortcode>.failed.json` with a count, excludes the shortcode from claims for `min(count, 24)` hours, and makes it permanent after 5 failures. ingest-email gives a permanent marker up (`failed_links`) and otherwise waits (no attempt). It also stops rewriting `index.md` when nothing changed.
+- **Why:** one counter per post across vaults, a backoff that protects the Instagram account, and no churn of `updated` while links wait for days.
+- **Alternatives:** count attempts in the frontmatter as today (retry storm, needs per-marker bookkeeping).
+- **Consequences:** `resolve_max_attempts` no longer applies to Instagram links in worker mode.
+
+## 12:20 — The worker is a Python package in this repo, installed with pipx, run by launchd or systemd --user {#run-2026-10-27-1145-8}
+
+- **Status:** open
+- **Context:** `instagram-worker`. "Uses the existing instagram scraper software": instascraper is a Python library; the repo is public.
+- **Question:** what is the worker and how is it installed on a Mac or Linux box?
+- **Decision:** `tools/instagram-worker/` (package `karpathy_instagram_worker`, command `karpathy-instagram-worker`), depending on instascraper at the same tag as the ingest image, stdlib HTTP only; installed with `pipx install "git+https://github.com/tillg/karpathy.app@<tag>#subdirectory=tools/instagram-worker"`. Commands `configure`, `login`, `doctor`, `once`, `run`, `service install|uninstall|status`. One `Humanizer` with instascraper's activity ledger per job, gate checked before claiming. Errors mapped like instascraper's CLI (not found → permanent; login/challenge → `needs-login`, job released; rate limit → released, sleep).
+- **Why:** calls the scraper as a library like ingest-email does; pipx gives an isolated venv on macOS and Linux; launchd/systemd are the native supervisors.
+- **Alternatives:** a Docker image (heavy on a Mac, awkward for an interactive Instagram login); shelling out to the `instascrape` CLI (loses typed errors).
+- **Consequences:** every worker host needs Tailscale (prod's proxy listens on the tailnet only); one Instagram account per worker, the UI warns when more than one worker is active.
