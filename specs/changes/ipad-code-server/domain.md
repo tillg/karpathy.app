@@ -1,7 +1,7 @@
 ---
 feature: ipad-code-server
 title: "Domain: VS Code in the browser on the dev host"
-status: applying
+status: applied
 order: 2
 created: 2026-10-22
 edited: 2026-10-22

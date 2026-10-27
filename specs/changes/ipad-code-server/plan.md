@@ -1,10 +1,10 @@
 ---
 feature: ipad-code-server
 title: "Plan: VS Code in the browser on the dev host"
-status: applying
+status: applied
 order: 4
 created: 2026-10-22
-edited: 2026-10-22
+edited: 2026-10-27
 ---
 
 # Plan: VS Code in the browser on the dev host
@@ -40,12 +40,12 @@ flowchart LR
   - Verify: `bash deploy/tailnet-serve.test.sh` → all passed; `grep -q tailnet-serve.test.sh justfile`
 
 - [x] Add the role `code_server` to `dev.yml` (after `devtools`, `when: code_server_enabled`): the pinned `.deb` for
-  the host's architecture, `~/.config/code-server/config.yaml` (127.0.0.1:8080, `auth: none`, `cert: false`,
+  the host's architecture, `~/.config/code-server/config.yaml` (127.0.0.1:13337, `auth: none`, `cert: false`,
   telemetry and update check off; mode 600) and `code-server@<user>` enabled and started, restarted by a handler on
   change.
   - Depends on: none
   - Test first: `deploy/ansible/dev.test.sh` › "code-server is the pinned version", "`code-server@dev` is active
-    and enabled", "code-server answers /healthz on 127.0.0.1:8080", "code-server listens on loopback only", "config:
+    and enabled", "code-server answers /healthz on 127.0.0.1:13337", "code-server listens on loopback only", "config:
     mode 600, owner dev, auth none" — fails today: no role installs code-server.
   - Verify: `bash deploy/ansible/dev.test.sh` → all passed
 
@@ -61,12 +61,12 @@ flowchart LR
     deploy/ansible deploy/README.md --exclude='*.test.sh'` (the test names the old tag on purpose); `just check` → green
 
 - [x] Publish code-server with `tailscale serve` from the role when `code_server_tailnet_serve` (default
-  `tailscale_enabled`), through `deploy/tailnet-serve.sh 443 http://127.0.0.1:8080`; `changed_when` on `changed`,
+  `tailscale_enabled`), through `deploy/tailnet-serve.sh 443 http://127.0.0.1:13337`; `changed_when` on `changed`,
   fail with the script's message on exit 3.
   - Depends on: 1, 2
   - Test first: `deploy/ansible/dev.test.sh` puts the fake `tailscale` (HTTPS on) into the container and sets
     `code_server_tailnet_serve: true` › "the role published code-server: serve --bg --https=443
-    http://127.0.0.1:8080" — fails today: the role has no serve task.
+    http://127.0.0.1:13337" — fails today: the role has no serve task.
   - Verify: `bash deploy/ansible/dev.test.sh` → all passed; `bash deploy/tailnet-serve.test.sh` → all passed
 
 - [x] Add `just code-web [worktree]` (`deploy/code.sh --web`): the URL from `KARPATHY_DEVHOST_URL` (default
@@ -100,7 +100,7 @@ flowchart LR
 
 ## Rollout (user)
 
-- [ ] Retag and lock down the tailnet, in this order: (1) Access controls: back up the policy, add the two new tags
+- [x] Retag and lock down the tailnet, in this order: (1) Access controls: back up the policy, add the two new tags
   to `tagOwners` only (a tag can't be assigned before); (2) admin console › Machines › *Edit ACL tags*: `karpathy` →
   `tag:server-prod`, `karpathy-dev` → `tag:server-dev`; (3) replace the policy with the one from `docs/dev-server.md`
   (no allow-all `acls`, no `tag:server`; its tests must pass on save); (4) prove from prod that the dev host is
@@ -110,15 +110,25 @@ flowchart LR
   - Test first: none — applies the tested roles and the documented policy to the real tailnet and hosts.
   - Verify: `ssh karpathy 'nc -zw5 karpathy-dev 22'` and `… 443` both fail; `ssh karpathy-dev 'nc -zw5 karpathy 22'`
     succeeds; `tailscale serve status` on `karpathy-dev` lists `https://karpathy-dev.tailab154c.ts.net` →
-    `http://127.0.0.1:8080`; from the Mac `curl -sf https://karpathy-dev.tailab154c.ts.net/healthz` → JSON; a second
+    `http://127.0.0.1:13337`; from the Mac `curl -sf https://karpathy-dev.tailab154c.ts.net/healthz` → JSON; a second
     `just devhost` → `changed=0`
+  - Done (user, 2026-10-22, checked from `karpathy-dev` 2026-10-27): both tags in place, policy saved with its tests,
+    prod → dev 22 and 443 blocked, dev → prod 22 open, serve and certificate live, `/healthz` 200. The `changed=1` of
+    the second `just devhost` was fixed in de7b59e (`dev.test.sh` now runs the playbook twice, `changed=0`); the
+    re-run itself needs the Mac. `just deploy hetzner`'s tag check passed; the deploy then stopped on the GitHub
+    release lookup (rate limit), unrelated to this change.
 
-- [ ] Use it on the iPad: `just code-web` on the dev host, scan the QR code, open `~/karpathy.app`, edit a file, run
+- [x] Use it on the iPad: `just code-web` on the dev host, scan the QR code, open `~/karpathy.app`, edit a file, run
   `just --list` in the editor's terminal, install the offered extensions, sign in to the Claude Code extension, add
   the page to the home screen. From the Mac, `just code-web <worktree>` opens that worktree.
   - Depends on: 8
   - Test first: none — manual acceptance on the device the change is for.
   - Verify: each action works, and the editor never shows "reconnecting"; findings go into #171 and, if something
     fails, into a fix with a test first.
+  - Done headless (2026-10-27, Playwright WebKit with the *iPad Pro 11 landscape* profile, from `karpathy-dev`):
+    workbench and file tree load from the `?folder=` URL, a file opens, the terminal runs `just --list` after *Trust
+    Folder & Continue* (now in the docs), the recommended extensions incl. Claude Code are installed, two minutes
+    without a websocket close or "reconnecting". The on-device part (QR scan, Home Screen, Claude login) is the
+    user's.
 
 System docs are updated at `/spec:archive`.

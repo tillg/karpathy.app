@@ -1,7 +1,7 @@
 ---
 feature: ipad-code-server
 title: "Proposal: VS Code in the browser on the dev host"
-status: applying
+status: applied
 order: 1
 created: 2026-10-22
 edited: 2026-10-22
@@ -38,7 +38,7 @@ flowchart LR
   end
   subgraph DH["karpathy-dev"]
     TS["tailscale serve<br/>:443, *.ts.net cert"]
-    CS["code-server<br/>127.0.0.1:8080, no auth"]
+    CS["code-server<br/>127.0.0.1:13337, no auth"]
     W["checkouts + worktrees<br/>terminals, extensions"]
   end
   S -- "https over the tailnet" --> TS --> CS --> W
@@ -46,7 +46,7 @@ flowchart LR
 
 - **New Ansible role `code_server`** in `dev.yml`: the pinned code-server `.deb` for the host's architecture, its
   config (loopback, `auth: none`, no TLS of its own), the `code-server@<user>` systemd service, enabled at boot.
-- **`tailscale serve`** for it, set up by the same role when Tailscale is on: HTTPS on 443 → `http://127.0.0.1:8080`.
+- **`tailscale serve`** for it, set up by the same role when Tailscale is on: HTTPS on 443 → `http://127.0.0.1:13337`.
   The role stops with a clear message while the tailnet's *HTTPS Certificates* setting is off (a one-time switch in
   the Tailscale admin console that only the user can flip).
 - **`just code-web [worktree]`:** opens the browser editor on a checkout. On the Mac in the default browser; on the

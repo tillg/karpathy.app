@@ -1,7 +1,7 @@
 ---
 feature: ipad-code-server
 title: "Architecture: VS Code in the browser on the dev host"
-status: applying
+status: applied
 order: 3
 created: 2026-10-22
 edited: 2026-10-22
@@ -21,8 +21,8 @@ flowchart LR
     subgraph Ansible["dev.yml"]
       R1[base] --> R2[tailscale] --> R3[docker] --> R4[devtools] --> R5["code_server (new)"]
     end
-    TSD["tailscaled<br/>serve :443 → 127.0.0.1:8080"]
-    CS["code-server@tgartner<br/>systemd, 127.0.0.1:8080, auth none"]
+    TSD["tailscaled<br/>serve :443 → 127.0.0.1:13337"]
+    CS["code-server@tgartner<br/>systemd, 127.0.0.1:13337, auth none"]
     CFG["~/.config/code-server/config.yaml"]
   end
   I["iPad Safari"]
@@ -36,10 +36,10 @@ flowchart LR
 Three pieces, all installed by Ansible on `just devhost`:
 
 1. **code-server**, Coder's `.deb`, pinned, running as the developer's login user from the systemd template the
-   package ships (`code-server@<user>`). It binds `127.0.0.1:8080` with `auth: none` and `cert: false`: nothing
+   package ships (`code-server@<user>`). It binds `127.0.0.1:13337` with `auth: none` and `cert: false`: nothing
    off the host reaches it directly.
 2. **`tailscale serve`** terminates HTTPS on the tailnet IP, port 443, with a Let's Encrypt certificate for
-   `karpathy-dev.<tailnet>.ts.net`, and proxies to `http://127.0.0.1:8080`. The serve config lives in `tailscaled`'s
+   `karpathy-dev.<tailnet>.ts.net`, and proxies to `http://127.0.0.1:13337`. The serve config lives in `tailscaled`'s
    state and survives reboots.
 3. **`deploy/tailnet-serve.sh`**, a small idempotent wrapper around `tailscale serve`, so Ansible gets a clear
    "changed / unchanged / tailnet HTTPS is off" and phase 2 (the dev stacks) can reuse it.
@@ -59,7 +59,7 @@ It is in `dev.yml` only, never in `site.yml` (prod).
 | `code_server_version` | `4.141.0` | Pinned like `just` and Playwright; released 2026-10-08. Bumped by hand. |
 | `code_server_arch` | `{aarch64: arm64, x86_64: amd64}[ansible_facts.architecture]` | `karpathy-dev` is arm64, CI's test container may be amd64. |
 | `code_server_url` | `https://github.com/coder/code-server/releases/download/v{{ code_server_version }}/code-server_{{ code_server_version }}_{{ code_server_arch }}.deb` | Upstream's release asset. |
-| `code_server_port` | `8080` | Loopback only; not one of the stack ports (80N0–80N9) or 8099 (`just site`). |
+| `code_server_port` | `13337` | Loopback only, outside 8000–8099: the stack ports and the Mac's SSH `LocalForward`s (8010…8090). 8080 was the first pick; review found it is stack 8's port and forwarded from the Mac. |
 | `code_server_tailnet_serve` | `"{{ tailscale_enabled }}"` | Publish via `tailscale serve`. The test sets it on its own, with a fake `tailscale`. |
 
 Tasks, in order:
@@ -69,7 +69,7 @@ Tasks, in order:
 2. **Config:** `~/.config/code-server/config.yaml` (owner the login user, mode 0600), from a template:
 
    ```yaml
-   bind-addr: 127.0.0.1:8080
+   bind-addr: 127.0.0.1:13337
    auth: none
    cert: false
    disable-telemetry: true
@@ -83,7 +83,7 @@ Tasks, in order:
    *Restart code-server*.
 3. **Service:** `code-server@{{ admin_user }}` enabled and started (`ansible.builtin.systemd_service`). Handler
    *Restart code-server* restarts it after a config or package change.
-4. **Tailnet URL:** when `code_server_tailnet_serve`, run `deploy/tailnet-serve.sh 443 http://127.0.0.1:8080` with
+4. **Tailnet URL:** when `code_server_tailnet_serve`, run `deploy/tailnet-serve.sh 443 http://127.0.0.1:13337` with
    `ansible.builtin.script` as root; `changed_when` on its `changed` line, `failed_when` on its exit code. On exit 3
    the task fails with the script's message: turn on *HTTPS Certificates* in the Tailscale admin console › DNS, then
    run `just devhost` again.
@@ -149,11 +149,11 @@ gains:
 
 - **A fake `tailscale`** in the container (`/usr/local/bin/tailscale`, the same fake as the script's test, with
   HTTPS on) and `code_server_tailnet_serve: true` in the extra vars, so the role's serve task runs for real and the
-  test checks the logged `serve --bg --https=443 http://127.0.0.1:8080` call.
+  test checks the logged `serve --bg --https=443 http://127.0.0.1:13337` call.
 - `code-server --version` starts with the pinned version (from `defaults/main.yml`, like the Playwright check).
 - `systemctl is-active` and `is-enabled` for `code-server@dev`.
-- `curl -sf http://127.0.0.1:8080/healthz` answers, and `ss -ltn` shows `127.0.0.1:8080`, not `0.0.0.0:8080` or
-  `*:8080`.
+- `curl -sf http://127.0.0.1:13337/healthz` answers, and `ss -ltn` shows `127.0.0.1:13337`, not `0.0.0.0:13337` or
+  `*:13337`.
 - The config file is mode 600, owned by the login user, and has `auth: none`.
 
 ## Key decisions
