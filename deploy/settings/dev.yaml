@@ -3,3 +3,6 @@
 git:
   remote_base: file:///remotes/
   author: { name: Dev User, email: dev@example.com }
+# Instagram jobs go to a worker (e2e plays one over HTTP with the dev worker token).
+ingest:
+  defaults: { instagram_source: worker }

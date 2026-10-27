@@ -4,7 +4,7 @@ import { secretRefs } from './secrets.js';
 type Secrets = Record<string, string | undefined>;
 
 /** Secrets the compose stack mounts as files (/run/secrets/<name>); every other reference is resolved inline. */
-const COMPOSE_SECRETS = ['bearer_token', 'opencode_password', 'github_token', 'dns_api_token'];
+const COMPOSE_SECRETS = ['bearer_token', 'opencode_password', 'github_token', 'dns_api_token', 'ingest_worker_token'];
 
 /** opencode reads a provider's key from this variable. */
 const KEY_VARS: Record<string, string> = {
@@ -93,6 +93,8 @@ export function renderComposeEnv(s: Settings, secrets: Secrets, { settingsDir }:
     ['GIT_REMOTE_BASE', s.git.remote_base],
     ['DEFAULT_MODEL', s.ai.model],
     ['SETTINGS_DIR', settingsDir],
+    // Who scrapes Instagram: the ingest service itself (local) or a worker on the user's machine (#168).
+    ['INGEST_INSTAGRAM_SOURCE', String(s.ingest?.defaults?.instagram_source ?? 'local')],
   ]);
 }
 
@@ -105,6 +107,7 @@ const SECRET_INFO: [RegExp, (m: RegExpMatchArray) => { component: string; purpos
   [/^git\.github_token$/, () => ({ component: 'backend', purpose: 'GitHub token (fallback)' })],
   [/^git\.author\./, (m) => ({ component: 'backend', purpose: `Git ${m.input!.slice(11)}` })],
   [/^proxy\.dns\.api_token$/, () => ({ component: 'proxy', purpose: 'DNS for certificates' })],
+  [/^ingest\.worker_token$/, () => ({ component: 'backend', purpose: 'Instagram worker token' })],
   [/^ingest\./, (m) => ({ component: 'ingest', purpose: `Ingest ${m.input!.slice(7)}` })],
 ];
 
@@ -146,6 +149,8 @@ export function renderBackendSettings(s: Settings, secrets: Secrets): string {
     },
     commit_reminder_threshold: s.commit_reminder_threshold,
     files: s.files,
+    // The Instagram worker's token: the backend accepts it on the worker routes only.
+    ...(s.ingest?.worker_token ? { ingest: { worker_token: ref(s.ingest.worker_token) } } : {}),
     secrets: secretManifest(s, secrets),
   };
   return JSON.stringify(backend, null, 2) + '\n';

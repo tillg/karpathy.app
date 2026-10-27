@@ -75,7 +75,7 @@ flowchart LR
 
 ## Settings, secrets, compose, Ansible
 
-- [ ] Settings: `ingest.worker_token` secret reference; `ingest.defaults.instagram_source` must be `local` or `worker` and is not set per profile; rendered into `INGEST_INSTAGRAM_SOURCE` (`.env`), `ingest.worker_token` (backend `settings.json`, a compose secret) and the manifest row "Instagram worker token"; `settings.yaml` declares both, `hetzner.yaml` and `dev.yaml` set `worker`
+- [x] Settings: `ingest.worker_token` secret reference; `ingest.defaults.instagram_source` must be `local` or `worker` and is not set per profile; rendered into `INGEST_INSTAGRAM_SOURCE` (`.env`), `ingest.worker_token` (backend `settings.json`, a compose secret) and the manifest row "Instagram worker token"; `settings.yaml` declares both, `hetzner.yaml` and `dev.yaml` set `worker`
   - Depends on: none
   - Test first: `packages/settings/test/schema.test.ts` › "instagram_source must be local or worker", "a profile setting instagram_source is an error naming the profile"; `render.test.ts` › ".env carries INGEST_INSTAGRAM_SOURCE (local by default)", "settings.json has ingest.worker_token as /run/secrets/ingest_worker_token", "the manifest names it Instagram worker token, component backend"; `repo-settings.test.ts` › "hetzner and dev use worker, prodtest local"; `apps/backend/test/settings.test.ts` › "ingest.worker_token is read from its file, absent is fine". Fail today: no such keys.
   - Verify: `npm test -w packages/settings && npm test -w apps/backend -- settings` → green; `just settings check` → ok

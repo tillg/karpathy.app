@@ -37,6 +37,7 @@ describe('loadBackendSettings', () => {
       commitReminderThreshold: 4,
       visibleDotDirs: ['.agents'],
       secrets: [],
+      workerToken: undefined,
     });
   });
 
@@ -52,6 +53,17 @@ describe('loadBackendSettings', () => {
     expect(loadBackendSettings(await rendered((s) => (s.secrets = [entry]))).secrets).toEqual([entry]);
     const bad = await rendered((s) => (s.secrets = [{ ...entry, value: 'x' }]));
     expect(() => loadBackendSettings(bad)).toThrow(/secrets/);
+  });
+
+  it('ingest.worker_token is read from its file, absent is fine', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'wt-'));
+    await writeFile(join(dir, 'ingest_worker_token'), 'wt\n');
+    expect(loadBackendSettings(await rendered((s) => (s.ingest = { worker_token: { file: join(dir, 'ingest_worker_token') } }))).workerToken).toBe('wt');
+    // No ingest block (an older settings.json), an empty file or none at all (a stack without the secret): no worker token.
+    expect(loadBackendSettings(await rendered()).workerToken).toBeUndefined();
+    await writeFile(join(dir, 'empty'), '');
+    expect(loadBackendSettings(await rendered((s) => (s.ingest = { worker_token: { file: join(dir, 'empty') } }))).workerToken).toBeUndefined();
+    expect(loadBackendSettings(await rendered((s) => (s.ingest = { worker_token: { file: join(dir, 'missing') } }))).workerToken).toBeUndefined();
   });
 
   it('a missing or invalid file names the path', async () => {
