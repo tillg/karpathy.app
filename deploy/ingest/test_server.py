@@ -15,6 +15,7 @@ import stat
 import tarfile
 import threading
 import time
+import tracemalloc
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -490,6 +491,7 @@ def special(name, kind, **kw):
     ("hard link", result_files("AAAAA1"), [special("hard.jpg", tarfile.LNKTYPE, linkname="post.md")]),
     ("device file", result_files("AAAAA1"), [special("dev", tarfile.CHRTYPE, devmajor=1, devminor=3)]),
     ("fifo", result_files("AAAAA1"), [special("fifo", tarfile.FIFOTYPE)]),
+    ("contiguous file", result_files("AAAAA1"), [special("cont.jpg", tarfile.CONTTYPE)]),
     ("41 files", {**result_files("AAAAA1"), **{f"{i}.jpg": b"x" for i in range(10, 48)}}, ()),
     ("a name with a space", {**result_files("AAAAA1"), "my photo.jpg": b"x"}, ()),
     ("two directory levels", result_files("AAAAA1", "AAAAA1/sub/"), ()),
@@ -516,6 +518,44 @@ def test_not_a_gzip_tarball_is_422(wsvc, data):
     status, body = put(wsvc, "AAAAA1", data)
     assert (status, body["error"]) == (422, "invalid-result")
     assert leftovers(wsvc) == []
+
+
+def test_a_huge_long_name_header_is_refused_without_reading_it_into_memory(tmp_path):
+    # A GNU long-name header is read whole by tarfile before any member check: a few hundred KB of gzip can carry a
+    # name of hundreds of MB. Here 20 MB: the refusal must come without holding it.
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz", format=tarfile.GNU_FORMAT) as tf:
+        tf.addfile(tarfile.TarInfo("a" * (20 * 1024 * 1024)), io.BytesIO(b""))
+    (tmp_path / "r.tar.gz").write_bytes(buf.getvalue())
+    del buf
+    (tmp_path / "staging").mkdir()
+    tracemalloc.start()
+    try:
+        problem = server._unpack(tmp_path / "r.tar.gz", tmp_path / "staging", "AAAAA1")
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert problem and "too large" in problem
+    assert peak < 5 * 1024 * 1024
+    assert list((tmp_path / "staging").iterdir()) == []
+
+
+def test_headers_past_the_unpacked_limit_are_refused(tmp_path, monkeypatch):
+    # The members' sizes are checked, but pax headers are not members: the decompressed stream as a whole is bounded.
+    monkeypatch.setattr(server, "MAX_UNPACKED", 1000)
+    monkeypatch.setattr(server, "MAX_HEADERS", 10 * 1024 * 1024)  # not the limit under test here
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz", format=tarfile.PAX_FORMAT) as tf:
+        for name, data in result_files("AAAAA1").items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.pax_headers = {"comment": "x" * 700_000}
+            tf.addfile(info, io.BytesIO(data))
+    (tmp_path / "r.tar.gz").write_bytes(buf.getvalue())
+    (tmp_path / "staging").mkdir()
+    problem = server._unpack(tmp_path / "r.tar.gz", tmp_path / "staging", "AAAAA1")
+    assert problem and "unpacked" in problem
+    assert list((tmp_path / "staging").iterdir()) == []
 
 
 def test_an_id_nobody_wants_is_404(wsvc, svc):

@@ -65,6 +65,10 @@ LEASE_S = 30 * 60
 # Result uploads (untrusted): the tarball's size, its unpacked size, the files in it and their names.
 MAX_RESULT = 500 * 1024 * 1024
 MAX_UNPACKED = 1024 * 1024 * 1024
+# The decompressed stream may exceed the members' sizes by their headers and padding: a few KB for MAX_FILES files.
+UNPACK_SLACK = 1024 * 1024
+# tarfile reads long-name and pax headers whole, before a member can be checked: all headers together are at most this.
+MAX_HEADERS = 1024 * 1024
 MAX_METADATA = 1024 * 1024
 MAX_FILES = 40
 FILE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -106,14 +110,53 @@ def _write_json(path: Path, data):
         Path(tmp).unlink(missing_ok=True)
 
 
+class _TooLarge(Exception):
+    pass
+
+
+class _BoundedStream:
+    """A seekable read-only view of a decompressed stream that never goes past `limit` bytes. While `header_budget` is
+    set (scanning the members: the only reads are headers), the reads together may take at most that many bytes.
+    tarfile reads GNU long-name and pax headers whole, before any member can be checked: unbounded, an upload of a few
+    hundred KB could make it hold hundreds of MB."""
+
+    def __init__(self, raw, limit: int, header_budget: int | None):
+        self.raw, self.limit, self.header_budget = raw, limit, header_budget
+
+    def read(self, size=-1):
+        if size is None or size < 0:
+            raise _TooLarge("unbounded read")
+        if self.header_budget is not None:
+            if size > self.header_budget:
+                raise _TooLarge(f"the tar headers are too large (more than {MAX_HEADERS // 1024} KB)")
+            self.header_budget -= size
+        if self.raw.tell() + size > self.limit:
+            raise _TooLarge(f"more than {MAX_UNPACKED // 2**20} MB unpacked")
+        return self.raw.read(size)
+
+    def seek(self, offset, whence=os.SEEK_SET):
+        if whence == os.SEEK_CUR:
+            offset += self.raw.tell()
+        elif whence != os.SEEK_SET:
+            raise OSError("seeking from the end is not supported")
+        if offset > self.limit:
+            raise _TooLarge(f"more than {MAX_UNPACKED // 2**20} MB unpacked")
+        return self.raw.seek(offset)
+
+    def tell(self):
+        return self.raw.tell()
+
+
 def _unpack(tarball: Path, staging: Path, code):
     """Unpacks an uploaded result into the empty dir `staging`, flat; returns None, or what is wrong with it.
 
     The members are checked before anything is written: regular files only, either all flat or all in one `<code>/`
-    directory, at most MAX_FILES, safe names, a bounded unpacked size. `filter='data'` guards the extraction itself.
+    directory, at most MAX_FILES, safe names, a bounded unpacked size. The decompressed stream is bounded too (headers
+    included, see _BoundedStream). `filter='data'` guards the extraction itself.
     Then the files the resolver needs: `post.md`, and `metadata.json` naming this shortcode."""
     try:
-        with tarfile.open(tarball, mode="r:gz") as tf:
+        stream = _BoundedStream(gzip.open(tarball), MAX_UNPACKED + UNPACK_SLACK, MAX_HEADERS)
+        with stream.raw, tarfile.open(fileobj=stream, mode="r:") as tf:
             files, shapes, total = [], set(), 0
             for m in tf:
                 parts = m.name.split("/")
@@ -123,7 +166,7 @@ def _unpack(tarball: Path, staging: Path, code):
                     if parts != [code]:
                         return f"directory {m.name[:80]!r}: at most one level, named after the shortcode"
                     continue
-                if not m.isreg():
+                if m.type not in (tarfile.REGTYPE, tarfile.AREGTYPE):  # isreg() also takes contiguous and sparse
                     return f"{m.name[:80]!r} is not a regular file (no links or devices)"
                 if len(parts) == 2 and parts[0] == code:
                     shapes.add("nested")
@@ -147,7 +190,10 @@ def _unpack(tarball: Path, staging: Path, code):
                     return f"{required} is missing"
             if files[names.index("metadata.json")].size > MAX_METADATA:
                 return "metadata.json is too large"
+            stream.header_budget = None  # the members' data is read now, bounded by the checks above
             tf.extractall(staging, members=[m.replace(name=n, deep=False) for m, n in zip(files, names)], filter="data")
+    except _TooLarge as exc:
+        return str(exc)
     except (tarfile.TarError, EOFError, zlib.error, gzip.BadGzipFile):
         return "not a gzip tarball"
     # What landed must be exactly the checked regular files.

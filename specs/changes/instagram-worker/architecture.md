@@ -152,9 +152,11 @@ backend adds auth and streaming, nothing else.
   leases it for 30 minutes to the claimer's name. All under `svc.lock`.
 - **Result upload:** `Content-Length` missing → 411; > 500 MB → 413 without reading the body. The body is copied in
   1 MiB chunks to a temp file under `/state/instagram/incoming/` (removed in `finally`), then
-  `tarfile.open(mode='r:gz').extractall(staging, filter='data')` into a staging dir on the same filesystem. Then it is
+  `tarfile.open(mode='r:gz').extractall(staging, filter='data')` into a staging dir on the same filesystem. The
+  decompressed stream is bounded: at most 1 GB + 1 MB slack in all, and while the members are scanned (before any
+  check, tarfile reads GNU long-name and pax headers whole) at most 1 MB of headers. Then it is
   validated: either flat files or one directory level `<shortcode>/` (flattened); at most 40 files; every name
-  matches `^[A-Za-z0-9._-]+$` and is not `.`/`..`; regular files only; `metadata.json` (valid JSON, `shortcode` equal
+  matches `^[A-Za-z0-9._-]+$` and is not `.`/`..`; regular files only (type `0`, no contiguous or sparse ones); `metadata.json` (valid JSON, `shortcode` equal
   to the job id) and `post.md` present. Then `os.replace(staging, results/<id>)`. Any failure → 422 with a message
   naming the rule; a `tarfile` error → 422. The job must be wanted or leased; if `results/<id>/` already exists → 204
   at once (idempotent; a lease is not required, so a late upload after a lapsed lease still counts). Success removes
