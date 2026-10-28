@@ -373,7 +373,7 @@ covers dialog focus trapping, menu/radio-group keys and phone touch-target sizes
 
 Layout: `apps/backend` (Express 5, Node/TS), `apps/web` (Vite + React PWA),
 `packages/shared` (API types, media table), `prompts/` (the instructions the app gives a model, one `.md` each; tool
-descriptions stay in the tool code; ADR 0006), `deploy/` (compose, Dockerfiles, Caddy, opencode config), `e2e/` (Playwright).
+descriptions stay in the tool code; ADR 0007), `deploy/` (compose, Dockerfiles, Caddy, opencode config), `e2e/` (Playwright).
 
 ## Deploying
 

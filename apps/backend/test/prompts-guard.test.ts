@@ -3,7 +3,7 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { prompt } from '../../../prompts/load.js';
 
-// ADR 0006 (#149): every model instruction is a prompt file in prompts/, never a string in code. Not prompt files: a tool's
+// ADR 0007 (#149): every model instruction is a prompt file in prompts/, never a string in code. Not prompt files: a tool's
 // description and argument descriptions (part of its definition, next to its signature), tool output (results, errors)
 // and app skills (deploy/opencode/skills/).
 
@@ -25,7 +25,7 @@ const config = () => JSON.parse(readFileSync(join(REPO, 'deploy/opencode/opencod
 const agentRefs = () =>
   Object.values(config().agent).flatMap((a) => (a.prompt ? [/^\{file:\/opt\/prompts\/(.+)\.md\}$/.exec(a.prompt)?.[1] ?? `!${a.prompt}`] : []));
 
-describe('prompt files (ADR 0006)', () => {
+describe('prompt files (ADR 0007)', () => {
   it('tool descriptions stay in the tool code, next to the signature: no prompts/tools/, no prompt() in a tool', () => {
     expect(existsSync(join(PROMPTS, 'tools'))).toBe(false);
     expect(walk(TOOLS, '.ts').filter((f) => /\bprompt\(/.test(readFileSync(f, 'utf8'))).map((f) => relative(REPO, f))).toEqual([]);

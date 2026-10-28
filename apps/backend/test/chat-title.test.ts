@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ChatMessage, VaultEvent } from '@karpathy/shared';
-import { ChatTitles, cleanTitle, sameTopic, transcript } from '../src/chat-title.js';
+import { ChatTitles, cleanTitle, sameTopic, titleRequest, transcript } from '../src/chat-title.js';
 import { ConfigStore } from '../src/config-store.js';
 import type { Harness, PromptInput } from '../src/harness/opencode.js';
 
@@ -216,6 +216,13 @@ describe('transcript', () => {
     expect(text.length).toBeLessThanOrEqual(1000);
     expect(text).toContain('User: newest question');
     expect(text).toContain('AI: reply');
+  });
+});
+
+describe('titleRequest', () => {
+  it('is the transcript, then the ask (prompts/chat-title-request.md, #149)', () => {
+    const msgs = [msg('user', 'Plan a trip', 0), msg('assistant', 'Where to?', 1)];
+    expect(titleRequest(msgs)).toBe('User: Plan a trip\n\nAI: Where to?\n\nWrite the title of this conversation.');
   });
 });
 

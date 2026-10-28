@@ -1,6 +1,7 @@
 import type { ChatMessage, VaultEvent } from '@karpathy/shared';
 import type { ConfigStore } from './config-store.js';
 import type { Harness } from './harness/opencode.js';
+import { prompt } from '../../../prompts/load.js';
 
 const TIMEOUT_MS = 30_000;
 /** The conversation the title model reads, at most: fits a 16K-token dev model with room to answer. */
@@ -10,6 +11,7 @@ const MAX_TITLE = 120;
 /** The turn after which the preliminary title is replaced; then every DRIFT_EVERY turns a drift check. */
 const TITLE_TURN = 2;
 const DRIFT_EVERY = 10;
+const TITLE_REQUEST = prompt('chat-title-request');
 
 /** The conversation as `User:` / `AI:` blocks of text parts, each cut, oldest dropped first to stay within `max`. */
 export function transcript(messages: ChatMessage[], max = MAX_TRANSCRIPT): string {
@@ -28,6 +30,11 @@ export function transcript(messages: ChatMessage[], max = MAX_TRANSCRIPT): strin
     size += b.length + 2;
   }
   return out.join('\n\n');
+}
+
+/** The user message of the title turn: the conversation, then the ask. */
+export function titleRequest(messages: ChatMessage[]): string {
+  return TITLE_REQUEST.render({ conversation: transcript(messages) });
 }
 
 /** The model's answer as a title: its first line without quotes, Markdown, a `Title:` prefix or a trailing period. */
@@ -95,7 +102,7 @@ export class ChatTitles {
       // A drift check titles the last ten turns afresh: small models answer "keep" to "does the title still fit?". Never
       // the turns the title was made from (at turn 10 that's turns 3-10): they'd pull the fresh title back to its topic.
       const recent = drift ? messages.slice(users[Math.max(turns - DRIFT_EVERY, TITLE_TURN)]) : messages;
-      const title = cleanTitle(await this.ask(`${transcript(recent)}\n\nWrite the title of this conversation.`));
+      const title = cleanTitle(await this.ask(titleRequest(recent)));
       if (!title || title.toUpperCase() === 'KEEP') return;
       // Renamed or deleted meanwhile: the user's choice wins.
       if ((await titleOf()) !== current || !(await this.harness.sessionExists(dir, chatId))) return;

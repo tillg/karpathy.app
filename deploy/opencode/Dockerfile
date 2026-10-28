@@ -16,7 +16,8 @@ COPY deploy/opencode/plugins/ /opt/opencode-config/opencode/plugins/
 COPY deploy/opencode/lib/ /opt/opencode-config/opencode/lib/
 # App skills (research): listed in every vault. A vault skill of the same name wins (the backend decides that).
 COPY deploy/opencode/skills/ /opt/opencode-config/opencode/skills/
-# Model instructions (prompts/*.md, ADR 0006): tools load them via ../../../prompts/load.ts, which lands here.
+# Model instructions (prompts/*.md, ADR 0007): opencode's lib/ loads them via ../../../prompts/load.ts, and opencode.json's
+# agent prompts via {file:/opt/prompts/agents/…}; they land here.
 COPY prompts/ /opt/prompts/
 COPY --chmod=755 deploy/opencode/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN set -e; export XDG_CONFIG_HOME=/opt/opencode-config HOME=/tmp/bake XDG_DATA_HOME=/tmp/bake/data OPENCODE_MODEL=none/none; \

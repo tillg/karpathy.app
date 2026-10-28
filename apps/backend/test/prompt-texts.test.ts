@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { prompt } from '../../../prompts/load.js';
 import { startOpencode, testDir } from './opencode-container.js';
 
-// The opencode image serves exactly the prompt files (ADR 0006): the agent prompts opencode.json pulls in with {file:}.
+// The opencode image serves exactly the prompt files (ADR 0007): the agent prompts opencode.json pulls in with {file:}.
 // Catches a missing COPY or a wrong path (the image's bake step catches one for opencode's lib/ prompts).
 
 let oc: Awaited<ReturnType<typeof startOpencode>>;
@@ -14,8 +14,8 @@ beforeAll(async () => {
 afterAll(() => oc?.stop());
 
 describe('prompt files in the opencode image', () => {
-  it("the commit-message agent's prompt is its prompt file", async () => {
+  it.each(['commit-message', 'chat-title'])("the %s agent's prompt is its prompt file", async (name) => {
     const agents = (await (await oc.fetch(`${oc.url}/agent?directory=/vaults`)).json()) as { name: string; prompt?: string }[];
-    expect(agents.find((a) => a.name === 'commit-message')!.prompt).toBe(prompt('agents/commit-message').text);
+    expect(agents.find((a) => a.name === name)!.prompt).toBe(prompt(`agents/${name}`).text);
   });
 });

@@ -276,7 +276,7 @@ flowchart TB
 ### Prompt files (`prompts/`)
 
 Every model instruction outside a tool's definition is one Markdown file here (#149,
-[ADR 0006](../../docs/adr/0006-prompts-as-markdown-files.md)). Tool descriptions stay in
+[ADR 0007](../../docs/adr/0007-prompts-as-markdown-files.md)). Tool descriptions stay in
 `deploy/opencode/tools/<id>.ts`, next to the signature.
 
 | File | Used by | Variables |
@@ -284,8 +284,9 @@ Every model instruction outside a tool's definition is one Markdown file here (#
 | `local-time.md` | backend `harness/local-time.ts`: the hidden line of every turn | `time`, `zone`, `offset`, `locale` |
 | `command-turn.md` | backend `harness/command.ts`: the hidden part of a command turn | `name`, `instructions` |
 | `commit-message-request.md` | backend `commit-message.ts`: the user message of the commit-message turn | `files`, `stat`, `diff` |
+| `chat-title-request.md` | backend `chat-title.ts` (`titleRequest`): the user message of the title turn | `conversation` |
 | `look-at-image-question.md` | opencode `lib/look-at-image.ts`: the default question to the vision model | none |
-| `agents/commit-message.md` | `opencode.json` agent `commit-message`, via `{file:/opt/prompts/agents/commit-message.md}` | none; no frontmatter |
+| `agents/commit-message.md`, `agents/chat-title.md` | `opencode.json` agents `commit-message` and `chat-title`, via `{file:/opt/prompts/agents/<id>.md}` | none; no frontmatter |
 
 - **Format:** the body is sent verbatim, with only leading and trailing newlines trimmed. It is not rendered
   as Markdown and not rewrapped. The frontmatter is a closed schema: `variables` only. Variables carry values
@@ -312,7 +313,7 @@ Every model instruction outside a tool's definition is one Markdown file here (#
 ```mermaid
 flowchart LR
   P[(prompts/*.md)] --> L[prompts/load.ts]
-  L --> B[backend: local time, command turn, commit request] --> OC[opencode session]
+  L --> B[backend: local time, command turn, commit and title requests] --> OC[opencode session]
   L --> V[opencode lib/look-at-image.ts] --> VM[vision model]
   P -- "{file:/opt/prompts/agents/…}" --> J[managed opencode.json] --> OC
   T[tools/*.ts: description + args next to the signature] --> OC
@@ -2373,7 +2374,7 @@ The ones that shape the whole system:
   refresh could cut it off. The drift check is decided in code (`sameTopic`, word overlap), not by asking the model.
   The Admin's vision model reaches the tool as a file on the vaults volume, not as a restart of opencode (slow, cuts
   running turns) or a backend endpoint the tool calls (a new auth path).
-- **Model instructions are prompt files** ([ADR 0006](../../docs/adr/0006-prompts-as-markdown-files.md)): one `.md`
+- **Model instructions are prompt files** ([ADR 0007](../../docs/adr/0007-prompts-as-markdown-files.md)): one `.md`
   per instruction in `prompts/`, loaded by `prompts/load.ts`, and agent prompts through `{file:}`. Tool
   descriptions stay next to the tool's signature. Tool output and app skills stay where they are. Rejected:
   inline strings, a `prompts/` per runtime, generated code, a template library, model parameters in
@@ -2515,13 +2516,13 @@ The ones that shape the whole system:
 - **Prompt file tests** (#149):
   - `prompt-load.test.ts`: the loader on fixture files (trimming, unknown keys, variable checks, single-pass
     render, missing file).
-  - `prompts-guard.test.ts` enforces ADR 0006:
+  - `prompts-guard.test.ts` enforces ADR 0007:
     - no `prompts/tools/`, and no tool calls `prompt()`;
     - agent prompts are `{file:}` references to files without frontmatter;
     - no unused prompt file;
     - every file loads;
     - no string literal over 120 characters passed to the prompt API in `apps/backend/src`.
-  - `prompt-texts.test.ts`: the running opencode image serves the agent prompt file (catches a missing
+  - `prompt-texts.test.ts`: the running opencode image serves each agent's prompt file (catches a missing
     `COPY` or a wrong `{file:}` path).
   - `commit-message.test.ts`: `commitRequest`, including the cut diff.
   - Editing a prompt file or a tool description puts `npm run test:llm` in its Verify (CLAUDE.md).

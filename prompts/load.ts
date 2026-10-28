@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-// The loader for prompt files (#149, ADR 0006): every model instruction is one .md file next to this one. Used by the
+// The loader for prompt files (#149, ADR 0007): every model instruction is one .md file next to this one. Used by the
 // backend (Node) and by opencode's lib/ (Bun, image path /opt/prompts), so it must stay inside prompts/ and have no
 // dependency the opencode image lacks: Bun parses YAML itself, Node uses the `yaml` package.
 

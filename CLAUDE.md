@@ -35,7 +35,7 @@ MVP (milestone M4) implemented and deployed. The source of truth for how the sys
 [`specs/system/`](specs/system/) plus the ADRs in `docs/adr/`; read the relevant pages before changing
 anything. Commands: `just` (see `README.md`). Model-facing changes (prompt files in `prompts/`, prompt parts, tool
 descriptions, the system prompt) put `npm run test:llm` in their `Verify:`. Every model instruction is a prompt file in
-`prompts/`, never a string in code, except tool descriptions, which stay next to the tool's signature (ADR 0006).
+`prompts/`, never a string in code, except tool descriptions, which stay next to the tool's signature (ADR 0007).
 
 `specs/` layout: `system/` (how the system is), `changes/<name>/` (open spec changes, spec plugin;
 archived = folded into `system/` and deleted), `research/<name>/` (research results, kept as reference).

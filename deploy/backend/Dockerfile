@@ -28,7 +28,7 @@ FROM base AS prod
 RUN npm ci --workspace apps/backend --include-workspace-root=false --omit=dev && npm cache clean --force
 COPY packages/shared packages/shared
 COPY apps/backend apps/backend
-# Model instructions (prompts/*.md, ADR 0006), read at startup by prompts/load.ts.
+# Model instructions (prompts/*.md, ADR 0007), read at startup by prompts/load.ts.
 COPY prompts prompts
 USER ${APP_UID}:${APP_GID}
 WORKDIR /app/apps/backend
