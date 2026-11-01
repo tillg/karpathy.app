@@ -26,3 +26,9 @@ ingest:
       account: { secret: ingest_gmail_account }
       allowed_senders: { secret: ingest_allowed_senders }
       settings: { max_per_poll: 50, resolve_max_attempts: 75 }
+    tech:
+      vault: tech
+      label: tech
+      account: { secret: ingest_gmail_account }
+      allowed_senders: { secret: ingest_allowed_senders }
+      settings: { resolve_max_attempts: 75 }
