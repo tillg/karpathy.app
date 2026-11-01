@@ -32,9 +32,10 @@ skills, `AGENTS.md`/`CLAUDE.md`, and MCP. Only the frontend (editor + chat) and 
 backend (file API + opencode client + git sync) get built.
 
 **Admin mode** (#150). Everything that configures or watches the installation lives in a mode of its own,
-apart from notes and chat: the gear in the sidebar opens it, **Done** goes back to where you were. Six sections:
+apart from notes and chat: the gear in the sidebar opens it, **Done** goes back to where you were. Seven sections:
 **General** (commit reminder, version), **Vaults** (add, edit, remove), **Secrets & keys** (GitHub token,
 Instagram login, and whether each deployment secret is set — never its value), **AI** (chat model, title model, vision model, web access),
+**Instagram** (posts waiting for the worker, scraped per hour or day, pace and estimated end),
 **Usage** (LLM tokens per day, model and vault, with cost when the provider reports it) and **Server** (CPU,
 memory, load and disk over 1 h / 24 h / 7 d, sampled by the backend every 30 s). Wide screens show the sections in
 a left rail; the phone shows a list, and each section has only "‹ Admin" back to it. Switching vaults stays in the
@@ -139,7 +140,8 @@ home machine, see below):
   a background service on a Mac or Linux box with a home IP and Tailscale. It pulls one post at a time from the server,
   scrapes it with your Instagram session and uploads the result; links wait until it does. Setup:
   **[docs/instagram-worker.md](docs/instagram-worker.md)** (token: `just instagram-worker-token <target>`). Admin mode ›
-  Secrets & keys › Instagram shows the workers and the queue. In local mode the server logs in itself: username and
+  Secrets & keys › Instagram shows the workers and the queue; admin mode › **Instagram** shows how many posts are in line,
+  how many were scraped per hour or day, the pace and when the line would be empty at that pace. In local mode the server logs in itself: username and
   password there (plus a 2FA code if Instagram asks); "Expired — Reconnect" and a notice in the Vaults section when
   Instagram rejected it.
 

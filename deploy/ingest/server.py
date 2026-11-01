@@ -3,7 +3,7 @@ the job API of the Instagram workers (via the backend's worker routes).
 
 Routes (every request needs `Authorization: Bearer <ingest_token>`):
 
-    GET  /instagram/status      {state, account?, via?, waitingLinks, source, workers?, queue?}
+    GET  /instagram/status      {state, account?, via?, waitingLinks, source, workers?, queue?, scraped?}
     POST /instagram/login       {username, password} → {state: "connected", account} | {state: "code", via}
     POST /instagram/code        {code}               → {state: "connected", account}
     POST /instagram/disconnect                       → status
@@ -30,7 +30,8 @@ the dropbox `<state>/instagram/results/<shortcode>/`, where ingest-email's resol
 the only writer of `Input/`). An upload is idempotent and needs no live lease. A failed scrape leaves a marker
 `<shortcode>.failed.json` {reason, permanent, at, count} next to the results, which backs the post off or, once
 permanent, makes the resolver give it up. Workers report their state by heartbeat (kept in `workers.json`, so the app
-still shows them after a restart); the status then also lists the workers and the queue by job state.
+still shows them after a restart); the status then also lists the workers and the queue by job state. Each stored result appends {id, at} to
+`scraped.jsonl` (started from the results already there); the status lists those times of the last 30 days.
 """
 
 import gzip
@@ -85,6 +86,8 @@ PRUNE_EVERY_S = 3600
 WORKER_STATES = ("idle", "scraping", "night", "resting", "needs-login", "rate-limited", "error")
 SAVE_EVERY_S = 60
 WORKER_KEEP_S = 30 * 24 * 3600
+# The scrape history (Admin › Instagram): one line per stored result, reported for the last SCRAPED_KEEP_S.
+SCRAPED_KEEP_S = 30 * 24 * 3600
 ISO ="%Y-%m-%dT%H:%M:%SZ"
 
 
@@ -293,6 +296,11 @@ class Service:
         self.workers_file = self.state_dir / "instagram" / "workers.json"
         self.workers = self._load_workers()  # name → last heartbeat
         self._saved_at: dict[str, float] = {}
+        # When each result was stored, one JSON line {id, at} per post. Started from the results already there.
+        self.scraped_file = self.state_dir / "instagram" / "scraped.jsonl"
+        if not self.scraped_file.exists():
+            seed = sorted((p.stat().st_mtime, p.name) for p in self.results_dir.iterdir() if p.is_dir())
+            self.scraped_file.write_text("".join(json.dumps({"id": n, "at": _iso(t)}) + "\n" for t, n in seed))
 
     # ---- state ----
     def account(self):
@@ -411,7 +419,7 @@ class Service:
         worker = self.source == "worker"
         if worker:
             waiting = sum(1 for _, link in self._unresolved() if SHORTCODE_IN_URL.search(str(link.get("url", ""))))
-            extra = {"source": "worker", "workers": self.recent_workers(), "queue": self.queue()}
+            extra = {"source": "worker", "workers": self.recent_workers(), "queue": self.queue(), "scraped": self.scraped()}
         else:
             waiting = self.waiting_links()
             extra = {"source": "local"}
@@ -436,6 +444,19 @@ class Service:
             for code in jobs:
                 counts[self._job_state(code, now)] += 1
         return counts
+
+    def scraped(self):
+        """When each post was scraped (ISO, oldest first), for the last SCRAPED_KEEP_S."""
+        since = self.clock() - SCRAPED_KEEP_S
+        found = []
+        for line in self.scraped_file.read_text().splitlines():
+            try:
+                at = json.loads(line)["at"]
+            except (ValueError, KeyError, TypeError):
+                continue
+            if _epoch(at) >= since:
+                found.append(at)
+        return sorted(found)
 
     # ---- worker mode: heartbeats ----
     def _load_workers(self):
@@ -595,6 +616,8 @@ class Service:
                 if not target.exists():
                     os.replace(staging, target)
                     staging = None
+                    with self.scraped_file.open("a") as f:
+                        f.write(json.dumps({"id": code, "at": _iso(self.clock())}) + "\n")
                 self.leases.pop(code, None)
                 marker = self._marker(code)
                 if marker and marker.get("permanent") is not True:

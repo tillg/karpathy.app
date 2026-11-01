@@ -768,3 +768,35 @@ def test_local_mode_status_is_unchanged_plus_source_local(svc):
     ig_item(svc, "mail-a", ["https://www.instagram.com/p/AAAAA1/"], reason="no-session")
     heartbeat(svc)
     assert status(svc) == {"state": "not-connected", "waitingLinks": 1, "source": "local"}
+
+
+# ---- worker mode: scrape history (Admin › Instagram) ----
+
+def test_worker_mode_status_lists_when_each_post_was_scraped_once_within_30_days(wsvc):
+    ig_item(wsvc, "mail-a", ["https://www.instagram.com/p/AAAAA1/", "https://www.instagram.com/p/BBBBB2/"])
+    assert status(wsvc)["scraped"] == []
+    first = server._iso(wsvc.clock())
+    assert put(wsvc, "AAAAA1", tarball(result_files("AAAAA1"))) == (204, {})
+    # A repeated upload of the same post is no second scrape.
+    assert put(wsvc, "AAAAA1", tarball(result_files("AAAAA1"))) == (204, {})
+    wsvc.clock.advance(HOUR)
+    assert put(wsvc, "BBBBB2", tarball(result_files("BBBBB2"))) == (204, {})
+    assert status(wsvc)["scraped"] == [first, server._iso(wsvc.clock())]
+    second = server._iso(wsvc.clock())
+    # Older than 30 days drops out.
+    wsvc.clock.advance(30 * 24 * HOUR - 60)
+    assert status(wsvc)["scraped"] == [second]
+
+
+def test_the_scrape_history_survives_a_restart_and_starts_from_the_results_already_there(start):
+    first = start("worker")
+    ig_item(first, "mail-a", ["https://www.instagram.com/p/AAAAA1/"])
+    # A result from before the history existed: its folder's time counts as its scrape.
+    old = results(first) / "OLDOLD1"
+    old.mkdir()
+    t = first.clock() - 2 * HOUR
+    os.utime(old, (t, t))
+    (first.state / "instagram" / "scraped.jsonl").unlink(missing_ok=True)
+    again = start("worker")
+    assert put(again, "AAAAA1", tarball(result_files("AAAAA1"))) == (204, {})
+    assert status(start("worker"))["scraped"] == [server._iso(t), server._iso(again.clock())]

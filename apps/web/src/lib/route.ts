@@ -2,7 +2,7 @@
 // work (issue #5). Never carries the token.
 
 /** Admin mode (#150): `#admin` (the list, `''`) and `#admin/<section>`. Never matches a vault route, which starts with `#/`. */
-export const ADMIN_SECTIONS = ['general', 'vaults', 'secrets', 'ai', 'usage', 'server'] as const;
+export const ADMIN_SECTIONS = ['general', 'vaults', 'secrets', 'ai', 'instagram', 'usage', 'server'] as const;
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
 
 export interface Route { admin: AdminSection | '' | null; vault: string | null; path: string | null }

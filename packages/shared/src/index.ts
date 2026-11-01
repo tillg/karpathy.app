@@ -119,6 +119,8 @@ export interface InstagramStatus {
   source?: 'local' | 'worker';
   workers?: InstagramWorker[];
   queue?: InstagramQueue;
+  /** Worker mode: when each post was scraped (ISO, oldest first), the last 30 days. */
+  scraped?: string[];
 }
 
 /** The answer to a login or a code: connected, or Instagram wants a 2FA/challenge code (`via`: "SMS", "email", …). */

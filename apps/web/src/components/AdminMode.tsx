@@ -7,6 +7,7 @@ import { useApp } from '../store';
 import { AiSection, GeneralSection, SecretsSection, VaultsSection } from './Admin';
 import { Icon } from './Icon';
 import { secretsSummary } from './SecretTable';
+import { InstagramSection } from './InstagramSection';
 import { diskPercent, ServerSection } from './ServerSection';
 import { money, tokens, UsageSection } from './UsageSection';
 
@@ -15,6 +16,7 @@ const SECTIONS: Record<AdminSection, { label: string; short?: string; icon: stri
   vaults: { label: 'Vaults', icon: 'book', sub: 'Add, edit and remove vaults' },
   secrets: { label: 'Secrets & keys', short: 'Secrets', icon: 'lock_shield', sub: 'GitHub, Instagram, deployment secrets' },
   ai: { label: 'AI', icon: 'sparkles', sub: 'Model and web access' },
+  instagram: { label: 'Instagram', icon: 'camera', sub: 'Posts in line, scraped over time, estimated end' },
   usage: { label: 'Usage', icon: 'chart_bar', sub: 'Tokens by day, model and vault' },
   server: { label: 'Server', icon: 'speedometer', sub: 'CPU, memory, load and disk' },
 };
@@ -116,6 +118,7 @@ export function AdminMode() {
               {section === 'vaults' && <VaultsSection />}
               {section === 'secrets' && <SecretsSection />}
               {section === 'ai' && <AiSection />}
+              {section === 'instagram' && <InstagramSection />}
               {section === 'usage' && <UsageSection />}
               {section === 'server' && <ServerSection />}
             </div>

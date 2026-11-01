@@ -48,7 +48,7 @@ collaboration, a sync protocol of its own, offline AI, creating GitHub repos fro
 
 The app is in one of two modes. **User mode** is the app as used day to day: file tree, note, search, chat, changes;
 it includes **switching** between vaults. **Admin mode** is a full-screen view of its own for configuring and watching
-the installation: six sections, no notes or chat. It replaced the former "Vaults" and "Settings" dialogs. Admin mode is
+the installation: seven sections, no notes or chat. It replaced the former "Vaults" and "Settings" dialogs. Admin mode is
 two roles ahead: today the one bearer token is both User and Admin, nothing is enforced yet (see
 [Permissions and visibility](#permissions-and-visibility)).
 
@@ -68,7 +68,7 @@ flowchart LR
     SW[Vault menu → switch vault]
   end
   subgraph A["Admin mode (#admin/&lt;section&gt;)"]
-    gen[General] --- vau[Vaults] --- sec[Secrets & keys] --- ai[AI] --- use[Usage] --- srv[Server]
+    gen[General] --- vau[Vaults] --- sec[Secrets & keys] --- ai[AI] --- ig[Instagram] --- use[Usage] --- srv[Server]
   end
   G --> gen
   MV --> vau
@@ -86,6 +86,7 @@ bookmarked link work; after a reload straight into admin mode, **Done** goes to 
 | **Vaults** | Vault list, details, Add vault, "What is a vault?" (below) |
 | **Secrets & keys** | GitHub token, Instagram login, and the status of every deployment secret (below) |
 | **AI** | Model (`provider/model`, server-wide; the server rejects models opencode doesn't offer; free text, no picker), "Default: …" line with **Use default**, **Title model** and **Vision model** the same way, **Web access** switch, **Save settings** |
+| **Instagram** | Posts waiting for a worker, scraped per hour or day, pace and estimated end ([Instagram](#instagram)) |
 | **Usage** | Tokens and cost over time, by day, model and vault ([Usage](#usage)) |
 | **Server** | CPU, memory, load and disk over time, opencode status, uptime ([Server](#server)) |
 
@@ -262,6 +263,22 @@ Admin mode › Usage: the LLM tokens the AI used. Range **7 days / 30 days** (de
 - **By model** (input, output, cache, cost) and **By vault** (chats with use, tokens, cost).
 - Footnote: "Counts the chats that still exist. A deleted chat drops out; cost as reported by the provider." Sub-agent
   sessions count; a failing vault is left out of the report instead of failing it.
+
+#### Instagram
+
+Admin mode › Instagram (worker mode): how the Instagram worker gets through its queue. Range **24 hours / 7 days /
+30 days** (default 24 hours); the page refreshes every minute while shown and visible.
+
+- **Tiles:** **In line** (waiting + being scraped + retrying later after a failed try), **Scraped** in the range,
+  **Pace** (posts per hour over the last 24 h, so the night pause counts) and **Done** (when the line would be empty at
+  that pace, with "in 2 d 3 h"; "No estimate: nothing scraped in the last 24 h" without a pace).
+- **Scraped per hour / day:** bars per local hour (24 h) or day (7 / 30 days), hover tooltip, "Show numbers".
+- **In line, and the projection:** what was in line over the range (today's queue plus what was scraped since), then a
+  dashed line at the current pace down to zero at the estimated end.
+- Footnote: what counts as in line, how many are scraped but not yet filed and given up, and that the projection
+  assumes no new links.
+- The history is the ingest service's `scraped.jsonl` (one line per stored result, started from the results already
+  there; the status reports the last 30 days). In local mode the section only says that the server scrapes itself.
 
 #### Server
 
@@ -899,7 +916,7 @@ sequenceDiagram
 | Tap on Ingest | A new chat running `/ingest`: wiki pages, items moved to `Sources/` (uncommitted) |
 | Instagram username, password, maybe a code (Secrets & keys › Instagram, local mode) | The Instagram connection's status; the password is not stored |
 | An Instagram worker on the user's machine (worker mode): server URL, worker token, Instagram login there | Scraped posts as `Input/insta-…/` items; the workers and job counts in Secrets & keys › Instagram |
-| Admin mode: gear, Manage vaults…, Edit vault; a range (7 / 30 days, 1 h / 24 h / 7 d) | The six sections; the secret status table, token usage, server charts |
+| Admin mode: gear, Manage vaults…, Edit vault; a range (7 / 30 days, 1 h / 24 h / 7 d) | The seven sections; the secret status table, token usage, server charts |
 
 No pasting of images, no video or audio uploads by the user (the AI may save them from a URL), no exports, no outgoing
 e-mail, no push notifications (also not when something arrives in `Input/`).

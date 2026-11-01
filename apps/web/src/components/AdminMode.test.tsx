@@ -28,7 +28,7 @@ describe('admin mode', () => {
     await waitFor(() => expect(location.hash).toBe('#admin/general'));
     expect(within(rail()!).getAllByRole('link').map((a) => a.textContent)).toEqual(
       expect.arrayContaining([expect.stringContaining('General'), expect.stringContaining('Vaults'), expect.stringContaining('Secrets'), expect.stringContaining('AI'), expect.stringContaining('Usage'), expect.stringContaining('Server')]));
-    expect(within(rail()!).getAllByRole('link')).toHaveLength(6);
+    expect(within(rail()!).getAllByRole('link')).toHaveLength(7);
     expect(screen.queryByRole('main', { name: 'Note' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     await waitFor(() => expect(location.hash).toBe(`#/${VAULT}/a.md`));
@@ -45,7 +45,7 @@ describe('admin mode', () => {
     expect(screen.queryByRole('navigation', { name: 'Tabs' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'Admin' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Done' })).toBeTruthy();
-    expect(screen.getAllByRole('link')).toHaveLength(6);
+    expect(screen.getAllByRole('link')).toHaveLength(7);
     fireEvent.click(screen.getByRole('link', { name: /Vaults/ }));
     await waitFor(() => expect(location.hash).toBe('#admin/vaults'));
     expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
@@ -256,6 +256,31 @@ describe('admin mode', () => {
       fireEvent.change(title, { target: { value: 'x/small' } });
       fireEvent.click(sec('ai').getByTestId('settings-save'));
       await waitFor(() => expect(patches(api)).toEqual([{ model: 'x/y', webAccess: false, titleModel: 'x/small' }]));
+    });
+
+    it('Instagram sits between AI and Usage: posts in line, scraped per hour, rate and estimated end', async () => {
+      const now = Date.now();
+      const scraped = Array.from({ length: 12 }, (_, i) => new Date(now - (i + 1) * 3600_000).toISOString());
+      await inAdmin('instagram', { 'GET /api/ingest/instagram': { state: 'connected', account: 'me', waitingLinks: 30, source: 'worker', workers: [],
+        queue: { waiting: 20, leased: 1, backingOff: 3, ready: 4, failed: 2 }, scraped } });
+      expect(within(rail()!).getAllByRole('link').map((a) => a.getAttribute('data-testid'))).toEqual(
+        ['admin-nav-general', 'admin-nav-vaults', 'admin-nav-secrets', 'admin-nav-ai', 'admin-nav-instagram', 'admin-nav-usage', 'admin-nav-server']);
+      expect((await sec('instagram').findByTestId('ig-in-line')).textContent).toBe('24');
+      expect(sec('instagram').getByTestId('ig-scraped-total').textContent).toBe('12');
+      expect(sec('instagram').getByTestId('ig-rate').textContent).toBe('0.5 / h');
+      // 24 left at 0.5 per hour: 48 h from now.
+      expect(sec('instagram').getByTestId('ig-eta').textContent).toContain('in 2 d 0 h');
+      expect(sec('instagram').getByRole('img', { name: 'Posts scraped per hour' })).toBeTruthy();
+      expect(sec('instagram').getByRole('img', { name: /Posts in line/ })).toBeTruthy();
+    });
+
+    it('Instagram: no estimate while nothing was scraped in the last 24 h; local mode has no queue', async () => {
+      await inAdmin('instagram', { 'GET /api/ingest/instagram': { state: 'connected', account: 'me', waitingLinks: 3, source: 'worker', workers: [],
+        queue: { waiting: 3, leased: 0, backingOff: 0, ready: 0, failed: 0 }, scraped: [] } });
+      expect((await sec('instagram').findByTestId('ig-eta')).textContent).toBe('No estimate: nothing scraped in the last 24 h');
+      cleanup();
+      await inAdmin('instagram', { 'GET /api/ingest/instagram': { state: 'connected', account: 'me', waitingLinks: 3, source: 'local' } });
+      expect((await sec('instagram').findByTestId('ig-local')).textContent).toContain('scrapes Instagram itself');
     });
 
     it('"Manage vaults…" opens #admin/vaults; "Edit vault" opens that vault\'s details', async () => {
