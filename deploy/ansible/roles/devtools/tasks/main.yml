@@ -2,8 +2,9 @@
 # (Docker comes from role docker).
 - name: Command-line tools
   ansible.builtin.apt:
-    # pipx: Ansible (below); qrencode and ffmpeg: e2e/token-scan.spec.ts's QR code video
-    name: [git, ripgrep, jq, netcat-openbsd, pipx, btop, qrencode, ffmpeg]
+    # pipx: Ansible (below); qrencode and ffmpeg: e2e/token-scan.spec.ts's QR code video; build-essential (make, g++)
+    # and python3: npm ci compiles node-pty (apps/terminal, #175), which has no Linux prebuild
+    name: [git, ripgrep, jq, netcat-openbsd, pipx, btop, qrencode, ffmpeg, build-essential, python3]
     state: present
     update_cache: true
     cache_valid_time: 3600

@@ -72,7 +72,7 @@ as_user 'docker info >/dev/null' >/dev/null && ok "login user can use Docker" ||
 
 # devtools: what `just check`, `just dev up`, `just e2e` and `claude` need, on the login shell's PATH.
 [[ "$(as_user 'node --version')" == v22.* ]] && ok "node is v22" || bad "node is v22" "$(as_user 'node --version')"
-for tool in just rg jq gh claude ansible btop; do
+for tool in just rg jq gh claude ansible btop make g++; do
   as_user "$tool --version" >/dev/null && ok "$tool answers --version" || bad "$tool answers --version" "$(as_user "$tool --version" | tail -1)"
 done
 # Ansible: pipx's pinned ansible-core (Ubuntu's 2.16 is too old) and requirements.yml's collections.
