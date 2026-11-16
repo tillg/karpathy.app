@@ -1,0 +1,102 @@
+#!/usr/bin/env node
+// `vault` (#175): commit, push and pull the vault you are in, through the app's backend, like the app's Commit button
+// (same secret scan). Git is read-only in this terminal (docs/adr/0008-terminal-in-its-own-container.md), so `git
+// commit` and `git push` don't work here; this does. Its token (terminal_git_token) opens these calls and nothing else.
+import { readFileSync, realpathSync } from 'node:fs';
+
+const API = process.env.VAULT_API ?? 'http://backend:8787/api/vault-cli';
+const TOKEN_FILE = process.env.VAULT_TOKEN_FILE ?? '/run/secrets/terminal_git_token';
+const VAULTS = process.env.VAULTS_DIR ?? '/vaults';
+
+const HELP = `vault — commit, push and pull this vault through the app (git is read-only in the terminal)
+
+  vault status               what changed, what isn't pushed yet
+  vault commit -m "message"  commit every change and push it (the app's Commit button)
+  vault push                 push commits that didn't get out
+  vault pull                 get what others pushed
+
+  --vault <id>               another vault than the one of the current folder`;
+
+const die = (msg, code = 1) => {
+  console.error(msg);
+  process.exit(code);
+};
+
+const args = process.argv.slice(2);
+const take = (flag) => {
+  const i = args.indexOf(flag);
+  if (i < 0) return undefined;
+  const v = args[i + 1];
+  if (v === undefined) die(`${flag} needs a value`);
+  args.splice(i, 2);
+  return v;
+};
+const messages = [];
+for (let m; (m = take('-m')) !== undefined; ) messages.push(m);
+let vault = take('--vault');
+const cmd = args.shift();
+if (!cmd || cmd === 'help' || cmd === '-h' || cmd === '--help') die(HELP, cmd ? 0 : 1);
+if (args.length) die(`unexpected: ${args.join(' ')}\n\n${HELP}`);
+
+if (!vault) {
+  const cwd = realpathSync(process.cwd());
+  const m = cwd.startsWith(`${VAULTS}/`) ? cwd.slice(VAULTS.length + 1).split('/')[0] : undefined;
+  if (!m) die(`not inside a vault (${VAULTS}/<id>): cd into one, or pass --vault <id>`);
+  vault = m;
+}
+
+let token;
+try {
+  token = readFileSync(TOKEN_FILE, 'utf8').trim();
+} catch {
+  die('vault: no terminal token here (the app has the terminal commands switched off)');
+}
+
+async function call(method, path, body) {
+  let res;
+  try {
+    res = await fetch(`${API}/vaults/${encodeURIComponent(vault)}${path}`, {
+      method,
+      headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    die(`vault: the app's backend doesn't answer (${e.cause?.code ?? e.message})`);
+  }
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) die(`vault: ${out.error ?? `HTTP ${res.status}`}${out.code === 'secrets' ? '\n(commit it from the app if it is not a secret)' : ''}`);
+  return out;
+}
+
+const summary = (s) => {
+  const bits = [`${s.changedCount ?? 0} changed`, `${s.unpushedCount ?? 0} not pushed`];
+  if (s.incomingCount) bits.push(`${s.incomingCount} to pull`);
+  if (s.state !== 'ready') bits.push(s.state);
+  return `${vault}: ${bits.join(', ')}`;
+};
+
+switch (cmd) {
+  case 'status': {
+    const [s, changes] = await Promise.all([call('GET', '/status'), call('GET', '/changes')]);
+    console.log(summary(s));
+    for (const c of changes) console.log(`  ${c.kind} ${c.path}`);
+    break;
+  }
+  case 'commit': {
+    if (!messages.length) die('vault commit needs a message: vault commit -m "what changed"');
+    const r = await call('POST', '/commit', { message: messages.join('\n\n') });
+    if (!r.commit) console.log('nothing to commit');
+    else console.log(r.pushed ? `committed ${r.commit.slice(0, 7)} and pushed` : `committed ${r.commit.slice(0, 7)}, not pushed yet: ${r.pushError ?? 'try vault push'}`);
+    break;
+  }
+  case 'push': {
+    const r = await call('POST', '/push');
+    console.log(r.pushed === false ? `not pushed: ${r.pushError ?? 'try again'}` : 'pushed');
+    break;
+  }
+  case 'pull':
+    console.log(summary(await call('POST', '/pull')));
+    break;
+  default:
+    die(`unknown command: ${cmd}\n\n${HELP}`);
+}

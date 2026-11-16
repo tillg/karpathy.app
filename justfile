@@ -79,6 +79,7 @@ prodtest action="up" *args:
         [ -s tmp/prodtest/secrets/ingest_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/ingest_token
         [ -s tmp/prodtest/secrets/ingest_worker_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/ingest_worker_token
         [ -s tmp/prodtest/secrets/terminal_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/terminal_token
+        [ -s tmp/prodtest/secrets/terminal_git_token ] || openssl rand -hex 24 > tmp/prodtest/secrets/terminal_git_token
         touch tmp/prodtest/secrets/github_token tmp/prodtest/secrets/dns_api_token
         # Provider keys of a hosted gateway (deploy/settings/prodtest.local.yaml) come from the dev secrets.
         for k in deploy/secrets/*_api_key; do [ -e "$k" ] && cp "$k" tmp/prodtest/secrets/; done

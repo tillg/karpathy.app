@@ -99,7 +99,8 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
   (backend and the `egress` Squid proxy, the only two with a route out). opencode, ingest and terminal reach the internet only
   through `egress:3128`; the backend talks to opencode with the `opencode_password` (HTTP Basic, also in opencode's
   healthcheck) to the ingest endpoint (`ingest:8090`) with the `ingest_token` and to the terminal service (`terminal:8095`) with the
-  `terminal_token`.
+  `terminal_token`. The terminal's `vault` command reaches the backend (`backend:8787/api/vault-cli`) with the
+  `terminal_git_token`.
 - **Ingest service** ([architecture.md](architecture.md#ingest-service-deployingest)): volume `ingest-state` (Gmail
   keyring, Instagram session, Instagram worker results and markers; backed up with the server), `shared/ingest.json`
   read-only at `/etc/ingest/config.json`, `INGEST_INSTAGRAM_SOURCE` from `shared/.env`, healthy while its last-run
@@ -334,6 +335,7 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
 | Commit author (`hetzner`: secret references, no personal data in the public repo) | backend | resolved into `shared/settings.json` (uid 1000, 0600) and `shared/.env` (0600); vault: `vault_git_author_name` / `_email` |
 | opencode server password | backend, opencode | `shared/secrets/opencode_password` (uid 1000, 0600); generated once on the target by role `app` (`force: false`), no vault entry; a change recreates the stack |
 | Terminal token | backend + terminal | `shared/secrets/terminal_token` (uid 1000, 0600); generated once on the target by role `app` with the ingest tokens, no vault entry; a change recreates the stack. Unlocks only the terminal service |
+| Terminal git token | backend + terminal | `shared/secrets/terminal_git_token` (uid 1000, 0600); generated once on the target by role `app` with the terminal token, no vault entry. Opens `/api/vault-cli` only (the terminal's `vault` command) |
 | Ingest token, gog keyring password | backend + ingest; ingest | `shared/secrets/ingest_token`, `shared/secrets/gog_keyring_password` (uid 1000, 0600); generated once on the target by role `app` like the opencode password, no vault entry; a change recreates the stack |
 | Instagram worker token | backend (not ingest); every Instagram worker | `shared/secrets/ingest_worker_token` (uid 1000, 0600); generated once on the target by role `app` › "Ingest secrets" like the ingest token (dev: `deploy/dev.sh`, prodtest: `just prodtest up`), no vault entry. `just instagram-worker-token <target>` prints it for `karpathy-instagram-worker configure`; on the worker it sits in `~/.config/karpathy-instagram-worker/config.toml` (0600). Rotating it = delete the file, redeploy, `configure` every worker |
 | Gmail OAuth client + refresh token | ingest | gog's file keyring in the `ingest-state` volume; put there by `just ingest-auth <target> <email>` from the Mac's Keychain, not by the playbook |

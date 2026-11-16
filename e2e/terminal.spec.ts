@@ -121,6 +121,21 @@ test('zsh like on the Mac: ↑ goes through the history, filtered by what is typ
   await closeAll(api, vault.id);
 });
 
+test('vault commit: commit and push from the terminal through the app; git commit points to it', async ({ page, api, vault }) => {
+  await closeAll(api, vault.id);
+  await openApp(page, vault.id);
+  await page.getByTestId('open-terminal').click();
+  await type(page, 'echo "# From vault" > From-vault.md && git add From-vault.md; echo "rc$((1+1))=$?"');
+  await expect(screen(page)).toContainText('git is read-only in this terminal');
+  await type(page, 'vault status');
+  await expect(screen(page)).toContainText('From-vault.md');
+  await type(page, 'vault commit -m "From the terminal"');
+  await expect(screen(page)).toContainText('and pushed', { timeout: 30_000 });
+  await expect.poll(async () => (await api.status(vault.id)).changedCount).toBe(0);
+  expect((await api.status(vault.id)).unpushedCount).toBe(0);
+  await closeAll(api, vault.id);
+});
+
 test('a file made in the terminal shows up in the app as a change', async ({ page, api, vault }) => {
   await closeAll(api, vault.id);
   await openApp(page, vault.id);

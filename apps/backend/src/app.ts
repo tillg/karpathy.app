@@ -11,6 +11,7 @@ import { BaseError } from './bases.js';
 import { normalizeRel, PathError } from './paths.js';
 import { callIngest, type IngestEndpoint } from './ingest.js';
 import { ingestWorkerRouter } from './ingest-worker.js';
+import { terminalGitRouter } from './terminal-git.js';
 import { closeVaultTerminals, terminalRouter, type TerminalEndpoint } from './terminal.js';
 import type { MetricsSampler } from './metrics.js';
 import type { UsageService } from './usage.js';
@@ -44,6 +45,8 @@ export interface AppDeps {
   terminal?: TerminalEndpoint;
   /** The Instagram worker's token (settings.json `ingest.worker_token`): its job routes only; unset = main token only. */
   workerToken?: string;
+  /** The terminal's token for its `vault` command (#175): /api/vault-cli only; unset = those routes don't exist. */
+  terminalGitToken?: string;
 }
 
 // Branch names reach git as arguments: only plain ref names (git check-ref-format rules),
@@ -475,6 +478,7 @@ export function createApp(d: AppDeps) {
 
   // Before the main router: the worker's job routes also take the worker token; everything else falls through.
   app.use('/api/ingest/instagram', ingestWorkerRouter(d));
+  if (d.terminalGitToken) app.use('/api/vault-cli', terminalGitRouter({ terminalGitToken: d.terminalGitToken, vaults: d.vaults }));
   app.use('/api', api);
   return app;
 }

@@ -56,6 +56,8 @@ services:
       # The terminal service (#175), token-guarded; on only when deploy/settings/ `terminal.enabled` says so.
       TERMINAL_URL: http://terminal:8095
       TERMINAL_TOKEN_FILE: /run/secrets/terminal_token
+      # The terminal's `vault` command (commit, push, pull through here): its token opens /api/vault-cli only.
+      TERMINAL_GIT_TOKEN_FILE: /run/secrets/terminal_git_token
       # The vaults' git dirs (#175), outside their working trees: the terminal writes the trees, not these.
       GITDIRS_DIR: /gitdirs
       # Commit and log timestamps in the target's timezone (role app writes TZ to .env).
@@ -63,7 +65,7 @@ services:
       # When the running release was deployed, reported by /api/health (role app writes it to .env).
       DEPLOYED_AT: ${DEPLOYED_AT:-}
     # ingest_worker_token: the Instagram worker's token, accepted on its job routes only (ingest never sees it).
-    secrets: [bearer_token, github_token, opencode_password, ingest_token, ingest_worker_token, terminal_token]
+    secrets: [bearer_token, github_token, opencode_password, ingest_token, ingest_worker_token, terminal_token, terminal_git_token]
     volumes:
       - vaults:/vaults
       - config:/config
@@ -171,10 +173,11 @@ services:
     environment:
       HTTP_PROXY: http://egress:3128
       HTTPS_PROXY: http://egress:3128
-      NO_PROXY: localhost,127.0.0.1
+      NO_PROXY: localhost,127.0.0.1,backend
       TERMINAL_TOKEN_FILE: /run/secrets/terminal_token
       TZ: ${TZ:-Etc/UTC}
-    secrets: [terminal_token]
+    # terminal_git_token: the `vault` command's (deploy/terminal/vault): commit, push and pull via the backend, nothing else.
+    secrets: [terminal_token, terminal_git_token]
     volumes:
       - vaults:/vaults
       # Read-only: git status/log/diff work, commits go through the app; nothing here can change what the backend's
@@ -228,3 +231,4 @@ secrets:
   ingest_token: { file: ./secrets/ingest_token }
   ingest_worker_token: { file: ./secrets/ingest_worker_token }
   terminal_token: { file: ./secrets/terminal_token }
+  terminal_git_token: { file: ./secrets/terminal_git_token }

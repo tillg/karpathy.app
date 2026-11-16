@@ -272,7 +272,7 @@
     owner: "{{ deploy_uid }}"
     group: "{{ deploy_gid }}"
     mode: "0600"
-  loop: [gog_keyring_password, ingest_token, ingest_worker_token, terminal_token]
+  loop: [gog_keyring_password, ingest_token, ingest_worker_token, terminal_token, terminal_git_token]
   register: app_ingest_secrets
   no_log: true
 

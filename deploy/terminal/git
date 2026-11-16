@@ -1,0 +1,18 @@
+#!/bin/sh
+# /usr/local/bin/git in the terminal image (#175): runs the real git; when a command that would write the repo fails
+# (git is read-only here, ADR 0008), it says what to use instead. Nothing else changes.
+/usr/bin/git "$@"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  skip=
+  for a in "$@"; do
+    if [ -n "$skip" ]; then skip=; continue; fi
+    case "$a" in -C|-c|--git-dir|--work-tree) skip=1; continue ;; -*) continue ;; esac
+    case "$a" in
+      add|commit|push|pull|fetch|merge|rebase|reset|stash|checkout|switch|restore|rm|mv|tag|cherry-pick|revert|am)
+        echo "git is read-only in this terminal: commit and push with 'vault commit -m \"message\"', pull with 'vault pull' (vault --help)" >&2 ;;
+    esac
+    break
+  done
+fi
+exit "$rc"

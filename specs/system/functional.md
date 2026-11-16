@@ -776,7 +776,11 @@ A shell on the server, in the app (#175, [ADR 0008](../../docs/adr/0008-terminal
   Claude login, `~/.claude`, shell history and the dotfiles survive restarts and deploys (`.zshrc` and `.p10k.zsh` come
   from the image once, when missing, and are the user's from then on). The terminal uses the MesloLGS NF font for the
   prompt's icons, loaded when a terminal opens. It has no GitHub push credentials, and **git there is read-only**: `git status`, `log` and `diff` work, `commit`,
-  `pull` and `push` don't. Commit and push from the app ([Changes and commits](#changes-and-commits)).
+  `pull` and `push` don't (a failed one says what to use). Commit and push with **`vault`** instead, which goes
+  through the app like its Commit button, secret scan included: `vault status`, `vault commit -m "…"` (every change,
+  committed and pushed), `vault push`, `vault pull`; `--vault <id>` for another vault than the folder's. A commit the
+  scan blocks is committed from the app. Claude Code knows this from `~/.claude/CLAUDE.md` (seeded like the
+  dotfiles).
 - **Sessions survive** closing the panel, a reload, closing and reopening the browser and another device: opening the
   panel reattaches to the newest session and shows its last 256 KB, and a full-screen program repaints. A dropped
   stream (the iPad sleeping) reconnects and resumes where it stopped. A session ends on **✕**, when its shell exits, or

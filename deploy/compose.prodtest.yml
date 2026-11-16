@@ -31,3 +31,4 @@ secrets:
   ingest_token: { file: ../tmp/prodtest/secrets/ingest_token }
   ingest_worker_token: { file: ../tmp/prodtest/secrets/ingest_worker_token }
   terminal_token: { file: ../tmp/prodtest/secrets/terminal_token }
+  terminal_git_token: { file: ../tmp/prodtest/secrets/terminal_git_token }

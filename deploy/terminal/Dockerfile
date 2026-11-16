@@ -17,6 +17,8 @@ RUN git clone -q https://github.com/ohmyzsh/ohmyzsh.git /usr/share/oh-my-zsh \
   && /usr/share/oh-my-zsh-custom/themes/powerlevel10k/gitstatus/install -f \
   && ls /usr/share/gitstatus/gitstatusd-*
 COPY deploy/terminal/skel /etc/karpathy/skel
+# git is read-only here: `vault` commits, pushes and pulls through the backend; the git wrapper says so when a write fails.
+COPY --chmod=755 deploy/terminal/vault deploy/terminal/git /usr/local/bin/
 # Claude Code, pinned like every other tool (a release at least two weeks old); no self-update in the image.
 RUN npm install -g @anthropic-ai/claude-code@2.1.318 && npm cache clean --force
 ARG APP_UID=1000

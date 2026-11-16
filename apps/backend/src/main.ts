@@ -56,7 +56,9 @@ const app = createApp({ token: settings.token, vaults, store, githubToken, secre
   // The ingest service's internal endpoint (Admin › Instagram): container wiring, the token a compose secret.
   ...(process.env.INGEST_URL && process.env.INGEST_TOKEN_FILE ? { ingest: { url: process.env.INGEST_URL, token: readFileSync(process.env.INGEST_TOKEN_FILE, 'utf8').trim() } } : {}),
   // The terminal service (#175): on when the settings say so and compose wires it.
-  ...(settings.terminalEnabled && process.env.TERMINAL_URL && process.env.TERMINAL_TOKEN_FILE ? { terminal: { url: process.env.TERMINAL_URL, token: readFileSync(process.env.TERMINAL_TOKEN_FILE, 'utf8').trim() } } : {}) });
+  ...(settings.terminalEnabled && process.env.TERMINAL_URL && process.env.TERMINAL_TOKEN_FILE ? { terminal: { url: process.env.TERMINAL_URL, token: readFileSync(process.env.TERMINAL_TOKEN_FILE, 'utf8').trim() } } : {}),
+  // The terminal's `vault` command (#175): its own token, for /api/vault-cli only.
+  ...(settings.terminalEnabled && process.env.TERMINAL_GIT_TOKEN_FILE ? { terminalGitToken: readFileSync(process.env.TERMINAL_GIT_TOKEN_FILE, 'utf8').trim() || undefined } : {}) });
 const server = serve(app, env.port, undefined, () => console.log(`backend listening on :${env.port}`));
 
 const shutdown = () => {
