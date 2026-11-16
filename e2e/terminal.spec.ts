@@ -40,6 +40,8 @@ test('opens a shell in the vault, runs commands and Claude Code, survives a relo
 
   // Reload: the panel comes back by itself and reattaches to the same shell.
   await type(page, 'export MARK=kept-$((1+1))');
+  // The shell echoed the line: it ran (a page can't send keys it hasn't been given yet).
+  await expect(screen(page)).toContainText('export MARK=kept-$((1+1))');
   await page.reload();
   await expect(page.getByTestId('terminal-panel')).toBeVisible({ timeout: 20_000 });
   await expect(screen(page)).toContainText('sum=42');
@@ -70,6 +72,7 @@ test('a second browser takes the session; the first shows it and takes it back w
   await page.getByTestId('open-terminal').click();
   await expect(page.getByTestId('terminal-tab').filter({ hasText: vault.id })).toHaveCount(1);
   await type(page, 'export MARK=there-$((1+1))');
+  await expect(screen(page)).toContainText('export MARK=there-$((1+1))');
 
   const ctx = await browser.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
   const other = await ctx.newPage();

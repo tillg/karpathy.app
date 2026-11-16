@@ -32,7 +32,16 @@ export class TerminalConnection {
 
   constructor(readonly id: string, private sink: TerminalSink) {
     void this.loop();
+    addEventListener('pagehide', this.onHide);
   }
+
+  /** The page goes (reload, closed tab): what's still queued goes out now, as a keepalive request. */
+  private onHide = () => {
+    if (!this.pending || this.closed) return;
+    const data = this.pending;
+    this.pending = '';
+    void api.terminalInput(this.id, data).catch(() => {});
+  };
 
   private async loop() {
     while (!this.closed) {
@@ -117,6 +126,7 @@ export class TerminalConnection {
 
   /** Stops reading (the session stays on the server). */
   detach() {
+    removeEventListener('pagehide', this.onHide);
     this.closed = true;
     clearTimeout(this.resizeTimer);
     this.ctrl.abort();

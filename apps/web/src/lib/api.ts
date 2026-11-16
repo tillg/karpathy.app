@@ -137,7 +137,8 @@ export const api = {
   // The terminal panel (#175); the stream is read by lib/terminal.ts.
   terminals: () => json<{ terminals: TerminalInfo[] }>('GET', '/terminals'),
   openTerminal: (id: string, cols: number, rows: number) => json<TerminalInfo>('POST', `${v(id)}/terminals`, { cols, rows }),
-  terminalInput: (tid: string, data: string) => json<void>('POST', `/terminals/${tid}/input`, { data }),
+  /** keepalive: keys typed just before a reload or a closed tab still arrive. */
+  terminalInput: (tid: string, data: string) => json<void>('POST', `/terminals/${tid}/input`, { data }, undefined, true),
   terminalResize: (tid: string, cols: number, rows: number) => json<void>('POST', `/terminals/${tid}/resize`, { cols, rows }),
   closeTerminal: (tid: string) => json<void>('DELETE', `/terminals/${tid}`),
   renameChat: (id: string, chatId: string, title: string) => json<void>('PATCH', `${v(id)}/chats/${encodeURIComponent(chatId)}`, { title }),
