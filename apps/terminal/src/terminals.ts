@@ -5,13 +5,14 @@ import { spawn, type IPty } from 'node-pty';
 
 /**
  * Shell sessions on pseudo-terminals (#175). A session outlives its stream: it ends when it is closed or its shell
- * exits, so a dropped connection (an iPad in the background) loses nothing. One stream at a time is attached; a new
- * one takes over. Output is numbered by its end offset (`at`), so a reattach can resume where its page left off, or
+ * exits, so a dropped connection (an iPad in the background) loses nothing. Any number of streams attach at once (the
+ * Mac and the iPhone): each gets all output, and any client can type. The pseudo-terminal has one size, the last one a
+ * client set; every stream hears of it (`size`). Output is numbered by its end offset (`at`), so a reattach can resume where its page left off, or
  * replay the scrollback when it can't.
  */
 
 /** A chunk of output (`at` = offset after it; `reset`: the first chunk of a replay that doesn't continue the page). */
-export type StreamEvent = { t: 'o'; d: string; at: number; reset?: boolean } | { t: 'x'; code: number } | { t: 'taken' };
+export type StreamEvent = { t: 'o'; d: string; at: number; reset?: boolean } | { t: 'x'; code: number } | { t: 'size'; cols: number; rows: number };
 
 /** Where a session's output goes: an NDJSON response, in the server. `send` returns false on backpressure. */
 export interface Sink {
@@ -36,7 +37,9 @@ interface Session extends TerminalInfo {
   /** Recent output, at most `scrollback` characters, ending at offset `total`. */
   buffer: string;
   total: number;
-  sink?: Sink;
+  sinks: Set<Sink>;
+  /** Streams that reported backpressure, with the timer that drops them if they stay blocked. */
+  blocked: Map<Sink, ReturnType<typeof setTimeout>>;
   paused: boolean;
   /** The shell's terminal (macOS only): every process it starts keeps it, also after the shell exits. */
   tty: string | null;
@@ -59,16 +62,20 @@ export interface TerminalsOptions {
   env?: Record<string, string>;
   max?: number;
   scrollback?: number;
+  /** How long a blocked stream may hold the shell before it is dropped (it reconnects and resumes). */
+  stallMs?: number;
 }
 
 export class Terminals {
   private sessions = new Map<string, Session>();
   private max: number;
   private scrollback: number;
+  private stallMs: number;
 
   constructor(private opts: TerminalsOptions) {
     this.max = opts.max ?? 4;
     this.scrollback = opts.scrollback ?? 256 * 1024;
+    this.stallMs = opts.stallMs ?? 5000;
   }
 
   list(): TerminalInfo[] {
@@ -89,19 +96,21 @@ export class Terminals {
       cwd,
       env: { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', ...this.opts.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
     });
-    const s: Session = { id: randomUUID(), cwd: label, cols, rows, created: new Date().toISOString(), pty, buffer: '', total: 0, paused: false, tty: ttyOf(pty), known: new Set(), seen: new Map() };
+    const s: Session = { id: randomUUID(), cwd: label, cols, rows, created: new Date().toISOString(), pty, buffer: '', total: 0, sinks: new Set(), blocked: new Map(), paused: false, tty: ttyOf(pty), known: new Set(), seen: new Map() };
     pty.onData((d) => {
       s.total += d.length;
       s.buffer = (s.buffer + d).slice(-this.scrollback);
-      if (s.sink && !s.sink.send({ t: 'o', d, at: s.total })) this.pause(s);
+      this.broadcast(s, { t: 'o', d, at: s.total });
     });
     pty.onExit(({ exitCode }) => {
       if (!this.sessions.has(s.id)) return;
       this.sessions.delete(s.id);
       // Its background jobs are orphans now, still in its session.
       this.reap(s);
-      s.sink?.send({ t: 'x', code: exitCode });
-      s.sink?.end();
+      for (const k of s.sinks) {
+        k.send({ t: 'x', code: exitCode });
+        this.drop(s, k);
+      }
     });
     if (s.tty) {
       s.watch = setInterval(() => this.track(s), 1000);
@@ -117,28 +126,30 @@ export class Terminals {
    */
   attach(id: string, from: number | undefined, sink: Sink): () => void {
     const s = this.get(id);
-    if (s.sink) {
-      s.sink.send({ t: 'taken' });
-      s.sink.end();
-    }
-    s.sink = sink;
+    s.sinks.add(sink);
     const start = s.total - s.buffer.length;
     const resume = from !== undefined && from >= start && from <= s.total;
     const replay = resume ? s.buffer.slice(from - start) : s.buffer;
-    sink.onDrain(() => this.resume(s));
-    this.resume(s);
-    if ((replay || !resume) && !sink.send({ t: 'o', d: replay, at: s.total, reset: !resume })) this.pause(s);
+    sink.onDrain(() => {
+      clearTimeout(s.blocked.get(sink));
+      s.blocked.delete(sink);
+      if (!s.blocked.size) this.resume(s);
+    });
+    if (replay || !resume) this.deliver(s, sink, { t: 'o', d: replay, at: s.total, reset: !resume });
+    this.deliver(s, sink, { t: 'size', cols: s.cols, rows: s.rows });
     return () => {
-      if (s.sink !== sink) return;
-      s.sink = undefined;
+      if (!s.sinks.has(sink)) return;
+      s.sinks.delete(sink);
+      clearTimeout(s.blocked.get(sink));
+      s.blocked.delete(sink);
       // Detached output only fills the scrollback: never leave the shell blocked.
-      this.resume(s);
+      if (!s.blocked.size) this.resume(s);
     };
   }
 
-  /** Whether a stream is attached. */
+  /** How many streams are attached. */
   attached(id: string) {
-    return Boolean(this.get(id).sink);
+    return this.get(id).sinks.size;
   }
 
   input(id: string, data: string, tag?: InputTag) {
@@ -161,6 +172,7 @@ export class Terminals {
     s.cols = cols;
     s.rows = rows;
     s.pty.resize(cols, rows);
+    this.broadcast(s, { t: 'size', cols, rows });
   }
 
   isPaused(id: string) {
@@ -175,7 +187,7 @@ export class Terminals {
     const s = this.get(id);
     this.sessions.delete(id);
     this.reap(s);
-    s.sink?.end();
+    for (const k of s.sinks) this.drop(s, k);
   }
 
   closeAll() {
@@ -211,6 +223,27 @@ export class Terminals {
       }
     }
     for (const pid of sessionMembers(s.pty.pid, s.tty)) s.known.add(pid);
+  }
+
+  private broadcast(s: Session, e: StreamEvent) {
+    for (const k of s.sinks) this.deliver(s, k, e);
+  }
+
+  /** Sends to one stream; on backpressure the shell pauses, and a stream still blocked after `stallMs` is dropped. */
+  private deliver(s: Session, k: Sink, e: StreamEvent) {
+    if (k.send(e) || s.blocked.has(k)) return;
+    this.pause(s);
+    s.blocked.set(k, setTimeout(() => {
+      this.drop(s, k);
+      if (!s.blocked.size) this.resume(s);
+    }, this.stallMs));
+  }
+
+  private drop(s: Session, k: Sink) {
+    clearTimeout(s.blocked.get(k));
+    s.blocked.delete(k);
+    s.sinks.delete(k);
+    k.end();
   }
 
   private pause(s: Session) {

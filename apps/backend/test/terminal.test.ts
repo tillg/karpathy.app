@@ -75,7 +75,7 @@ describe('terminal routes', () => {
       ctrl.abort();
       await pending;
       await new Promise((r) => setTimeout(r, 100));
-      expect(t.terms.attached(id), `left after ${wait} ms`).toBe(false);
+      expect(t.terms.attached(id), `left after ${wait} ms`).toBe(0);
     }
   });
 

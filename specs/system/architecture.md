@@ -644,11 +644,15 @@ shells of the app's Terminal panel and Claude Code on the vaults. It is a small 
 - **Sessions:** bash as a login shell (`-l`, `TERM=xterm-256color`) with `PATH`, `LANG` and the configured env only,
   nothing of the server's env. At most 4 (`429` beyond). A session lives until `DELETE`, the shell's exit or a
   restart of the container; closing it kills the shell and all its descendants. Output is numbered by its end offset
-  (`at`) and the last 256 KB is kept. One stream is attached at a time (a new one takes over). A stream with `from`
+  (`at`) and the last 256 KB is kept. Any number of streams attach at once, each getting all output; input comes from
+  any of them. A stream with `from`
   inside the kept range continues there; otherwise the first chunk is the whole kept output with `reset: true`, and the
-  client then nudges the size so full-screen programs repaint. Backpressure: while the response can't keep up the PTY
-  is paused. Events: `{t:'o', d, at, reset?}`, `{t:'x', code}`, `{t:'taken'}` (another client attached: the stream
-  ends, the web app shows "Opened on another device or tab" with **Use here**, which reattaches). When the shell exits, its background jobs are killed.
+  client then nudges the size so full-screen programs repaint. Backpressure: while a stream can't keep up the PTY is
+  paused; a stream still blocked after 5 s (a sleeping phone) is ended, so it can't hold the shell for the others, and
+  reconnects later from its offset. The PTY has one size, the last a client set; `{t:'size', cols, rows}` tells every
+  stream (and each new one), and a client that gets typed in or focused while the size is another's sets its own
+  again (`claim`, like tmux's `window-size latest`). Events: `{t:'o', d, at, reset?}`, `{t:'x', code}`,
+  `{t:'size', cols, rows}`. When the shell exits, its background jobs are killed.
 - **State:** the sessions live in the service's memory; only the home volume persists (login, `~/.claude`, history).
 
 ### Egress proxy (`deploy/egress`)

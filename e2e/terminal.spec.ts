@@ -66,30 +66,32 @@ test('opens a shell in the vault, runs commands and Claude Code, survives a relo
   await expect(page.getByTestId('terminal-panel')).toHaveCount(0);
 });
 
-test('a second browser takes the session; the first shows it and takes it back with "Use here"', async ({ page, api, vault, browser }) => {
+test('two browsers on one session (Mac and phone): both see everything, both type; the shell takes the size of the one in use', async ({ page, api, vault, browser }) => {
   await closeAll(api, vault.id);
   await openApp(page, vault.id);
   await page.getByTestId('open-terminal').click();
   await expect(page.getByTestId('terminal-tab').filter({ hasText: vault.id })).toHaveCount(1);
-  await type(page, 'export MARK=there-$((1+1))');
-  await expect(screen(page)).toContainText('export MARK=there-$((1+1))');
+  await type(page, 'echo "fr$((0))m-mac"');
+  await expect(screen(page)).toContainText('fr0m-mac');
 
-  const ctx = await browser.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
+  const ctx = await browser.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true, viewport: { width: 1000, height: 800 } });
   const other = await ctx.newPage();
   await openApp(other, vault.id);
+  // Not wide: the sidebar with the button opens on demand.
+  await other.getByTestId('sidebar-toggle').click();
   await other.getByTestId('open-terminal').click();
-  await expect(screen(other)).toContainText('MARK=there-');
-  // The first page does not fight for it back: it says so and waits.
-  await expect(page.getByTestId('terminal-taken')).toContainText('Opened on another device or tab');
+  await expect(screen(other)).toContainText('fr0m-mac');
+  await type(other, 'echo "fr$((0))m-phone"; stty size');
+  // The first page keeps streaming: it sees what the other one typed and ran.
+  for (const p of [page, other]) await expect(screen(p)).toContainText('fr0m-phone');
   await page.waitForTimeout(3000);
-  await expect(page.getByTestId('terminal-taken')).toBeVisible();
-  await expect(other.getByTestId('terminal-taken')).toHaveCount(0);
+  await type(page, 'echo "ag$((0))ain"; stty size');
+  for (const p of [page, other]) await expect(screen(p)).toContainText('ag0ain');
 
-  await page.getByTestId('terminal-use-here').click();
-  await expect(page.getByTestId('terminal-taken')).toHaveCount(0);
-  await type(page, 'echo "$MARK"');
-  await expect(screen(page)).toContainText('there-2');
-  await expect(other.getByTestId('terminal-taken')).toBeVisible();
+  // stty prints "rows cols": the narrow page's width while it typed, the wide one's after.
+  const sizes = (await screen(page).innerText()).match(/^\d+ \d+$/gm)!.map((l) => Number(l.split(' ')[1]));
+  expect(sizes).toHaveLength(2);
+  expect(sizes[1]!).toBeGreaterThan(sizes[0]!);
   await ctx.close();
 });
 

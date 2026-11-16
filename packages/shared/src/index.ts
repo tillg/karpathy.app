@@ -504,4 +504,4 @@ export interface TerminalInfo {
 }
 
 /** One line of `GET /terminals/:id/stream`: output (`at` = offset after it; `reset` = a replay, clear first) or exit. */
-export type TerminalEvent = { t: 'o'; d: string; at: number; reset?: boolean } | { t: 'x'; code: number } | { t: 'taken' };
+export type TerminalEvent = { t: 'o'; d: string; at: number; reset?: boolean } | { t: 'x'; code: number } | { t: 'size'; cols: number; rows: number };

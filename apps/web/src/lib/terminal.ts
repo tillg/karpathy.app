@@ -5,7 +5,8 @@ import { readNdjson } from './ndjson';
 /**
  * One terminal session's link to the server (#175): reads its output stream and reconnects when it drops (an iPad in
  * the background), resuming from the last offset it saw; sends keystrokes in order, one request at a time, again after a failure; debounces
- * resizes. The session itself lives on the server until it is closed or its shell exits.
+ * resizes. The session itself lives on the server until it is closed or its shell exits. Other devices may be attached
+ * too, all getting the same output; the shell has one size, the one of the client last typed in or focused (`claim`).
  */
 export interface TerminalSink {
   /** Output; `reset`: the page doesn't continue, clear the screen first. */
@@ -14,8 +15,6 @@ export interface TerminalSink {
   ended(code?: number): void;
   /** The stream is up, or waiting to reconnect. */
   status(live: boolean): void;
-  /** Another device or tab attached to the session and took it over; this connection stops (no reconnect). */
-  taken(): void;
 }
 
 const RETRY_MS = 1000;
@@ -33,6 +32,8 @@ export class TerminalConnection {
   /** A chunk whose request failed: sent again as it was (same seq), never merged with later keys. */
   private retry: { data: string; seq: number } | undefined;
   private size: { cols: number; rows: number } | null = null;
+  /** The shell's size, as the server last announced it (another device may have set it). */
+  private shellSize: { cols: number; rows: number } | null = null;
   private resizeTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(readonly id: string, private sink: TerminalSink) {
@@ -55,10 +56,8 @@ export class TerminalConnection {
         const res = await request('GET', `/terminals/${this.id}/stream${this.at === undefined ? '' : `?from=${this.at}`}`, undefined, this.ctrl.signal);
         this.sink.status(true);
         await readNdjson<TerminalEvent>(res, (e) => {
-          if (e.t === 'taken') {
-            this.closed = true;
-            this.ctrl.abort();
-            this.sink.taken();
+          if (e.t === 'size') {
+            this.shellSize = { cols: e.cols, rows: e.rows };
             return;
           }
           if (e.t === 'x') {
@@ -92,6 +91,7 @@ export class TerminalConnection {
   /** Keystrokes, in order: what arrives while a request is out goes in the next one. */
   input(data: string) {
     if (this.closed) return;
+    this.claim();
     this.pending += data;
     if (!this.sending) void this.flush();
   }
@@ -124,6 +124,15 @@ export class TerminalConnection {
     this.size = { cols, rows };
     clearTimeout(this.resizeTimer);
     this.resizeTimer = setTimeout(() => void api.terminalResize(this.id, cols, rows).catch(() => {}), 100);
+  }
+
+  /** This client is the one in use (typing, focus): the shell takes its size again if another device changed it. */
+  claim() {
+    const s = this.size;
+    if (this.closed || !s || !this.shellSize || (this.shellSize.cols === s.cols && this.shellSize.rows === s.rows)) return;
+    this.shellSize = s;
+    clearTimeout(this.resizeTimer);
+    void api.terminalResize(this.id, s.cols, s.rows).catch(() => {});
   }
 
   private nudge() {

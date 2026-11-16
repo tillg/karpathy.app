@@ -15,7 +15,8 @@ function collector(slow = false) {
     end: () => events.push({ t: 'end' } as unknown as StreamEvent),
   };
   const text = () => events.filter((e) => e.t === 'o').map((e) => (e as { d: string }).d).join('');
-  return { sink, events, text, drain: () => drain() };
+  const ended = () => events.some((e) => (e as { t: string }).t === 'end');
+  return { sink, events, text, ended, drain: () => drain() };
 }
 
 const until = async (fn: () => boolean, ms = 5000) => {
@@ -125,15 +126,45 @@ describe('Terminals', () => {
     expect(c.text().match(/r2\r\n/g)).toHaveLength(1);
   });
 
-  it('a second stream takes the session; the first is told, then ended', async () => {
+  it('several streams at once (Mac and iPhone): each gets all output, either can type', async () => {
     terms = new Terminals({ shell: '/bin/sh' });
     const t = terms.open(tmpdir(), 80, 24);
-    const first = collector();
-    const second = collector();
-    terms.attach(t.id, undefined, first.sink);
-    terms.attach(t.id, undefined, second.sink);
-    expect(first.events.slice(-2)).toEqual([{ t: 'taken' }, { t: 'end' }]);
-    expect(terms.attached(t.id)).toBe(true);
+    const mac = collector();
+    const phone = collector();
+    terms.attach(t.id, undefined, mac.sink);
+    terms.attach(t.id, undefined, phone.sink);
+    terms.input(t.id, 'echo "m$((0))ac"\r', { cid: 'mac', seq: 1 });
+    terms.input(t.id, 'echo "ph$((0))ne"\r', { cid: 'phone', seq: 1 });
+    for (const c of [mac, phone]) await until(() => c.text().includes('m0ac\r\n') && c.text().includes('ph0ne\r\n'));
+    expect(mac.ended()).toBe(false);
+    expect(phone.ended()).toBe(false);
+  });
+
+  it('a resize is announced to every stream, and to each new one', async () => {
+    terms = new Terminals({ shell: '/bin/sh' });
+    const t = terms.open(tmpdir(), 80, 24);
+    const mac = collector();
+    terms.attach(t.id, undefined, mac.sink);
+    expect(mac.events.at(-1)).toEqual({ t: 'size', cols: 80, rows: 24 });
+    const phone = collector();
+    terms.attach(t.id, undefined, phone.sink);
+    terms.resize(t.id, 40, 30);
+    expect(mac.events.at(-1)).toEqual({ t: 'size', cols: 40, rows: 30 });
+    expect(phone.events.at(-1)).toEqual({ t: 'size', cols: 40, rows: 30 });
+  });
+
+  it('a stream that stays blocked (a sleeping iPhone) is dropped; the shell runs on for the others', async () => {
+    terms = new Terminals({ shell: '/bin/sh', stallMs: 200 });
+    const t = terms.open(tmpdir(), 80, 24);
+    const asleep = collector(true);
+    const mac = collector();
+    terms.attach(t.id, undefined, asleep.sink);
+    terms.attach(t.id, undefined, mac.sink);
+    terms.input(t.id, 'echo "o$((0))ne"\r');
+    await until(() => asleep.ended());
+    expect(terms.isPaused(t.id)).toBe(false);
+    terms.input(t.id, 'echo "t$((0))wo"\r');
+    await until(() => mac.text().includes('t0wo\r\n'));
   });
 
   it('an exiting shell ends the session and tells the stream', async () => {
@@ -171,8 +202,8 @@ describe('Terminals', () => {
     await until(() => fresh.text().includes('t0wo\r\n'));
     expect(fresh.text()).toContain('o0ne\r\n');
     expect(fresh.events[0]).toMatchObject({ t: 'o', reset: true });
-    // The earlier stream was taken over.
-    expect(b.events.at(-1)).toMatchObject({ t: 'end' });
+    // Both stay attached.
+    expect(b.ended()).toBe(false);
   });
 
   it('keeps only the last bytes of scrollback', async () => {

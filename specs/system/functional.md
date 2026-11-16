@@ -782,8 +782,9 @@ A shell on the server, in the app (#175, [ADR 0008](../../docs/adr/0008-terminal
   one line. Selecting text copies it at once, like the chat, with the "Copied" toast; by the same rule a URL selected
   over such rows copies without line breaks. Typing that a flaky network makes
   the page send again is typed once (each chunk carries a page id and number).
-- **Two devices:** a session shows on one client at a time. Opening it on a second device or tab takes it over; the first
-  shows "Opened on another device or tab" with **Use here**, which takes it back.
+- **Several devices:** a session can be open on the Mac and the iPhone (or two tabs) at once. Both show all output as
+  it comes and both can type. The shell has one size: the one of the device last typed in or clicked into, so the
+  other may show a full-screen program (Claude Code) drawn for the other width until it is used again.
 - **Off:** with `terminal.enabled: false` in the settings the button is gone and the routes answer `404 terminal-off`.
   `503 terminal-down` (service not running) and `429` (limit) are the API's answers.
 - Files changed in the terminal show up in Changes like any other edit, uncommitted, and the app's secret scan sees
