@@ -771,16 +771,18 @@ A shell on the server, in the app (#175, [ADR 0008](../../docs/adr/0008-terminal
 - **The shell** is bash as uid 1000 in the `terminal` container, starting in the open vault's folder
   (`/vaults/<id>[/<root>]`). It sees every vault, with `git`, `rg`, `curl`, `less` and **Claude Code** (2.1.318, pinned,
   no self-update; the first `claude` run asks for a login by URL and code). Its home (`/home/node`) is a volume: the
-  Claude login, `~/.claude` and shell history survive restarts and deploys. It has no GitHub push credentials: commit
-  and push from the app ([Changes and commits](#changes-and-commits)).
+  Claude login, `~/.claude` and shell history survive restarts and deploys. It has no GitHub push credentials, and **git there is read-only**: `git status`, `log` and `diff` work, `commit`,
+  `pull` and `push` don't. Commit and push from the app ([Changes and commits](#changes-and-commits)).
 - **Sessions survive** closing the panel, a reload, closing and reopening the browser and another device: opening the
   panel reattaches to the newest session and shows its last 256 KB, and a full-screen program repaints. A dropped
   stream (the iPad sleeping) reconnects and resumes where it stopped. A session ends on **✕**, when its shell exits, or
-  when the terminal container restarts (a deploy).
+  when the terminal container restarts (a deploy); its background jobs end with the shell.
+- **Two devices:** a session shows on one client at a time. Opening it on a second device or tab takes it over; the first
+  shows "Opened on another device or tab" with **Use here**, which takes it back.
 - **Off:** with `terminal.enabled: false` in the settings the button is gone and the routes answer `404 terminal-off`.
   `503 terminal-down` (service not running) and `429` (limit) are the API's answers.
-- Files changed in the terminal show up in Changes like any other edit, uncommitted; commits made there bypass the app's
-  secret scan ([security.md](security.md#the-terminal)).
+- Files changed in the terminal show up in Changes like any other edit, uncommitted, and the app's secret scan sees
+  every commit ([security.md](security.md#the-terminal)).
 
 ### Skills
 

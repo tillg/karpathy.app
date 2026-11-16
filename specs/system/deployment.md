@@ -106,10 +106,17 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
   file is younger than 20 min. Without profiles it idles, healthy.
 - **Terminal service** ([architecture.md](architecture.md#terminal-service-appsterminal), ADR 0008): the sixth image,
   uid 1000, on `internal` only with the egress proxy, the whole `vaults` volume (on a target the `/srv/vaults` bind
-  mount, read-write) and the volume `terminal-home` (`/home/node`: Claude Code's login and settings, shell history), the secret `terminal_token` and no other. Healthy when `:8095/healthz` answers. A deploy recreates the
+  mount, read-write), the volume `gitdirs` read-only and the volume `terminal-home` (`/home/node`: Claude Code's login and settings, shell history), the secret `terminal_token` and no other. Healthy when `:8095/healthz` answers. A deploy recreates the
   container, which ends every open shell (the panel shows them as ended); the login in the home volume stays.
   Switched off in the app (not stopped) with `terminal: { enabled: false }` in `deploy/settings/` (the backend answers
   `404 terminal-off`, the app hides the button). The first `claude` run in the terminal needs a login by URL and code.
+- **Volume `gitdirs`** (#175, architecture.md [Data](architecture.md#data)): each vault's git directory at
+  `/gitdirs/<id>`, a Docker named volume on the host's root disk (not on the `/srv/vaults` loop filesystem). The backend
+  mounts it read-write (`GITDIRS_DIR=/gitdirs`), terminal and opencode read-only, ingest not at all. The first start of
+  a backend with the volume moves every vault's `.git` there (idempotent) and leaves a `.git` file in the clone. **Rollback:**
+  a backend of a release before this one (0.0.40) expects `.git` folders: before `just deploy <target> 0.0.40`, copy
+  each `/gitdirs/<id>` back to `/vaults/<id>/.git` (replacing the file), or re-add the vaults. The volume is part of what
+  a backup of the host's Docker volumes must keep.
 - **Instagram worker** (worker mode, [architecture.md](architecture.md#instagram-worker-toolsinstagram-worker)): not
   part of the stack and not a release image. It runs on the user's machine, installed with pipx from a release tag
   of this repo (setup: `docs/instagram-worker.md`), and reaches the target through the proxy like the PWA (prod: the

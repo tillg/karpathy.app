@@ -271,7 +271,7 @@ flowchart TB
 | `ingest-worker.ts` | `ingestWorkerRouter`: the Instagram worker's five job routes, mounted at `/api/ingest/instagram` before the main router, on the worker or the main token ([Instagram worker and job API](#instagram-worker-and-job-api)). `UPLOAD_TIMEOUT_MS` (10 min). |
 | `terminal.ts` | `terminalRouter(endpoint, vaults)` (#175): `GET /terminals`, `POST /vaults/:id/terminals` (`cwd` = the vault's root folder relative to the vaults dir; refused `409 not-ready` while cloning), the NDJSON `…/stream?from=N` (piped, so a slow browser pauses the shell), `POST …/input`, `POST …/resize`, `DELETE`, forwarded to the terminal service with the `terminal_token`. No endpoint (`terminal.enabled: false`) = `404 terminal-off`; service unreachable = `503 terminal-down`; service `401` = `502 terminal-auth` (never a `401`, which would log the app out); `429` (4 sessions) = `terminal-limit`. |
 | `serve.ts` | `serve(app, port)`: starts the HTTP server with `requestTimeout` = the upload timeout + 1 min (Node's 300 s default would cut a slow result upload); `headersTimeout` and `keepAliveTimeout` keep Node's defaults. |
-| `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure (its dirty check and stash leave `<root>/Input` out), commit, push, conflict sides and resolution; hardened `runGit`: every command runs with `core.hooksPath=/dev/null` and `core.fsmonitor=false` (`safeGitEnv`), and `assertSafeRepo` first refuses (`409 unsafe-git-config`) a clone whose `.git` isn't a plain folder or whose `.git/config` holds a key outside `SAFE_KEYS`, because the terminal service can write `.git` ([Terminal service](#terminal-service-appsterminal)); `secret-scan.ts` and `search.ts` call both too. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
+| `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure (its dirty check and stash leave `<root>/Input` out), commit, push, conflict sides and resolution; hardened `runGit`: every command runs with `core.hooksPath=/dev/null`, `core.fsmonitor=false` and `diff.ignoreSubmodules=all` (`safeGitEnv`) and gets `GIT_DIR` / `GIT_WORK_TREE` explicitly (`repoEnv`; `registerGitDirs` is called by `Vaults` at start): a vault's git dir is `<GITDIRS_DIR>/<id>` (volume `gitdirs`), outside the working tree the terminal service can write, and git never discovers a `.git` in the tree ([Terminal service](#terminal-service-appsterminal)); `repo.ts` clones with `--separate-git-dir` and leaves a `.git` file; `secret-scan.ts` and `search.ts` use both too. `vaults.ts` migrates older clones at start (`moveGitDirOut`) and removes a vault's git dir with the vault; `atomic-write.ts` writes the state files in the `/vaults` root with random temp names, `O_EXCL`, refusing a symlinked folder. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
 | `search.ts` | The vault search (#138): `SearchIndex` per vault root, text analysis (`fold`, `detectLanguage`, `wordTerms`), ranking and hit lines ([Vault search](#vault-search)). |
 | `files.ts`, `paths.ts` | Tree listing, versions (content hash), `filesMentioning` (ripgrep, for the move's link scan), the note graph (`graph`: notes + links via the shared `noteLinks`, for `GET /vaults/:id/graph`); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
 | `bases.ts` | Bases query tables (#91): `parseBase` (YAML via `yaml`, core schema; v1 subset, `BaseError` `base-invalid` / `base-unsupported` → 422), a Pratt parser and evaluator for filter expressions (unsupported names refused before any file is read), and the file index: per vault root, every file's size, times, frontmatter, tags and link references as written (`linkRefs`; not the full text), re-read only when size or mtime changed (stat per query, no watcher coupling); links are resolved per query with the shared basename index of `resolveWikilink` (one bucket per link, not a scan of every path). `forgetBaseIndex(root)` drops a root's index when the vault is removed or its root, branch or repo changes (and when a watcher starts). `queryBase` filters, sorts (empty last, path as tie-break), caps at `limit` / 500 rows and serializes cells (`BaseCell`: dates as `YYYY-MM-DD[ HH:mm]`, `file.name` / `basename` / `path` as links). `POST /vaults/:id/base` `{ source }`. |
@@ -635,7 +635,7 @@ shells of the app's Terminal panel and Claude Code on the vaults. It is a small 
   `USE_BUILTIN_RIPGREP=0`; node-pty compiled in the same layer as its toolchain, which is then removed. First use of
   `claude` needs a login (URL + code); it lands in the home volume.
 - **Compose:** uid 1000, `cap_drop: [ALL]`, `no-new-privileges`, `init`, network `internal` only (no published port),
-  `HTTP(S)_PROXY=http://egress:3128`, the volumes `vaults` (read-write, whole) and `terminal-home` (`/home/node`),
+  `HTTP(S)_PROXY=http://egress:3128`, the volumes `vaults` (read-write, whole), `gitdirs` (**read-only**, `/gitdirs`) and `terminal-home` (`/home/node`),
   secret `terminal_token` and nothing else. Healthcheck `GET /healthz` on `:8095`.
 - **API** (`:8095`, bearer `terminal_token`, hashed constant-time compare, `401` otherwise): `GET /terminals`, `POST
   /terminals {cwd, cols, rows}` (`cwd` relative to the vaults dir, resolved through symlinks and refused outside it),
@@ -647,7 +647,8 @@ shells of the app's Terminal panel and Claude Code on the vaults. It is a small 
   (`at`) and the last 256 KB is kept. One stream is attached at a time (a new one takes over). A stream with `from`
   inside the kept range continues there; otherwise the first chunk is the whole kept output with `reset: true`, and the
   client then nudges the size so full-screen programs repaint. Backpressure: while the response can't keep up the PTY
-  is paused. Events: `{t:'o', d, at, reset?}`, `{t:'x', code}`.
+  is paused. Events: `{t:'o', d, at, reset?}`, `{t:'x', code}`, `{t:'taken'}` (another client attached: the stream
+  ends, the web app shows "Opened on another device or tab" with **Use here**, which reattaches). When the shell exits, its background jobs are killed.
 - **State:** the sessions live in the service's memory; only the home volume persists (login, `~/.claude`, history).
 
 ### Egress proxy (`deploy/egress`)
@@ -2091,7 +2092,7 @@ for the `secrets` key (every deployment renders anyway; the backend tolerates it
 
 | Store | Content | Owner |
 |---|---|---|
-| Volume `vaults` → `/vaults/<id>` | Full git clone of each vault repo (no shallow or sparse clone). The notes themselves. | backend (git), opencode (file tools), terminal (shells, rw) |
+| Volume `vaults` → `/vaults/<id>` | Full git clone of each vault repo (no shallow or sparse clone). The notes themselves. | backend (git), opencode (file tools), terminal (shells, rw; git dirs ro) |
 | `<vault root>/Input/` (in the clone, tracked by git) | The ingest queue: one folder per input item, its `index.md` frontmatter holding the link state (`unresolved_links`, `resolved_links`, `failed_links`). | ingest service (creates, updates while links are open), AI (`move_to_sources`), user |
 | Volume `ingest-state` → `/state` | gog's encrypted file keyring (Gmail OAuth client and refresh token), instascraper's session and activity ledger (`home/.config/instascraper/`), login staging dirs, ingest-email's rendered config and locks, the last-run file. Backed up with the server, not in git. | ingest service |
 | `deploy/settings/*.yaml` (git) | The settings of every environment: central file, environment files; gitignored local overlays for dev and prodtest. Secret references only. | operator / developer |
@@ -2099,6 +2100,7 @@ for the `secrets` key (every deployment renders anyway; the backend tolerates it
 | Volume `config` → `/config/config.json` | `vaults` (config + `cloned` / `cloneError` / `pendingFolders`), `settings` (threshold, web access, `modelOverride`, `titleModelOverride` and `visionModelOverride` only while ≠ their defaults), `titleSuggestions` (per vault and chat, #148), `githubToken` (plaintext, if set in the app), `aiTouched`, `editStamps` (per vault and path: last AI / human write, epoch ms), `conflicts`, `queued` turns. | backend only |
 | Volume `config` → `/config/metrics.jsonl` (0600) | The metrics history (#150): one JSON `MetricsSample` per line, every 30 s, 7 days (~3 MB); appended per sample, rewritten atomically once an hour and at start without old or torn lines. Not part of `config.json`. | backend only (opencode can't see the volume) |
 | `/vaults/.preflight/` | Short-lived blobless clones of the attach preflight; emptied at startup. | backend |
+| Volume `gitdirs` → `/gitdirs/<id>` | Each vault's git directory (objects, refs, config, hooks), outside the working tree; the working tree holds a `.git` file pointing here. Created by the clone or by the first start's migration of older clones; removed with the vault. | backend (rw); terminal and opencode (ro) |
 | Volume `terminal-home` → `/home/node` (terminal) | The terminal's home: Claude Code's login and `~/.claude`, shell history, tools the user installs there. Survives restarts and deploys; not in git. | terminal service |
 | Volume `opencode-data` | opencode sessions = chat history, including attached files (base64, after opencode's resize), until the chat is deleted. | opencode |
 | localStorage `karpathy.chips:<vault>:<chat>` | Unsent chat attachments (path, version, type, size) and their source folder. | web |
@@ -2399,8 +2401,9 @@ The ones that shape the whole system:
   The UI is split along the planned User and Admin roles; the one bearer token is both.
 - **The terminal is its own container, without app secrets** ([ADR 0008](../../docs/adr/0008-terminal-in-its-own-container.md)):
   shells and Claude Code run in the `terminal` service, confined like ingest, so a prompt-injected session can damage
-  vault files but reach no credential. NDJSON + POSTs instead of a WebSocket; sessions live until closed. Because it
-  can write `.git`, the backend's git runs without hooks and refuses an unsafe `.git/config`.
+  vault files but reach no credential. NDJSON + POSTs instead of a WebSocket; sessions live until closed. Its
+  working-tree writes are harmless to the backend because the vaults' git dirs live in a separate volume (`gitdirs`),
+  read-only for the terminal: git there is read-only, and the backend's git ignores hooks and any `.git` in the tree.
 - **The user commits, the AI never does** ([ADR 0001](../../docs/adr/0001-user-triggered-commits.md)).
 - **Explicit pull steps instead of `git pull --rebase --autostash`** (diagram in
   [domain.md](domain.md#pull-and-conflict)): unpushed commits are folded back with `reset --mixed`, never rebased, so no

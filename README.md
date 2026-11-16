@@ -47,7 +47,8 @@ tabs, each a bash in the open vault's folder with `git`, `rg` and **Claude Code*
 log in by URL and code; the login lives in a volume). Sessions keep running when you close the panel, reload or switch
 device, and end on ✕, when the shell exits, or at the next deploy. The shells run in a `terminal` container of their
 own (internal network, internet only through the egress proxy, none of the app's secrets) and have no GitHub push
-credentials: commit and push from the app. `terminal.enabled: false` in [`deploy/settings/`](deploy/settings/) switches
+credentials, and git there is read-only (`status`, `log`, `diff`; each vault's git directory is a read-only volume
+for it): commit and push from the app. `terminal.enabled: false` in [`deploy/settings/`](deploy/settings/) switches
 it off. [ADR 0008](docs/adr/0008-terminal-in-its-own-container.md).
 
 ## Sync

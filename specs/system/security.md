@@ -125,8 +125,8 @@ this repo's code or into its settings. Both are scanned with **gitleaks**, pinne
   always apply.
 - **Unpushed commits.** Every push (`Repo.push`, also the pull's "push what's unpushed") first checks the commits in
   `origin/<branch>..HEAD` against the list of commits the app scanned (`/config/secret-scanned/<vault id>`, outside the
-  vaults volume: the terminal can write `.git` and could otherwise mark its own commits as scanned). Any other one
-  (made in a terminal in the clone, or before the scan existed) is scanned on its own (its changes against its
+  vaults volume, next to the git dirs the terminal can't write). Any other one
+  (made before the scan existed) is scanned on its own (its changes against its
   parent, its message; the remote's `.gitleaksignore`). Clean → recorded and pushed. A finding → nothing is pushed,
   all unpushed commits are folded back into uncommitted changes (as a pull does), and the push error says so; the
   next Commit & Push scans them with *Commit anyway* at hand.
@@ -319,15 +319,15 @@ untrusted vault content (ingested mail, web pages). It is fenced in like ingest 
 | A command (the user's, a pasted one, a hijacked Claude Code) steals an app credential | The container has no app secret: no bearer, GitHub, opencode password, provider key or worker token, only `terminal_token`, which unlocks only the terminal service. No `/config`, no Docker socket, no other container's files; uid 1000, `cap_drop: [ALL]`, `no-new-privileges`, `init`, bounded logs, no published port | The shell reads and writes every vault (not only the open one) and `terminal-home` (the Claude login) |
 | **SSRF / exfiltration:** the shell reaches the backend, opencode, the metadata service or the tailnet | Network `internal` only; `HTTP(S)_PROXY` to the egress proxy, which refuses loopback, private, link-local and tailnet ranges after DNS, on every redirect | The proxy allows every public destination: a hijacked session can send vault content to any public host |
 | Prompt injection through vault content in a Claude Code session | The confinement above; damage to vault files is uncommitted and shows in Changes before anything reaches GitHub (ADR 0001) | Claude Code can read every vault and write any file in it, including `.git` (next row) |
-| The terminal plants a git hook, `filter`, `textconv`, `core.fsmonitor`, credential helper or the like to run a command in the backend, next to the GitHub token | Every backend git command runs with `core.hooksPath=/dev/null` and `core.fsmonitor=false` (`safeGitEnv`). Before it runs, `assertSafeRepo` refuses (`409 unsafe-git-config`, naming the key) a clone whose `.git` isn't a plain folder or whose `.git/config` holds a key outside the allowlist (`SAFE_KEYS`: clone keys, `core.*` data keys, `remote.*` urls, `branch.*`, `user.name`/`email`, a few data options; `include*` and `extensions.worktreeConfig` are refused). The secret scan and the search's `check-ignore` go through both too. The terminal's home (`~/.gitconfig`) is a different volume from the backend's, so its global config never applies to the backend's git | A user who sets an unusual key (say `diff.tool`) gets a clear refusal until they remove it |
+| The terminal plants a git hook, `filter`, `textconv`, `core.fsmonitor`, credential helper, `refs/replace` or a fake `origin/<branch>` to run a command in the backend (next to the GitHub token) or to empty the push scan's range | **The git dirs are not in its reach:** each vault's git directory is `/gitdirs/<id>` on the volume `gitdirs`, mounted read-write by the backend only, read-only in the terminal and opencode, not in ingest. The terminal can't write config, hooks or refs. The working tree keeps a `.git` file (`gitdir: /gitdirs/<id>`), so its own `git status`, `log` and `diff` work and a commit fails. The backend names `GIT_DIR` and `GIT_WORK_TREE` for every git command (`repoEnv`), never discovering a `.git` in the tree, and adds `core.hooksPath=/dev/null`, `core.fsmonitor=false` and `diff.ignoreSubmodules=all` (a repo the terminal `git init`s in a vault is never entered); the secret scan and search's `check-ignore` go through the same. Backend state files in the `/vaults` root use random temp names and `O_EXCL` (`atomic-write.ts`), so a planted symlink can't redirect them. The terminal's home (`~/.gitconfig`) is another volume, never read by the backend | The terminal can still write the working tree, including the `.git` file; that only affects its own git (and a nested repo it creates, which the backend skips) |
 | Someone else drives the terminal API | `:8095` on the `internal` network only; every request needs `terminal_token` (constant-time compare); `cwd` of a new shell must resolve to a folder inside the vaults dir; the public routes need the bearer token. A token mismatch is `502 terminal-auth`, never a `401` that would log the user out | — |
 | A client floods the service | At most 4 sessions (`429`), request bodies capped (input 1 MB), a slow stream pauses the PTY instead of buffering | A session left open holds a shell until the container restarts |
 
 - The bearer token now grants a shell. A stolen token or QR code is no longer only "read and write the notes": it
   runs commands in the terminal container and reaches the internet through the egress proxy.
 - The terminal has **no git push credentials**: commit and push from the app. A user who logs in to GitHub there
-  (`gh`, a token in `~/.git-credentials`, an SSH key in `terminal-home`) does so at their own risk, and what they push
-  skips the app's [secret scan](#secret-scan-before-a-push).
+  (`gh`, a token in `~/.git-credentials`, an SSH key in `terminal-home`) does so at their own risk; the terminal can't
+  commit (git dirs read-only), so the app's [secret scan](#secret-scan-before-a-push) still sees every commit.
 - `terminal.enabled: false` in the settings removes the routes (`404 terminal-off`) and the button; the service can
   stay stopped.
 
@@ -435,6 +435,8 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   network.
 - Backend, opencode, ingest and terminal run as uid 1000, not root; every service has `cap_drop: [ALL]` (the proxy keeps
   `NET_BIND_SERVICE`), `no-new-privileges` and bounded logs.
+- **Git dirs** (#175): each vault's git directory is on the volume `gitdirs`, read-write for the backend only; the
+  terminal and opencode mount it read-only, ingest not at all ([The terminal](#the-terminal)).
 - opencode's snapshots, sharing and auto-update are off; its version is pinned.
 - **Dev stacks on the Mac** (prod is unchanged): besides the proxy on 80N0, the backend's HTTP API is published on
   `127.0.0.1:80N1` only, for debugging; opencode and web stay unpublished on the internal network. The dev model is
@@ -470,9 +472,9 @@ kinds, strings only) and can only change which fields and flags the form shows; 
 - **Terminal** (#175):
   - The bearer token grants a shell (single shared token, no roles): a stolen token or QR code can read and rewrite
     every vault and send their content to any public host through the egress proxy.
-  - The terminal can write `.git` in every clone. Config keys and hooks are guarded ([The terminal](#the-terminal)), and
-    the secret scan's record of scanned commits lives in `/config`, out of its reach, so its commits are scanned when the
-    app pushes them. A `git push` from the terminal itself (if the user logs in to GitHub there) skips the scan.
+  - The terminal can't write any git dir, ref or hook ([The terminal](#the-terminal)); it writes the working trees, so
+    its changes are uncommitted until the app commits them (and scans them). A `git push` from the terminal itself (if
+    the user logs in to GitHub there) has nothing to push, as it can't commit.
   - The terminal shares the `internal` network with backend, opencode and ingest (as ingest does), so it can reach their
     ports; they are token- or password-guarded, and the terminal holds none of the tokens.
   - A session left open keeps a shell (and what runs in it) until the terminal container restarts, no idle timeout.
