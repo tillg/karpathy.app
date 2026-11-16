@@ -139,7 +139,7 @@ for _ in $(seq 30); do out=$(run curl -sf "http://127.0.0.1:$port/healthz") && b
   || bad "code-server answers /healthz on 127.0.0.1:$port" "$out"
 # Listening sockets (state 0A) on the port, IPv4 and IPv6; the image has no ss. 0100007F = 127.0.0.1.
 hex=$(printf '%04X' "$port")
-out=$(run cat /proc/net/tcp /proc/net/tcp6 | awk -v p=":$hex" '$4 == "0A" && substr($2, length($2) - 4) == p {print $2}' | paste -sd' ')
+out=$(run cat /proc/net/tcp /proc/net/tcp6 | awk -v p=":$hex" '$4 == "0A" && substr($2, length($2) - 4) == p {print $2}' | paste -sd' ' -)
 eq "code-server listens on loopback only" "$out" "0100007F:$hex"
 conf="/home/$user/.config/code-server/config.yaml"
 eq "code-server config: mode 600, owner $user" "$(run stat -c '%a %U' "$conf")" "600 $user"
