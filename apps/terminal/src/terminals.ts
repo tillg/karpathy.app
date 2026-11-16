@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
 import { spawn, type IPty } from 'node-pty';
 
 /**
@@ -37,7 +38,9 @@ interface Session extends TerminalInfo {
   total: number;
   sink?: Sink;
   paused: boolean;
-  /** Processes seen below the shell: once it has exited its jobs are orphans no process tree leads to. */
+  /** The shell's terminal (macOS only): every process it starts keeps it, also after the shell exits. */
+  tty: string | null;
+  /** macOS: the processes seen on its tty. Once the shell exits the tty is revoked and they can't be found by it. */
   known: Set<number>;
   watch?: ReturnType<typeof setInterval>;
 }
@@ -78,7 +81,7 @@ export class Terminals {
       cwd,
       env: { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', ...this.opts.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
     });
-    const s: Session = { id: randomUUID(), cwd: label, cols, rows, created: new Date().toISOString(), pty, buffer: '', total: 0, paused: false, known: new Set() };
+    const s: Session = { id: randomUUID(), cwd: label, cols, rows, created: new Date().toISOString(), pty, buffer: '', total: 0, paused: false, tty: ttyOf(pty), known: new Set() };
     pty.onData((d) => {
       s.total += d.length;
       s.buffer = (s.buffer + d).slice(-this.scrollback);
@@ -87,12 +90,15 @@ export class Terminals {
     pty.onExit(({ exitCode }) => {
       if (!this.sessions.has(s.id)) return;
       this.sessions.delete(s.id);
+      // Its background jobs are orphans now, still in its session.
       this.reap(s);
       s.sink?.send({ t: 'x', code: exitCode });
       s.sink?.end();
     });
-    s.watch = setInterval(() => this.track(s), 1000);
-    s.watch.unref();
+    if (s.tty) {
+      s.watch = setInterval(() => this.track(s), 1000);
+      s.watch.unref();
+    }
     this.sessions.set(s.id, s);
     return this.list().find((t) => t.id === s.id)!;
   }
@@ -129,7 +135,7 @@ export class Terminals {
 
   input(id: string, data: string) {
     const s = this.get(id);
-    // A line may start a job and the next one end the shell: note what runs below it while it can still be found.
+    // A line may start a job and the next one end the shell: note what runs on its tty while it still can be found.
     if (/[\r\n]/.test(data)) this.track(s);
     s.pty.write(data);
   }
@@ -147,15 +153,12 @@ export class Terminals {
 
   /**
    * Ends the session: the shell and everything it started. Job control gives background jobs process groups of their
-   * own, so the whole tree of descendants is killed, not just the shell's group.
+   * own and a subshell that exits orphans its jobs, so the whole session is killed, not the shell's group or tree.
    */
   close(id: string) {
     const s = this.get(id);
     this.sessions.delete(id);
-    this.reap(s, [s.pty.pid]);
-    try {
-      process.kill(-s.pty.pid, 'SIGKILL');
-    } catch { /* no group left */ }
+    this.reap(s);
     s.sink?.end();
   }
 
@@ -169,8 +172,21 @@ export class Terminals {
     return s;
   }
 
+  /** Kills the shell and everything in its session (jobs in their own process groups, orphans of an exited shell). */
+  private reap(s: Session) {
+    clearInterval(s.watch);
+    this.track(s);
+    for (const pid of [s.pty.pid, ...sessionMembers(s.pty.pid, s.tty), ...s.known]) {
+      if (pid === process.pid) continue;
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch { /* already gone */ }
+    }
+  }
+
+  /** macOS only (see `known`). Forgets the ones that ended, so their pids are never killed after the system reuses them. */
   private track(s: Session) {
-    // Forget the ones that ended since, so their pids are never killed after the system reuses them.
+    if (!s.tty) return;
     for (const pid of s.known) {
       try {
         process.kill(pid, 0);
@@ -178,19 +194,7 @@ export class Terminals {
         s.known.delete(pid);
       }
     }
-    for (const pid of descendants(s.pty.pid)) s.known.add(pid);
-  }
-
-  /** Kills everything the session started that still runs: what is below the shell now and what was seen before. */
-  private reap(s: Session, extra: number[] = []) {
-    clearInterval(s.watch);
-    this.track(s);
-    for (const pid of [...s.known, ...extra]) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch { /* already gone */ }
-    }
-    s.known.clear();
+    for (const pid of sessionMembers(s.pty.pid, s.tty)) s.known.add(pid);
   }
 
   private pause(s: Session) {
@@ -212,22 +216,37 @@ export class TerminalNotFound extends Error {
   }
 }
 
-/** Every process below `root` (busybox and macOS `ps` both take `-A -o pid=,ppid=`). */
-function descendants(root: number): number[] {
-  let out: string;
+/**
+ * macOS has no /proc and its ps can't name a session (`sess` is 0 for every process: matching on it
+ * kills them all). The session's controlling terminal stands in for it: `ttys012` for `/dev/ttys012`.
+ */
+function ttyOf(pty: IPty): string | null {
+  const name = (pty as IPty & { ptsName?: string }).ptsName ?? '';
+  return /^\/dev\/(ttys\d+)$/.exec(name)?.[1] ?? null;
+}
+
+/** The processes in the session the shell `sid` leads (Linux: /proc's session field; macOS: its tty). */
+function sessionMembers(sid: number, tty: string | null): number[] {
+  if (process.platform === 'linux') {
+    const out: number[] = [];
+    for (const name of readdirSync('/proc')) {
+      if (!/^\d+$/.test(name)) continue;
+      try {
+        const stat = readFileSync(`/proc/${name}/stat`, 'utf8');
+        // pid (comm) state ppid pgrp session …; comm may hold spaces and parentheses.
+        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+        if (Number(fields[3]) === sid) out.push(Number(name));
+      } catch { /* gone meanwhile */ }
+    }
+    return out;
+  }
+  if (!tty) return [];
   try {
-    out = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' });
+    return execFileSync('ps', ['-A', '-o', 'pid=,tty='], { encoding: 'utf8' }).split('\n')
+      .map((l) => l.trim().split(/\s+/))
+      .filter(([pid, x]) => pid && x === tty)
+      .map(([pid]) => Number(pid));
   } catch {
     return [];
   }
-  const children = new Map<number, number[]>();
-  for (const line of out.split('\n')) {
-    const [pid, ppid] = line.trim().split(/\s+/).map(Number);
-    if (!pid || ppid === undefined || Number.isNaN(ppid)) continue;
-    children.set(ppid, [...(children.get(ppid) ?? []), pid]);
-  }
-  const found: number[] = [];
-  const stack = [root];
-  while (stack.length) for (const c of children.get(stack.pop()!) ?? []) { found.push(c); stack.push(c); }
-  return found;
 }

@@ -283,6 +283,8 @@ edited: 2026-11-16
   - [12:20 — Release the terminal as v0.0.41 and deploy it to prod](#run-2026-11-16-1117-12)
   - [13:00 — Hold the release; the vaults' git dirs move to a `gitdirs` volume the terminal mounts read-only](#run-2026-11-16-1117-13)
   - [13:15 — Test the migration and e2e on karpathy-dev; give the dev host a C toolchain](#run-2026-11-16-1117-14)
+- [2026-11-16 13:30 — #175 resumed after the session crashed](#run-2026-11-16-1330)
+  - [13:40 — Reap a terminal by its session: /proc on Linux, the tty plus tracking on macOS](#run-2026-11-16-1330-1)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -4141,3 +4143,21 @@ edited: 2026-11-16
 - **Why:** the dev host is the documented second place for dev stacks, and the toolchain is what the new dependency needs everywhere `npm ci` runs. CI's Ubuntu runners and the images already have it.
 - **Alternatives:** override the Mac's 10 GiB guard (a growing VM disk could fill the user's disk); make node-pty optional (`npm ci` passes, but the terminal tests fail without it).
 - **Consequences:** a fresh Linux dev machine outside Ansible also needs `build-essential`, which the README should say. Rollback of the role change: drop the two packages. The Mac's disk is the user's to clean up.
+
+# 2026-11-16 13:30 — #175 resumed after the session crashed {#run-2026-11-16-1330}
+
+- **Started by:** `/autonomous`
+- **Task, as given:**
+
+  > implement gh issue #175 - note: U already started with it but our session crashed
+
+## 13:40 — Reap a terminal by its session: /proc on Linux, the tty plus tracking on macOS {#run-2026-11-16-1330-1}
+
+- **Status:** open
+- **Context:** the crashed run left an uncommitted rewrite of `apps/terminal/src/terminals.ts`: kill a closed or exited terminal's processes by session (Linux `/proc/<pid>/stat`, macOS `ps -o sess=`) instead of the polled process tree. On macOS `sess` is `0` for every process (889 of 889 here), so the rewrite's reap matched and SIGKILLed every process of the user. Running its tests is what crashed the Claude sessions, twice.
+- **Question:** keep the session approach, and how on macOS?
+- **Decision:** Linux (prod, CI, the terminal image) matches `/proc`'s session field against the shell's pid, the session leader. macOS (dev, tests) matches the pty's tty name (`ptsName`, only `/dev/ttysNNN`; no tty, no match) and, since macOS revokes the tty when the shell exits, also keeps the earlier tracking (on each entered line and once a second) of what ran on it. A new test covers a job whose parent subshell exits at once (`( sleep 300 & )`): red on the old process-tree code, green now on the Mac and on karpathy-dev (Linux).
+- **Why:** the session is the one thing a job can't leave without `setsid`; a process tree loses orphans. The tty can't match unrelated processes, unlike `sess=0`.
+- **Alternatives:** keep the polled process tree everywhere (misses an orphan between two polls); `pgrep -s` (macOS's pgrep has no `-s`).
+- **Consequences:** a job that calls `setsid` itself still escapes, on both platforms. On macOS, a pid in the tracked set that ends and is reused within a second could be killed: dev only.
+  Baseline: `just check` was already red before this commit, in `deploy/ansible/dev.test.sh` ("code-server listens on loopback only", twice), which this diff doesn't touch. Committed with no new failures.

@@ -80,6 +80,19 @@ describe('Terminals', () => {
     await until(() => !alive(pid));
   });
 
+  it('closing a session also kills a job whose parent exited at once (no process tree leads to it)', async () => {
+    terms = new Terminals({ shell: '/bin/sh' });
+    const t = terms.open(tmpdir(), 80, 24);
+    const c = collector();
+    terms.attach(t.id, undefined, c.sink);
+    terms.input(t.id, '( sleep 300 & echo bg=$! )\r');
+    await until(() => /bg=(\d+)/.test(c.text()));
+    const pid = Number(/bg=(\d+)/.exec(c.text())![1]);
+    expect(alive(pid)).toBe(true);
+    terms.close(t.id);
+    await until(() => !alive(pid));
+  });
+
   it('a second stream takes the session; the first is told, then ended', async () => {
     terms = new Terminals({ shell: '/bin/sh' });
     const t = terms.open(tmpdir(), 80, 24);
