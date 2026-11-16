@@ -4175,6 +4175,7 @@ edited: 2026-11-16
 - **Why:** it is the plan the earlier run logged; the blocker it held for is resolved and tested.
 - **Alternatives:** an rc first (prodtest already ran the same images).
 - **Consequences:** first start of the new backend moves every vault's `.git` to the `gitdirs` volume. Rollback: copy `/gitdirs/<id>` back to `/vaults/<id>/.git` by hand, then `just deploy hetzner 0.0.40`.
+  Deployed 15:14 (`failed=0`); all 4 vaults migrated. Again as **v0.0.42** at 15:57 with the review fixes ([decision 4](#run-2026-11-16-1330-4)); rollback to 0.0.41 is `just deploy hetzner 0.0.41` (same git dir layout).
 
 ## 15:20 — Retro: ignore md2html previews of ADRs; a test that outsiders survive a reap {#run-2026-11-16-1330-3}
 
