@@ -39,6 +39,15 @@ async function call(ep: TerminalEndpoint, method: string, path: string, body?: u
   throw new HttpError(res.status, typeof out.error === 'string' ? out.error : `Terminal service: ${res.status}`, res.status === 429 ? 'terminal-limit' : 'terminal-error');
 }
 
+/** Ends the shells started in vault `id` (its folder is going away); quiet when the terminal is off or down. */
+export async function closeVaultTerminals(ep: TerminalEndpoint | undefined, id: string): Promise<void> {
+  if (!ep) return;
+  try {
+    const { terminals } = (await (await call(ep, 'GET', '/terminals')).json()) as { terminals: { id: string; cwd: string }[] };
+    for (const t of terminals.filter((x) => x.cwd === id || x.cwd.startsWith(`${id}/`))) await call(ep, 'DELETE', `/terminals/${t.id}`).catch(() => {});
+  } catch { /* the terminal service is down: its shells went with it */ }
+}
+
 /** Routes under /api (bearer-guarded by the caller). */
 export function terminalRouter(ep: TerminalEndpoint | undefined, vaults: Vaults) {
   const r = Router();

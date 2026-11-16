@@ -11,7 +11,7 @@ import { BaseError } from './bases.js';
 import { normalizeRel, PathError } from './paths.js';
 import { callIngest, type IngestEndpoint } from './ingest.js';
 import { ingestWorkerRouter } from './ingest-worker.js';
-import { terminalRouter, type TerminalEndpoint } from './terminal.js';
+import { closeVaultTerminals, terminalRouter, type TerminalEndpoint } from './terminal.js';
 import type { MetricsSampler } from './metrics.js';
 import type { UsageService } from './usage.js';
 import { HttpError, type Vaults } from './vaults.js';
@@ -268,6 +268,7 @@ export function createApp(d: AppDeps) {
   api.delete('/vaults/:id', async (req, res) => {
     await d.vaults.remove(req.params.id!);
     d.chat?.vaultRemoved(req.params.id!);
+    await closeVaultTerminals(d.terminal, req.params.id!);
     res.status(204).end();
   });
 

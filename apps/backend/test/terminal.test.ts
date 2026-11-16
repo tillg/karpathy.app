@@ -39,7 +39,7 @@ async function setup({ terminal = true, root = '' } = {}) {
   const base_ = await listen(server);
   const call = (path: string, init: RequestInit = {}) =>
     fetch(`${base_}/api${path}`, { ...init, headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json', ...init.headers } });
-  return { ...t, id, call, terms };
+  return { ...t, id, call, terms, remote };
 }
 
 /** Collects a stream's output text until `done` holds (or 5 s). */
@@ -108,6 +108,21 @@ describe('terminal routes', () => {
     const missing = await t.call('/terminals/00000000-0000-4000-8000-000000000000/stream');
     expect(missing.status).toBe(404);
     expect((await t.call('/terminals/not-an-id/stream')).status).toBe(400);
+  });
+
+  it('removing a vault ends its shells; other vaults\' shells stay', async () => {
+    const t = await setup({ root: 'notes' });
+    // The same repo at its top: another vault.
+    const other = await t.addVault(t.remote.repo, { name: 'other' });
+    const open = (id: string) => t.call(`/vaults/${id}/terminals`, { method: 'POST', body: JSON.stringify({ cols: 80, rows: 24 }) });
+    expect((await open(t.id)).status).toBe(201);
+    const r2 = await open(other);
+    const keep = await r2.json();
+    expect(r2.status, JSON.stringify(keep)).toBe(201);
+    // Its changes would block the removal: only the shell matters here.
+    expect((await t.call(`/vaults/${t.id}`, { method: 'DELETE' })).status).toBe(204);
+    const { terminals } = await (await t.call('/terminals')).json();
+    expect(terminals.map((x: { id: string }) => x.id)).toEqual([keep.id]);
   });
 
   it('needs the bearer token', async () => {
