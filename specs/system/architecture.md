@@ -25,7 +25,7 @@ flowchart LR
     O[opencode serve<br/>agent loop + tools]
     E[egress: Squid<br/>public addresses only]
     I[ingest: ingest-email<br/>mail + links into Input/]
-    T[terminal: PTY server<br/>bash, git, Claude Code]
+    T[terminal: PTY server<br/>zsh, git, Claude Code]
     V[(volume vaults:<br/>git clones)]
     C[(volume config:<br/>config.json)]
     OD[(volume opencode-data)]
@@ -641,7 +641,8 @@ shells of the app's Terminal panel and Claude Code on the vaults. It is a small 
   /terminals {cwd, cols, rows}` (`cwd` relative to the vaults dir, resolved through symlinks and refused outside it),
   `GET /terminals/:id/stream?from=N` (NDJSON), `POST …/input {data}`, `POST …/resize {cols, rows}`, `DELETE
   /terminals/:id`. The backend is its only client ([Backend](#backend-appsbackend), `terminal.ts`).
-- **Sessions:** bash as a login shell (`-l`, `TERM=xterm-256color`) with `PATH`, `LANG` and the configured env only,
+- **Sessions:** zsh as a login shell (`-l`, oh-my-zsh and powerlevel10k pinned in the image, `gitstatusd` fetched at
+  build; `apps/terminal/src/home.ts` copies `deploy/terminal/skel/` dotfiles into the home volume when missing; `TERM=xterm-256color`) with `PATH`, `LANG` and the configured env only,
   nothing of the server's env. At most 4 (`429` beyond). A session lives until `DELETE`, the shell's exit or a
   restart of the container; closing it kills the shell and all its descendants. Output is numbered by its end offset
   (`at`) and the last 256 KB is kept. Any number of streams attach at once, each getting all output; input comes from

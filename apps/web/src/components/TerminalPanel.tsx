@@ -17,6 +17,7 @@ import { Icon } from './Icon';
 
 const HEIGHT_KEY = 'karpathy.terminalHeight';
 const FONT_SIZE = 13;
+const TERM_FONT = 'MesloLGS NF';
 const readHeight = () => {
   try {
     const h = Number(localStorage.getItem(HEIGHT_KEY));
@@ -223,6 +224,13 @@ function XtermView({ id, onEnded, handle }: { id: string; onEnded: () => void; h
       conn.resize(term.cols, term.rows);
     };
     refit();
+    // The prompt's icons need MesloLGS NF (styles.css); xterm measures its cells when the font is set, so switch once
+    // it has loaded. Without it (offline), the normal monospace font stays.
+    void document.fonts.load(`${FONT_SIZE}px "${TERM_FONT}"`).then((faces) => {
+      if (!faces.length || termRef.current !== term) return;
+      term.options.fontFamily = `"${TERM_FONT}", ${term.options.fontFamily}`;
+      refit();
+    }).catch(() => {});
     const ro = new ResizeObserver(refit);
     ro.observe(box.current!);
     const sub = term.onData((d) => conn.input(d));

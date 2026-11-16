@@ -30,7 +30,7 @@ flowchart LR
   W[Instagram worker:<br/>user's machine, home IP] -- "Tailscale, then worker token<br/>over HTTPS: job routes only" --> P
   W -- "own session" --> IG[Instagram]
   B -- "job routes, ingest token;<br/>result tarball streamed" --> I
-  B -- "internal network only,<br/>terminal token (NDJSON stream)" --> T[terminal service:<br/>bash, Claude Code]
+  B -- "internal network only,<br/>terminal token (NDJSON stream)" --> T[terminal service:<br/>zsh, Claude Code]
   T -. "read/write all vaults,<br/>no app secrets" .-> V
   T -- "all outbound HTTP" --> E
 ```
@@ -310,7 +310,7 @@ and holds nothing of the app's:
 
 ## The terminal
 
-The compose service `terminal` ([ADR 0008](../../docs/adr/0008-terminal-in-its-own-container.md), #175) runs bash and Claude
+The compose service `terminal` ([ADR 0008](../../docs/adr/0008-terminal-in-its-own-container.md), #175) runs a shell (zsh) and Claude
 Code for the app's Terminal panel. It runs whatever the user types, and what an AI the user starts there does with
 untrusted vault content (ingested mail, web pages). It is fenced in like ingest and holds nothing of the app's:
 

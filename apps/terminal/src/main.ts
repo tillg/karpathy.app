@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { seedHome } from './home.js';
 import { startServer } from './server.js';
 import { Terminals } from './terminals.js';
 
@@ -7,8 +8,12 @@ const token = readFileSync(process.env.TERMINAL_TOKEN_FILE ?? '/run/secrets/term
 const port = Number(process.env.PORT ?? 8095);
 /** What the shell inherits from the container; everything else (the token file's path included) stays out. */
 const PASS = ['HOME', 'USER', 'TZ', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy',
-  'DISABLE_AUTOUPDATER', 'USE_BUILTIN_RIPGREP', 'SHELL'];
+  'DISABLE_AUTOUPDATER', 'USE_BUILTIN_RIPGREP', 'SHELL', 'GITSTATUS_CACHE_DIR'];
 const env = Object.fromEntries(PASS.flatMap((k) => (process.env[k] ? [[k, process.env[k]!]] : [])));
+
+// zsh with oh-my-zsh and powerlevel10k (deploy/terminal/): their dotfiles go into the home volume once.
+const seeded = await seedHome(process.env.SHELL_SKEL ?? '/etc/karpathy/skel', process.env.HOME ?? '/home/node');
+if (seeded.length) console.log(`home: seeded ${seeded.join(', ')}`);
 
 const terminals = new Terminals({ shell: process.env.SHELL ?? '/bin/bash', env });
 const server = await startServer({ terminals, token, vaultsDir: process.env.VAULTS_DIR ?? '/vaults', port });

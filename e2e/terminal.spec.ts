@@ -95,6 +95,32 @@ test('two browsers on one session (Mac and phone): both see everything, both typ
   await ctx.close();
 });
 
+test('zsh like on the Mac: ↑ goes through the history, filtered by what is typed; a powerline prompt in colour', async ({ page, api, vault }) => {
+  await closeAll(api, vault.id);
+  await openApp(page, vault.id);
+  await page.getByTestId('open-terminal').click();
+  for (const w of ['alpha-1', 'beta-2', 'alpha-3']) {
+    await type(page, `echo ${w}`);
+    await expect(screen(page)).toContainText(`${w}\n`.trim());
+  }
+  // "echo a" then ↑: only the lines that start with it, newest first.
+  await page.keyboard.type('echo a');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => ((await screen(page).innerText()).match(/^alpha-1$/gm) ?? []).length).toBe(2);
+  // Plain ↑ is the last command again.
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => ((await screen(page).innerText()).match(/^alpha-1$/gm) ?? []).length).toBe(3);
+
+  // The prompt font (Nerd Font icons) has loaded, and the prompt has colour.
+  await expect.poll(() => page.evaluate(() => document.fonts.check('13px "MesloLGS NF"'))).toBe(true);
+  expect(await screen(page).locator('[class*="xterm-bg-"], [style*="background-color"]').count()).toBeGreaterThan(0);
+  await page.screenshot({ path: test.info().outputPath('175-zsh.png') });
+  await closeAll(api, vault.id);
+});
+
 test('a file made in the terminal shows up in the app as a change', async ({ page, api, vault }) => {
   await closeAll(api, vault.id);
   await openApp(page, vault.id);

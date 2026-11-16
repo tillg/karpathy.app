@@ -768,10 +768,14 @@ A shell on the server, in the app (#175, [ADR 0008](../../docs/adr/0008-terminal
   ⇧Tab, ^C, ^D, arrows). Whether the panel is open is remembered per browser. The button is disabled while there is no ready vault.
 - **Tabs:** up to 4 sessions (a fifth is refused, "close one first"). **+** starts a shell, **✕** ends it, the chevron
   hides the panel and leaves the shells running.
-- **The shell** is bash as uid 1000 in the `terminal` container, starting in the open vault's folder
+- **The shell** is zsh with oh-my-zsh and powerlevel10k, like the Mac (the same `~/.p10k.zsh`, `plugins=(git)`; ↑ goes
+  through the history, and with something typed only through the lines that start with it), as uid 1000 in the
+  `terminal` container, starting in the open vault's folder
   (`/vaults/<id>[/<root>]`). It sees every vault, with `git`, `rg`, `curl`, `less` and **Claude Code** (2.1.318, pinned,
   no self-update; the first `claude` run asks for a login by URL and code). Its home (`/home/node`) is a volume: the
-  Claude login, `~/.claude` and shell history survive restarts and deploys. It has no GitHub push credentials, and **git there is read-only**: `git status`, `log` and `diff` work, `commit`,
+  Claude login, `~/.claude`, shell history and the dotfiles survive restarts and deploys (`.zshrc` and `.p10k.zsh` come
+  from the image once, when missing, and are the user's from then on). The terminal uses the MesloLGS NF font for the
+  prompt's icons, loaded when a terminal opens. It has no GitHub push credentials, and **git there is read-only**: `git status`, `log` and `diff` work, `commit`,
   `pull` and `push` don't. Commit and push from the app ([Changes and commits](#changes-and-commits)).
 - **Sessions survive** closing the panel, a reload, closing and reopening the browser and another device: opening the
   panel reattaches to the newest session and shows its last 256 KB, and a full-screen program repaints. A dropped
