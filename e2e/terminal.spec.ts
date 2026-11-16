@@ -103,6 +103,45 @@ test('a file made in the terminal shows up in the app as a change', async ({ pag
   await closeAll(api, vault.id);
 });
 
+test('a URL a program broke over several rows opens whole; selecting text copies it', async ({ page, api, vault, context, browserName }) => {
+  await closeAll(api, vault.id);
+  await openApp(page, vault.id);
+  await page.getByTestId('open-terminal').click();
+  // fold: hard line breaks at the terminal's width, as Claude Code prints its login URL.
+  const url = `${BASE_URL}/#long-${'x'.repeat(260)}-end`;
+  await type(page, `clear; printf '%s\\n' '${url}' | fold -w $(tput cols); echo "d$((0))ne"`);
+  await expect(screen(page)).toContainText('d0ne');
+  // xterm's layers sit above the row elements: aim the mouse at the row's position instead of the element.
+  const second = (await screen(page).locator(':scope > div').filter({ hasText: /^x+/ }).first().boundingBox())!;
+  await page.mouse.move(second.x + 30, second.y + second.height / 2);
+  await page.mouse.move(second.x + 40, second.y + second.height / 2);
+  const [popup] = await Promise.all([page.waitForEvent('popup'), page.mouse.click(second.x + 40, second.y + second.height / 2)]);
+  await expect.poll(() => popup.url()).toBe(url);
+  await popup.close();
+
+  if (browserName === 'chromium') {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await type(page, 'echo "se$((1))ect me"');
+    const row = screen(page).locator(':scope > div').filter({ hasText: /^se1ect me/ }).first();
+    const box = (await row.boundingBox())!;
+    await page.mouse.move(box.x + 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toMatch(/^se1ec/);
+    // The broken URL, selected over its rows, copies as one line.
+    const first = (await screen(page).locator(':scope > div').filter({ hasText: /^https:/ }).first().boundingBox())!;
+    const last = (await screen(page).locator(':scope > div').filter({ hasText: /-end/ }).first().boundingBox())!;
+    await page.mouse.move(first.x + 1, first.y + first.height / 2);
+    await page.mouse.down();
+    // Past the text's end: xterm drops the row's trailing blanks.
+    await page.mouse.move(last.x + last.width - 4, last.y + last.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(url);
+  }
+  await closeAll(api, vault.id);
+});
+
 test('@iphone the terminal covers the screen and has a key bar for Esc, Tab and the arrows', async ({ page, api, vault }) => {
   await closeAll(api, vault.id);
   await openApp(page, vault.id);

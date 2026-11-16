@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 import type { TerminalInfo } from '@karpathy/shared';
 import { api, ApiError } from '../lib/api';
+import { selectionCopier } from '../lib/copy-select';
+import { joinSelection, linksAt } from '../lib/term-links';
 import { TerminalConnection } from '../lib/terminal';
 import { useApp } from '../store';
 import { Icon } from './Icon';
@@ -151,6 +152,25 @@ const cssVar = (name: string) => getComputedStyle(document.documentElement).getP
 
 function XtermView({ id, onEnded, handle }: { id: string; onEnded: () => void; handle: React.RefObject<{ input: (d: string) => void; focus: () => void } | null> }) {
   const box = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const { toast } = useApp();
+  // Copy on select, like the chat (#144): from the gesture's end, where Safari allows the clipboard write.
+  const copier = useMemo(() => selectionCopier(() => toast('Copied')), [toast]);
+  const copySelection = () => {
+    const t = termRef.current;
+    const pos = t?.getSelectionPosition();
+    if (!t || !pos) return copier('');
+    // The buffer rows the selection covers, xterm's own wraps merged as its selection text merges them. `y` is the
+    // buffer index (0-based; xterm 6's typings say 1-based, its code returns the selection model's index).
+    const buf = t.buffer.active;
+    const rows: string[] = [];
+    for (let y = pos.start.y; y <= pos.end.y && y < buf.length; y++) {
+      let row = buf.getLine(y)?.translateToString(false) ?? '';
+      while (buf.getLine(y + 1)?.isWrapped) row += buf.getLine(++y)?.translateToString(false) ?? '';
+      rows.push(row);
+    }
+    copier(joinSelection(t.getSelection(), rows, t.cols));
+  };
   const [live, setLive] = useState(true);
   const [exit, setExit] = useState<number | null | undefined>(undefined);
   const [taken, setTaken] = useState(false);
@@ -170,8 +190,23 @@ function XtermView({ id, onEnded, handle }: { id: string; onEnded: () => void; h
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopener')));
+    // URLs, also those a program broke over several rows itself (Claude Code's login link): see term-links.ts.
+    const linkSub = term.registerLinkProvider({
+      provideLinks: (line, done) => {
+        const buf = term.buffer.active;
+        const from = Math.max(0, line - 1 - 40);
+        const rows: string[] = [];
+        for (let i = from; i < Math.min(buf.length, line + 40); i++) rows.push(buf.getLine(i)?.translateToString(false) ?? '');
+        const links = linksAt(rows, term.cols, line - 1 - from).map((l) => ({
+          text: l.url,
+          range: { start: { x: l.start.x + 1, y: l.start.y + from + 1 }, end: { x: l.end.x + 1, y: l.end.y + from + 1 } },
+          activate: () => window.open(l.url, '_blank', 'noopener'),
+        }));
+        done(links.length ? links : undefined);
+      },
+    });
     term.open(box.current!);
+    termRef.current = term;
     const conn = new TerminalConnection(id, {
       write: (d, reset) => {
         if (reset) term.reset();
@@ -201,6 +236,8 @@ function XtermView({ id, onEnded, handle }: { id: string; onEnded: () => void; h
     return () => {
       ro.disconnect();
       sub.dispose();
+      linkSub.dispose();
+      termRef.current = null;
       conn.detach();
       term.dispose();
       handle.current = null;
@@ -209,7 +246,7 @@ function XtermView({ id, onEnded, handle }: { id: string; onEnded: () => void; h
 
   return (
     <div className="term-view">
-      <div className="term-xterm" ref={box} data-testid="terminal-xterm" data-live={live} data-exit={exit === undefined ? undefined : String(exit)} />
+      <div className="term-xterm" ref={box} data-testid="terminal-xterm" onMouseUp={copySelection} onTouchEnd={copySelection} data-live={live} data-exit={exit === undefined ? undefined : String(exit)} />
       {taken && (
         <div className="term-reconnect" role="status" data-testid="terminal-taken">
           Opened on another device or tab <button className="link" data-testid="terminal-use-here" onClick={() => setAttempt((a) => a + 1)}>Use here</button>

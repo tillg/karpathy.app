@@ -777,6 +777,11 @@ A shell on the server, in the app (#175, [ADR 0008](../../docs/adr/0008-terminal
   panel reattaches to the newest session and shows its last 256 KB, and a full-screen program repaints. A dropped
   stream (the iPad sleeping) reconnects and resumes where it stopped. A session ends on **✕**, when its shell exits, or
   when the terminal container restarts (a deploy); its background jobs end with the shell.
+- **Links and copying:** a click on a URL opens it in a new tab, also when a program broke it over several rows itself
+  (Claude Code's login link): a row that runs to the right edge and a next row that starts without a space read as
+  one line. Selecting text copies it at once, like the chat, with the "Copied" toast; by the same rule a URL selected
+  over such rows copies without line breaks. Typing that a flaky network makes
+  the page send again is typed once (each chunk carries a page id and number).
 - **Two devices:** a session shows on one client at a time. Opening it on a second device or tab takes it over; the first
   shows "Opened on another device or tab" with **Use here**, which takes it back.
 - **Off:** with `terminal.enabled: false` in the settings the button is gone and the routes answer `404 terminal-off`.
