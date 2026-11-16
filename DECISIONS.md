@@ -286,6 +286,7 @@ edited: 2026-11-16
 - [2026-11-16 13:30 — #175 resumed after the session crashed](#run-2026-11-16-1330)
   - [13:40 — Reap a terminal by its session: /proc on Linux, the tty plus tracking on macOS](#run-2026-11-16-1330-1)
   - [15:00 — Release v0.0.41 and deploy it to prod, as the crashed run planned](#run-2026-11-16-1330-2)
+  - [15:20 — Retro: ignore md2html previews of ADRs; a test that outsiders survive a reap](#run-2026-11-16-1330-3)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -4173,3 +4174,13 @@ edited: 2026-11-16
 - **Why:** it is the plan the earlier run logged; the blocker it held for is resolved and tested.
 - **Alternatives:** an rc first (prodtest already ran the same images).
 - **Consequences:** first start of the new backend moves every vault's `.git` to the `gitdirs` volume. Rollback: copy `/gitdirs/<id>` back to `/vaults/<id>/.git` by hand, then `just deploy hetzner 0.0.40`.
+
+## 15:20 — Retro: ignore md2html previews of ADRs; a test that outsiders survive a reap {#run-2026-11-16-1330-3}
+
+- **Status:** open
+- **Context:** retro of this run and the crashed one. (1) The crashed run's reap matched every process on macOS (`sess=0`) and killed the user's desktop twice; no test checked that a reap stays inside its session. (2) `deploy/ansible/dev.test.sh` piped into `paste -sd' '`, which on macOS needs `-` for stdin: the code-server loopback check always failed on the Mac. (3) A stray md2html preview `docs/adr/0008-…html` made the tree dirty, which `just release` refuses. (4) The full terminal e2e raced for the 4-session cap across parallel projects. (5) `gh run watch` died on a network blip although the run went on.
+- **Question:** which fixes are mechanical and project-level?
+- **Decision:** (1) test `closing or exiting a session leaves processes outside it alone` (676fd3b); (2) `paste -sd' ' -` (eb69aea); (3) `docs/adr/*.html` in `.gitignore`; (4) issue #177; (5) none: poll `gh run view` in a loop that tolerates errors instead (a habit, no repo change).
+- **Why:** each is the smallest change that stops the same failure recurring.
+- **Alternatives:** a size guard in `reap` (refuse to kill more than N pids): arbitrary, and the test already pins the property.
+- **Consequences:** an ADR preview no longer shows in `git status`; build one on purpose with `/md2html:build`.

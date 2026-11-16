@@ -33,6 +33,8 @@ specs/**/*.html
 /index.html
 !specs/**/*-report.html
 /DECISIONS.html
+# md2html previews of ADRs (not reports): a stray one blocks `just release` (dirty tree)
+docs/adr/*.html
 _site/
 
 # Git worktrees of parallel agents (CLAUDE.md: worktrees go in .worktrees/)
