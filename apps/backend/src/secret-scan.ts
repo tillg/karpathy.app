@@ -4,7 +4,7 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { SecretFinding } from '@karpathy/shared';
-import { assertSafeRepo, safeGitEnv } from './git.js';
+import { repoEnv, safeGitEnv } from './git.js';
 
 /**
  * gitleaks' own rules, whatever a vault carries: a `.gitleaks.toml` in the vault (written by the AI, or arriving
@@ -246,8 +246,7 @@ export class SecretScanner {
   private async exportBlobs(repoDir: string, targets: { sha: string; file: string }[]): Promise<void> {
     if (!targets.length) return;
     await new Promise<void>((resolve, reject) => {
-      assertSafeRepo(repoDir);
-      const child = spawn('git', ['cat-file', '--batch'], { cwd: repoDir, env: gitEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn('git', ['cat-file', '--batch'], { cwd: repoDir, env: gitEnv(repoDir), stdio: ['pipe', 'pipe', 'pipe'] });
       const timer = setTimeout(() => child.kill('SIGKILL'), this.timeoutMs);
       let i = 0;
       let header: { size: number } | null = null;
@@ -317,8 +316,7 @@ export class SecretScanner {
   /** git with the backend's settings; a non-zero exit rejects. */
   private git(repoDir: string, args: string[], env: Record<string, string> = {}, input?: string): Promise<Buffer> {
     return new Promise((resolve, reject) => {
-      assertSafeRepo(repoDir);
-      const child = execFile('git', args, { cwd: repoDir, env: { ...gitEnv(), ...env }, encoding: 'buffer', timeout: this.timeoutMs, maxBuffer: 256 * 1024 * 1024 }, (err, out, errOut) => {
+      const child = execFile('git', args, { cwd: repoDir, env: { ...gitEnv(repoDir), ...env }, encoding: 'buffer', timeout: this.timeoutMs, maxBuffer: 256 * 1024 * 1024 }, (err, out, errOut) => {
         if (err) reject(new Error(`secret scan failed: git ${args[0]}: ${errOut.toString('utf8').trim() || err.message}`));
         else resolve(out);
       });
@@ -327,9 +325,9 @@ export class SecretScanner {
   }
 }
 
-/** runGit's config (shared clones, no hooks, …); callers check the repo with assertSafeRepo first. */
-function gitEnv(): NodeJS.ProcessEnv {
-  return { ...safeGitEnv(), GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
+/** runGit's config (shared clones, no hooks, …) and the clone's git dir outside its working tree (#175). */
+function gitEnv(repoDir: string): NodeJS.ProcessEnv {
+  return { ...safeGitEnv(), ...repoEnv(repoDir), GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' };
 }
 
 /** First characters of a secret (at most four, at most 15 % of it) and `…`. */

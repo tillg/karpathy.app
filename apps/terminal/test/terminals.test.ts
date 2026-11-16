@@ -66,6 +66,31 @@ describe('Terminals', () => {
     expect(terms.list()).toEqual([]);
   });
 
+  it('a shell that exits by itself takes its background jobs with it', async () => {
+    terms = new Terminals({ shell: '/bin/sh' });
+    const t = terms.open(tmpdir(), 80, 24);
+    const c = collector();
+    terms.attach(t.id, undefined, c.sink);
+    terms.input(t.id, 'sleep 300 & echo bg=$!\r');
+    await until(() => /bg=(\d+)/.test(c.text()));
+    const pid = Number(/bg=(\d+)/.exec(c.text())![1]);
+    expect(alive(pid)).toBe(true);
+    terms.input(t.id, 'exit\r');
+    await until(() => c.events.some((e) => e.t === 'x'));
+    await until(() => !alive(pid));
+  });
+
+  it('a second stream takes the session; the first is told, then ended', async () => {
+    terms = new Terminals({ shell: '/bin/sh' });
+    const t = terms.open(tmpdir(), 80, 24);
+    const first = collector();
+    const second = collector();
+    terms.attach(t.id, undefined, first.sink);
+    terms.attach(t.id, undefined, second.sink);
+    expect(first.events.slice(-2)).toEqual([{ t: 'taken' }, { t: 'end' }]);
+    expect(terms.attached(t.id)).toBe(true);
+  });
+
   it('an exiting shell ends the session and tells the stream', async () => {
     terms = new Terminals({ shell: '/bin/sh' });
     const t = terms.open(tmpdir(), 80, 24);

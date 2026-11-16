@@ -10,7 +10,7 @@ import { spawn, type IPty } from 'node-pty';
  */
 
 /** A chunk of output (`at` = offset after it; `reset`: the first chunk of a replay that doesn't continue the page). */
-export type StreamEvent = { t: 'o'; d: string; at: number; reset?: boolean } | { t: 'x'; code: number };
+export type StreamEvent = { t: 'o'; d: string; at: number; reset?: boolean } | { t: 'x'; code: number } | { t: 'taken' };
 
 /** Where a session's output goes: an NDJSON response, in the server. `send` returns false on backpressure. */
 export interface Sink {
@@ -37,6 +37,9 @@ interface Session extends TerminalInfo {
   total: number;
   sink?: Sink;
   paused: boolean;
+  /** Processes seen below the shell: once it has exited its jobs are orphans no process tree leads to. */
+  known: Set<number>;
+  watch?: ReturnType<typeof setInterval>;
 }
 
 export interface TerminalsOptions {
@@ -75,7 +78,7 @@ export class Terminals {
       cwd,
       env: { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', ...this.opts.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
     });
-    const s: Session = { id: randomUUID(), cwd: label, cols, rows, created: new Date().toISOString(), pty, buffer: '', total: 0, paused: false };
+    const s: Session = { id: randomUUID(), cwd: label, cols, rows, created: new Date().toISOString(), pty, buffer: '', total: 0, paused: false, known: new Set() };
     pty.onData((d) => {
       s.total += d.length;
       s.buffer = (s.buffer + d).slice(-this.scrollback);
@@ -84,9 +87,12 @@ export class Terminals {
     pty.onExit(({ exitCode }) => {
       if (!this.sessions.has(s.id)) return;
       this.sessions.delete(s.id);
+      this.reap(s);
       s.sink?.send({ t: 'x', code: exitCode });
       s.sink?.end();
     });
+    s.watch = setInterval(() => this.track(s), 1000);
+    s.watch.unref();
     this.sessions.set(s.id, s);
     return this.list().find((t) => t.id === s.id)!;
   }
@@ -97,7 +103,10 @@ export class Terminals {
    */
   attach(id: string, from: number | undefined, sink: Sink): () => void {
     const s = this.get(id);
-    if (s.sink) s.sink.end();
+    if (s.sink) {
+      s.sink.send({ t: 'taken' });
+      s.sink.end();
+    }
     s.sink = sink;
     const start = s.total - s.buffer.length;
     const resume = from !== undefined && from >= start && from <= s.total;
@@ -113,8 +122,16 @@ export class Terminals {
     };
   }
 
+  /** Whether a stream is attached. */
+  attached(id: string) {
+    return Boolean(this.get(id).sink);
+  }
+
   input(id: string, data: string) {
-    this.get(id).pty.write(data);
+    const s = this.get(id);
+    // A line may start a job and the next one end the shell: note what runs below it while it can still be found.
+    if (/[\r\n]/.test(data)) this.track(s);
+    s.pty.write(data);
   }
 
   resize(id: string, cols: number, rows: number) {
@@ -135,11 +152,10 @@ export class Terminals {
   close(id: string) {
     const s = this.get(id);
     this.sessions.delete(id);
-    for (const pid of [...descendants(s.pty.pid), s.pty.pid]) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch { /* already gone */ }
-    }
+    this.reap(s, [s.pty.pid]);
+    try {
+      process.kill(-s.pty.pid, 'SIGKILL');
+    } catch { /* no group left */ }
     s.sink?.end();
   }
 
@@ -151,6 +167,30 @@ export class Terminals {
     const s = this.sessions.get(id);
     if (!s) throw new TerminalNotFound(id);
     return s;
+  }
+
+  private track(s: Session) {
+    // Forget the ones that ended since, so their pids are never killed after the system reuses them.
+    for (const pid of s.known) {
+      try {
+        process.kill(pid, 0);
+      } catch {
+        s.known.delete(pid);
+      }
+    }
+    for (const pid of descendants(s.pty.pid)) s.known.add(pid);
+  }
+
+  /** Kills everything the session started that still runs: what is below the shell now and what was seen before. */
+  private reap(s: Session, extra: number[] = []) {
+    clearInterval(s.watch);
+    this.track(s);
+    for (const pid of [...s.known, ...extra]) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch { /* already gone */ }
+    }
+    s.known.clear();
   }
 
   private pause(s: Session) {

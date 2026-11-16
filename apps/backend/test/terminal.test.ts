@@ -1,6 +1,8 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { appendFile, mkdir, mkdtemp } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { appendFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -63,6 +65,20 @@ async function read(res: Response, done: (text: string) => boolean) {
 }
 
 describe('terminal routes', () => {
+  it('a browser that leaves while the stream is being set up does not keep the shell attached', async () => {
+    const t = await setup({ root: 'notes' });
+    const { id } = await (await t.call(`/vaults/${t.id}/terminals`, { method: 'POST', body: JSON.stringify({ cols: 90, rows: 20 }) })).json();
+    for (let wait = 0; wait < 15; wait++) {
+      const ctrl = new AbortController();
+      const pending = t.call(`/terminals/${id}/stream`, { signal: ctrl.signal }).catch(() => {});
+      await new Promise((r) => setTimeout(r, wait));
+      ctrl.abort();
+      await pending;
+      await new Promise((r) => setTimeout(r, 100));
+      expect(t.terms.attached(id), `left after ${wait} ms`).toBe(false);
+    }
+  });
+
   it('opens a shell in the vault folder, streams it and takes input', async () => {
     const t = await setup({ root: 'notes' });
     const r = await t.call(`/vaults/${t.id}/terminals`, { method: 'POST', body: JSON.stringify({ cols: 90, rows: 20 }) });
@@ -112,14 +128,19 @@ describe('terminal routes', () => {
     expect((await (await t.call('/settings')).json()).terminal).toBe(true);
   });
 
-  it('a clone whose .git/config the terminal made unsafe is refused with a 409 that names the key', async () => {
+  it('a .git the terminal points at a hostile git dir changes nothing for the app (its git dir is elsewhere)', async () => {
     const t = await setup();
-    await appendFile(join(t.dirs.vaults, t.id, '.git', 'config'), '[filter "x"]\n\tclean = touch /tmp/pwned\n');
+    const evil = join(t.dirs.vaults, '..', 'evil');
+    const marker = join(t.dirs.vaults, '..', 'pwned');
+    await mkdir(evil, { recursive: true });
+    execFileSync('git', ['init', '-q', evil]);
+    await appendFile(join(evil, '.git', 'config'), `[filter "x"]\n\tclean = touch ${marker}\n[core]\n\tfsmonitor = touch ${marker}\n`);
+    await writeFile(join(t.dirs.vaults, t.id, '.git'), `gitdir: ${join(evil, '.git')}\n`);
+    await writeFile(join(t.dirs.vaults, t.id, '.gitattributes'), '* filter=x\n');
     const r = await t.call(`/vaults/${t.id}/status`);
-    expect(r.status).toBe(409);
-    const body = await r.json();
-    expect(body.code).toBe('unsafe-git-config');
-    expect(body.error).toContain('filter.x.clean');
+    expect(r.status).toBe(200);
+    expect((await r.json()).state).toBe('ready');
+    expect(existsSync(marker)).toBe(false);
   });
 
   it('reports the terminal service being down as 503, not as a logout', async () => {

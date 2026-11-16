@@ -12,7 +12,6 @@ import { normalizeRel, PathError } from './paths.js';
 import { callIngest, type IngestEndpoint } from './ingest.js';
 import { ingestWorkerRouter } from './ingest-worker.js';
 import { terminalRouter, type TerminalEndpoint } from './terminal.js';
-import { UnsafeGitConfigError } from './git.js';
 import type { MetricsSampler } from './metrics.js';
 import type { UsageService } from './usage.js';
 import { HttpError, type Vaults } from './vaults.js';
@@ -461,7 +460,6 @@ export function createApp(d: AppDeps) {
     if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message, code: err.code, ...err.extra });
     if (err instanceof BaseError) return void res.status(422).json({ error: err.message, code: err.code });
     if (err instanceof PathError) return void res.status(400).json({ error: err.message, code: 'bad-path' });
-    if (err instanceof UnsafeGitConfigError) return void res.status(409).json({ error: err.message, code: 'unsafe-git-config' });
     if (err instanceof z.ZodError) return void res.status(400).json({ error: err.issues.map((i) => i.message).join('; '), code: 'invalid' });
     if ((err as { type?: string }).type === 'entity.too.large') return void res.status(413).json({ error: 'The file is larger than 50 MB.', code: 'too-large' });
     if ((err as { type?: string }).type === 'entity.parse.failed') return void res.status(400).json({ error: 'invalid JSON' });

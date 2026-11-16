@@ -1,12 +1,13 @@
 import { mkdir, readFile, rm, writeFile, access } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
 import { INPUT_DIR, type Change, type ChangeKind, type ConflictChoice, type SecretFinding } from '@karpathy/shared';
-import { Git, type GitOptions } from './git.js';
+import { Git, type GitOptions, repoEnv } from './git.js';
 import { MESSAGE_FILE, type SecretScanner } from './secret-scan.js';
 
 export const PULL_STASH = 'karpathy-app-pull';
 /** Commits whose secret scan passed (or whose findings the user acknowledged), one hash per line, in .git. */
 const SCANNED_FILE = 'karpathy-secret-scanned';
+const gitDirOf = (dir: string) => repoEnv(dir).GIT_DIR ?? join(dir, '.git');
 const AI_COAUTHOR = 'karpathy.app agent <agent@karpathy.app>';
 export const AI_TRAILER = `Co-authored-by: ${AI_COAUTHOR}`;
 
@@ -53,15 +54,26 @@ export class Repo {
      * The record of commits the app scanned. Outside the clone in the app (the terminal can write `.git`, #175, and
      * could mark its own commits as scanned); `.git/karpathy-secret-scanned` when unset.
      */
-    private readonly scannedFile = join(dir, '.git', SCANNED_FILE),
+    private readonly scannedFile = join(gitDirOf(dir), SCANNED_FILE),
   ) {
     this.git = new Git(dir, opts);
   }
 
+  /** Its git dir: outside the clone when the vaults have a git dirs volume (#175), else `.git`. */
+  get gitDir(): string {
+    return gitDirOf(this.dir);
+  }
+
+  /** Clones into `dir`; its git dir goes where repoEnv says (outside the working tree), else into `dir/.git`. */
   static async clone(url: string, dir: string, branch: string, opts: GitOptions): Promise<void> {
+    const gitDir = repoEnv(dir).GIT_DIR;
     await rm(dir, { recursive: true, force: true });
+    if (gitDir) {
+      await rm(gitDir, { recursive: true, force: true });
+      await mkdir(dirname(gitDir), { recursive: true });
+    }
     await mkdir(dirname(dir), { recursive: true });
-    await new Git(dirname(dir), opts).run(['clone', '--branch', branch, '--end-of-options', url, dir]);
+    await new Git(dirname(dir), opts).run(['clone', ...(gitDir ? [`--separate-git-dir=${gitDir}`] : []), '--branch', branch, '--end-of-options', url, dir]);
   }
 
   get rootDir(): string {
@@ -158,7 +170,7 @@ export class Repo {
    * on "cannot lock ref". Callers hold the vault lock, so no other git updates that ref right now.
    */
   private async dropStaleRefLock() {
-    await rm(join(this.dir, '.git', 'refs', 'remotes', 'origin', `${this.branch}.lock`), { force: true });
+    await rm(join(this.gitDir, 'refs', 'remotes', 'origin', `${this.branch}.lock`), { force: true });
   }
 
   /** Updates origin/<branch> only: no merge, no index, no working tree (background fetch). */

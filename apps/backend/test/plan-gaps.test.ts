@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { VaultEvent } from '@karpathy/shared';
 import { makeApp, TOKEN } from './app-helpers.js';
 import { makeRemote } from './helpers.js';
+import type { VaultsEnv } from '../src/vaults.js';
 
 // Verifies from the MVP plan (specs/01_mvp/plan.md, removed; see git 9c25f72) that had no test yet.
 
@@ -17,9 +18,9 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) await c();
 });
 
-async function vaultApp() {
+async function vaultApp(env: Partial<VaultsEnv> = {}) {
   const remote = await makeRemote({ 'Home.md': '# Home\n', 'Other.md': 'other\n' });
-  const t = await makeApp(remote.remoteBase);
+  const t = await makeApp(remote.remoteBase, { env });
   cleanups.push(() => t.vaults.close());
   const id = await t.addVault(remote.repo);
   return { ...t, remote, id };
@@ -92,7 +93,8 @@ describe('P3 event stream', () => {
   });
 
   it('writes inside .git/ emit no files-changed event', async () => {
-    const t = await vaultApp();
+    // A .git folder inside the clone: a deployment without the git dirs volume (#175), or a repo nested in a vault.
+    const t = await vaultApp({ gitDirsDir: undefined });
     const connect = await openEvents(t.app, t.id);
     const s = await connect();
     await s.waitFor(() => s.events.length > 0, 2000);
@@ -166,6 +168,17 @@ describe('P1/§2.5 compose topology (deploy/compose.yml)', () => {
     expect(t.cap_drop).toEqual(['ALL']);
     expect(t.security_opt).toContain('no-new-privileges:true');
     expect(t.user).toBe(svc.backend!.user);
+  });
+
+  it('the vaults\' git dirs (#175): the backend writes them, terminal and opencode only read them, ingest never sees them', () => {
+    type Vol = { source: string; target: string; read_only?: boolean };
+    const vols = (s: string) => ((svc[s] as unknown as { volumes?: Vol[] }).volumes ?? []).filter((v) => v.source === 'gitdirs');
+    expect(vols('backend')).toEqual([expect.objectContaining({ target: '/gitdirs' })]);
+    expect(vols('backend')[0]!.read_only).toBeFalsy();
+    expect(svc.backend!.environment).toMatchObject({ GITDIRS_DIR: '/gitdirs' });
+    expect(vols('terminal')).toEqual([expect.objectContaining({ target: '/gitdirs', read_only: true })]);
+    expect(vols('opencode')).toEqual([expect.objectContaining({ target: '/gitdirs', read_only: true })]);
+    expect(vols('ingest')).toEqual([]);
   });
 
   it('backend and opencode run as the same UID/GID', () => {

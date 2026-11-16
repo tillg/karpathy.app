@@ -1,5 +1,6 @@
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { writeAtomic } from './atomic-write.js';
 
 /**
  * The Admin's vision model (#148), handed to opencode's `look_at_image` tool as a file on the vaults volume, outside every
@@ -13,8 +14,5 @@ export async function syncVisionModel(vaultsDir: string, s: { visionModel: strin
   const dest = join(vaultsDir, VISION_FILE);
   const prefix = `${s.visionGateway}/`;
   if (!s.visionGateway || s.visionModel === s.defaultVisionModel || !s.visionModel.startsWith(prefix)) return rm(dest, { force: true });
-  await mkdir(dirname(dest), { recursive: true });
-  const tmp = `${dest}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify({ model: s.visionModel.slice(prefix.length) }));
-  await rename(tmp, dest);
+  await writeAtomic(dest, JSON.stringify({ model: s.visionModel.slice(prefix.length) }));
 }

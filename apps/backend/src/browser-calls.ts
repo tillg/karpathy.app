@@ -1,7 +1,8 @@
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseBrowserCallResult, type BrowserCall, type VaultEvent } from '@karpathy/shared';
 import { HttpError } from './vaults.js';
+import { writeAtomic } from './atomic-write.js';
 
 /**
  * Browser calls (#151): a browser tool (deploy/opencode/tools/user_location.ts) waits for
@@ -60,11 +61,7 @@ export class BrowserCalls {
     if (!result) throw new HttpError(400, `not a valid ${p.tool} result`);
     p.answered = true;
     try {
-      const dest = join(this.dir(chatId), `${fileKey(callId)}.json`);
-      await mkdir(this.dir(chatId), { recursive: true });
-      const tmp = `${dest}.${process.pid}.tmp`;
-      await writeFile(tmp, JSON.stringify(result));
-      await rename(tmp, dest);
+      await writeAtomic(join(this.dir(chatId), `${fileKey(callId)}.json`), JSON.stringify(result));
     } catch (e) {
       p.answered = false;
       throw e;

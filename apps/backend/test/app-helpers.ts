@@ -1,6 +1,6 @@
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import request from 'supertest';
 import type { Settings } from '@karpathy/shared';
 import { createApp, type AppDeps } from '../src/app.js';
@@ -31,7 +31,9 @@ export async function makeApp(remoteBase: string, { deps = {}, dirs, githubSecre
   const store = await ConfigStore.open(configDir, { ...defaults, ...(defaultModel ? { model: defaultModel } : {}) });
   const githubToken = new GitHubToken(store, githubSecret);
   // visibleDotDirs as deploy/settings/settings.yaml sets it.
-  const vaults = new Vaults(store, { vaultsDir, remoteBase, identity, visibleDotDirs: ['.agents'], githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), stateDir: configDir, ...env });
+  const vaults = new Vaults(store, { vaultsDir, remoteBase, identity, visibleDotDirs: ['.agents'], githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), stateDir: configDir,
+    // As deployed (#175): git dirs outside the working trees.
+    gitDirsDir: join(dirname(vaultsDir), 'gitdirs'), ...env });
   await vaults.init();
   const app = createApp({ token: TOKEN, vaults, store, githubToken, ...deps });
   const auth = { Authorization: `Bearer ${TOKEN}` };

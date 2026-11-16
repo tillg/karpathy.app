@@ -7,7 +7,7 @@ RUN apk add --no-cache bash git ripgrep less curl openssh-client ncurses tzdata 
 RUN npm install -g @anthropic-ai/claude-code@2.1.318 && npm cache clean --force
 ARG APP_UID=1000
 ARG APP_GID=1000
-RUN mkdir -p /vaults /app && chown -R ${APP_UID}:${APP_GID} /vaults /app /home/node
+RUN mkdir -p /vaults /gitdirs /app && chown -R ${APP_UID}:${APP_GID} /vaults /gitdirs /app /home/node
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY apps/terminal/package.json apps/terminal/

@@ -56,6 +56,8 @@ services:
       # The terminal service (#175), token-guarded; on only when deploy/settings/ `terminal.enabled` says so.
       TERMINAL_URL: http://terminal:8095
       TERMINAL_TOKEN_FILE: /run/secrets/terminal_token
+      # The vaults' git dirs (#175), outside their working trees: the terminal writes the trees, not these.
+      GITDIRS_DIR: /gitdirs
       # Commit and log timestamps in the target's timezone (role app writes TZ to .env).
       TZ: ${TZ:-Etc/UTC}
       # When the running release was deployed, reported by /api/health (role app writes it to .env).
@@ -65,6 +67,7 @@ services:
     volumes:
       - vaults:/vaults
       - config:/config
+      - gitdirs:/gitdirs
       # SETTINGS_DIR: the rendered settings, relative to this file; unset on a target (shared/ is the project dir).
       # Not created when missing (a directory would block every later render): render first.
       - { type: bind, source: "${SETTINGS_DIR:-.}/settings.json", target: /etc/karpathy/settings.json, read_only: true, bind: { create_host_path: false } }
@@ -97,6 +100,9 @@ services:
     tmpfs: ["/home/app:uid=${APP_UID:-1000},gid=${APP_GID:-1000},mode=0700"]
     volumes:
       - vaults:/vaults
+      # Read-only (#175): opencode finds each vault's repo through its .git file, as before the git dirs moved out
+      # (its project id, and so the chat list, comes from the repo).
+      - { type: volume, source: gitdirs, target: /gitdirs, read_only: true }
       - opencode-data:/data
     # /global/health needs the password too (basic auth; busybox wget has no --user).
     healthcheck:
@@ -171,6 +177,9 @@ services:
     secrets: [terminal_token]
     volumes:
       - vaults:/vaults
+      # Read-only: git status/log/diff work, commits go through the app; nothing here can change what the backend's
+      # git runs (hooks, config, refs).
+      - { type: volume, source: gitdirs, target: /gitdirs, read_only: true }
       # The user's home: Claude Code's login and settings, shell history, own tools.
       - terminal-home:/home/node
     depends_on:
@@ -208,6 +217,7 @@ volumes:
   caddy-data: {}
   ingest-state: {}
   terminal-home: {}
+  gitdirs: {}
 
 secrets:
   bearer_token: { file: ./secrets/bearer_token }

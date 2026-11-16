@@ -4,7 +4,7 @@ import { readNdjson } from './ndjson';
 
 /**
  * One terminal session's link to the server (#175): reads its output stream and reconnects when it drops (an iPad in
- * the background), resuming from the last offset it saw; sends keystrokes in order, one request at a time; debounces
+ * the background), resuming from the last offset it saw; sends keystrokes in order, one request at a time, again after a failure; debounces
  * resizes. The session itself lives on the server until it is closed or its shell exits.
  */
 export interface TerminalSink {
@@ -14,9 +14,12 @@ export interface TerminalSink {
   ended(code?: number): void;
   /** The stream is up, or waiting to reconnect. */
   status(live: boolean): void;
+  /** Another device or tab attached to the session and took it over; this connection stops (no reconnect). */
+  taken(): void;
 }
 
 const RETRY_MS = 1000;
+const INPUT_RETRY_MS = 500;
 
 export class TerminalConnection {
   private at: number | undefined;
@@ -37,6 +40,12 @@ export class TerminalConnection {
         const res = await request('GET', `/terminals/${this.id}/stream${this.at === undefined ? '' : `?from=${this.at}`}`, undefined, this.ctrl.signal);
         this.sink.status(true);
         await readNdjson<TerminalEvent>(res, (e) => {
+          if (e.t === 'taken') {
+            this.closed = true;
+            this.ctrl.abort();
+            this.sink.taken();
+            return;
+          }
           if (e.t === 'x') {
             this.finish(e.code);
             return;
@@ -77,9 +86,17 @@ export class TerminalConnection {
     while (this.pending && !this.closed) {
       const data = this.pending;
       this.pending = '';
-      await api.terminalInput(this.id, data).catch((err) => {
-        if (err instanceof ApiError && err.status === 404) this.finish();
-      });
+      try {
+        await api.terminalInput(this.id, data);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          this.finish();
+          break;
+        }
+        // Not lost: back in front of what was typed meanwhile, sent again shortly.
+        this.pending = data + this.pending;
+        await new Promise((r) => setTimeout(r, INPUT_RETRY_MS));
+      }
     }
     this.sending = false;
   }

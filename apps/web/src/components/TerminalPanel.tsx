@@ -153,6 +153,9 @@ function XtermView({ id, onEnded, handle }: { id: string; onEnded: () => void; h
   const box = useRef<HTMLDivElement>(null);
   const [live, setLive] = useState(true);
   const [exit, setExit] = useState<number | null | undefined>(undefined);
+  const [taken, setTaken] = useState(false);
+  /** Bumped by "Use here": a new connection takes the session back. */
+  const [attempt, setAttempt] = useState(0);
   const endedRef = useRef(onEnded);
   endedRef.current = onEnded;
 
@@ -181,7 +184,9 @@ function XtermView({ id, onEnded, handle }: { id: string; onEnded: () => void; h
         setTimeout(() => endedRef.current(), 1500);
       },
       status: setLive,
+      taken: () => setTaken(true),
     });
+    setTaken(false);
     const refit = () => {
       if (!box.current?.offsetHeight) return;
       fit.fit();
@@ -200,12 +205,17 @@ function XtermView({ id, onEnded, handle }: { id: string; onEnded: () => void; h
       term.dispose();
       handle.current = null;
     };
-  }, [id, handle]);
+  }, [id, handle, attempt]);
 
   return (
     <div className="term-view">
       <div className="term-xterm" ref={box} data-testid="terminal-xterm" data-live={live} data-exit={exit === undefined ? undefined : String(exit)} />
-      {!live && exit === undefined && <div className="term-reconnect" role="status">Reconnecting…</div>}
+      {taken && (
+        <div className="term-reconnect" role="status" data-testid="terminal-taken">
+          Opened on another device or tab <button className="link" data-testid="terminal-use-here" onClick={() => setAttempt((a) => a + 1)}>Use here</button>
+        </div>
+      )}
+      {!live && !taken && exit === undefined && <div className="term-reconnect" role="status">Reconnecting…</div>}
     </div>
   );
 }

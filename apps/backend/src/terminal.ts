@@ -66,7 +66,13 @@ export function terminalRouter(ep: TerminalEndpoint | undefined, vaults: Vaults)
     const id = tid(req);
     const from = typeof req.query.from === 'string' && /^\d+$/.test(req.query.from) ? `?from=${req.query.from}` : '';
     const ctrl = new AbortController();
+    // Before the await: a browser that leaves while the upstream is being opened must not leave it attached.
+    res.on('close', () => ctrl.abort());
     const up = await call(e, 'GET', `/terminals/${id}/stream${from}`, undefined, ctrl.signal);
+    if (res.destroyed || res.writableEnded) {
+      ctrl.abort();
+      return;
+    }
     res.status(200);
     res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -76,7 +82,6 @@ export function terminalRouter(ep: TerminalEndpoint | undefined, vaults: Vaults)
     body.on('error', () => res.end());
     // pipe() carries backpressure: a slow browser pauses the upstream read, and so the shell.
     body.pipe(res);
-    res.on('close', () => ctrl.abort());
   });
   r.post('/terminals/:tid/input', async (req, res) => pass(res, await call(need(), 'POST', `/terminals/${tid(req)}/input`, req.body)));
   r.post('/terminals/:tid/resize', async (req, res) => pass(res, await call(need(), 'POST', `/terminals/${tid(req)}/resize`, req.body)));

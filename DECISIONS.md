@@ -281,6 +281,7 @@ edited: 2026-11-16
   - [12:05 — Claude Code 2.1.318 is baked into the terminal image, pinned; its home is a volume](#run-2026-11-16-1117-10)
   - [12:05 — The backend's git ignores hooks and refuses a clone whose `.git/config` holds keys outside an allowlist](#run-2026-11-16-1117-11)
   - [12:20 — Release the terminal as v0.0.41 and deploy it to prod](#run-2026-11-16-1117-12)
+  - [13:00 — Hold the release; the vaults' git dirs move to a `gitdirs` volume the terminal mounts read-only](#run-2026-11-16-1117-13)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -4107,3 +4108,25 @@ edited: 2026-11-16
 - **Why:** this is the documented release path (justfile `release`, `deploy`), the same as earlier prod deploys in this log.
 - **Alternatives:** an rc release first (`0.0.41-rc.1`); prodtest already exercises the same images locally.
 - **Consequences:** prod gets a shell in the app behind the bearer token (`terminal.enabled: true`). The first deploy creates `terminal_token` on the host and the `terminal-home` volume. Rollback: `just deploy hetzner 0.0.40`. The terminal container and its volume stay behind as orphans until the next deploy, which `remove_orphans` cleans up. To switch only the terminal off: `terminal: { enabled: false }` in `deploy/settings/hetzner.yaml`, then deploy.
+
+## 13:00 — Hold the release; the vaults' git dirs move to a `gitdirs` volume the terminal mounts read-only {#run-2026-11-16-1117-13}
+
+- **Status:** open
+- **Overrides:** global `~/.claude/CLAUDE.md` — "Never make tests pass by changing/removing them" (the allowlist tests written earlier in this run, for decision 11, are replaced by tests of the new boundary)
+- **Context:** an independent review of `13a5d08..4197a96` broke decision 11's allowlist, and confirmed it by running code. A `.git/commondir` file points git at another config. The stamp cache can be fooled (same uid restores inode, size and mtime). `git update-ref refs/remotes/origin/main HEAD` in the terminal empties the push scan's range. A scan-then-push race and `refs/replace` add more. Each gives the terminal code execution in the backend or an unscanned push. Separately, the allowlist turned common keys (`git lfs`, `submodule.*`, `gh`) into a 409 on every git call.
+- **Question:** how does the backend stay safe in clones the terminal can write?
+- **Decision:** below git, not in it.
+  - Each vault's git directory lives in `/gitdirs/<id>`, a new `gitdirs` volume. The backend mounts it read-write; the terminal mounts it read-only; opencode and ingest don't mount it.
+  - The working tree keeps a `.git` file (`gitdir: /gitdirs/<id>`), so the terminal's `git status`, `log` and `diff` work, and commits fail.
+  - Every backend git command gets `GIT_DIR` and `GIT_WORK_TREE` explicitly (`repoEnv` in `git.ts`) and never discovers a `.git` in the tree. It also gets `diff.ignoreSubmodules=all`, so a repo nested in a vault is never entered.
+  - The allowlist (`assertSafeRepo`, `SAFE_KEYS`) is removed.
+  - Existing clones are migrated at backend start: copy `.git` to `/gitdirs/<id>.tmp`, rename it into place, then replace `.git` with the gitfile. This is idempotent.
+  - The backend's temp files in the `/vaults` root get random names and `O_EXCL`, so a symlink planted by the terminal can't redirect them.
+- **Why:** a spike of the alternative (terminal as uid 1001, default ACLs, sticky clone root) kept the terminal out of `.git`, but the backend lost write access to files the terminal made with mode 0600 or 0700 (`mktemp` + `mv`, `umask 077`). Commit, Discard and vault delete then failed. The gitdir spike passed every attack and every normal task, with one uid.
+- **Alternatives:** harden the allowlist (git config sources via `--show-origin`, ctime in the stamp, scan to a fixed sha); a check-then-run race stays open whatever is checked. The uid split with ACLs failed (above).
+- **Consequences:**
+  - Git in the terminal is read-only: commit with the app (ADR 0001).
+  - `gitdirs` is a Docker named volume, on the root disk on prod, not the vaults loop filesystem.
+  - The first start of the new backend copies every vault's `.git` once.
+  - Rollback: `just deploy hetzner 0.0.40` brings back a backend that expects `.git` folders. Before rolling back, run the reverse move by hand (copy `/gitdirs/<id>` back to `/vaults/<id>/.git`), or re-add the vaults.
+  - Supersedes decision 11's allowlist. Its hook and fsmonitor env stays.

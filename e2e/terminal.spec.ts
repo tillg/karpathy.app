@@ -64,6 +64,32 @@ test('opens a shell in the vault, runs commands and Claude Code, survives a relo
   await expect(page.getByTestId('terminal-panel')).toHaveCount(0);
 });
 
+test('a second browser takes the session; the first shows it and takes it back with "Use here"', async ({ page, api, vault, browser }) => {
+  await closeAll(api, vault.id);
+  await openApp(page, vault.id);
+  await page.getByTestId('open-terminal').click();
+  await expect(page.getByTestId('terminal-tab').filter({ hasText: vault.id })).toHaveCount(1);
+  await type(page, 'export MARK=there-$((1+1))');
+
+  const ctx = await browser.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
+  const other = await ctx.newPage();
+  await openApp(other, vault.id);
+  await other.getByTestId('open-terminal').click();
+  await expect(screen(other)).toContainText('MARK=there-');
+  // The first page does not fight for it back: it says so and waits.
+  await expect(page.getByTestId('terminal-taken')).toContainText('Opened on another device or tab');
+  await page.waitForTimeout(3000);
+  await expect(page.getByTestId('terminal-taken')).toBeVisible();
+  await expect(other.getByTestId('terminal-taken')).toHaveCount(0);
+
+  await page.getByTestId('terminal-use-here').click();
+  await expect(page.getByTestId('terminal-taken')).toHaveCount(0);
+  await type(page, 'echo "$MARK"');
+  await expect(screen(page)).toContainText('there-2');
+  await expect(other.getByTestId('terminal-taken')).toBeVisible();
+  await ctx.close();
+});
+
 test('a file made in the terminal shows up in the app as a change', async ({ page, api, vault }) => {
   await closeAll(api, vault.id);
   await openApp(page, vault.id);

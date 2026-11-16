@@ -8,7 +8,7 @@ RUN sh /tmp/gitleaks-install.sh /usr/local/bin && rm /tmp/gitleaks-install.sh
 ARG APP_UID=1000
 ARG APP_GID=1000
 # Mount points owned by the app user, so fresh named volumes inherit the ownership.
-RUN mkdir -p /vaults /config /app && chown -R ${APP_UID}:${APP_GID} /vaults /config /app
+RUN mkdir -p /vaults /config /gitdirs /app && chown -R ${APP_UID}:${APP_GID} /vaults /config /gitdirs /app
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/

@@ -1,9 +1,9 @@
-import { existsSync } from 'node:fs';
-import { appendFile, mkdir, mkdtemp, rename, writeFile } from 'node:fs/promises';
+import { existsSync, realpathSync } from 'node:fs';
+import { appendFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { Git, runGit, UnsafeGitConfigError } from '../src/git.js';
+import { Git, registerGitDirs, repoEnv, runGit } from '../src/git.js';
 import { identity, makeRemote, sh } from './helpers.js';
 
 describe('runGit timeout', () => {
@@ -18,60 +18,89 @@ describe('runGit timeout', () => {
 });
 
 /**
- * The terminal (#175) can write `.git` in a clone; the backend runs git there with the GitHub token in its env. So
- * hooks never run, and a clone whose local config could run a command is refused before git starts.
+ * The terminal (#175) writes the working trees but mounts the git dirs read-only: a vault's git dir lives outside its
+ * clone (`<gitdirs>/<id>`), and the backend's git always gets it explicitly (repoEnv). Whatever `.git` the terminal
+ * plants in a working tree is ignored, and a repo nested in a vault is never entered.
  */
-describe('runGit in a clone the terminal can write', () => {
-  async function clone(extraConfig = '') {
+describe('runGit in a working tree the terminal can write', () => {
+  /** A clone whose git dir lives outside it, as the backend makes it; repoEnv knows the two dirs. */
+  async function clone() {
     const remote = await makeRemote({ 'a.md': 'a\n' });
-    const dir = await mkdtemp(join(tmpdir(), 'kai-git-'));
-    sh(dir, 'clone', '-q', remote.bare, 'c');
-    const c = join(dir, 'c');
-    if (extraConfig) await appendFile(join(c, '.git', 'config'), extraConfig);
-    return { c, marker: join(dir, 'pwned') };
+    const base = await mkdtemp(join(tmpdir(), 'kai-git-'));
+    const vaults = join(base, 'vaults');
+    const gitdirs = join(base, 'gitdirs');
+    await mkdir(vaults);
+    await mkdir(gitdirs);
+    registerGitDirs(vaults, gitdirs);
+    sh(vaults, 'clone', '-q', `--separate-git-dir=${join(gitdirs, 'v')}`, remote.bare, 'v');
+    return { c: join(vaults, 'v'), gitdir: join(gitdirs, 'v'), marker: join(base, 'pwned'), base };
+  }
+  /** A git dir with a config that runs `touch marker` through a filter, fsmonitor and textconv. */
+  async function evilGitDir(dir: string, marker: string) {
+    sh(dirname(dir), 'init', '-q', dir);
+    await appendFile(join(dir, '.git', 'config'), `[filter "x"]\n\tclean = touch ${marker}\n[core]\n\tfsmonitor = touch ${marker}\n[diff "x"]\n\ttextconv = touch ${marker}\n`);
+    return join(dir, '.git');
   }
 
-  it('a planted hook does not run', async () => {
+  it('repoEnv points git at the git dir outside the clone, from any folder of it', async () => {
+    const { c, gitdir } = await clone();
+    expect(repoEnv(c)).toMatchObject({ GIT_DIR: gitdir, GIT_WORK_TREE: c });
+    await mkdir(join(c, 'sub'));
+    expect(repoEnv(join(c, 'sub'))).toMatchObject({ GIT_DIR: gitdir, GIT_WORK_TREE: c });
+    expect(repoEnv(tmpdir()).GIT_DIR).toBeUndefined();
+  });
+
+  it('a .git file the terminal points at a hostile git dir is ignored', async () => {
+    const { c, marker, base } = await clone();
+    const evil = await evilGitDir(join(base, 'evil'), marker);
+    await writeFile(join(c, '.git'), `gitdir: ${evil}\n`);
+    await writeFile(join(c, '.gitattributes'), '* filter=x diff=x\n');
+    await writeFile(join(c, 'a.md'), 'changed\n');
+    const git = new Git(c, { identity });
+    expect((await git.run(['status', '--porcelain'])).stdout).toContain('a.md');
+    await git.run(['add', '-A']);
+    await git.run(['diff', '--cached']);
+    await git.run(['commit', '-qm', 'x']);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('a .git folder planted in a sub-folder (a vault root) is ignored', async () => {
+    const { c, gitdir, marker } = await clone();
+    await mkdir(join(c, 'sub'));
+    await evilGitDir(join(c, 'sub'), marker);
+    await writeFile(join(c, 'sub', 'n.md'), 'n\n');
+    const r = await runGit(join(c, 'sub'), ['rev-parse', '--absolute-git-dir'], { identity });
+    expect(r.stdout.trim()).toBe(realpathSync(gitdir));
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('a repo nested in the working tree is never entered (its config can run nothing)', async () => {
     const { c, marker } = await clone();
-    await writeFile(join(c, '.git', 'hooks', 'pre-commit'), `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o755 });
+    const nested = join(c, 'nested');
+    await mkdir(nested);
+    sh(nested, 'init', '-q');
+    await writeFile(join(nested, 'f.md'), 'f\n');
+    sh(nested, 'add', '-A');
+    sh(nested, '-c', 'user.name=x', '-c', 'user.email=x@x', 'commit', '-qm', 'n');
+    await appendFile(join(nested, '.git', 'config'), `[filter "x"]\n\tclean = touch ${marker}\n[core]\n\tfsmonitor = touch ${marker}\n`);
+    await writeFile(join(nested, '.gitattributes'), '* filter=x\n');
+    const git = new Git(c, { identity });
+    await git.run(['add', '-A']);
+    await git.run(['commit', '-qm', 'with nested']);
+    await writeFile(join(nested, 'f.md'), 'changed\n');
+    await git.run(['status', '--porcelain']);
+    await git.run(['diff', 'HEAD']);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('a planted hook does not run', async () => {
+    const { c, gitdir, marker } = await clone();
+    // Hooks live in the git dir, which the terminal can't write; this guards the backend's own env as well.
+    await writeFile(join(gitdir, 'hooks', 'pre-commit'), `#!/bin/sh\ntouch ${marker}\n`, { mode: 0o755 });
     await writeFile(join(c, 'b.md'), 'b\n');
     const git = new Git(c, { identity });
     await git.run(['add', 'b.md']);
     await git.run(['commit', '-m', 'b']);
     expect(existsSync(marker)).toBe(false);
-  });
-
-  it.each([
-    ['filter.x.clean', '[filter "x"]\n\tclean = touch MARKER\n'],
-    ['core.fsmonitor', '[core]\n\tfsmonitor = touch MARKER\n'],
-    ['diff.x.textconv', '[diff "x"]\n\ttextconv = touch MARKER\n'],
-    ['include.path', '[include]\n\tpath = /tmp/other\n'],
-    ['extensions.worktreeconfig', '[extensions]\n\tworktreeConfig = true\n'],
-    ['credential.helper', '[credential]\n\thelper = !touch MARKER\n'],
-    ['core.sshcommand', '[core]\n\tsshCommand = touch MARKER\n'],
-  ])('refuses a clone whose .git/config sets %s, before git runs', async (key, cfg) => {
-    const { c, marker } = await clone();
-    await appendFile(join(c, '.git', 'config'), cfg.replace('MARKER', marker));
-    await writeFile(join(c, '.gitattributes'), '* filter=x diff=x\n');
-    await writeFile(join(c, 'a.md'), 'changed\n');
-    const err = await runGit(c, ['status', '--porcelain'], { identity }).catch((e) => e);
-    expect(err).toBeInstanceOf(UnsafeGitConfigError);
-    expect(err.message).toContain(key);
-    // From a sub-folder of the clone (a vault root) too.
-    await mkdir(join(c, 'sub'), { recursive: true });
-    expect(await runGit(join(c, 'sub'), ['status'], { identity }).catch((e) => e)).toBeInstanceOf(UnsafeGitConfigError);
-    expect(existsSync(marker)).toBe(false);
-  });
-
-  it('a plain clone with the usual keys runs', async () => {
-    const { c } = await clone('[user]\n\tname = Me\n\temail = me@example.com\n[pull]\n\trebase = false\n[branch "x"]\n\tremote = origin\n\tmerge = refs/heads/x\n');
-    expect((await runGit(c, ['status', '--porcelain'], { identity })).code).toBe(0);
-  });
-
-  it('refuses a .git that is a file pointing elsewhere', async () => {
-    const { c } = await clone();
-    await rename(join(c, '.git'), join(c, '..', 'elsewhere.git'));
-    await writeFile(join(c, '.git'), `gitdir: ${join(c, '..', 'elsewhere.git')}\n`);
-    expect(await runGit(c, ['status'], { identity }).catch((e) => e)).toBeInstanceOf(UnsafeGitConfigError);
   });
 });

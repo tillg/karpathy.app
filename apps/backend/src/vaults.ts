@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
+import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import {
@@ -28,7 +28,7 @@ import { forgetBaseIndex, queryBase } from './bases.js';
 import { filesMentioning, graph, listTree, versionOf, versionOfFile } from './files.js';
 import { SearchIndex } from './search.js';
 import { tidyAttachments, type TidyResult } from './tidy-attachments.js';
-import { Git, GitError, type GitIdentity } from './git.js';
+import { Git, GitError, registerGitDirs, type GitIdentity } from './git.js';
 import { VaultLock } from './lock.js';
 import { normalizeRel, resolveInVault } from './paths.js';
 import { preflight } from './preflight.js';
@@ -76,6 +76,11 @@ export interface VaultsEnv {
   secretScanner?: SecretScanner;
   /** Backend-only state outside the vaults volume (the config dir): the secret scan's record of scanned commits. */
   stateDir?: string;
+  /**
+   * Where the vaults' git dirs live (`<gitDirsDir>/<id>`), outside their working trees: the terminal (#175) writes the
+   * trees but mounts this read-only. Unset = `.git` inside each clone.
+   */
+  gitDirsDir?: string;
 }
 
 interface Runtime {
@@ -128,6 +133,7 @@ export class Vaults {
   ) {
     this.secretScanner = env.secretScanner ?? new SecretScanner();
     this.browserCalls = new BrowserCalls(this.vaultsPath(), (id, e) => this.emit(id, e));
+    if (env.gitDirsDir) registerGitDirs(env.vaultsDir, env.gitDirsDir);
   }
 
   /** Loads configured vaults; re-clones any whose clone never finished. */
@@ -136,6 +142,7 @@ export class Vaults {
     await rm(this.preflightDir(), { recursive: true, force: true });
     for (const v of this.store.get().vaults) {
       const r = this.runtime(v.id);
+      if (v.cloned && this.env.gitDirsDir) await this.moveGitDirOut(v.id);
       if (v.cloned) {
         r.state = 'ready';
         r.conflict = await this.repo(v).inConflict().catch(() => false);
@@ -290,6 +297,7 @@ export class Vaults {
       await this.beforeRemove?.(id);
       await r.watcher?.close();
       await rm(this.cloneDir(id), { recursive: true, force: true });
+      if (this.env.gitDirsDir) await rm(join(resolve(this.env.gitDirsDir), id), { recursive: true, force: true });
       const scanned = this.scannedFile(id);
       if (scanned) await rm(scanned, { force: true });
       forgetBaseIndex(join(this.cloneDir(id), v.root));
@@ -1177,6 +1185,31 @@ export class Vaults {
     let id = slug;
     for (let n = 2; ids.has(id); n++) id = `${slug}-${n}`;
     return id;
+  }
+
+  /**
+   * A clone made before the git dirs volume (#175): its `.git` folder moves to `<gitDirsDir>/<id>` and a `.git` file
+   * takes its place. Copy, then rename into place, then swap the folder for the file: a crash at any point leaves
+   * something the next start completes, and never two git dirs in use.
+   */
+  private async moveGitDirOut(id: string) {
+    const clone = this.cloneDir(id);
+    const dotGit = join(clone, '.git');
+    const target = join(resolve(this.env.gitDirsDir!), id);
+    const st = await lstat(dotGit).catch(() => null);
+    if (st?.isDirectory()) {
+      if (!existsSync(target)) {
+        const tmp = `${target}.tmp`;
+        await rm(tmp, { recursive: true, force: true });
+        await mkdir(dirname(target), { recursive: true });
+        await cp(dotGit, tmp, { recursive: true, verbatimSymlinks: true, preserveTimestamps: true });
+        await rename(tmp, target);
+      }
+      await rename(dotGit, `${dotGit}.old`);
+    }
+    if (existsSync(target) && !st?.isFile()) await writeFile(dotGit, `gitdir: ${target}\n`);
+    await rm(`${dotGit}.old`, { recursive: true, force: true });
+    await rm(`${target}.tmp`, { recursive: true, force: true });
   }
 
   private startClone(v: StoredVault) {
