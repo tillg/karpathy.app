@@ -31,7 +31,7 @@ done
 chmod +x "$tmp"/bin/* "$tmp"/nocode/*
 # Only the stubs and what code.sh needs from the system (bash, coreutils), not the real `code`.
 sys=$(dirname "$(command -v bash)"):/usr/bin:/bin
-sys=$(tr ':' '\n' <<<"$sys" | while read -r d; do [ -x "$d/code" ] || echo "$d"; done | paste -sd:)
+sys=$(tr ':' '\n' <<<"$sys" | while read -r d; do [ -x "$d/code" ] || echo "$d"; done | paste -sd: -)
 
 # run [env…] -- [args…]: code.sh with the stub `code`; prints its output, sets $status.
 run() {
