@@ -53,12 +53,15 @@ services:
       # The ingest service's internal endpoint (Admin › Instagram), token-guarded.
       INGEST_URL: http://ingest:8090
       INGEST_TOKEN_FILE: /run/secrets/ingest_token
+      # The terminal service (#175), token-guarded; on only when deploy/settings/ `terminal.enabled` says so.
+      TERMINAL_URL: http://terminal:8095
+      TERMINAL_TOKEN_FILE: /run/secrets/terminal_token
       # Commit and log timestamps in the target's timezone (role app writes TZ to .env).
       TZ: ${TZ:-Etc/UTC}
       # When the running release was deployed, reported by /api/health (role app writes it to .env).
       DEPLOYED_AT: ${DEPLOYED_AT:-}
     # ingest_worker_token: the Instagram worker's token, accepted on its job routes only (ingest never sees it).
-    secrets: [bearer_token, github_token, opencode_password, ingest_token, ingest_worker_token]
+    secrets: [bearer_token, github_token, opencode_password, ingest_token, ingest_worker_token, terminal_token]
     volumes:
       - vaults:/vaults
       - config:/config
@@ -145,6 +148,33 @@ services:
       egress: { condition: service_healthy }
     networks: [internal]
 
+  # The app's terminal panel (#175, deploy/terminal): shells and Claude Code on the vaults. Runs whatever the user (or an
+  # AI the user starts there) types on untrusted content, so it is confined like ingest: internal network, egress proxy
+  # only, no app secrets. Its one secret, terminal_token, only lets the backend in.
+  terminal:
+    image: ghcr.io/tillg/karpathy.app-terminal:${APP_VERSION:-dev}
+    build: { context: .., dockerfile: deploy/terminal/Dockerfile, target: prod }
+    restart: unless-stopped
+    init: true
+    user: *app-user
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logs
+    environment:
+      HTTP_PROXY: http://egress:3128
+      HTTPS_PROXY: http://egress:3128
+      NO_PROXY: localhost,127.0.0.1
+      TERMINAL_TOKEN_FILE: /run/secrets/terminal_token
+      TZ: ${TZ:-Etc/UTC}
+    secrets: [terminal_token]
+    volumes:
+      - vaults:/vaults
+      # The user's home: Claude Code's login and settings, shell history, own tools.
+      - terminal-home:/home/node
+    depends_on:
+      egress: { condition: service_healthy }
+    networks: [internal]
+
   # The only way from opencode to the internet: public destinations only (no loopback, private,
   # link-local or tailnet addresses, also after redirects), so the AI's web fetches can't reach
   # the backend, other containers or the cloud metadata service.
@@ -175,6 +205,7 @@ volumes:
   opencode-data: {}
   caddy-data: {}
   ingest-state: {}
+  terminal-home: {}
 
 secrets:
   bearer_token: { file: ./secrets/bearer_token }
@@ -184,3 +215,4 @@ secrets:
   gog_keyring_password: { file: ./secrets/gog_keyring_password }
   ingest_token: { file: ./secrets/ingest_token }
   ingest_worker_token: { file: ./secrets/ingest_worker_token }
+  terminal_token: { file: ./secrets/terminal_token }

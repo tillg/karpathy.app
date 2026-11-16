@@ -43,6 +43,13 @@ services:
     volumes:
       - vaults:/vaults
 
+  # Sources bind-mounted; a restart of the container picks up a change (it ends the open shells).
+  terminal:
+    image: !reset null
+    build: { context: .., dockerfile: deploy/terminal/Dockerfile, target: dev }
+    volumes:
+      - ../apps/terminal/src:/app/apps/terminal/src:ro
+
   web:
     build: { context: .., dockerfile: deploy/web/Dockerfile.dev }
     restart: unless-stopped

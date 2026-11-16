@@ -52,6 +52,8 @@ export interface SettingsView extends Settings {
   githubToken: { source: 'settings' | 'secret' | 'none'; last4: string | null };
   /** What the current model reads; null when opencode is down or doesn't list the model. */
   modelInput: ModelInput | null;
+  /** The terminal panel is available (deploy/settings/ `terminal.enabled`, #175). */
+  terminal: boolean;
 }
 
 /** One entry of `GET /settings/secrets`: a secret the deployment references, never its value. */

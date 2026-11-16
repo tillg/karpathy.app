@@ -140,9 +140,10 @@ describe('P1/§2.5 compose topology (deploy/compose.yml)', () => {
   }));
   const svc = compose.services as Record<string, { ports?: unknown[]; user?: string; secrets?: { source: string }[]; environment?: Record<string, string>; volumes?: { source: string; target: string }[] }>;
 
-  it('five services (with the egress proxy and the ingest service); only the proxy publishes ports', () => {
-    expect(Object.keys(svc).sort()).toEqual(['backend', 'egress', 'ingest', 'opencode', 'proxy']);
+  it('six services (with the egress proxy, the ingest and the terminal service); only the proxy publishes ports', () => {
+    expect(Object.keys(svc).sort()).toEqual(['backend', 'egress', 'ingest', 'opencode', 'proxy', 'terminal']);
     expect(svc.ingest!.ports ?? []).toEqual([]);
+    expect(svc.terminal!.ports ?? []).toEqual([]);
     expect(svc.egress!.ports ?? []).toEqual([]);
     expect(svc.proxy!.ports?.length).toBeGreaterThan(0);
     expect(svc.backend!.ports ?? []).toEqual([]);
@@ -158,6 +159,15 @@ describe('P1/§2.5 compose topology (deploy/compose.yml)', () => {
     expect(svc.opencode!.environment).toMatchObject({ HTTP_PROXY: 'http://egress:3128', HTTPS_PROXY: 'http://egress:3128' });
   });
 
+  it('the terminal (shells, Claude Code) is confined like opencode: internal network, egress proxy, no app secrets', () => {
+    const t = svc.terminal as unknown as { networks: object; cap_drop: string[]; security_opt: string[]; user: string };
+    expect(Object.keys(t.networks)).toEqual(['internal']);
+    expect(svc.terminal!.environment).toMatchObject({ HTTP_PROXY: 'http://egress:3128', HTTPS_PROXY: 'http://egress:3128' });
+    expect(t.cap_drop).toEqual(['ALL']);
+    expect(t.security_opt).toContain('no-new-privileges:true');
+    expect(t.user).toBe(svc.backend!.user);
+  });
+
   it('backend and opencode run as the same UID/GID', () => {
     expect(svc.backend!.user).toBeTruthy();
     expect(svc.opencode!.user).toBe(svc.backend!.user);
@@ -165,10 +175,11 @@ describe('P1/§2.5 compose topology (deploy/compose.yml)', () => {
 
   it('each secret goes only to the service that needs it; opencode gets no GitHub or bearer token', () => {
     const secrets = (s: string) => (svc[s]!.secrets ?? []).map((x) => x.source).sort();
-    expect(secrets('backend')).toEqual(['bearer_token', 'github_token', 'ingest_token', 'ingest_worker_token', 'opencode_password']);
+    expect(secrets('backend')).toEqual(['bearer_token', 'github_token', 'ingest_token', 'ingest_worker_token', 'opencode_password', 'terminal_token']);
     expect(secrets('proxy')).toEqual(['dns_api_token']);
     expect(secrets('opencode')).toEqual(['opencode_password']);
     expect(secrets('ingest')).toEqual(['gog_keyring_password', 'ingest_token']);
+    expect(secrets('terminal')).toEqual(['terminal_token']);
     const env = (s: string) => Object.keys(svc[s]!.environment ?? {});
     expect(env('opencode').filter((k) => /GITHUB|BEARER|GIT_/.test(k))).toEqual([]);
     for (const s of ['backend', 'proxy']) expect(env(s).filter((k) => /_API_KEY$/.test(k)), s).toEqual([]);

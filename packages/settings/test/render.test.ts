@@ -145,6 +145,9 @@ describe('renderBackendSettings', () => {
     });
     expect(s.commit_reminder_threshold).toBe(4);
     expect(s.files).toEqual({ visible_dot_dirs: ['.agents'] });
+    expect(s.terminal).toEqual({ enabled: true });
+    // An older settings.yaml without the block: the terminal is off.
+    expect(JSON.parse(renderBackendSettings(compat(), SECRETS)).terminal).toEqual({ enabled: false });
     for (const e of ['dev', 'prodtest', 'test', 'hetzner'])
       expect(() => backendSettingsSchema.parse(JSON.parse(renderBackendSettings(loadSettings(e, { overlay: false }), SECRETS))), e).not.toThrow();
     for (const name of ['bearer_token', 'opencode_password', 'github_token', 'dns_api_token', 'openrouter_api_key'])

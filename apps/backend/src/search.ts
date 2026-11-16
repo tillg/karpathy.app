@@ -10,6 +10,7 @@ import { franc } from 'franc-min';
 import MiniSearch, { type SearchResult } from 'minisearch';
 import type { SearchHit } from '@karpathy/shared';
 import { resolveInVault } from './paths.js';
+import { assertSafeRepo, safeGitEnv } from './git.js';
 
 /**
  * Ranked full-text search over one vault root (#138): a lazily built, incrementally refreshed in-memory index
@@ -221,7 +222,8 @@ function hasRun(seq: string[], phrase: string[]): boolean {
 /** The paths (relative to `root`) git ignores; none outside a git repository. */
 function gitIgnored(root: string, paths: string[]): Promise<Set<string>> {
   return new Promise((resolve, reject) => {
-    const child = execFile('git', ['check-ignore', '-z', '--stdin'], { cwd: root, maxBuffer: 16 * 1024 * 1024 }, (err, out) => {
+    assertSafeRepo(root);
+    const child = execFile('git', ['check-ignore', '-z', '--stdin'], { cwd: root, env: safeGitEnv(), maxBuffer: 16 * 1024 * 1024 }, (err, out) => {
       const code = (err as { code?: number } | null)?.code;
       // Exit code 1 = nothing ignored; 128 = not a git repository (ripgrep then applies no .gitignore either).
       if (err && code !== 1 && code !== 128) reject(err);

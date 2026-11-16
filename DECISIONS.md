@@ -1,7 +1,7 @@
 ---
 title: "Decisions"
 created: 2026-10-02
-edited: 2026-10-27
+edited: 2026-11-16
 ---
 
 **Contents**
@@ -268,6 +268,18 @@ edited: 2026-10-27
   - [20:45 — Retro: document passing the worker token from the command; update the run book's Instagram line](#run-2026-10-27-2016-3)
   - [20:50 — Re-queue mylife's 118 Instagram links stuck as login-wall web stubs (prepared, not applied)](#run-2026-10-27-2016-4)
   - [21:10 — Fix the missing ingest routes in deploy/settings, release 0.0.38, deploy, then re-queue again](#run-2026-10-27-2016-5)
+- [2026-11-16 11:17 — #175: a terminal on the server, in a bottom panel of the app](#run-2026-11-16-1117)
+  - [11:40 — The terminal is a shell inside the backend container, not on the host](#run-2026-11-16-1117-1)
+  - [11:40 — Terminal I/O as an NDJSON stream plus POSTs, not a WebSocket](#run-2026-11-16-1117-2)
+  - [11:40 — node-pty 1.1.0, its install script allowed, its macOS helper made executable by a postinstall](#run-2026-11-16-1117-3)
+  - [11:40 — A `terminal.enabled` setting, on in every environment](#run-2026-11-16-1117-4)
+  - [11:40 — Sessions outlive a dropped stream for 5 minutes and replay their last 64 KB; at most 4](#run-2026-11-16-1117-5)
+  - [11:40 — Build it straight from the issue, without a spec change](#run-2026-11-16-1117-6)
+  - [11:40 — Commit and push to main](#run-2026-11-16-1117-7)
+  - [12:05 — The shell runs in a `terminal` container of its own, confined like ingest](#run-2026-11-16-1117-8)
+  - [12:05 — Sessions live until closed or exited; the panel lists and reattaches them](#run-2026-11-16-1117-9)
+  - [12:05 — Claude Code 2.1.318 is baked into the terminal image, pinned; its home is a volume](#run-2026-11-16-1117-10)
+  - [12:05 — The backend's git ignores hooks and refuses a clone whose `.git/config` holds keys outside an allowlist](#run-2026-11-16-1117-11)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -3961,3 +3973,124 @@ edited: 2026-10-27
 - **Why:** every component setting lives in `deploy/settings/` (#133); the image has all resolvers' dependencies, so the full table is safe.
 - **Alternatives:** default routes in ingest-email itself (another repo, and it would hide the config's role).
 - **Consequences:** from 0.0.38 on, YouTube and GitHub links also go to their own resolvers, not to `web`. Override kind: a second prod deploy in the run. Rollback: `just deploy hetzner 0.0.37` (stubs again). Result: v0.0.38 deployed (`failed=0`, all containers healthy); prod's router sends the Instagram URLs to `instagram`. Second backup `~/backups/mylife-instagram-requeue-20261027-2.tgz`; re-queue applied at 21:24: 1 resolved from the dropbox (`insta-2026-09-17-br-berge-ddzbrnolky8`), 117 waiting, no new stubs; 6 `insta-…` folders by 21:45. Worker upgraded to v0.0.38. Its `service install` hit `Bootstrap failed: 5` (launchd still held the stopping worker); fixed test-first in `eb8c936`, not released yet. To change the stub's always-loaded setup in `test_macos_install_twice_replaces_not_duplicates` (assertions unchanged), it now models launchd letting go after a bootout.
+
+# 2026-11-16 11:17 — #175: a terminal on the server, in a bottom panel of the app {#run-2026-11-16-1117}
+
+- **Started by:** `/autonomous implement gh issue 175`
+- **Task, as given:**
+
+  > implement gh issue 175
+
+## 11:40 — The terminal is a shell inside the backend container, not on the host {#run-2026-11-16-1117-1}
+
+- **Status:** open
+- **Context:** issue #175 wants a "Terminal" button that opens a terminal in a bottom panel, like VS Code's, with "full access about what's going on on the server". The app's services are containers; the backend runs as uid 1000 with `cap_drop: [ALL]` and no Docker access (`specs/system/security.md`, Runtime hardening).
+- **Question:** where does the shell run: on the host, in a container of its own, or in the backend container?
+- **Decision:** in the backend container, as uid 1000, started in the open vault's folder (`/vaults/<id>[/<root>]`). It sees every vault clone, git, ripgrep, gitleaks, the backend's processes and the internal and egress networks. It does not see the host or the other containers' logs.
+- **Why:** host access would need the Docker socket, `nsenter` or SSH from a container, which would undo the hardening that makes a container breakout stop short of root. The backend container already holds every vault and the git tooling, so a shell there covers the everyday "what's going on" questions (git state, files, processes, disk) without a new service.
+- **Alternatives:** a dedicated terminal container with only the vaults volume and no secrets (safer, but it can't see the backend and needs another service and a proxy in the backend); the host via SSH (the full access the issue names, but it turns the bearer token into root on the server).
+- **Consequences:** the bearer token now grants code execution as uid 1000 in the backend, including reading `/run/secrets/*` (GitHub token, opencode password, ingest token). Commits made in the terminal bypass the app's secret scan. Both are written in `security.md` and in ADR 0008. For host-level work there is still SSH over Tailscale.
+  Superseded by [decision 8](#run-2026-11-16-1117-8) (own container) once the user added Claude Code as a requirement.
+
+## 11:40 — Terminal I/O as an NDJSON stream plus POSTs, not a WebSocket {#run-2026-11-16-1117-2}
+
+- **Status:** open
+- **Context:** a browser WebSocket can't send the `Authorization` header, and an upgrade bypasses the Express router and `bearerAuth`. The app already streams chats as NDJSON over `fetch`.
+- **Question:** which transport carries the terminal?
+- **Decision:** `GET /api/terminals/:tid/stream` (NDJSON: output, exit) and `POST …/input` / `POST …/resize`. The client sends its keystrokes one POST at a time from a buffer, so they never reorder.
+- **Why:** it is the same auth, proxy path and stream helper as the chat. Nothing new in Caddy, and no token in a URL.
+- **Alternatives:** a WebSocket with the token in the query string or in the first message (lower latency per keystroke, but a second auth path and the token in proxy logs).
+- **Consequences:** each keystroke burst costs one HTTP request (HTTP/2 through Caddy keeps that cheap). Revisit if typing feels laggy over mobile networks.
+
+## 11:40 — node-pty 1.1.0, its install script allowed, its macOS helper made executable by a postinstall {#run-2026-11-16-1117-3}
+
+- **Status:** open
+- **Context:** a real terminal (`vim`, `top`, resizing, Ctrl-C) needs a pseudo-terminal, which Node has only through a native module. npm 11 blocks dependency install scripts unless they're listed in `allowScripts`. node-pty 1.1.0's macOS prebuilt `spawn-helper` ships without the exec bit (`posix_spawnp failed`). There is no musl prebuild, so Alpine compiles it.
+- **Question:** which PTY module, and how to install it?
+- **Decision:** `node-pty@1.1.0` (the stable release VS Code uses), `allowScripts: { "node-pty@1.1.0": true }` in the root `package.json`, and a root `postinstall` (`scripts/node-pty-helper.mjs`) that sets the exec bit on the prebuilt helpers. The backend image installs `python3 make g++` for its `npm ci` and removes them in the same layer.
+- **Why:** a spike showed it running on the Mac and in `node:22-alpine` as uid 1000 with `cap_drop: ALL` and `no-new-privileges`.
+- **Alternatives:** `@lydell/node-pty` (prebuilds, but only for glibc Linux, and beta); `script(1)` as a PTY wrapper (no resize).
+- **Consequences:** the backend image build takes longer (a native compile). Drop the postinstall once node-pty ships an executable helper.
+
+## 11:40 — A `terminal.enabled` setting, on in every environment {#run-2026-11-16-1117-4}
+
+- **Status:** open
+- **Context:** the terminal widens what the bearer token can do (decision 1). The issue asks for it in the app, and the user works from the iPad on prod.
+- **Question:** should the terminal be switchable, and what is the default?
+- **Decision:** `terminal: { enabled: true }` in `deploy/settings/settings.yaml`, rendered into the backend's `settings.json`. When it is off, the terminal routes answer 404 and the app hides the button. An older `settings.json` without the field counts as off.
+- **Why:** the user asked for it, and a deployment can switch it off with a one-line override (`terminal: { enabled: false }` in `<env>.yaml`).
+- **Alternatives:** off by default in prod (safer, but the feature the issue asks for wouldn't be there).
+- **Consequences:** the next release brings a shell to prod. Turning it off is a one-line override plus a deploy.
+
+## 11:40 — Sessions outlive a dropped stream for 5 minutes and replay their last 64 KB; at most 4 {#run-2026-11-16-1117-5}
+
+- **Status:** open
+- **Context:** on the iPad, Safari drops a `fetch` stream whenever the app goes to the background. If closing the stream killed the shell, a running command would be lost on every app switch.
+- **Question:** what happens to the shell when its stream ends?
+- **Decision:** the session lives on, detached, for 5 minutes. A new stream on the same id replays the last 64 KB of output and continues. Closing the panel (DELETE) or the shell exiting ends the session at once, killing its whole process group. There are at most 4 sessions; a fifth is refused with 429. While the stream can't keep up (`res.write` returns false), the PTY is paused.
+- **Why:** this is the behaviour of VS Code's remote terminals on reconnect, at a small cost: a ring buffer and a timer.
+- **Alternatives:** kill on disconnect (simpler, but loses work on every app switch); no limit (a runaway client could fork shells without end).
+- **Consequences:** a session dropped by the network costs a shell for up to 5 minutes. A backend restart ends every session.
+  Superseded by [decision 9](#run-2026-11-16-1117-9): a 5-minute grace would kill a long Claude Code run while the iPad sleeps.
+
+## 11:40 — Build it straight from the issue, without a spec change {#run-2026-11-16-1117-6}
+
+- **Status:** open
+- **Context:** the repo keeps open work as `specs/changes/<name>/`, but the task is "implement gh issue 175". The issue is two sentences long.
+- **Question:** draft a spec change first, or implement directly?
+- **Decision:** implement directly, test-first, and write the result into `specs/system/` (architecture, functional, security), ADR 0008, the README and the demo run book.
+- **Why:** the design fits in this run's decisions. A proposal nobody can review before the code exists would only add paperwork.
+- **Alternatives:** `specs/changes/terminal/` with proposal, architecture and plan (the house process for bigger features).
+- **Consequences:** the design review happens over this log and ADR 0008 instead of over a proposal.
+
+## 11:40 — Commit and push to main {#run-2026-11-16-1117-7}
+
+- **Status:** open
+- **Overrides:** global `~/.claude/CLAUDE.md` — "Never create or switch branches without explicit permission" leaves main as the only branch; `/autonomous` — push after each green commit.
+- **Context:** the checkout is on `main`, which is clean and has no branch protection known to me.
+- **Question:** where do the commits go?
+- **Decision:** commit each green unit on `main` and push it.
+- **Why:** `/autonomous` pushes after each green commit, and creating a branch isn't allowed without permission. If the push is rejected as protected, the skill's fallback is `autonomous/terminal` plus a PR.
+- **Alternatives:** a feature branch and a PR (easier to review as one piece, but needs a branch).
+- **Consequences:** the terminal lands on `main` piece by piece. Revert forward if needed.
+
+## 12:05 — The shell runs in a `terminal` container of its own, confined like ingest {#run-2026-11-16-1117-8}
+
+- **Status:** open
+- **Context:** mid-run, the user added: "The (implicit) expectation is, that in this terminal I can run claude code". Claude Code is an AI agent that reads vault content (ingested mail, web pages), so prompt injection reaches whatever its shell can read. `deploy/compose.yml` already confines everything that handles untrusted content (opencode, ingest) to the internal network, the egress proxy and no app secrets.
+- **Question:** keep the shell in the backend container (decision 1)?
+- **Decision:** no. A new `terminal` service (image `karpathy.app-terminal`) runs a small PTY server (`apps/terminal`) as uid 1000, with `cap_drop: [ALL]`, `no-new-privileges`, the `vaults` volume, a home volume, the internal network only and `HTTP(S)_PROXY` to the egress proxy. Its one secret is `terminal_token`, which the backend uses to reach it and which unlocks nothing else. The backend keeps the public routes (bearer token) and forwards them.
+- **Why:** in the backend, Claude Code could read the GitHub token, the bearer token, the opencode password and `/config`, and it would reach the internet directly. In its own container, a hijacked session can damage the vaults (uncommitted, visible in Changes) but can't take a credential.
+- **Alternatives:** the backend container (decision 1: it sees the backend's processes, needs no new service, but exposes every secret to an AI agent).
+- **Consequences:** the terminal doesn't see the backend's processes or secrets. `git push` from the terminal has no credentials: commits go through the app (ADR 0001), or the user logs in to GitHub in the terminal at their own risk. Node-pty and the Claude Code binary stay out of the backend image. One more image to build, release and deploy.
+
+## 12:05 — Sessions live until closed or exited; the panel lists and reattaches them {#run-2026-11-16-1117-9}
+
+- **Status:** open
+- **Context:** decision 5's 5-minute grace would kill a long Claude Code run while the iPad sleeps.
+- **Question:** how long does a detached session live, and how does the app get back to it?
+- **Decision:** a session lives until the user closes it (✕ in the panel, DELETE) or its shell exits, at most 4 at a time. `GET /terminals` lists them, and the panel reattaches to the newest one when it opens. A reattach on the same page resumes from the last output offset it saw. A fresh page gets the last 256 KB, then a resize that makes full-screen programs repaint.
+- **Why:** a terminal that forgets running work on every app switch is useless on the iPad. The cap bounds the cost, and the list keeps the sessions from becoming orphans.
+- **Alternatives:** a 5-minute grace (decision 5); tmux in the image (robust repaint, but one more layer for the user to learn).
+- **Consequences:** a forgotten session holds a shell until the terminal container restarts (a deploy). The 4-session cap makes that visible: a fifth is refused with a message saying so.
+
+## 12:05 — Claude Code 2.1.318 is baked into the terminal image, pinned; its home is a volume {#run-2026-11-16-1117-10}
+
+- **Status:** open
+- **Overrides:** project `CLAUDE.md` — "Provider-agnostic by design — never hard-wire a specific LLM provider" (it is about the app's agentic loop; a vendor CLI in the user's own terminal is a tool, not the loop)
+- **Context:** the user wants to run Claude Code in the terminal. Its npm package ships a native musl binary (`@anthropic-ai/claude-code-linux-*-musl`). A spike ran `claude --version` in `node:22-alpine` as uid 1000 with `cap_drop: ALL`.
+- **Question:** install it in the image, or leave it to the user?
+- **Decision:** `npm install -g @anthropic-ai/claude-code@2.1.318` in the terminal image (2 weeks old, like every pinned tool), with `DISABLE_AUTOUPDATER=1` and `USE_BUILTIN_RIPGREP=0` (Alpine's `rg`). `/home/node` is the volume `terminal-home`, so the login, `~/.claude` and anything the user installs there survive restarts and deploys.
+- **Why:** it works out of the box, and the version is pinned like opencode's. Ripgrep, bash and git are there for its tools.
+- **Alternatives:** the native installer into the home volume (auto-updates, but unpinned and missing on a fresh stack).
+- **Consequences:** the image grows by about 320 MB. Updating it means bumping the version in `deploy/terminal/Dockerfile`. The first `claude` run needs the user to log in (URL plus code): not verified in this run.
+
+## 12:05 — The backend's git ignores hooks and refuses a clone whose `.git/config` holds keys outside an allowlist {#run-2026-11-16-1117-11}
+
+- **Status:** open
+- **Context:** until now nothing but the backend could write `.git` (opencode denies it). The terminal can. The backend runs git in the same clones with the GitHub token in the child's env (`GIT_CONFIG_VALUE_2`), so a planted hook or a `filter.*.clean`, `core.fsmonitor` or `diff.*.textconv` command would run in the backend and could read it.
+- **Question:** how does the backend's git stay safe in a clone the terminal can write?
+- **Decision:** every backend git command sets `core.hooksPath=/dev/null` and `core.fsmonitor=false`. Before it runs, the backend reads the clone's `.git/config` and refuses (409, naming the key) if a key is outside an allowlist: the keys a clone has, `core.*` data keys, `remote.<name>.url`/`fetch`/`pushurl`, `branch.<name>.remote`/`merge`/`rebase`, `user.name`/`email`, and any other key whose name doesn't take a command. `extensions.worktreeConfig` and `include*` are refused, because they add config sources.
+- **Why:** filters, textconv, fsmonitor, credential helpers and the like all need a config key to run, so an allowlist on the one local config file closes them. Hooks need no config key, so the env override handles those.
+- **Alternatives:** mount `.git` read-only in the terminal (it would break `git commit` there, and each vault's path is only known at runtime); trust the terminal (a prompt-injected Claude Code could then steal the token).
+- **Consequences:** a user who sets an unusual key in a clone (say `diff.tool`) gets a clear refusal from the app until they remove it. Global config in the terminal's home doesn't matter: the backend doesn't read it.

@@ -71,6 +71,8 @@ export const settingsSchema = z.strictObject({
   timezone: z.string(),
   commit_reminder_threshold: z.number().int().nonnegative(),
   files: z.strictObject({ visible_dot_dirs: z.array(dotDir) }),
+  /** The app's terminal panel (#175): a shell in the terminal service. Absent = off. */
+  terminal: z.strictObject({ enabled: z.boolean() }).optional(),
   gateways: z.record(z.string(), gateway),
   /** The ingest service: which Gmail label fills which vault's Input/. No profiles = the loop idles. */
   ingest: z.strictObject({

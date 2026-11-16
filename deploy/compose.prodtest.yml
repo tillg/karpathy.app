@@ -30,3 +30,4 @@ secrets:
   gog_keyring_password: { file: ../tmp/prodtest/secrets/gog_keyring_password }
   ingest_token: { file: ../tmp/prodtest/secrets/ingest_token }
   ingest_worker_token: { file: ../tmp/prodtest/secrets/ingest_worker_token }
+  terminal_token: { file: ../tmp/prodtest/secrets/terminal_token }

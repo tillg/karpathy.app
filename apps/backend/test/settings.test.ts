@@ -38,7 +38,13 @@ describe('loadBackendSettings', () => {
       visibleDotDirs: ['.agents'],
       secrets: [],
       workerToken: undefined,
+      terminalEnabled: false,
     });
+  });
+
+  it('terminal.enabled switches the terminal on; an older settings.json without it leaves it off', async () => {
+    expect(loadBackendSettings(await rendered((s) => (s.terminal = { enabled: true }))).terminalEnabled).toBe(true);
+    expect(loadBackendSettings(await rendered((s) => (s.terminal = { enabled: false }))).terminalEnabled).toBe(false);
   });
 
   it('reads title_model, vision_model and vision_gateway; an older settings.json falls back', async () => {

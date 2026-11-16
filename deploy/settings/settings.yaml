@@ -38,6 +38,11 @@ commit_reminder_threshold: 4
 files:
   visible_dot_dirs: [.agents]    # dot-dirs the file tree shows (never .git)
 
+# The app's terminal panel (#175): a shell in the terminal service's container (vaults, git, Claude Code; no app
+# secrets). Off = the button is gone and the routes answer 404.
+terminal:
+  enabled: true
+
 # Ways to reach LLMs; ai.gateway picks one. The key is opencode's provider id.
 gateways:
   openrouter:

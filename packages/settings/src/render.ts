@@ -149,6 +149,7 @@ export function renderBackendSettings(s: Settings, secrets: Secrets): string {
     },
     commit_reminder_threshold: s.commit_reminder_threshold,
     files: s.files,
+    terminal: { enabled: s.terminal?.enabled ?? false },
     // The Instagram worker's token: the backend accepts it on the worker routes only.
     ...(s.ingest?.worker_token ? { ingest: { worker_token: ref(s.ingest.worker_token) } } : {}),
     secrets: secretManifest(s, secrets),

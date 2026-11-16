@@ -11,6 +11,8 @@ import { BaseError } from './bases.js';
 import { normalizeRel, PathError } from './paths.js';
 import { callIngest, type IngestEndpoint } from './ingest.js';
 import { ingestWorkerRouter } from './ingest-worker.js';
+import { terminalRouter, type TerminalEndpoint } from './terminal.js';
+import { UnsafeGitConfigError } from './git.js';
 import type { MetricsSampler } from './metrics.js';
 import type { UsageService } from './usage.js';
 import { HttpError, type Vaults } from './vaults.js';
@@ -39,6 +41,8 @@ export interface AppDeps {
   deployed?: string;
   /** The ingest service's internal endpoint (Admin › Instagram); unset = not running. */
   ingest?: IngestEndpoint;
+  /** The terminal service (#175); unset = the terminal is off (settings `terminal.enabled`). */
+  terminal?: TerminalEndpoint;
   /** The Instagram worker's token (settings.json `ingest.worker_token`): its job routes only; unset = main token only. */
   workerToken?: string;
 }
@@ -173,7 +177,8 @@ export function createApp(d: AppDeps) {
       defaultVisionModel,
       visionModelOverridden: settings.visionModel !== defaultVisionModel,
       visionGateway: d.visionGateway ?? '',
-      githubToken: { source: d.githubToken?.source() ?? 'none', last4: t ? t.slice(-4) : null }, modelInput };
+      githubToken: { source: d.githubToken?.source() ?? 'none', last4: t ? t.slice(-4) : null }, modelInput,
+      terminal: d.terminal !== undefined };
   };
   api.get('/settings', async (_req, res) => {
     res.json(await settingsView());
@@ -447,6 +452,8 @@ export function createApp(d: AppDeps) {
     res.json(await callIngest(d.ingest, 'POST', '/instagram/disconnect', {}));
   });
 
+  api.use(terminalRouter(d.terminal, d.vaults));
+
   api.use((_req, res) => {
     res.status(404).json({ error: 'not found' });
   });
@@ -454,6 +461,7 @@ export function createApp(d: AppDeps) {
     if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message, code: err.code, ...err.extra });
     if (err instanceof BaseError) return void res.status(422).json({ error: err.message, code: err.code });
     if (err instanceof PathError) return void res.status(400).json({ error: err.message, code: 'bad-path' });
+    if (err instanceof UnsafeGitConfigError) return void res.status(409).json({ error: err.message, code: 'unsafe-git-config' });
     if (err instanceof z.ZodError) return void res.status(400).json({ error: err.issues.map((i) => i.message).join('; '), code: 'invalid' });
     if ((err as { type?: string }).type === 'entity.too.large') return void res.status(413).json({ error: 'The file is larger than 50 MB.', code: 'too-large' });
     if ((err as { type?: string }).type === 'entity.parse.failed') return void res.status(400).json({ error: 'invalid JSON' });

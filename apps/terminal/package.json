@@ -1,0 +1,21 @@
+{
+  "name": "@karpathy/terminal",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "postinstall": "node scripts/node-pty-helper.mjs"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "node-pty": "1.1.0",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "vitest": "^5.0.2"
+  }
+}

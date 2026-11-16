@@ -27,6 +27,8 @@ export const backendSettingsSchema = z.strictObject({
   files: z.strictObject({
     visible_dot_dirs: z.array(z.string().regex(/^\.[^/]+$/, 'a dot-dir name starts with "."').refine((d) => d !== '.git', '.git is never shown')),
   }),
+  /** The terminal panel (#175); absent in an older settings.json = off. */
+  terminal: z.strictObject({ enabled: z.boolean() }).optional(),
   /** The Instagram worker's token (#168); absent in an older settings.json. */
   ingest: z.strictObject({ worker_token: file.optional() }).optional(),
   /** The secret manifest (names and booleans only), as of the render; absent in an older settings.json. */
@@ -53,6 +55,8 @@ export interface BackendSettings {
   secrets: z.infer<typeof backendSettingsSchema>['secrets'];
   /** Accepted on the Instagram worker routes only; undefined = only the main token works there. */
   workerToken: string | undefined;
+  /** settings `terminal.enabled`: the terminal routes forward to the terminal service. */
+  terminalEnabled: boolean;
 }
 
 const secret = (f: { file: string } | undefined) => (f ? readFileSync(f.file, 'utf8').trim() || undefined : undefined);
@@ -82,5 +86,6 @@ export function loadBackendSettings(path: string): BackendSettings {
     secrets: s.secrets,
     // Optional: a stack without the secret file still starts, with the worker routes on the main token only.
     workerToken: s.ingest?.worker_token && existsSync(s.ingest.worker_token.file) ? secret(s.ingest.worker_token) : undefined,
+    terminalEnabled: s.terminal?.enabled ?? false,
   };
 }

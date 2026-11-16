@@ -62,7 +62,7 @@ jobs:
     needs: [check, guard, web]
     strategy:
       matrix:
-        image: [proxy, backend, opencode, egress, ingest]
+        image: [proxy, backend, opencode, egress, ingest, terminal]
         arch: [amd64, arm64]
         include:
           - { arch: amd64, runner: ubuntu-24.04 }
@@ -111,7 +111,7 @@ jobs:
     permissions: { contents: read, packages: write }
     strategy:
       matrix:
-        image: [proxy, backend, opencode, egress, ingest]
+        image: [proxy, backend, opencode, egress, ingest, terminal]
     steps:
       - uses: actions/download-artifact@v8
         with: { pattern: 'digest-${{ matrix.image }}-*', merge-multiple: true, path: digests }
