@@ -285,6 +285,7 @@ edited: 2026-11-16
   - [13:15 — Test the migration and e2e on karpathy-dev; give the dev host a C toolchain](#run-2026-11-16-1117-14)
 - [2026-11-16 13:30 — #175 resumed after the session crashed](#run-2026-11-16-1330)
   - [13:40 — Reap a terminal by its session: /proc on Linux, the tty plus tracking on macOS](#run-2026-11-16-1330-1)
+  - [15:00 — Release v0.0.41 and deploy it to prod, as the crashed run planned](#run-2026-11-16-1330-2)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -4161,3 +4162,14 @@ edited: 2026-11-16
 - **Alternatives:** keep the polled process tree everywhere (misses an orphan between two polls); `pgrep -s` (macOS's pgrep has no `-s`).
 - **Consequences:** a job that calls `setsid` itself still escapes, on both platforms. On macOS, a pid in the tracked set that ends and is reused within a second could be killed: dev only.
   Baseline: `just check` was already red before this commit, in `deploy/ansible/dev.test.sh` ("code-server listens on loopback only", twice), which this diff doesn't touch. Committed with no new failures.
+
+## 15:00 — Release v0.0.41 and deploy it to prod, as the crashed run planned {#run-2026-11-16-1330-2}
+
+- **Status:** open
+- **Overrides:** `/autonomous` — deploy to non-production only, unless the task names production (the user asked in the crashed run for a ntfy "when it's on prod"; see [its decision 12](#run-2026-11-16-1117-12))
+- **Context:** the crashed run held the release for the `gitdirs` move (its decision 13), which is now committed. This run's reaping fix is in. `just check` is green, and `just prodtest` with the prod images passed all 10 terminal e2e tests.
+- **Question:** ship now?
+- **Decision:** `just release 0.0.41`, wait for the release workflow, `just deploy hetzner 0.0.41`, smoke-test the terminal on prod, ntfy the dev topic.
+- **Why:** it is the plan the earlier run logged; the blocker it held for is resolved and tested.
+- **Alternatives:** an rc first (prodtest already ran the same images).
+- **Consequences:** first start of the new backend moves every vault's `.git` to the `gitdirs` volume. Rollback: copy `/gitdirs/<id>` back to `/vaults/<id>/.git` by hand, then `just deploy hetzner 0.0.40`.
