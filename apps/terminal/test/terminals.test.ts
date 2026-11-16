@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -91,6 +92,24 @@ describe('Terminals', () => {
     expect(alive(pid)).toBe(true);
     terms.close(t.id);
     await until(() => !alive(pid));
+  });
+
+  it('closing or exiting a session leaves processes outside it alone', async () => {
+    const outsider = spawn('sleep', ['300'], { stdio: 'ignore' });
+    try {
+      terms = new Terminals({ shell: '/bin/sh' });
+      const a = terms.open(tmpdir(), 80, 24);
+      const b = terms.open(tmpdir(), 80, 24);
+      const c = collector();
+      terms.attach(b.id, undefined, c.sink);
+      terms.input(b.id, 'exit\r');
+      await until(() => c.events.some((e) => e.t === 'x'));
+      terms.close(a.id);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(alive(outsider.pid!)).toBe(true);
+    } finally {
+      outsider.kill('SIGKILL');
+    }
   });
 
   it('a second stream takes the session; the first is told, then ended', async () => {
