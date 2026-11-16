@@ -551,6 +551,20 @@ function useAppState() {
     if (usesDates(v)) void refreshFiles();
   }, [refreshFiles]);
   const [commitOpen, setCommitOpen] = useState(false);
+  /** The terminal panel (#175); remembered per browser, so a reload or a new visit reopens it (its shells live on). */
+  const [terminalOpen, setTerminalOpenState] = useState(() => {
+    try {
+      return localStorage.getItem('karpathy.terminalOpen') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const setTerminalOpen = useCallback((open: boolean) => {
+    setTerminalOpenState(open);
+    try {
+      localStorage.setItem('karpathy.terminalOpen', open ? '1' : '0');
+    } catch { /* not kept */ }
+  }, []);
   /** The graph is shown in the note pane, over the open note (which stays as it was); opening a note closes it. */
   const [graphOpen, setGraphOpenState] = useState(false);
   /** What the graph shows: the open note's local graph (#92), the `Wiki` folder or all notes. Kept for the session. */
@@ -947,7 +961,7 @@ function useAppState() {
     followLink, exists, readOnly, conflict, canGoBack, goBack,
     section, setSection, phoneTab, setPhoneTab, phoneNote, setPhoneNote, chatOpen, setChatOpen, chatMain, setChatMain, ingestNow,
     schema: schema?.vault === activeId ? schema.schema : DEFAULT_SCHEMA,
-    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, admin, adminVault, clearAdminVault, openAdmin, setAdminSection, adminUp, closeAdmin, commitOpen, setCommitOpen, graphOpen, setGraphOpen, graphScope, setGraphScope, chatId, setChatId,
+    sidebarOpen, setSidebarOpen, mode, setMode, pageMode, setPageMode, propsView, setPropsView, sortFilter, setSortFilter, scrollRef, placeNow, admin, adminVault, clearAdminVault, openAdmin, setAdminSection, adminUp, closeAdmin, commitOpen, setCommitOpen, terminalOpen, setTerminalOpen, graphOpen, setGraphOpen, graphScope, setGraphScope, chatId, setChatId,
   };
 }
 

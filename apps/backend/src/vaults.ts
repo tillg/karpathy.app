@@ -74,6 +74,8 @@ export interface VaultsEnv {
   visibleDotDirs?: readonly string[];
   /** Scans what a commit records for secrets (#141); default: the pinned gitleaks on PATH. */
   secretScanner?: SecretScanner;
+  /** Backend-only state outside the vaults volume (the config dir): the secret scan's record of scanned commits. */
+  stateDir?: string;
 }
 
 interface Runtime {
@@ -288,6 +290,8 @@ export class Vaults {
       await this.beforeRemove?.(id);
       await r.watcher?.close();
       await rm(this.cloneDir(id), { recursive: true, force: true });
+      const scanned = this.scannedFile(id);
+      if (scanned) await rm(scanned, { force: true });
       forgetBaseIndex(join(this.cloneDir(id), v.root));
       await this.store.update((c) => {
         c.vaults = c.vaults.filter((x) => x.id !== id);
@@ -1115,12 +1119,17 @@ export class Vaults {
     return resolve(this.env.vaultsDir);
   }
 
+  /** Outside the vaults volume, which the terminal can write (#175); unset (some tests) = inside the clone. */
+  private scannedFile(id: string) {
+    return this.env.stateDir ? join(resolve(this.env.stateDir), 'secret-scanned', id) : undefined;
+  }
+
   private cloneDir(id: string) {
     return join(resolve(this.env.vaultsDir), id);
   }
 
   private repo(v: StoredVault, timeoutMs?: number): Repo {
-    return new Repo(this.cloneDir(v.id), v.branch, v.root, { identity: this.env.identity, token: this.env.githubToken?.(), timeoutMs }, this.secretScanner);
+    return new Repo(this.cloneDir(v.id), v.branch, v.root, { identity: this.env.identity, token: this.env.githubToken?.(), timeoutMs }, this.secretScanner, this.scannedFile(v.id));
   }
 
   private refuseDuplicate(repo: string, branch: string, root: string, exceptId?: string) {

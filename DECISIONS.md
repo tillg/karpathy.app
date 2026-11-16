@@ -280,6 +280,7 @@ edited: 2026-11-16
   - [12:05 — Sessions live until closed or exited; the panel lists and reattaches them](#run-2026-11-16-1117-9)
   - [12:05 — Claude Code 2.1.318 is baked into the terminal image, pinned; its home is a volume](#run-2026-11-16-1117-10)
   - [12:05 — The backend's git ignores hooks and refuses a clone whose `.git/config` holds keys outside an allowlist](#run-2026-11-16-1117-11)
+  - [12:20 — Release the terminal as v0.0.41 and deploy it to prod](#run-2026-11-16-1117-12)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -4094,3 +4095,15 @@ edited: 2026-11-16
 - **Why:** filters, textconv, fsmonitor, credential helpers and the like all need a config key to run, so an allowlist on the one local config file closes them. Hooks need no config key, so the env override handles those.
 - **Alternatives:** mount `.git` read-only in the terminal (it would break `git commit` there, and each vault's path is only known at runtime); trust the terminal (a prompt-injected Claude Code could then steal the token).
 - **Consequences:** a user who sets an unusual key in a clone (say `diff.tool`) gets a clear refusal from the app until they remove it. Global config in the terminal's home doesn't matter: the backend doesn't read it.
+  As built (`SAFE_KEYS`, `apps/backend/src/git.ts`), the allowlist also takes any `branch.*` key (editors add their own, e.g. `branch.main.vscode-merge-base`) and the partial-clone keys of the preflight. It covers the secret scan's and search's git calls too. The docs pass found one more `.git` write that mattered: the secret scan's record of scanned commits (`.git/karpathy-secret-scanned`) would let a terminal commit pass a push unscanned. It moved to `/config/secret-scanned/<vault id>`, test-first. An existing vault starts with an empty record, so it rescans its unpushed commits once.
+
+## 12:20 — Release the terminal as v0.0.41 and deploy it to prod {#run-2026-11-16-1117-12}
+
+- **Status:** open
+- **Overrides:** `/autonomous` — deploy to non-production environments only, unless the task names production (the user named it mid-run: "send me a ntfy when it's on prod")
+- **Context:** the user asked to be notified "when it's on prod", which means the terminal is to ship. The latest release is v0.0.40.
+- **Question:** how does it get to prod?
+- **Decision:** once `just check` and the terminal e2e specs are green, run `just prodtest` (the prod images, incl. the new terminal image, on this Mac) as a smoke test. Then `just release 0.0.41`, wait for the release workflow (six images now), `just deploy hetzner 0.0.41`, smoke-test the terminal on prod through the API (open a session, run `claude --version`, close it), and post to the ntfy dev topic.
+- **Why:** this is the documented release path (justfile `release`, `deploy`), the same as earlier prod deploys in this log.
+- **Alternatives:** an rc release first (`0.0.41-rc.1`); prodtest already exercises the same images locally.
+- **Consequences:** prod gets a shell in the app behind the bearer token (`terminal.enabled: true`). The first deploy creates `terminal_token` on the host and the `terminal-home` volume. Rollback: `just deploy hetzner 0.0.40`. The terminal container and its volume stay behind as orphans until the next deploy, which `remove_orphans` cleans up. To switch only the terminal off: `terminal: { enabled: false }` in `deploy/settings/hetzner.yaml`, then deploy.

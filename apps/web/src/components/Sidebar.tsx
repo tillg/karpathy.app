@@ -10,7 +10,7 @@ const TITLES: Record<Section, string> = { files: 'Files', search: 'Search', chan
 
 /** Sidebar column (desktop), overlay (tablet), or the Files/Search/Changes tab root (phone). */
 export function Sidebar({ inert }: { inert?: boolean }) {
-  const { section, setSection, phone, phoneTab, openAdmin, setSidebarOpen, wide, status, usable, setGraphOpen } = useApp();
+  const { section, setSection, phone, phoneTab, openAdmin, setSidebarOpen, wide, status, usable, setGraphOpen, settings, terminalOpen, setTerminalOpen } = useApp();
   const current: Section = phone ? (phoneTab === 'chat' ? 'files' : phoneTab) : section;
   return (
     <aside className="pane" id="sidebar" inert={inert} aria-label="Sidebar">
@@ -18,6 +18,10 @@ export function Sidebar({ inert }: { inert?: boolean }) {
         {phone && <span className="bar-title">{TITLES[current]}</span>}
         <span className="sp" />
         <button className="ib" title="Graph" aria-label="Graph" data-testid="open-graph" disabled={!usable} onClick={() => setGraphOpen(true)}><Icon n="circle_grid_hex" /></button>
+        {settings?.terminal && (
+          <button className="ib" title="Terminal (Ctrl+`)" aria-label="Terminal" aria-pressed={terminalOpen} data-testid="open-terminal" disabled={!usable}
+            onClick={() => setTerminalOpen(!terminalOpen)}><Icon n="chevron_right_square" /></button>
+        )}
         <button className="ib" title="Settings" aria-label="Settings" data-testid="open-settings" onClick={() => void openAdmin()}><Icon n="gear_alt" /></button>
         {!wide && !phone && <button className="ib" title="Close sidebar" onClick={() => setSidebarOpen(false)}><Icon n="sidebar_left" /></button>}
       </header>

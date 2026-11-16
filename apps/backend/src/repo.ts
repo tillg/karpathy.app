@@ -49,6 +49,11 @@ export class Repo {
     opts: GitOptions,
     /** Guards every push (#141): unpushed commits the app didn't scan are scanned first. */
     private readonly scanner?: SecretScanner,
+    /**
+     * The record of commits the app scanned. Outside the clone in the app (the terminal can write `.git`, #175, and
+     * could mark its own commits as scanned); `.git/karpathy-secret-scanned` when unset.
+     */
+    private readonly scannedFile = join(dir, '.git', SCANNED_FILE),
   ) {
     this.git = new Git(dir, opts);
   }
@@ -386,11 +391,12 @@ export class Repo {
   async markScanned(commit: string): Promise<void> {
     const keep = new Set([...(await this.scannedCommits()), commit]);
     const unpushed = new Set((await this.git.run(['rev-list', `${this.upstream}..HEAD`], { allowFail: true })).stdout.split('\n').filter(Boolean));
-    await writeFile(join(this.dir, '.git', SCANNED_FILE), [...keep].filter((c) => c === commit || unpushed.has(c)).map((c) => `${c}\n`).join(''));
+    await mkdir(dirname(this.scannedFile), { recursive: true });
+    await writeFile(this.scannedFile, [...keep].filter((c) => c === commit || unpushed.has(c)).map((c) => `${c}\n`).join(''));
   }
 
   private async scannedCommits(): Promise<string[]> {
-    return (await readFile(join(this.dir, '.git', SCANNED_FILE), 'utf8').catch(() => '')).split('\n').filter(Boolean);
+    return (await readFile(this.scannedFile, 'utf8').catch(() => '')).split('\n').filter(Boolean);
   }
 
   /**

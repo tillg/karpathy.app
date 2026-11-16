@@ -247,6 +247,20 @@ describe('secret scan review fixes (#141)', () => {
     expect((await t.api.post(`/vaults/${t.id}/commit`, { message: 'again' })).status).toBe(422);
   });
 
+  it('push: a commit marked as scanned from inside the clone (the terminal can write .git, #175) is still scanned', async () => {
+    const t = await vaultApp();
+    await writeFile(join(t.root, 'Leak.md'), `${fakeToken()}\n`);
+    sh(t.root, 'add', '-A');
+    sh(t.root, 'commit', '-q', '-m', 'outside the app');
+    const head = sh(t.root, 'rev-parse', 'HEAD').trim();
+    const git = sh(t.root, 'rev-parse', '--absolute-git-dir').trim();
+    await writeFile(join(git, 'karpathy-secret-scanned'), `${head}\n`);
+    const r = await t.api.post(`/vaults/${t.id}/push`);
+    expect(r.body.pushed).toBe(false);
+    expect(r.body.pushError).toMatch(/possible secret/i);
+    expect(t.remote.remoteLog()).toEqual(['seed']);
+  });
+
   it('push: an unscanned clean local commit is pushed', async () => {
     const t = await vaultApp();
     await writeFile(join(t.root, 'Clean.md'), 'clean\n');

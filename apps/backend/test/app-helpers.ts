@@ -31,7 +31,7 @@ export async function makeApp(remoteBase: string, { deps = {}, dirs, githubSecre
   const store = await ConfigStore.open(configDir, { ...defaults, ...(defaultModel ? { model: defaultModel } : {}) });
   const githubToken = new GitHubToken(store, githubSecret);
   // visibleDotDirs as deploy/settings/settings.yaml sets it.
-  const vaults = new Vaults(store, { vaultsDir, remoteBase, identity, visibleDotDirs: ['.agents'], githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), ...env });
+  const vaults = new Vaults(store, { vaultsDir, remoteBase, identity, visibleDotDirs: ['.agents'], githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), stateDir: configDir, ...env });
   await vaults.init();
   const app = createApp({ token: TOKEN, vaults, store, githubToken, ...deps });
   const auth = { Authorization: `Bearer ${TOKEN}` };

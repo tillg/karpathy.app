@@ -10,6 +10,7 @@ import { MoveNotice, ReminderDialog, StaleDialog, Toast } from './Dialogs';
 import { Icon } from './Icon';
 import { NotePane } from './NotePane';
 import { Sidebar } from './Sidebar';
+import { TerminalPanel } from './TerminalPanel';
 
 const TABS = [
   { id: 'files', label: 'Files', icon: 'folder' },
@@ -70,6 +71,21 @@ export function Shell() {
       pane.querySelector<HTMLElement>('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])')?.focus();
   }, [tablet, sidebarOpen, chatOpen]);
 
+  // Ctrl+` toggles the terminal panel, as in VS Code (#175).
+  const { terminalOpen, setTerminalOpen, settings, usable } = s;
+  const terminalOn = Boolean(settings?.terminal) && usable;
+  useEffect(() => {
+    if (!terminalOn) return;
+    const k = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.metaKey && !e.altKey && (e.key === '`' || e.code === 'Backquote')) {
+        e.preventDefault();
+        setTerminalOpen(!terminalOpen);
+      }
+    };
+    addEventListener('keydown', k);
+    return () => removeEventListener('keydown', k);
+  }, [terminalOn, terminalOpen, setTerminalOpen]);
+
   // Wide layout: the swap button on the note/chat divider says what a click does.
   const swapLabel = s.chatMain ? 'Move note to main column' : 'Move chat to main column';
 
@@ -108,6 +124,7 @@ export function Shell() {
         <div id="scrim" className={!phone && !wide && (s.sidebarOpen || s.chatOpen) ? 'on' : ''}
           onClick={() => { s.setSidebarOpen(false); s.setChatOpen(false); }} />
       </div>
+      {terminalOn && terminalOpen && s.admin === null && <TerminalPanel />}
       {s.admin !== null && <AdminMode />}
       {s.commitOpen && <CommitDialog />}
       <StaleDialog />

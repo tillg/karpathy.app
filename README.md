@@ -41,6 +41,15 @@ memory, load and disk over 1 h / 24 h / 7 d, sampled by the backend every 30 s).
 a left rail; the phone shows a list, and each section has only "‹ Admin" back to it. Switching vaults stays in the
 vault menu of the normal (user) mode: a first step towards separate User and Admin roles.
 
+**Terminal** (#175). A shell on the server's vaults, in the app: the Terminal button in the sidebar header (or Ctrl+`)
+opens a bottom panel like VS Code's (full screen on the phone, with a key bar for Esc, Tab, arrows and Ctrl-C). Up to 4
+tabs, each a bash in the open vault's folder with `git`, `rg` and **Claude Code** (the first `claude` run asks you to
+log in by URL and code; the login lives in a volume). Sessions keep running when you close the panel, reload or switch
+device, and end on ✕, when the shell exits, or at the next deploy. The shells run in a `terminal` container of their
+own (internal network, internet only through the egress proxy, none of the app's secrets) and have no GitHub push
+credentials: commit and push from the app. `terminal.enabled: false` in [`deploy/settings/`](deploy/settings/) switches
+it off. [ADR 0008](docs/adr/0008-terminal-in-its-own-container.md).
+
 ## Sync
 
 Every vault is a **GitHub repo**. In admin mode's **Vaults** section (vault menu → **Manage vaults…**) you configure

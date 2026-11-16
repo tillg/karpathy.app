@@ -1,7 +1,7 @@
 ---
 title: "Deployment: releases, targets and operations"
 created: 2026-10-02
-edited: 2026-10-27
+edited: 2026-11-16
 ---
 
 # Deployment: releases, targets and operations
@@ -76,7 +76,7 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
 - **Built and Deployed:** the guard job's time goes into the backend image as `BUILT_AT`; role `app`
   writes `DEPLOYED_AT` to `shared/.env`, keeping it when the same version is redeployed (an unchanged
   `.env` recreates nothing). `GET /api/health` reports both as `built` / `deployed` (`null` locally).
-- Images: `ghcr.io/tillg/karpathy.app-{proxy,backend,opencode,egress,ingest}`, public (the repo is), pulled
+- Images: `ghcr.io/tillg/karpathy.app-{proxy,backend,opencode,egress,ingest,terminal}`, public (the repo is), pulled
   anonymously. Every version stays in GHCR. Releases before `0.0.17-rc.1` have no `ingest` image.
 
 ## The compose stack on a target
@@ -95,14 +95,21 @@ The public website at https://karpathy.app has its own, much simpler pipeline: [
 - Settings arrive rendered ([Settings on a target](#settings-on-a-target)): compose interpolates `shared/.env`, the
   backend mounts `shared/settings.json` read-only (`SETTINGS_FILE=/etc/karpathy/settings.json`), opencode reads
   `shared/opencode.env`.
-- Networks: `edge` (proxy), `internal` (`internal: true`: proxy, backend, opencode, ingest, egress) and `egress`
-  (backend and the `egress` Squid proxy, the only two with a route out). opencode and ingest reach the internet only
+- Networks: `edge` (proxy), `internal` (`internal: true`: proxy, backend, opencode, ingest, terminal, egress) and `egress`
+  (backend and the `egress` Squid proxy, the only two with a route out). opencode, ingest and terminal reach the internet only
   through `egress:3128`; the backend talks to opencode with the `opencode_password` (HTTP Basic, also in opencode's
-  healthcheck) and to the ingest endpoint (`ingest:8090`) with the `ingest_token`.
+  healthcheck) to the ingest endpoint (`ingest:8090`) with the `ingest_token` and to the terminal service (`terminal:8095`) with the
+  `terminal_token`.
 - **Ingest service** ([architecture.md](architecture.md#ingest-service-deployingest)): volume `ingest-state` (Gmail
   keyring, Instagram session, Instagram worker results and markers; backed up with the server), `shared/ingest.json`
   read-only at `/etc/ingest/config.json`, `INGEST_INSTAGRAM_SOURCE` from `shared/.env`, healthy while its last-run
   file is younger than 20 min. Without profiles it idles, healthy.
+- **Terminal service** ([architecture.md](architecture.md#terminal-service-appsterminal), ADR 0008): the sixth image,
+  uid 1000, on `internal` only with the egress proxy, the whole `vaults` volume (on a target the `/srv/vaults` bind
+  mount, read-write) and the volume `terminal-home` (`/home/node`: Claude Code's login and settings, shell history), the secret `terminal_token` and no other. Healthy when `:8095/healthz` answers. A deploy recreates the
+  container, which ends every open shell (the panel shows them as ended); the login in the home volume stays.
+  Switched off in the app (not stopped) with `terminal: { enabled: false }` in `deploy/settings/` (the backend answers
+  `404 terminal-off`, the app hides the button). The first `claude` run in the terminal needs a login by URL and code.
 - **Instagram worker** (worker mode, [architecture.md](architecture.md#instagram-worker-toolsinstagram-worker)): not
   part of the stack and not a release image. It runs on the user's machine, installed with pipx from a release tag
   of this repo (setup: `docs/instagram-worker.md`), and reaches the target through the proxy like the PWA (prod: the
@@ -319,6 +326,7 @@ inbound traffic; SSH, the app (443), Beszel (8090) and Gatus (8091) are reached 
 | Provider key of the gateway, optional `EXA_API_KEY` (with the non-secret web caps, model and provider config) | opencode | `shared/opencode.env` (0600), rendered from `deploy/settings/`; vault: `vault_opencode_env` |
 | Commit author (`hetzner`: secret references, no personal data in the public repo) | backend | resolved into `shared/settings.json` (uid 1000, 0600) and `shared/.env` (0600); vault: `vault_git_author_name` / `_email` |
 | opencode server password | backend, opencode | `shared/secrets/opencode_password` (uid 1000, 0600); generated once on the target by role `app` (`force: false`), no vault entry; a change recreates the stack |
+| Terminal token | backend + terminal | `shared/secrets/terminal_token` (uid 1000, 0600); generated once on the target by role `app` with the ingest tokens, no vault entry; a change recreates the stack. Unlocks only the terminal service |
 | Ingest token, gog keyring password | backend + ingest; ingest | `shared/secrets/ingest_token`, `shared/secrets/gog_keyring_password` (uid 1000, 0600); generated once on the target by role `app` like the opencode password, no vault entry; a change recreates the stack |
 | Instagram worker token | backend (not ingest); every Instagram worker | `shared/secrets/ingest_worker_token` (uid 1000, 0600); generated once on the target by role `app` › "Ingest secrets" like the ingest token (dev: `deploy/dev.sh`, prodtest: `just prodtest up`), no vault entry. `just instagram-worker-token <target>` prints it for `karpathy-instagram-worker configure`; on the worker it sits in `~/.config/karpathy-instagram-worker/config.toml` (0600). Rotating it = delete the file, redeploy, `configure` every worker |
 | Gmail OAuth client + refresh token | ingest | gog's file keyring in the `ingest-state` volume; put there by `just ingest-auth <target> <email>` from the Mac's Keychain, not by the playbook |
@@ -544,4 +552,5 @@ flowchart LR
 - Only vaults already cloned get ingest mounts: a profile for a vault added later needs a redeploy.
 - The Instagram worker has no auto-update: a new release means `pipx install --force …@<tag>` and `service install`
   on every worker by hand. `ingest-email.ref` pins a commit on ingest_email's unmerged branch `instagram-worker`.
+- The terminal's home volume (`terminal-home`) holds the Claude Code login (an Anthropic account credential) in plain files; root on the host can read it. A deploy ends open shells; sessions don't survive a container restart.
 - The ingest image is public on GHCR, with the private ingest-email's code inside ([security.md](security.md#gaps-known-not-built)).

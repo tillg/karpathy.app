@@ -32,7 +32,7 @@ const store = await ConfigStore.open(env.configDir, { model: settings.defaultMod
 // look_at_image reads the Admin's vision model from the vaults volume: make the file match the store.
 await syncVisionModel(env.vaultsDir, { visionModel: store.get().settings.visionModel, defaultVisionModel: settings.defaultVisionModel, visionGateway: settings.visionGateway });
 const githubToken = new GitHubToken(store, settings.githubToken, process.env.GITHUB_API_BASE);
-const vaults = new Vaults(store, { vaultsDir: env.vaultsDir, remoteBase: settings.remoteBase, visibleDotDirs: settings.visibleDotDirs, githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), identity: settings.identity });
+const vaults = new Vaults(store, { vaultsDir: env.vaultsDir, remoteBase: settings.remoteBase, visibleDotDirs: settings.visibleDotDirs, githubToken: () => githubToken.current(), redact: (m) => githubToken.redact(m), identity: settings.identity, stateDir: env.configDir });
 await vaults.init();
 
 const harness = new OpencodeHarness(env.opencodeUrl, settings.opencodePassword);

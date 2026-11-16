@@ -1,7 +1,7 @@
 ---
 title: "Security: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-27
+edited: 2026-11-16
 ---
 
 # Security: karpathy.app
@@ -30,6 +30,9 @@ flowchart LR
   W[Instagram worker:<br/>user's machine, home IP] -- "Tailscale, then worker token<br/>over HTTPS: job routes only" --> P
   W -- "own session" --> IG[Instagram]
   B -- "job routes, ingest token;<br/>result tarball streamed" --> I
+  B -- "internal network only,<br/>terminal token (NDJSON stream)" --> T[terminal service:<br/>bash, Claude Code]
+  T -. "read/write all vaults,<br/>no app secrets" .-> V
+  T -- "all outbound HTTP" --> E
 ```
 
 ## Authentication
@@ -44,6 +47,8 @@ flowchart LR
   compare); every other path falls through to the main router, which knows only the bearer token. So a stolen worker
   token can claim Instagram job URLs, report failures and upload results, nothing else: no vault, chat, setting,
   status or Instagram login. Without a configured worker token only the main token works there.
+- The bearer token also opens the **terminal**: whoever has it has a shell in the terminal container (uid 1000, read and
+  write every vault, the internet through the egress proxy, no app secret; [The terminal](#the-terminal)).
 - The web app keeps the token in localStorage; a 401 clears it together with the offline cache of note contents.
   The one way it travels in a URL is the login link `#token=…` (QR code): the fragment never reaches the server,
   and the app removes it from the address bar and the history at once. The QR code is a credential.
@@ -61,6 +66,7 @@ flowchart LR
 | Ingest token | backend, ingest | compose secret `ingest_token`, generated once per target; the backend reads it from `INGEST_TOKEN_FILE` and sends it as a bearer token to the ingest endpoint | Not listed |
 | gog keyring password | ingest | compose secret `gog_keyring_password`, generated once per target; `run.sh` exports it as `GOG_KEYRING_PASSWORD` | Not listed |
 | Gmail OAuth client + refresh token | ingest | gog's file keyring in the `ingest-state` volume, encrypted with the keyring password; piped in from the Mac's Keychain by `just ingest-auth`, never printed or written to disk on the way | No |
+| Terminal token | backend, terminal | compose secret `terminal_token`, generated once per target like the ingest token; the backend reads it from `TERMINAL_TOKEN_FILE` and sends it as a bearer token to the terminal service (`:8095`), which compares it hashed and in constant time. It unlocks only the terminal service, nothing else; the terminal container holds no other secret | Not listed |
 | Instagram worker token | backend; the Instagram workers | compose secret `ingest_worker_token`, generated once per target like the ingest token; the backend only (the ingest container never gets it), via `settings.json` `ingest.worker_token`. Printed by `just instagram-worker-token <target>` (stdout, for pasting into `configure`); on a worker in `~/.config/karpathy-instagram-worker/config.toml` (0600, written atomically). One per deployment | Name, set ("Instagram worker token") |
 | Instagram session (cookies, device ids) | ingest (local mode); the worker (worker mode) | local mode: `session-<user>.json` (0600) in the `ingest-state` volume; worker mode: in instascraper's `~/.config/instascraper/` on the worker's machine, never sent to the server. The password is never stored | Connection state, or the workers' states |
 | Ingest profile account and allowed senders (personal data) | ingest | secret references resolved into `ingest.json` (0600) | Name, set |
@@ -84,7 +90,7 @@ and every task that handles them doesn't log. Compose secret files are written 0
 references, never values; the renderer never logs a value; the legacy check in `dev.sh` names keys of an old
 `deploy/.env` / `opencode.env`, not their values. `settings.json` holds no credential: only `/run/secrets/…` paths, plus the `secrets` manifest (names, purpose,
 component, optional and set flags; no value).
-opencode never receives the GitHub or bearer token; the ingest service receives none of the app's secrets (bearer,
+opencode and the terminal never receive the GitHub or bearer token; the ingest service receives none of the app's secrets (bearer,
 GitHub, opencode password, provider keys, worker token), only its own two. The backend forwards a worker's requests
 with the ingest token, never the worker token.
 
@@ -118,7 +124,8 @@ this repo's code or into its settings. Both are scanned with **gitleaks**, pinne
   and a vault `.gitleaks.toml` (the AI or an ingest could write one to switch rules off); gitleaks' default rules
   always apply.
 - **Unpushed commits.** Every push (`Repo.push`, also the pull's "push what's unpushed") first checks the commits in
-  `origin/<branch>..HEAD` against the list of commits the app scanned (`.git/karpathy-secret-scanned`). Any other one
+  `origin/<branch>..HEAD` against the list of commits the app scanned (`/config/secret-scanned/<vault id>`, outside the
+  vaults volume: the terminal can write `.git` and could otherwise mark its own commits as scanned). Any other one
   (made in a terminal in the clone, or before the scan existed) is scanned on its own (its changes against its
   parent, its message; the remote's `.gitleaksignore`). Clean → recorded and pushed. A finding → nothing is pushed,
   all unpushed commits are folded back into uncommitted changes (as a pull does), and the push error says so; the
@@ -301,6 +308,29 @@ and holds nothing of the app's:
 - Gmail access is set up from the Mac (`just ingest-auth`): the OAuth client and refresh token are piped over SSH into
   `docker exec` on stdin, never as arguments, and land only in the encrypted keyring.
 
+## The terminal
+
+The compose service `terminal` ([ADR 0008](../../docs/adr/0008-terminal-in-its-own-container.md), #175) runs bash and Claude
+Code for the app's Terminal panel. It runs whatever the user types, and what an AI the user starts there does with
+untrusted vault content (ingested mail, web pages). It is fenced in like ingest and holds nothing of the app's:
+
+| Risk | Guard | What remains |
+|---|---|---|
+| A command (the user's, a pasted one, a hijacked Claude Code) steals an app credential | The container has no app secret: no bearer, GitHub, opencode password, provider key or worker token, only `terminal_token`, which unlocks only the terminal service. No `/config`, no Docker socket, no other container's files; uid 1000, `cap_drop: [ALL]`, `no-new-privileges`, `init`, bounded logs, no published port | The shell reads and writes every vault (not only the open one) and `terminal-home` (the Claude login) |
+| **SSRF / exfiltration:** the shell reaches the backend, opencode, the metadata service or the tailnet | Network `internal` only; `HTTP(S)_PROXY` to the egress proxy, which refuses loopback, private, link-local and tailnet ranges after DNS, on every redirect | The proxy allows every public destination: a hijacked session can send vault content to any public host |
+| Prompt injection through vault content in a Claude Code session | The confinement above; damage to vault files is uncommitted and shows in Changes before anything reaches GitHub (ADR 0001) | Claude Code can read every vault and write any file in it, including `.git` (next row) |
+| The terminal plants a git hook, `filter`, `textconv`, `core.fsmonitor`, credential helper or the like to run a command in the backend, next to the GitHub token | Every backend git command runs with `core.hooksPath=/dev/null` and `core.fsmonitor=false` (`safeGitEnv`). Before it runs, `assertSafeRepo` refuses (`409 unsafe-git-config`, naming the key) a clone whose `.git` isn't a plain folder or whose `.git/config` holds a key outside the allowlist (`SAFE_KEYS`: clone keys, `core.*` data keys, `remote.*` urls, `branch.*`, `user.name`/`email`, a few data options; `include*` and `extensions.worktreeConfig` are refused). The secret scan and the search's `check-ignore` go through both too. The terminal's home (`~/.gitconfig`) is a different volume from the backend's, so its global config never applies to the backend's git | A user who sets an unusual key (say `diff.tool`) gets a clear refusal until they remove it |
+| Someone else drives the terminal API | `:8095` on the `internal` network only; every request needs `terminal_token` (constant-time compare); `cwd` of a new shell must resolve to a folder inside the vaults dir; the public routes need the bearer token. A token mismatch is `502 terminal-auth`, never a `401` that would log the user out | — |
+| A client floods the service | At most 4 sessions (`429`), request bodies capped (input 1 MB), a slow stream pauses the PTY instead of buffering | A session left open holds a shell until the container restarts |
+
+- The bearer token now grants a shell. A stolen token or QR code is no longer only "read and write the notes": it
+  runs commands in the terminal container and reaches the internet through the egress proxy.
+- The terminal has **no git push credentials**: commit and push from the app. A user who logs in to GitHub there
+  (`gh`, a token in `~/.git-credentials`, an SSH key in `terminal-home`) does so at their own risk, and what they push
+  skips the app's [secret scan](#secret-scan-before-a-push).
+- `terminal.enabled: false` in the settings removes the routes (`404 terminal-off`) and the button; the service can
+  stay stopped.
+
 ## The agents move
 
 The app writes vault files without a tap (`agents-standard.ts`), so it is fenced in:
@@ -401,9 +431,9 @@ kinds, strings only) and can only change which fields and flags the form shows; 
 
 ## Runtime hardening
 
-- On a target only the proxy publishes ports (443 only, no port 80); backend, opencode and ingest are on the internal
+- On a target only the proxy publishes ports (443 only, no port 80); backend, opencode, ingest and terminal are on the internal
   network.
-- Backend, opencode and ingest run as uid 1000, not root; every service has `cap_drop: [ALL]` (the proxy keeps
+- Backend, opencode, ingest and terminal run as uid 1000, not root; every service has `cap_drop: [ALL]` (the proxy keeps
   `NET_BIND_SERVICE`), `no-new-privileges` and bounded logs.
 - opencode's snapshots, sharing and auto-update are off; its version is pinned.
 - **Dev stacks on the Mac** (prod is unchanged): besides the proxy on 80N0, the backend's HTTP API is published on
@@ -437,6 +467,17 @@ kinds, strings only) and can only change which fields and flags the form shows; 
   so does the LLM provider). `.gitleaksignore` fingerprints contain the line number, so an edit above an ignored
   line revives the finding.
 - No rate limiting on the token check.
+- **Terminal** (#175):
+  - The bearer token grants a shell (single shared token, no roles): a stolen token or QR code can read and rewrite
+    every vault and send their content to any public host through the egress proxy.
+  - The terminal can write `.git` in every clone. Config keys and hooks are guarded ([The terminal](#the-terminal)), and
+    the secret scan's record of scanned commits lives in `/config`, out of its reach, so its commits are scanned when the
+    app pushes them. A `git push` from the terminal itself (if the user logs in to GitHub there) skips the scan.
+  - The terminal shares the `internal` network with backend, opencode and ingest (as ingest does), so it can reach their
+    ports; they are token- or password-guarded, and the terminal holds none of the tokens.
+  - A session left open keeps a shell (and what runs in it) until the terminal container restarts, no idle timeout.
+  - The Claude login in `terminal-home` is a credential for the user's Anthropic account, readable by anything in the
+    terminal.
 - **The exact position can be exfiltrated by prompt injection** (#151): a hostile page in a vault can tell the AI to
   call `user_location` and put the result into a `webfetch` URL to an attacker's host, a `websearch` query or a note.
   Once the browser's site permission is granted, the call needs no further click, and the position is full precision

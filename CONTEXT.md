@@ -127,6 +127,12 @@ _Avoid_: Preview
 The Write/Read mode the user last chose. Applies to every note opened afterwards and survives a reload; one per browser.
 _Avoid_: Default mode
 
+### Terminal
+
+**Terminal**:
+The app's bottom panel with real shells (bash, `git`, Claude Code) on the server's vaults, started in the open vault's folder. It runs in the `terminal` container, which has no app secrets and no push credentials; a session lives until the user closes it, its shell exits or the container restarts.
+_Avoid_: Console, SSH
+
 ### Operations
 
 Terms for running the app, not for using it ([`specs/system/deployment.md`](specs/system/deployment.md)).

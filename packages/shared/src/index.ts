@@ -492,3 +492,16 @@ export interface MetricsReport {
   uptimeS: number;
   intervalS: number;
 }
+
+/** A shell session of the terminal panel (#175): `GET /terminals`, `POST /vaults/:id/terminals`. */
+export interface TerminalInfo {
+  id: string;
+  /** The folder it started in, relative to the vaults dir (`<vault id>[/<root>]`). */
+  cwd: string;
+  cols: number;
+  rows: number;
+  created: string;
+}
+
+/** One line of `GET /terminals/:id/stream`: output (`at` = offset after it; `reset` = a replay, clear first) or exit. */
+export type TerminalEvent = { t: 'o'; d: string; at: number; reset?: boolean } | { t: 'x'; code: number };

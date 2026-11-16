@@ -1,7 +1,7 @@
 ---
 title: "Architecture: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-27
+edited: 2026-11-16
 ---
 
 # Architecture: karpathy.app
@@ -12,7 +12,7 @@ As built on 2026-10-02. This page describes what exists; the reasons behind it a
 ## Overview
 
 A thin backend in front of git and an agent harness, a PWA in front of the backend, and an ingest service that fills
-the vaults' `Input/` from mail and the web, all in one docker compose stack. Only the reverse proxy publishes ports.
+the vaults' `Input/` from mail and the web, and a terminal service for the app's Terminal panel, all in one docker compose stack. Only the reverse proxy publishes ports.
 
 ```mermaid
 flowchart LR
@@ -25,9 +25,11 @@ flowchart LR
     O[opencode serve<br/>agent loop + tools]
     E[egress: Squid<br/>public addresses only]
     I[ingest: ingest-email<br/>mail + links into Input/]
+    T[terminal: PTY server<br/>bash, git, Claude Code]
     V[(volume vaults:<br/>git clones)]
     C[(volume config:<br/>config.json)]
     OD[(volume opencode-data)]
+    TH[(volume terminal-home:<br/>Claude login, history)]
     IST[(volume ingest-state:<br/>Gmail token, Instagram session,<br/>worker results)]
   end
   subgraph Home["User's Mac / Linux box (home IP)"]
@@ -44,6 +46,10 @@ flowchart LR
   P -- "/api/*" --> B
   B -- "@opencode-ai/sdk (HTTP + SSE),<br/>Basic auth" --> O
   B -- "/instagram/* :8090,<br/>ingest token (jobs streamed)" --> I
+  B -- "/api/terminals* :8095,<br/>terminal token (NDJSON stream)" --> T
+  T -- "shells, rw all vaults" --> V
+  T --> TH
+  T -- "HTTP(S)_PROXY" --> E
   B -- "git, ripgrep" --> V
   B --> C
   O -- "file tools" --> V
@@ -69,6 +75,7 @@ flowchart LR
 | Shared | `packages/shared`: TypeScript types for the API (no runtime schemas). |
 | Settings | `packages/settings`: zod schema, loader, secret resolution and renderer for `deploy/settings/` (YAML), run with `tsx` as `just settings …` ([Settings](#settings)). |
 | Ingest | Python 3.13 image running [ingest-email](https://github.com/tillg/ingest_email) (private repo, pinned commit) with instascraper 1.1.0, the `gog` Gmail CLI 0.43.0 (checksum-verified), tesseract (deu, eng), poppler and ffmpeg; a stdlib `http.server` endpoint ([Ingest service](#ingest-service-deployingest)). |
+| Terminal | `apps/terminal`: Node 22 + node-pty 1.1.0 (compiled on Alpine) PTY server on Express, image `deploy/terminal/Dockerfile` (`node:22-alpine` with bash, git, ripgrep, less, curl, openssh-client, Claude Code 2.1.318 pinned); web: xterm.js 6 (`@xterm/xterm`, `addon-fit`, `addon-web-links`) ([Terminal service](#terminal-service-appsterminal)). |
 | Instagram worker | Python ≥ 3.11 package `karpathy_instagram_worker` in `tools/instagram-worker/` (not a release image): instascraper v1.1.0 as a library, stdlib HTTP (`urllib`, `http.client`), config TOML; installed with pipx from a git tag, run by launchd (macOS) or a systemd user unit (Linux) ([Instagram worker](#instagram-worker-toolsinstagram-worker)). |
 | Tests | Vitest (backend projects `default`, `github`, `llm`; web unit tests for `lib/` and component tests with `@testing-library/react` in jsdom), pytest (the ingest endpoint, in the image's test stage; the Instagram worker in a `python:3.11-slim` container with instascraper stubbed, `tools/instagram-worker/test.sh`), shell tests (`*.test.sh`), Playwright e2e (desktop, iPad, iPhone in Chromium and WebKit), axe-core. |
 | Website | Plain HTML + CSS in `site/`, no framework or dependencies; tests with `node:test`; GitHub Pages. |
@@ -214,6 +221,15 @@ once per note, so a note made since gets its local graph); the `3d-force-graph` 
   `Shell` renders `AdminMode` while `admin !== null` and keeps the user-mode `#app` mounted but `hidden`. The vault
   list, vault details, help `Modal` and confirm `Modal` (missing folders) are unchanged. `InstagramNotice` ("Reconnect
   in Secrets & keys", or in worker mode "Details" / "Workers in Secrets & keys") switches the section.
+- **Terminal panel** (#175, `components/TerminalPanel.tsx`, `lib/terminal.ts`): rendered by `Shell` while the store's
+  `terminalOpen` is set (localStorage `karpathy.terminalOpen`, per browser) and `settings.terminal` is on; opened by
+  the sidebar header's Terminal button (`open-terminal`) or Ctrl+`. A bottom panel on wide and tablet, resizable by
+  its drag handle (height in `karpathy.terminalHeight`), full screen on phone with a key bar (Esc, Tab, ⇧Tab, ^C, ^D,
+  arrows) on touch devices. Up to 4 tabs (one per session), + opens a shell in the open vault's folder, ✕ ends it
+  (`DELETE`), the chevron hides the panel and leaves the shells running. On open it lists `GET /terminals` and
+  reattaches to the newest session. Each tab is one xterm.js view over the NDJSON stream; it remembers the last
+  output offset (`at`) and, after a dropped stream, reconnects with `?from=<offset>`; input goes out one `POST` at a
+  time from a buffer, so keystrokes never reorder. Off (`terminal.enabled: false`): no button, no panel.
 - **Service worker**: precaches the app shell; `vault-api` NetworkFirst cache (5 s timeout) for the vault list, file
   tree and opened notes; auto-update with a re-check whenever the app becomes visible.
 
@@ -243,7 +259,7 @@ flowchart TB
 
 | Module | Responsibility |
 |---|---|
-| `main.ts` | Loads the settings (`SETTINGS_FILE`, default `/etc/karpathy/settings.json`), reads the container wiring from env (`PORT`, `VAULTS_DIR`, `CONFIG_DIR`, `OPENCODE_URL`, `OPENCODE_VAULTS_DIR`; `INGEST_URL` and `INGEST_TOKEN_FILE` for the ingest endpoint, both or none) and the build/deploy facts (`APP_VERSION`, `BUILT_AT`, `DEPLOYED_AT`), wires the services (the `UsageService` over the harness, the `MetricsSampler`, started with `await metrics.start()`, `settings.secrets` into `createApp`), graceful shutdown (stops the sampler). |
+| `main.ts` | Loads the settings (`SETTINGS_FILE`, default `/etc/karpathy/settings.json`), reads the container wiring from env (`PORT`, `VAULTS_DIR`, `CONFIG_DIR`, `OPENCODE_URL`, `OPENCODE_VAULTS_DIR`; `INGEST_URL` and `INGEST_TOKEN_FILE` for the ingest endpoint, both or none; `TERMINAL_URL` and `TERMINAL_TOKEN_FILE` for the terminal service, used only when the settings' `terminal.enabled` is on) and the build/deploy facts (`APP_VERSION`, `BUILT_AT`, `DEPLOYED_AT`), wires the services (the `UsageService` over the harness, the `MetricsSampler`, started with `await metrics.start()`, `settings.secrets` into `createApp`), graceful shutdown (stops the sampler). |
 | `settings.ts` | `loadBackendSettings(path)`: parses the rendered `settings.json` with the backend's own zod schema and reads each `{ file }` secret; a missing or invalid file stops the start with the path and the failing key. The schema also accepts `secrets`, the rendered secret manifest (`SecretStatus` without the GitHub extras; defaults to `[]`, so an older `settings.json` still loads) and exposes it as `BackendSettings.secrets`. |
 | `app.ts` | Express routes under `/api`, error mapping, NDJSON writer (15 s keepalive). `/healthz` outside auth; `/api/health` also reports the release version (`APP_VERSION`, `dev` for local builds), which admin mode › General shows next to the PWA's own. New in #150: `GET /api/settings/secrets`, `GET /api/usage` and `GET /api/metrics` ([Admin mode](#admin-mode)). |
 | `auth.ts` | Bearer token check (hashed, constant-time compare); `bearerAuthAny(tokens)`, the same check against each of several tokens (the Instagram worker routes). |
@@ -253,8 +269,9 @@ flowchart TB
 | `github-token.ts` | `GitHubToken`: the server-wide token (stored over secret), its source, `GET /user` identity check, redaction of every value seen. |
 | `ingest.ts` | `callIngest`: proxies the Instagram routes to the ingest service's endpoint ([Ingest](#ingest)); `forwardIngest`: passes a job-route request (JSON, or a streamed body with its `Content-Length`) through and returns the service's status, type and body as they are. |
 | `ingest-worker.ts` | `ingestWorkerRouter`: the Instagram worker's five job routes, mounted at `/api/ingest/instagram` before the main router, on the worker or the main token ([Instagram worker and job API](#instagram-worker-and-job-api)). `UPLOAD_TIMEOUT_MS` (10 min). |
+| `terminal.ts` | `terminalRouter(endpoint, vaults)` (#175): `GET /terminals`, `POST /vaults/:id/terminals` (`cwd` = the vault's root folder relative to the vaults dir; refused `409 not-ready` while cloning), the NDJSON `…/stream?from=N` (piped, so a slow browser pauses the shell), `POST …/input`, `POST …/resize`, `DELETE`, forwarded to the terminal service with the `terminal_token`. No endpoint (`terminal.enabled: false`) = `404 terminal-off`; service unreachable = `503 terminal-down`; service `401` = `502 terminal-auth` (never a `401`, which would log the app out); `429` (4 sessions) = `terminal-limit`. |
 | `serve.ts` | `serve(app, port)`: starts the HTTP server with `requestTimeout` = the upload timeout + 1 min (Node's 300 s default would cut a slow result upload); `headersTimeout` and `keepAliveTimeout` keep Node's defaults. |
-| `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure (its dirty check and stash leave `<root>/Input` out), commit, push, conflict sides and resolution; hardened `runGit`. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
+| `repo.ts`, `git.ts` | All git commands for one clone: changes, diff, pull procedure (its dirty check and stash leave `<root>/Input` out), commit, push, conflict sides and resolution; hardened `runGit`: every command runs with `core.hooksPath=/dev/null` and `core.fsmonitor=false` (`safeGitEnv`), and `assertSafeRepo` first refuses (`409 unsafe-git-config`) a clone whose `.git` isn't a plain folder or whose `.git/config` holds a key outside `SAFE_KEYS`, because the terminal service can write `.git` ([Terminal service](#terminal-service-appsterminal)); `secret-scan.ts` and `search.ts` call both too. `Repo.stageSymlink` / `stagedAsSymlink` stage a path as a symlink (mode 120000) without committing. |
 | `search.ts` | The vault search (#138): `SearchIndex` per vault root, text analysis (`fold`, `detectLanguage`, `wordTerms`), ranking and hit lines ([Vault search](#vault-search)). |
 | `files.ts`, `paths.ts` | Tree listing, versions (content hash), `filesMentioning` (ripgrep, for the move's link scan), the note graph (`graph`: notes + links via the shared `noteLinks`, for `GET /vaults/:id/graph`); path normalization and symlink-safe resolution. `Vaults.rawFile` resolves a raw-file path with the same rules; `Vaults.upload` writes uploads ([Uploads](#uploads)). |
 | `bases.ts` | Bases query tables (#91): `parseBase` (YAML via `yaml`, core schema; v1 subset, `BaseError` `base-invalid` / `base-unsupported` → 422), a Pratt parser and evaluator for filter expressions (unsupported names refused before any file is read), and the file index: per vault root, every file's size, times, frontmatter, tags and link references as written (`linkRefs`; not the full text), re-read only when size or mtime changed (stat per query, no watcher coupling); links are resolved per query with the shared basename index of `resolveWikilink` (one bucket per link, not a scan of every path). `forgetBaseIndex(root)` drops a root's index when the vault is removed or its root, branch or repo changes (and when a watcher starts). `queryBase` filters, sorts (empty last, path as tie-break), caps at `limit` / 500 rows and serializes cells (`BaseCell`: dates as `YYYY-MM-DD[ HH:mm]`, `file.name` / `basename` / `path` as links). `POST /vaults/:id/base` `{ source }`. |
@@ -606,10 +623,37 @@ needs Tailscale where prod's proxy listens on the tailnet only. Setup guide: `do
   `loginctl enable-linger`. Both carry a non-default `KARPATHY_WORKER_CONFIG` into the service. `status` shows the
   state and the last 20 log lines.
 
+### Terminal service (`apps/terminal`)
+
+The compose service `terminal` (#175, [ADR 0008](../../docs/adr/0008-terminal-in-its-own-container.md)) runs the
+shells of the app's Terminal panel and Claude Code on the vaults. It is a small Express server (`main.ts`,
+`server.ts`) over a PTY session manager (`terminals.ts`, node-pty).
+
+- **Image** (`deploy/terminal/Dockerfile`, the sixth release image `ghcr.io/tillg/karpathy.app-terminal`, targets `dev` and
+  `prod`): `node:22-alpine` with bash, git, ripgrep, less, curl, openssh-client, ncurses, procps; Claude Code
+  `@anthropic-ai/claude-code@2.1.318` installed globally, pinned, with `DISABLE_AUTOUPDATER=1` and
+  `USE_BUILTIN_RIPGREP=0`; node-pty compiled in the same layer as its toolchain, which is then removed. First use of
+  `claude` needs a login (URL + code); it lands in the home volume.
+- **Compose:** uid 1000, `cap_drop: [ALL]`, `no-new-privileges`, `init`, network `internal` only (no published port),
+  `HTTP(S)_PROXY=http://egress:3128`, the volumes `vaults` (read-write, whole) and `terminal-home` (`/home/node`),
+  secret `terminal_token` and nothing else. Healthcheck `GET /healthz` on `:8095`.
+- **API** (`:8095`, bearer `terminal_token`, hashed constant-time compare, `401` otherwise): `GET /terminals`, `POST
+  /terminals {cwd, cols, rows}` (`cwd` relative to the vaults dir, resolved through symlinks and refused outside it),
+  `GET /terminals/:id/stream?from=N` (NDJSON), `POST …/input {data}`, `POST …/resize {cols, rows}`, `DELETE
+  /terminals/:id`. The backend is its only client ([Backend](#backend-appsbackend), `terminal.ts`).
+- **Sessions:** bash as a login shell (`-l`, `TERM=xterm-256color`) with `PATH`, `LANG` and the configured env only,
+  nothing of the server's env. At most 4 (`429` beyond). A session lives until `DELETE`, the shell's exit or a
+  restart of the container; closing it kills the shell and all its descendants. Output is numbered by its end offset
+  (`at`) and the last 256 KB is kept. One stream is attached at a time (a new one takes over). A stream with `from`
+  inside the kept range continues there; otherwise the first chunk is the whole kept output with `reset: true`, and the
+  client then nudges the size so full-screen programs repaint. Backpressure: while the response can't keep up the PTY
+  is paused. Events: `{t:'o', d, at, reset?}`, `{t:'x', code}`.
+- **State:** the sessions live in the service's memory; only the home volume persists (login, `~/.claude`, history).
+
 ### Egress proxy (`deploy/egress`)
 
 Squid 6 in an own Alpine image (base pinned by digest; the fourth release image), on networks `internal` and
-`egress`. Used by opencode and by the ingest service. `squid.conf` has one `dst` ACL of internal ranges (loopback, RFC 1918, link-local, CGNAT/tailnet, ULA,
+`egress`. Used by opencode, the ingest service and the terminal service. `squid.conf` has one `dst` ACL of internal ranges (loopback, RFC 1918, link-local, CGNAT/tailnet, ULA,
 multicast, …) that is denied, then allows everything else; Squid checks after DNS resolution on every request, so
 each redirect hop is re-checked. opencode gets `HTTP_PROXY`/`HTTPS_PROXY=http://egress:3128` and
 `NO_PROXY=localhost,127.0.0.1,0.0.0.0` (its plugin client calls its own server directly; no override in dev or the backend tests). Gotcha: `::ffff:0:0/96` or `0.0.0.0/8` in the ACL make Squid read `0.0.0.0/0`, so they stay out.
@@ -675,6 +719,11 @@ sequenceDiagram
   answered, `400` invalid result). The question travels as the vault event `browser-call`; pending calls are replayed
   on connect. See [Browser tools and local time](#browser-tools-and-local-time).
 - Turns outlive connections: a client reattaches to a running turn from any device.
+- **Terminal** (#175): NDJSON over `fetch` too (a WebSocket can't carry the `Authorization` header and would bypass
+  `bearerAuth`): `GET /api/terminals/:tid/stream?from=N` plus `POST …/input` / `…/resize`, `DELETE`, `GET
+  /api/terminals` and `POST /api/vaults/:id/terminals`, forwarded by the backend to `http://terminal:8095` with the
+  terminal token ([Terminal service](#terminal-service-appsterminal)). Shells outlive the stream, the panel and the
+  browser; a client resumes by offset.
 
 ## Incoming changes and the user's pull
 
@@ -2042,7 +2091,7 @@ for the `secrets` key (every deployment renders anyway; the backend tolerates it
 
 | Store | Content | Owner |
 |---|---|---|
-| Volume `vaults` → `/vaults/<id>` | Full git clone of each vault repo (no shallow or sparse clone). The notes themselves. | backend (git), opencode (file tools) |
+| Volume `vaults` → `/vaults/<id>` | Full git clone of each vault repo (no shallow or sparse clone). The notes themselves. | backend (git), opencode (file tools), terminal (shells, rw) |
 | `<vault root>/Input/` (in the clone, tracked by git) | The ingest queue: one folder per input item, its `index.md` frontmatter holding the link state (`unresolved_links`, `resolved_links`, `failed_links`). | ingest service (creates, updates while links are open), AI (`move_to_sources`), user |
 | Volume `ingest-state` → `/state` | gog's encrypted file keyring (Gmail OAuth client and refresh token), instascraper's session and activity ledger (`home/.config/instascraper/`), login staging dirs, ingest-email's rendered config and locks, the last-run file. Backed up with the server, not in git. | ingest service |
 | `deploy/settings/*.yaml` (git) | The settings of every environment: central file, environment files; gitignored local overlays for dev and prodtest. Secret references only. | operator / developer |
@@ -2050,6 +2099,7 @@ for the `secrets` key (every deployment renders anyway; the backend tolerates it
 | Volume `config` → `/config/config.json` | `vaults` (config + `cloned` / `cloneError` / `pendingFolders`), `settings` (threshold, web access, `modelOverride`, `titleModelOverride` and `visionModelOverride` only while ≠ their defaults), `titleSuggestions` (per vault and chat, #148), `githubToken` (plaintext, if set in the app), `aiTouched`, `editStamps` (per vault and path: last AI / human write, epoch ms), `conflicts`, `queued` turns. | backend only |
 | Volume `config` → `/config/metrics.jsonl` (0600) | The metrics history (#150): one JSON `MetricsSample` per line, every 30 s, 7 days (~3 MB); appended per sample, rewritten atomically once an hour and at start without old or torn lines. Not part of `config.json`. | backend only (opencode can't see the volume) |
 | `/vaults/.preflight/` | Short-lived blobless clones of the attach preflight; emptied at startup. | backend |
+| Volume `terminal-home` → `/home/node` (terminal) | The terminal's home: Claude Code's login and `~/.claude`, shell history, tools the user installs there. Survives restarts and deploys; not in git. | terminal service |
 | Volume `opencode-data` | opencode sessions = chat history, including attached files (base64, after opencode's resize), until the chat is deleted. | opencode |
 | localStorage `karpathy.chips:<vault>:<chat>` | Unsent chat attachments (path, version, type, size) and their source folder. | web |
 | Volume `caddy-data` | TLS certificates and keys. | proxy |
@@ -2068,9 +2118,10 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 
 - **Exposed:** one HTTPS origin: the PWA plus `/api/*` (full route list in `apps/backend/src/app.ts`). Every `/api`
   route needs the bearer token; `/healthz` exists only inside the stack.
-- **Consumed:** GitHub over HTTPS (clone, fetch, push), the opencode HTTP API and the ingest endpoint (`:8090`) on the
+- **Consumed:** GitHub over HTTPS (clone, fetch, push), the opencode HTTP API, the ingest endpoint (`:8090`) and the terminal service (`:8095`) on the
   internal network, the LLM provider APIs, Exa and public web pages (from opencode, through the egress proxy), the
-  Gmail API, Instagram and the pages linked in mails (from the ingest service, through the egress proxy), and the DNS
+  Gmail API, Instagram and the pages linked in mails (from the ingest service, through the egress proxy), whatever the user or
+  Claude Code fetches in the terminal (through the egress proxy), and the DNS
   provider API (DNS-01, from the proxy only).
 
 ## External systems
@@ -2094,13 +2145,13 @@ No database. Git is the source of truth for notes; GitHub is the sync hub.
 ## Infrastructure
 
 - **Runtime = docker compose** in dev and prod (`deploy/compose.yml`). Services `proxy` (networks `edge` +
-  `internal`), `backend` and `egress` (`internal` + `egress`), `opencode` and `ingest` (`internal` only, which is
-  `internal: true`: no route out but the egress proxy); backend, opencode and ingest run as uid 1000; all with
+  `internal`), `backend` and `egress` (`internal` + `egress`), `opencode`, `ingest` and `terminal` (`internal` only, which is
+  `internal: true`: no route out but the egress proxy); backend, opencode, ingest and terminal run as uid 1000; all with
   `cap_drop: [ALL]`, `no-new-privileges` and log rotation. Settings come rendered from `deploy/settings/`
   ([Settings](#settings)): compose interpolates `.env`, the backend reads `settings.json` (`SETTINGS_FILE`),
   opencode gets `opencode.env`, ingest `ingest.json`. Secrets are files mounted as compose secrets (`deploy/secrets/`
   in dev, `tmp/prodtest/secrets/` in prodtest, `shared/secrets/` on a target: `bearer_token`, `github_token`,
-  `opencode_password`, `dns_api_token`, `gog_keyring_password`, `ingest_token`; the last two generated like the
+  `opencode_password`, `dns_api_token`, `gog_keyring_password`, `ingest_token`, `terminal_token`; the last three generated like the
   opencode password); provider keys, `EXA_API_KEY` and the web caps come from `opencode.env`.
 - **Dev** (`compose.dev.yml`, `just dev up [N]`): numbered dev stacks side by side, one per checkout; stack N on
   https://localhost:80N0 with Caddy's internal CA, Vite with HMR (`web` service), bind-mounted sources, local bare
@@ -2346,6 +2397,10 @@ The ones that shape the whole system:
   charts, the secret status rendered into `settings.json` instead of probed, a backend sampler with a JSONL history on
   the config volume instead of Beszel's API, and token usage aggregated from opencode's sessions instead of a ledger.
   The UI is split along the planned User and Admin roles; the one bearer token is both.
+- **The terminal is its own container, without app secrets** ([ADR 0008](../../docs/adr/0008-terminal-in-its-own-container.md)):
+  shells and Claude Code run in the `terminal` service, confined like ingest, so a prompt-injected session can damage
+  vault files but reach no credential. NDJSON + POSTs instead of a WebSocket; sessions live until closed. Because it
+  can write `.git`, the backend's git runs without hooks and refuses an unsafe `.git/config`.
 - **The user commits, the AI never does** ([ADR 0001](../../docs/adr/0001-user-triggered-commits.md)).
 - **Explicit pull steps instead of `git pull --rebase --autostash`** (diagram in
   [domain.md](domain.md#pull-and-conflict)): unpushed commits are folded back with `reset --mixed`, never rebased, so no
@@ -2611,7 +2666,7 @@ directory with its items), `ingest-routes.test.ts`
   (bearer, zod, forwarding with the token to a real local HTTP stand-in for the service, 503, 401 → 502, no password in
   the log), `ingest-egress.test.ts` (a real ingest + egress container pair: the backend stand-in,
   `169.254.169.254` and a private IP refused, a public URL through the proxy, httpx and `gog` honouring
-  `HTTPS_PROXY`), `plan-gaps.test.ts` (five services, ingest publishes nothing and has exactly its two secrets).
+  `HTTPS_PROXY`), `plan-gaps.test.ts` (six services, ingest and terminal publish nothing, ingest has exactly its two secrets and terminal exactly `terminal_token`).
   Ingest service: `deploy/ingest/run.test.sh` (the loop against a fake `ingest-email` on `PATH`: fetch and resolve
   cadence, last-run file also during a long call, skipped vault, `.tmp-*` cleanup, the rendered ingest-email config,
   idle without profiles), `compose.test.sh`

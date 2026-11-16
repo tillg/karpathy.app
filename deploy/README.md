@@ -19,6 +19,7 @@ flowchart TB
       opencode[opencode<br/>AI agent loop]
       egress[egress: Squid<br/>public destinations only]
       ingest[ingest: ingest-email<br/>mail + links into Input/]
+      terminal[terminal: bash, Claude Code<br/>shells for the app's Terminal panel]
     end
     subgraph Mon["compose project karpathy-monitoring"]
       hub[Beszel hub<br/>tailnet IP :8090]
@@ -41,6 +42,9 @@ flowchart TB
   opencode --> egress
   ingest --> vaults
   ingest --> egress
+  backend -->|terminal token| terminal
+  terminal --> vaults
+  terminal --> egress
   egress -->|model calls, web search and fetch| LLM
   agent --> hub
   gatus -->|checks HTTPS + cert| proxy
@@ -67,8 +71,8 @@ when the whole box is gone.
                                        starts the stack, runs the smoke check
 ```
 
-- **A release** is a tag `vX.Y.Z` (or a pre-release `vX.Y.Z-rc.N`). CI builds the five images
-  (`ghcr.io/tillg/karpathy.app-{proxy,backend,opencode,egress,ingest}:X.Y.Z`, public; the ingest image's build checks
+- **A release** is a tag `vX.Y.Z` (or a pre-release `vX.Y.Z-rc.N`). CI builds the six images
+  (`ghcr.io/tillg/karpathy.app-{proxy,backend,opencode,egress,ingest,terminal}:X.Y.Z`, public; the ingest image's build checks
   out the private `tillg/ingest_email` with a read-only deploy key, repo secret `INGEST_EMAIL_DEPLOY_KEY`) and attaches
   `compose.yml` to the GitHub release. Nothing is ever built on a server, and the server holds no
   copy of the source.

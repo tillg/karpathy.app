@@ -2,7 +2,7 @@ import type {
   BaseResult,
   BrowserCallResult,
   ChatDetail, ChatSummary, Change, Command, InstagramLoginAnswer, InstagramStatus, CommitResult, ConflictChoice, Diff, FileContent, FileEntry, GraphData, MetricsRange, MetricsReport,
-  OpenPage, ReturnedPrompt, SearchHit, SecretStatus, Settings, SettingsView, TokenTest, UploadResult, UsageDays, UsageReport, Vault, VaultConfig, VaultStatus,
+  OpenPage, ReturnedPrompt, SearchHit, SecretStatus, Settings, SettingsView, TerminalInfo, TokenTest, UploadResult, UsageDays, UsageReport, Vault, VaultConfig, VaultStatus,
 } from '@karpathy/shared';
 
 import { clientContext, type ClientContext } from './client-context';
@@ -133,6 +133,13 @@ export const api = {
   newChat: (id: string) => json<{ chatId: string }>('POST', `${v(id)}/chats`),
   chat: (id: string, chatId: string) => json<ChatDetail>('GET', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
   deleteChat: (id: string, chatId: string) => json<void>('DELETE', `${v(id)}/chats/${encodeURIComponent(chatId)}`),
+
+  // The terminal panel (#175); the stream is read by lib/terminal.ts.
+  terminals: () => json<{ terminals: TerminalInfo[] }>('GET', '/terminals'),
+  openTerminal: (id: string, cols: number, rows: number) => json<TerminalInfo>('POST', `${v(id)}/terminals`, { cols, rows }),
+  terminalInput: (tid: string, data: string) => json<void>('POST', `/terminals/${tid}/input`, { data }),
+  terminalResize: (tid: string, cols: number, rows: number) => json<void>('POST', `/terminals/${tid}/resize`, { cols, rows }),
+  closeTerminal: (tid: string) => json<void>('DELETE', `/terminals/${tid}`),
   renameChat: (id: string, chatId: string, title: string) => json<void>('PATCH', `${v(id)}/chats/${encodeURIComponent(chatId)}`, { title }),
   keepChatTitle: (id: string, chatId: string) => json<void>('DELETE', `${v(id)}/chats/${encodeURIComponent(chatId)}/title-suggestion`),
   prompt: (id: string, chatId: string, text: string, attachments?: string[], openPage?: OpenPage) =>

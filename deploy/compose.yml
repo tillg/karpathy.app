@@ -153,6 +153,8 @@ services:
   # only, no app secrets. Its one secret, terminal_token, only lets the backend in.
   terminal:
     image: ghcr.io/tillg/karpathy.app-terminal:${APP_VERSION:-dev}
+    # The shell prompt's host name (instead of the container id).
+    hostname: terminal
     build: { context: .., dockerfile: deploy/terminal/Dockerfile, target: prod }
     restart: unless-stopped
     init: true

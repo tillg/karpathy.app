@@ -1,7 +1,7 @@
 ---
 title: "Functional: karpathy.app"
 created: 2026-10-01
-edited: 2026-10-27
+edited: 2026-11-16
 ---
 
 # Functional: karpathy.app
@@ -758,6 +758,30 @@ flowchart LR
   worker mode an Instagram worker on the user's machine, in local mode a login in admin mode › Secrets & keys
   ([Instagram connection](#instagram-connection)).
 
+### Terminal
+
+A shell on the server, in the app (#175, [ADR 0008](../../docs/adr/0008-terminal-in-its-own-container.md)): `git`, files,
+`rg`, and Claude Code on the vaults from the iPad or the phone, without SSH.
+
+- **Open it** with the Terminal button in the sidebar header or **Ctrl+`**. A bottom panel like VS Code's, resizable
+  by its top edge on desktop and tablet; full screen on the phone, where touch devices also get a key bar (Esc, Tab,
+  ⇧Tab, ^C, ^D, arrows). Whether the panel is open is remembered per browser. The button is disabled while there is no ready vault.
+- **Tabs:** up to 4 sessions (a fifth is refused, "close one first"). **+** starts a shell, **✕** ends it, the chevron
+  hides the panel and leaves the shells running.
+- **The shell** is bash as uid 1000 in the `terminal` container, starting in the open vault's folder
+  (`/vaults/<id>[/<root>]`). It sees every vault, with `git`, `rg`, `curl`, `less` and **Claude Code** (2.1.318, pinned,
+  no self-update; the first `claude` run asks for a login by URL and code). Its home (`/home/node`) is a volume: the
+  Claude login, `~/.claude` and shell history survive restarts and deploys. It has no GitHub push credentials: commit
+  and push from the app ([Changes and commits](#changes-and-commits)).
+- **Sessions survive** closing the panel, a reload, closing and reopening the browser and another device: opening the
+  panel reattaches to the newest session and shows its last 256 KB, and a full-screen program repaints. A dropped
+  stream (the iPad sleeping) reconnects and resumes where it stopped. A session ends on **✕**, when its shell exits, or
+  when the terminal container restarts (a deploy).
+- **Off:** with `terminal.enabled: false` in the settings the button is gone and the routes answer `404 terminal-off`.
+  `503 terminal-down` (service not running) and `429` (limit) are the API's answers.
+- Files changed in the terminal show up in Changes like any other edit, uncommitted; commits made there bypass the app's
+  secret scan ([security.md](security.md#the-terminal)).
+
 ### Skills
 
 A vault follows the open **`.agents` standard**: instructions in `AGENTS.md`, skills in `.agents/skills/<name>/SKILL.md`
@@ -952,7 +976,7 @@ overwrite) and *deleted* (banner).
 
 ## Permissions and visibility
 
-Single user: whoever has the bearer token can do everything. There are no roles, no sharing and no per-vault
+Single user: whoever has the bearer token can do everything, including a shell on the server's vaults (terminal; the shell sees no app secret, [security.md](security.md#the-terminal)). There are no roles, no sharing and no per-vault
 permissions. The UI is split along a planned line of two roles: **User** (user mode: notes, chat, switching between the
 vaults one has access to) and **Admin** (also admin mode: configure and watch the installation). Today the one token is
 both; a later change can restrict admin mode, taking nothing away from users. The AI's permissions are fixed in the managed opencode config ([architecture.md](architecture.md#opencode-deployopencode)).
@@ -969,7 +993,7 @@ both; a later change can restrict admin mode, taking nothing away from users. Th
   wrote the file, not when the note was created. A `.base` file's YAML has no highlighting.
 - **No rename or move** of notes or folders (except the move into its own folder on a page's first upload or after an AI turn showing pictures), no
   explicit folder creation, no automatic pull (only the count updates on its own), no per-chat model,
-  no free chat rename (a title suggestion is the only way to a new title), no global keyboard shortcuts.
+  no free chat rename (a title suggestion is the only way to a new title), no global keyboard shortcuts except Ctrl+` for the terminal.
 - **Chat titles:** the drift check is a word-overlap heuristic: a synonym ("car" vs "vehicle") counts as drift and
   gives one extra suggestion, which **Keep** dismisses; a new topic named with half of the old title's words is missed. Title calls
   don't show in Usage (their throwaway sessions run outside the vaults). The vision and title model fields take only
