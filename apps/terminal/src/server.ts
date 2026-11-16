@@ -21,7 +21,7 @@ export interface ServerOptions {
 const size = { cols: z.number().int().min(2).max(1000), rows: z.number().int().min(1).max(500) };
 const openBody = z.object({ cwd: z.string().max(1000), ...size }).strict();
 const resizeBody = z.object(size).strict();
-const inputBody = z.object({ data: z.string().max(1_000_000) }).strict();
+const inputBody = z.object({ data: z.string().max(1_000_000), cid: z.string().max(100).optional(), seq: z.number().int().optional() }).strict();
 
 class BadRequest extends Error {}
 
@@ -82,7 +82,8 @@ export function createServerApp({ terminals, token, vaultsDir }: Omit<ServerOpti
     });
   });
   app.post('/terminals/:id/input', (req, res) => {
-    terminals.input(req.params.id!, inputBody.parse(req.body).data);
+    const { data, cid, seq } = inputBody.parse(req.body);
+    terminals.input(req.params.id!, data, cid !== undefined && seq !== undefined ? { cid, seq } : undefined);
     res.status(204).end();
   });
   app.post('/terminals/:id/resize', (req, res) => {

@@ -27,6 +27,11 @@ export class TerminalConnection {
   private closed = false;
   private pending = '';
   private sending = false;
+  /** This page's input tag: the service takes each (cid, seq) once, so a retry is never typed twice. */
+  private cid = crypto.randomUUID();
+  private seq = 0;
+  /** A chunk whose request failed: sent again as it was (same seq), never merged with later keys. */
+  private retry: { data: string; seq: number } | undefined;
   private size: { cols: number; rows: number } | null = null;
   private resizeTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -37,10 +42,11 @@ export class TerminalConnection {
 
   /** The page goes (reload, closed tab): what's still queued goes out now, as a keepalive request. */
   private onHide = () => {
-    if (!this.pending || this.closed) return;
-    const data = this.pending;
+    if (this.closed) return;
+    const chunks = [this.retry, this.pending ? { data: this.pending, seq: ++this.seq } : undefined];
+    this.retry = undefined;
     this.pending = '';
-    void api.terminalInput(this.id, data).catch(() => {});
+    for (const c of chunks) if (c) void api.terminalInput(this.id, c.data, { cid: this.cid, seq: c.seq }).catch(() => {});
   };
 
   private async loop() {
@@ -92,18 +98,21 @@ export class TerminalConnection {
 
   private async flush() {
     this.sending = true;
-    while (this.pending && !this.closed) {
-      const data = this.pending;
-      this.pending = '';
+    while ((this.retry || this.pending) && !this.closed) {
+      const chunk = this.retry ?? { data: this.pending, seq: ++this.seq };
+      if (!this.retry) this.pending = '';
+      this.retry = undefined;
       try {
-        await api.terminalInput(this.id, data);
+        await api.terminalInput(this.id, chunk.data, { cid: this.cid, seq: chunk.seq });
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) {
           this.finish();
           break;
         }
-        // Not lost: back in front of what was typed meanwhile, sent again shortly.
-        this.pending = data + this.pending;
+        // Refused (too long, bad request): sending it again can't help, and later keys must not wait behind it.
+        if (err instanceof ApiError && err.status >= 400 && err.status < 500) continue;
+        // Not lost: sent again shortly, as it was; the service drops it if the first request did arrive.
+        this.retry = chunk;
         await new Promise((r) => setTimeout(r, INPUT_RETRY_MS));
       }
     }

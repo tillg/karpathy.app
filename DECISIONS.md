@@ -287,6 +287,7 @@ edited: 2026-11-16
   - [13:40 — Reap a terminal by its session: /proc on Linux, the tty plus tracking on macOS](#run-2026-11-16-1330-1)
   - [15:00 — Release v0.0.41 and deploy it to prod, as the crashed run planned](#run-2026-11-16-1330-2)
   - [15:20 — Retro: ignore md2html previews of ADRs; a test that outsiders survive a reap](#run-2026-11-16-1330-3)
+  - [15:45 — Review of 4197a96..HEAD: fix the .git symlink, removal order and doubled keystrokes; leave three](#run-2026-11-16-1330-4)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -4184,3 +4185,15 @@ edited: 2026-11-16
 - **Why:** each is the smallest change that stops the same failure recurring.
 - **Alternatives:** a size guard in `reap` (refuse to kill more than N pids): arbitrary, and the test already pins the property.
 - **Consequences:** an ADR preview no longer shows in `git status`; build one on purpose with `/md2html:build`.
+
+## 15:45 — Review of 4197a96..HEAD: fix the .git symlink, removal order and doubled keystrokes; leave three {#run-2026-11-16-1330-4}
+
+- **Status:** open
+- **Context:** an independent read-only review of the commits after the crashed run's last review found seven issues. Three I confirmed in the code and they matter on prod now that the terminal is there.
+- **Question:** which to fix in this run?
+- **Decision:**
+  - Fixed: (1) the startup migration wrote the gitfile through whatever `.git` was (a symlink the terminal planted could clobber the vault's git config or a `/config` file, or stop the backend with EISDIR on every start). Now a non-file `.git` is removed and the gitfile created with `wx`, and each vault's migration is caught on its own. (5) Removing a vault ended its shells only after the uncommitted-changes check and the delete: now first. (6) A retried input chunk could be typed twice (`git push` twice) when the first request did arrive: each page tags chunks with a random `cid` and a `seq`, the terminal service takes each tag once (last 64 per page, 16 pages), a retry resends the same chunk, and 4xx stops retrying.
+  - Left: (2) the migration copies a `.git` verbatim: prod migrated v0.0.40 clones, which no terminal could touch, so only dev stacks are exposed. (3) `Repo.clone` and the preflight still discover `.git` in `/vaults`: no concrete exploit; a ceiling dir doesn't stop discovery below it. (7) the pagehide keepalive can overtake a request still out: rare, and the tag makes a reorder not a loss.
+- **Why:** 1 and 6 can hurt the user on prod today; 5 is a two-line order change.
+- **Alternatives:** a reorder buffer on the service for 7 (more state for a rare case).
+- **Consequences:** needs v0.0.42. Tests: `gitdirs.test.ts` (symlink to a file and to a folder), `terminals.test.ts` and `terminal.test.ts` (retry typed once). The page's retry loop has no unit test (it would need a mocked fetch); the e2e terminal specs cover it. 5 has no deterministic test: in either order a shell that already wrote gets a 409.

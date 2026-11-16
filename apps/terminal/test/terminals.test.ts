@@ -112,6 +112,19 @@ describe('Terminals', () => {
     }
   });
 
+  it('a retried input chunk (same page and sequence number) is typed once', async () => {
+    terms = new Terminals({ shell: '/bin/sh' });
+    const t = terms.open(tmpdir(), 80, 24);
+    const c = collector();
+    terms.attach(t.id, undefined, c.sink);
+    terms.input(t.id, 'echo "r$((1+1))"\r', { cid: 'page-a', seq: 1 });
+    terms.input(t.id, 'echo "r$((1+1))"\r', { cid: 'page-a', seq: 1 });
+    // Another page's chunk 1 is its own.
+    terms.input(t.id, 'echo "D$((0))NE"\r', { cid: 'page-b', seq: 1 });
+    await until(() => c.text().includes('D0NE\r\n'));
+    expect(c.text().match(/r2\r\n/g)).toHaveLength(1);
+  });
+
   it('a second stream takes the session; the first is told, then ended', async () => {
     terms = new Terminals({ shell: '/bin/sh' });
     const t = terms.open(tmpdir(), 80, 24);

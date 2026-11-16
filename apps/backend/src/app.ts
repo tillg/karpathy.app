@@ -266,9 +266,10 @@ export function createApp(d: AppDeps) {
     res.json(await d.vaults.patch(req.params.id!, patchVault.parse(req.body)));
   });
   api.delete('/vaults/:id', async (req, res) => {
+    // Shells first: one still writing after remove()'s uncommitted-changes check would lose that work.
+    await closeVaultTerminals(d.terminal, req.params.id!);
     await d.vaults.remove(req.params.id!);
     d.chat?.vaultRemoved(req.params.id!);
-    await closeVaultTerminals(d.terminal, req.params.id!);
     res.status(204).end();
   });
 

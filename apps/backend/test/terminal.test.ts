@@ -97,6 +97,20 @@ describe('terminal routes', () => {
     expect((await (await t.call('/terminals')).json()).terminals).toHaveLength(0);
   });
 
+  it('a retried input chunk (same page tag) is typed once', async () => {
+    const t = await setup();
+    const { id } = await (await t.call(`/vaults/${t.id}/terminals`, { method: 'POST', body: JSON.stringify({ cols: 80, rows: 24 }) })).json();
+    const stream = await t.call(`/terminals/${id}/stream`);
+    const send = (data: string, seq: number) =>
+      t.call(`/terminals/${id}/input`, { method: 'POST', body: JSON.stringify({ data, cid: 'page', seq }) });
+    expect((await send('echo "r$((1+1))"\r', 1)).status).toBe(204);
+    expect((await send('echo "r$((1+1))"\r', 1)).status).toBe(204);
+    expect((await send('echo "D$((0))NE"\r', 2)).status).toBe(204);
+    const text = await read(stream, (s) => s.includes('D0NE\r\n'));
+    expect(text.match(/r2\r\n/g)).toHaveLength(1);
+    await t.call(`/terminals/${id}`, { method: 'DELETE' });
+  });
+
   it('passes the service limit and unknown ids through as errors', async () => {
     const t = await setup();
     const open = () => t.call(`/vaults/${t.id}/terminals`, { method: 'POST', body: JSON.stringify({ cols: 80, rows: 24 }) });

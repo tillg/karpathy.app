@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs';
-import { lstat, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -60,6 +60,27 @@ describe('git dirs outside the working trees', () => {
       expect(existsSync(join(clone, '.git.old'))).toBe(false);
       const st = (await t.api.get(`/vaults/${id}/status`)).body;
       expect(st).toMatchObject({ state: 'ready', unpushedCount: 1, changedCount: 1 });
+      await t.vaults.close();
+    }
+  });
+
+  it('a .git the terminal replaced by a symlink is never written through; one to a folder doesn\'t stop the start', async () => {
+    const remote = await makeRemote({ 'a.md': 'a\n' });
+    const d = await dirs();
+    const first = await makeApp(remote.remoteBase, { dirs: d, env: { gitDirsDir: d.gitdirs } });
+    const id = await first.addVault(remote.repo);
+    await first.vaults.close();
+    const dotGit = join(d.vaults, id, '.git');
+    const config = join(d.gitdirs, id, 'config');
+    const before = await readFile(config, 'utf8');
+
+    for (const link of [config, d.gitdirs]) {
+      await rm(dotGit, { force: true });
+      await symlink(link, dotGit);
+      const t = await makeApp(remote.remoteBase, { dirs: d, env: { gitDirsDir: d.gitdirs } });
+      expect(await readFile(config, 'utf8')).toBe(before);
+      expect((await lstat(dotGit)).isFile()).toBe(true);
+      expect((await t.api.get(`/vaults/${id}/status`)).body.state).toBe('ready');
       await t.vaults.close();
     }
   });

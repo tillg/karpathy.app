@@ -43,6 +43,14 @@ interface Session extends TerminalInfo {
   /** macOS: the processes seen on its tty. Once the shell exits the tty is revoked and they can't be found by it. */
   known: Set<number>;
   watch?: ReturnType<typeof setInterval>;
+  /** Per page (`cid`): the last input sequence numbers taken, so a retried chunk isn't typed twice. */
+  seen: Map<string, number[]>;
+}
+
+/** Tags a page's input chunk; a retry sends the same tag. */
+export interface InputTag {
+  cid: string;
+  seq: number;
 }
 
 export interface TerminalsOptions {
@@ -81,7 +89,7 @@ export class Terminals {
       cwd,
       env: { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', ...this.opts.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' },
     });
-    const s: Session = { id: randomUUID(), cwd: label, cols, rows, created: new Date().toISOString(), pty, buffer: '', total: 0, paused: false, tty: ttyOf(pty), known: new Set() };
+    const s: Session = { id: randomUUID(), cwd: label, cols, rows, created: new Date().toISOString(), pty, buffer: '', total: 0, paused: false, tty: ttyOf(pty), known: new Set(), seen: new Map() };
     pty.onData((d) => {
       s.total += d.length;
       s.buffer = (s.buffer + d).slice(-this.scrollback);
@@ -133,8 +141,16 @@ export class Terminals {
     return Boolean(this.get(id).sink);
   }
 
-  input(id: string, data: string) {
+  input(id: string, data: string, tag?: InputTag) {
     const s = this.get(id);
+    if (tag) {
+      const seqs = s.seen.get(tag.cid) ?? [];
+      // A request that reached the shell but whose answer got lost comes again: take it once.
+      if (seqs.includes(tag.seq)) return;
+      s.seen.delete(tag.cid);
+      s.seen.set(tag.cid, [...seqs, tag.seq].slice(-64));
+      if (s.seen.size > 16) s.seen.delete(s.seen.keys().next().value!);
+    }
     // A line may start a job and the next one end the shell: note what runs on its tty while it still can be found.
     if (/[\r\n]/.test(data)) this.track(s);
     s.pty.write(data);

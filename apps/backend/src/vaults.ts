@@ -142,7 +142,8 @@ export class Vaults {
     await rm(this.preflightDir(), { recursive: true, force: true });
     for (const v of this.store.get().vaults) {
       const r = this.runtime(v.id);
-      if (v.cloned && this.env.gitDirsDir) await this.moveGitDirOut(v.id);
+      // One vault's broken `.git` must not keep the backend from starting.
+      if (v.cloned && this.env.gitDirsDir) await this.moveGitDirOut(v.id).catch((e) => console.warn(`git dir of ${v.id}:`, (e as Error).message));
       if (v.cloned) {
         r.state = 'ready';
         r.conflict = await this.repo(v).inConflict().catch(() => false);
@@ -1207,7 +1208,11 @@ export class Vaults {
       }
       await rename(dotGit, `${dotGit}.old`);
     }
-    if (existsSync(target) && !st?.isFile()) await writeFile(dotGit, `gitdir: ${target}\n`);
+    // The terminal can write the tree: a `.git` that isn't a plain file (a symlink, say) is replaced, never followed.
+    if (existsSync(target) && !(await lstat(dotGit).catch(() => null))?.isFile()) {
+      await rm(dotGit, { force: true });
+      await writeFile(dotGit, `gitdir: ${target}\n`, { flag: 'wx' });
+    }
     await rm(`${dotGit}.old`, { recursive: true, force: true });
     await rm(`${target}.tmp`, { recursive: true, force: true });
   }
