@@ -282,6 +282,7 @@ edited: 2026-11-16
   - [12:05 — The backend's git ignores hooks and refuses a clone whose `.git/config` holds keys outside an allowlist](#run-2026-11-16-1117-11)
   - [12:20 — Release the terminal as v0.0.41 and deploy it to prod](#run-2026-11-16-1117-12)
   - [13:00 — Hold the release; the vaults' git dirs move to a `gitdirs` volume the terminal mounts read-only](#run-2026-11-16-1117-13)
+  - [13:15 — Test the migration and e2e on karpathy-dev; give the dev host a C toolchain](#run-2026-11-16-1117-14)
 
 # 2026-10-02 17:16 — Clean up the specs/ sub-directories {#run-2026-10-02-1716}
 
@@ -4130,3 +4131,13 @@ edited: 2026-11-16
   - The first start of the new backend copies every vault's `.git` once.
   - Rollback: `just deploy hetzner 0.0.40` brings back a backend that expects `.git` folders. Before rolling back, run the reverse move by hand (copy `/gitdirs/<id>` back to `/vaults/<id>/.git`), or re-add the vaults.
   - Supersedes decision 11's allowlist. Its hook and fsmonitor env stays.
+
+## 13:15 — Test the migration and e2e on karpathy-dev; give the dev host a C toolchain {#run-2026-11-16-1117-14}
+
+- **Status:** open
+- **Context:** `just dev up` on the Mac refused: only 4.3 GiB were free on the Mac's disk (it needs 10). Docker's VM had 61 GB, but 895 of 926 GiB on the host were used outside this project. On karpathy-dev, `npm ci` then failed: node-pty (#175) compiles on Linux and the host had no `make`.
+- **Question:** where to run the stack-level tests, and how to fix `npm ci` on Linux dev hosts?
+- **Decision:** run them in a worktree on karpathy-dev (`.worktrees/t175`, stack 1 there). Add `build-essential` and `python3` to the `devtools` role, plus `make`/`g++` checks in `deploy/ansible/dev.test.sh`, and apply them with `just devhost` (`failed=0`). The worktree got `tmp/ingest_email-src` copied from the main checkout, because the non-interactive SSH session has no GitHub credentials for the private repo.
+- **Why:** the dev host is the documented second place for dev stacks, and the toolchain is what the new dependency needs everywhere `npm ci` runs. CI's Ubuntu runners and the images already have it.
+- **Alternatives:** override the Mac's 10 GiB guard (a growing VM disk could fill the user's disk); make node-pty optional (`npm ci` passes, but the terminal tests fail without it).
+- **Consequences:** a fresh Linux dev machine outside Ansible also needs `build-essential`, which the README should say. Rollback of the role change: drop the two packages. The Mac's disk is the user's to clean up.
